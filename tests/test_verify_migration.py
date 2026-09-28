@@ -2,6 +2,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
+
 from scripts import import_data_assets, verify_migration
 
 
@@ -426,3 +428,199 @@ def test_instrumentation_keeps_failure_verdict_and_message(monkeypatch, tmp_path
     # 판정이 실패해도 계측은 계속 남습니다.
     assert set(payload["step_timings"]) == {"weights", "chroma"}
     assert any(segment.get("bytes") for segment in payload["segments"])
+
+
+def _valid_signature_metadata() -> dict[str, str]:
+    """기준선 메타데이터 검증을 통과하는 최소 출처 정보입니다."""
+    return {
+        "generated_at": "2026-09-28T00:00:00+00:00",
+        "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
+        "generated_by": "ci",
+        "tool_version": verify_migration.G1_TOOL_VERSION,
+        "git_head": "0" * 40,
+    }
+
+
+def _signature_table(name: str, table_hash: str, columns: list[dict] | None = None) -> dict:
+    return {
+        "name": name,
+        "columns": columns if columns is not None else [],
+        "primary_key": [],
+        "foreign_keys": [],
+        "indexes": [],
+        "hash": table_hash,
+    }
+
+
+def _signature_column(name: str, type_name: str = "INTEGER") -> dict:
+    return {
+        "name": name,
+        "type": type_name,
+        "nullable": False,
+        "primary_key": name == "id",
+    }
+
+
+def _write_signature_baseline(path: Path, signature: dict) -> Path:
+    path.write_text(json.dumps(signature), encoding="utf-8")
+    return path
+
+
+def test_signature_scope_cli_defaults_to_full_and_forwards_managed(monkeypatch, tmp_path):
+    """--signature-scope 미지정은 full 이고, 지정하면 그대로 전달됩니다."""
+    seen: list[str] = []
+    report = tmp_path / "report.json"
+
+    def fake_verify(**kwargs):
+        seen.append(kwargs["signature_scope"])
+        return True, "ok"
+
+    monkeypatch.setattr(verify_migration, "verify_schema_signature", fake_verify)
+    monkeypatch.setattr(
+        "sys.argv",
+        ["verify_migration.py", "--only-steps", "signature", "--report-path", str(report)],
+    )
+    assert verify_migration.main() == 0
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "verify_migration.py",
+            "--only-steps",
+            "signature",
+            "--signature-scope",
+            "managed",
+            "--report-path",
+            str(report),
+        ],
+    )
+    assert verify_migration.main() == 0
+
+    assert seen == ["full", "managed"]
+
+
+def test_managed_scope_ignores_tables_outside_orm_set(monkeypatch, tmp_path):
+    """managed 는 ORM 관리 밖 테이블 차이와 추가 테이블을 무시합니다."""
+    baseline = {
+        "tables": {
+            "test_users": _signature_table("test_users", "user-hash"),
+            "django_leftovers": _signature_table(
+                "django_leftovers",
+                "leftover-baseline",
+                [_signature_column("id")],
+            ),
+        },
+        "orm_tables": ["test_users"],
+        "metadata": _valid_signature_metadata(),
+    }
+    current = {
+        "tables": {
+            "test_users": _signature_table("test_users", "user-hash"),
+            "django_leftovers": _signature_table(
+                "django_leftovers",
+                "leftover-current",
+                [_signature_column("id", "BIGINT")],
+            ),
+            "db_only_table": _signature_table("db_only_table", "extra-hash"),
+        },
+    }
+    baseline_path = _write_signature_baseline(tmp_path / "baseline.json", baseline)
+    monkeypatch.setattr(verify_migration, "generate_schema_signature", lambda **_kwargs: current)
+
+    ok, message = verify_migration.verify_schema_signature(
+        baseline_path=baseline_path,
+        signature_scope="managed",
+    )
+    assert ok is True, message
+    assert "ORM 관리" in message
+
+    # 같은 서명이라도 full 범위는 대상 밖 차이를 그대로 실패로 잡습니다.
+    ok_full, message_full = verify_migration.verify_schema_signature(
+        baseline_path=baseline_path,
+    )
+    assert ok_full is False
+    assert "django_leftovers" in message_full or "db_only_table" in message_full
+
+
+def test_managed_scope_fails_when_orm_table_missing(monkeypatch, tmp_path):
+    """managed 에서 ORM 관리 테이블이 현재 DB 에 없으면 테이블 누락으로 실패합니다."""
+    baseline = {
+        "tables": {
+            "test_users": _signature_table("test_users", "user-hash"),
+            "test_posts": _signature_table("test_posts", "post-hash"),
+        },
+        "orm_tables": ["test_users", "test_posts"],
+        "metadata": _valid_signature_metadata(),
+    }
+    current = {"tables": {"test_users": _signature_table("test_users", "user-hash")}}
+    baseline_path = _write_signature_baseline(tmp_path / "baseline.json", baseline)
+    monkeypatch.setattr(verify_migration, "generate_schema_signature", lambda **_kwargs: current)
+
+    ok, message = verify_migration.verify_schema_signature(
+        baseline_path=baseline_path,
+        signature_scope="managed",
+    )
+    assert ok is False
+    assert "테이블 누락" in message
+    assert "test_posts" in message
+
+
+def test_managed_scope_fails_on_orm_table_column_diff(monkeypatch, tmp_path):
+    """managed 에서 ORM 관리 테이블의 컬럼 차이는 실패입니다."""
+    baseline = {
+        "tables": {
+            "test_users": _signature_table(
+                "test_users",
+                "baseline-hash",
+                [_signature_column("id", "INTEGER")],
+            )
+        },
+        "orm_tables": ["test_users"],
+        "metadata": _valid_signature_metadata(),
+    }
+    current = {
+        "tables": {
+            "test_users": _signature_table(
+                "test_users",
+                "current-hash",
+                [_signature_column("id", "BIGINT")],
+            )
+        },
+    }
+    baseline_path = _write_signature_baseline(tmp_path / "baseline.json", baseline)
+    monkeypatch.setattr(verify_migration, "generate_schema_signature", lambda **_kwargs: current)
+
+    ok, message = verify_migration.verify_schema_signature(
+        baseline_path=baseline_path,
+        signature_scope="managed",
+    )
+    assert ok is False
+    assert "타입 변경" in message
+
+
+@pytest.mark.parametrize("orm_tables", [None, []])
+def test_managed_scope_requires_baseline_orm_tables(monkeypatch, tmp_path, orm_tables):
+    """기준선 orm_tables 가 없거나 비면 DB 조회 없이 fail-closed 합니다."""
+    baseline = {
+        "tables": {"test_users": _signature_table("test_users", "user-hash")},
+        "metadata": _valid_signature_metadata(),
+    }
+    if orm_tables is not None:
+        baseline["orm_tables"] = orm_tables
+    baseline_path = _write_signature_baseline(tmp_path / "baseline.json", baseline)
+
+    def should_not_generate(**_kwargs):
+        raise AssertionError("orm_tables 부재 시 DB 서명을 생성하면 안 됩니다")
+
+    monkeypatch.setattr(
+        verify_migration,
+        "generate_schema_signature",
+        should_not_generate,
+    )
+
+    ok, message = verify_migration.verify_schema_signature(
+        baseline_path=baseline_path,
+        signature_scope="managed",
+    )
+    assert ok is False
+    assert "orm_tables" in message

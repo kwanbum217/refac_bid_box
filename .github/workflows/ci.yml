@@ -541,3 +541,60 @@ jobs:
             echo "Error: No tests passed in mysql_integration."
             exit 1
           fi
+
+  g1-schema-signature:
+    name: G1 스키마 서명 재현성 검증
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        # 빈 DB 에 Alembic 마이그레이션을 올린 결과가 운영 기준선과 같은지 봅니다.
+        # mysql-ngram-integration 잡과 같은 다이제스트로 고정합니다.
+        image: mysql:8.0@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b
+        env:
+          MYSQL_ROOT_PASSWORD: testpassword
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -ptestpassword"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      # MYSQL_DATABASE 로 스키마를 만들면 MySQL 8 기본 콜레이션
+      # utf8mb4_0900_ai_ci 가 적용돼 기준선(utf8mb4_unicode_ci)과 컬럼 타입
+      # 문자열이 달라집니다. 기준선과 같은 콜레이션을 명시해 스키마를 만듭니다.
+      - name: Create Isolated MySQL Schema
+        env:
+          MYSQL_PWD: testpassword
+        run: |
+          mysql -h 127.0.0.1 -u root --default-character-set=utf8mb4 \
+            -e "CREATE DATABASE test_procurement_schema CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+
+      # 설정은 SECRET_KEY 를 필수로 요구합니다. 스모크용 일회성 값이며 실제
+      # 비밀은 CI 에 두지 않습니다.
+      - name: Apply Alembic Migrations
+        env:
+          DATABASE_URL: mysql+pymysql://root:testpassword@127.0.0.1:3306/test_procurement_schema
+          SECRET_KEY: ci-schema-signature-placeholder-value-not-a-real-secret-0123456789
+        run: uv run alembic upgrade head
+
+      # ORM 관리 테이블과 alembic_version 한정으로 기준선 서명과 대조합니다.
+      # Django 잔여 테이블은 마이그레이션 대상이 아니라 빈 DB 에 생기지 않습니다.
+      - name: Verify Managed Schema Signature
+        env:
+          DATABASE_URL: mysql+pymysql://root:testpassword@127.0.0.1:3306/test_procurement_schema
+          SECRET_KEY: ci-schema-signature-placeholder-value-not-a-real-secret-0123456789
+        run: uv run python scripts/verify_migration.py --only-steps signature --signature-scope managed

@@ -95,6 +95,13 @@ RECONCILIATION_TABLES: tuple[str, ...] = (
     "bid_results",
 )
 
+# 스키마 서명 대조 범위입니다. full 은 운영 DB 전 테이블 무손실 검증이고,
+# managed 는 빈 DB 에 마이그레이션을 올린 결과를 재현성 검증하는 CI 전용 범위입니다.
+# managed 는 Django 잔여 테이블과 servc_inst_verify 를 제외한다. 그 테이블들은
+# 마이그레이션 대상이 아니라 빈 DB 에 생기지 않아 기준선과 대조할 수 없습니다.
+SIGNATURE_SCOPES: tuple[str, ...] = ("full", "managed")
+MANAGED_SIGNATURE_EXTRA_TABLES: tuple[str, ...] = ("alembic_version",)
+
 
 def get_orm_table_names() -> set[str]:
     """모든 등록된 SQLAlchemy ORM 테이블 이름을 반환합니다."""
@@ -706,18 +713,21 @@ def verify_schema_signature(
     baseline_path: Path | None = None,
     auto_save_baseline: bool = False,
     tables: tuple[str, ...] | list[str] | None = None,
+    signature_scope: str = "full",
 ) -> tuple[bool, str]:
-    """전 테이블 스키마 서명을 생성하고 기준선과 비교 검증합니다."""
+    """스키마 서명을 생성하고 기준선과 비교 검증합니다.
+
+    signature_scope 가 full 이면 기존과 같이 전 테이블을 대조한다. managed 이면
+    기준선의 orm_tables 와 alembic 장부 테이블로 대상을 한정한다. managed 는 빈 DB
+    마이그레이션 재현성 검증용이며, 기준선에 orm_tables 가 없으면 DB 조회 없이
+    fail-closed 한다.
+    """
     print("[4/5] DB 전 테이블 스키마 서명 검증...")
     path = baseline_path or SCHEMA_BASELINE_PATH
     if not path.exists():
         return False, f"기준 서명 파일 없음: {path} (명시적 기준선 생성 명령 필요)"
-
-    try:
-        current_sig = generate_schema_signature(engine_or_inspector=engine, tables=tables)
-    except Exception as exc:
-        print(f"      스키마 서명 생성 실패: {exc}")
-        return False, f"스키마 서명 생성 실패: {exc}"
+    if signature_scope not in SIGNATURE_SCOPES:
+        return False, f"알 수 없는 signature_scope: {signature_scope}"
 
     try:
         baseline_sig = json.loads(path.read_text(encoding="utf-8"))
@@ -728,7 +738,42 @@ def verify_schema_signature(
     if metadata_error:
         return False, metadata_error
 
-    is_match, diff_messages, _ = compare_schema_signatures(baseline_sig, current_sig)
+    scoped_tables = tables
+    target_tables: set[str] | None = None
+    if signature_scope == "managed":
+        baseline_orm = baseline_sig.get("orm_tables")
+        if not isinstance(baseline_orm, list) or not baseline_orm:
+            return False, "기준선 orm_tables 누락 또는 비어 있음 (managed 범위 대조 불가)"
+        target_tables = set(baseline_orm) | set(MANAGED_SIGNATURE_EXTRA_TABLES)
+        scoped_tables = sorted(target_tables)
+
+    try:
+        current_sig = generate_schema_signature(engine_or_inspector=engine, tables=scoped_tables)
+    except Exception as exc:
+        print(f"      스키마 서명 생성 실패: {exc}")
+        return False, f"스키마 서명 생성 실패: {exc}"
+
+    baseline_cmp = baseline_sig
+    current_cmp = current_sig
+    if target_tables is not None:
+        baseline_cmp = {
+            **baseline_sig,
+            "tables": {
+                name: sig
+                for name, sig in baseline_sig.get("tables", {}).items()
+                if name in target_tables
+            },
+        }
+        current_cmp = {
+            **current_sig,
+            "tables": {
+                name: sig
+                for name, sig in current_sig.get("tables", {}).items()
+                if name in target_tables
+            },
+        }
+
+    is_match, diff_messages, _ = compare_schema_signatures(baseline_cmp, current_cmp)
     if not is_match:
         for d in diff_messages:
             print(f"      [서명 차이] {d}")
@@ -737,6 +782,9 @@ def verify_schema_signature(
             f"DB 스키마 서명 불일치 ({len(diff_messages)}건): {'; '.join(diff_messages[:3])}",
         )
 
+    if target_tables is not None:
+        print(f"      ORM 관리 테이블 {len(target_tables)}개 스키마 서명 일치")
+        return True, f"DB 스키마 서명 일치 (ORM 관리 {len(target_tables)}개 테이블 한정)"
     print(f"      전 테이블 스키마 서명 일치 (해시: {current_sig.get('overall_hash', '')[:16]}...)")
     return True, "DB 스키마 서명 일치 (전 테이블 컬럼·타입·제약조건 무손실)"
 
@@ -1099,6 +1147,15 @@ def main() -> int:
             "쉼표 구분 단계만 실행합니다. weights,chroma,tables,signature,rowcount,reconciliation"
         ),
     )
+    parser.add_argument(
+        "--signature-scope",
+        choices=SIGNATURE_SCOPES,
+        default="full",
+        help=(
+            "스키마 서명 대조 범위입니다. full 은 운영 DB 전 테이블 무손실 검증, "
+            "managed 는 기준선 orm_tables 와 alembic_version 한정 재현성 검증"
+        ),
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -1161,7 +1218,13 @@ def main() -> int:
         _timed_step("tables", verify_db_schema) if _wanted("tables") else (True, "단계 생략")
     )
     step4_ok, step4_msg = (
-        _timed_step("signature", lambda: verify_schema_signature(baseline_path=args.baseline_path))
+        _timed_step(
+            "signature",
+            lambda: verify_schema_signature(
+                baseline_path=args.baseline_path,
+                signature_scope=args.signature_scope,
+            ),
+        )
         if _wanted("signature")
         else (True, "단계 생략")
     )

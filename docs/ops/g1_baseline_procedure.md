@@ -84,3 +84,16 @@ uv run pytest tests/test_g1_baseline_drift_gate.py -q
 ```
 
 갱신 후 기존 테이블 정의 변경이 0건인지 `git diff data/backups/schema_signature_baseline.json` 으로 대조합니다. 새 테이블·인덱스 항목만 늘고 기존 항목의 컬럼·타입·제약조건은 변하지 않아야 합니다.
+
+## 6. 스키마 서명 대조 범위와 CI 검증
+
+`scripts/verify_migration.py` 의 `--signature-scope` 는 서명 대조 대상을 정합니다.
+
+| 값 | 의미 |
+| --- | --- |
+| `full`(기본) | 운영 DB 전 테이블 대조. 데이터 무손실 검증용이며 기존 동작과 같습니다. |
+| `managed` | 기준선 `orm_tables` 와 `alembic_version` 한정 대조. 빈 DB 마이그레이션 재현성 검증용입니다. |
+
+`managed` 는 Django 잔여 테이블과 `servc_inst_verify` 를 대조에서 제외합니다. 그 테이블들은 마이그레이션 대상이 아니라 빈 DB 에 생기지 않기 때문입니다. 기준선 `orm_tables` 가 없거나 비어 있으면 DB 조회 없이 실패합니다. 대상 테이블이 빈 DB 에 없으면 테이블 누락으로 실패하고, 대상 밖 추가 테이블은 무시합니다.
+
+CI 의 `g1-schema-signature` 잡(`.github/workflows/ci.yml`)이 이 범위를 사용합니다. 빈 MySQL 8 에 `utf8mb4_unicode_ci` 스키마를 만들고 `alembic upgrade head` 를 올린 뒤 `--only-steps signature --signature-scope managed` 로 대조합니다. 따라서 스키마를 바꾸는 마이그레이션을 병합하기 전 기준선을 갱신하지 않으면 이 잡이 실패합니다.
