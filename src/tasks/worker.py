@@ -47,11 +47,15 @@ from src.tasks.automation_tasks import (
 from src.tasks.coverage_tasks import result_coverage_monitor_task
 from src.tasks.retrain_task import run_retrain_pipeline_task
 from src.tasks.scheduled_tasks import (
+    DRIFT_MONITOR_CATCHUP_JOB_NAME,
+    RESULT_COVERAGE_CATCHUP_JOB_NAME,
     WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
     backup_schedule_task,
     development_data_refresh_task,
     drift_monitor_task,
     nightly_schedule_task,
+    run_drift_monitor_catchup_task,
+    run_result_coverage_catchup_task,
     run_schedule_catchup_task,
     run_weekly_retrain_catchup_task,
     weekly_retrain_task,
@@ -183,6 +187,8 @@ ARQ_QUEUE_KEY = "arq:queue"
 SCHEDULE_CATCHUP_JOB_NAME = "run_schedule_catchup_task"
 SCHEDULE_CATCHUP_JOB_ID = "schedule-catchup-startup"
 SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS = 10800
+# 모니터 따라잡기는 원 태스크 크론과 같은 1시간 제한을 씁니다.
+MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS = 3600
 _worker_cache = CacheLayer()
 _worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:12]}"
 
@@ -291,6 +297,19 @@ def record_schedule_result(schedule_name: str, outcome: Any, success: bool) -> N
         return
 
 
+def read_schedule_status() -> dict[str, Any]:
+    """Redis 스케줄 상태를 읽습니다.
+
+    조회 실패나 값 부재는 기록 없음으로 취급해 빈 dict 를 돌려줍니다. 모니터
+    따라잡기 판정이 가벼운 읽기 전용이라 한 번 더 도는 편이 안전합니다.
+    """
+    try:
+        current = _worker_cache.get(SCHEDULE_STATUS_KEY)
+    except Exception:
+        return {}
+    return current if isinstance(current, dict) else {}
+
+
 async def _heartbeat_loop(key: str = WORKER_HEARTBEAT_KEY) -> None:
     # 관측 기록은 동기 Redis 왕복을 포함하므로 이벤트 루프 밖 스레드에서 실행합니다.
     while True:
@@ -391,6 +410,8 @@ class WorkerSettings:
         drift_monitor_task,
         run_schedule_catchup_task,
         run_weekly_retrain_catchup_task,
+        run_drift_monitor_catchup_task,
+        run_result_coverage_catchup_task,
         rebuild_dataset_summary_task,
         refresh_institution_catalog_task,
         result_coverage_monitor_task,
@@ -569,6 +590,8 @@ def ensure_all_worker_tasks_traced() -> None:
 CATCHUP_JOB_TIMEOUTS: dict[str, int] = {
     SCHEDULE_CATCHUP_JOB_NAME: SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS,
     WEEKLY_RETRAIN_CATCHUP_JOB_NAME: SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS,
+    DRIFT_MONITOR_CATCHUP_JOB_NAME: MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS,
+    RESULT_COVERAGE_CATCHUP_JOB_NAME: MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS,
 }
 
 

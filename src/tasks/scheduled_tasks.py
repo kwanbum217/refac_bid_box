@@ -728,6 +728,22 @@ def is_drift_monitor_enabled() -> bool:
     return bool(settings.ML_DRIFT_MONITOR_ENABLED)
 
 
+def _acquire_drift_monitor_claim() -> ScheduleClaimResult:
+    """드리프트 크론과 기동 따라잡기가 공유하는 선점을 원자적으로 획득합니다.
+
+    TTL 은 잡 타임아웃 이상으로 잡습니다. Redis 에 접근할 수 없으면 호출부가
+    경고를 남기고 선점 없이 진행하도록 결과를 그대로 돌려줍니다.
+    """
+    from src.tasks.worker import MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS
+
+    ttl = max(int(MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS), DRIFT_MONITOR_CLAIM_TTL_SECONDS)
+    return acquire_schedule_claim(
+        "drift_monitor",
+        key=DRIFT_MONITOR_CLAIM_KEY,
+        ttl_seconds=ttl,
+    )
+
+
 @traced_worker_task
 @_record_schedule("drift_monitor")
 async def drift_monitor_task(
@@ -751,6 +767,32 @@ async def drift_monitor_task(
         logger.info("PSI 드리프트 모니터링이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
+    # arq 매일 04:00 크론과 기동 따라잡기가 같은 키를 잡아 중복 검사를 막습니다.
+    claim = _acquire_drift_monitor_claim()
+    if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+        logger.info("PSI 드리프트 모니터링이 이미 실행 중이어서 건너뜁니다.")
+        return {"status": "skipped", "reason": "already_running"}
+    if not claim.acquired:
+        logger.warning(
+            "Redis 접근 불가로 PSI 드리프트 모니터링 선점 없이 진행합니다 (key=%s, status=%s)",
+            DRIFT_MONITOR_CLAIM_KEY,
+            claim.status.value,
+        )
+
+    try:
+        return await _run_drift_monitor(ctx, evaluation_window_days, registry_dir)
+    finally:
+        # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
+        if claim.acquired and claim.token:
+            release_schedule_claim(key=DRIFT_MONITOR_CLAIM_KEY, token=claim.token)
+
+
+async def _run_drift_monitor(
+    ctx: dict[str, Any],
+    evaluation_window_days: int,
+    registry_dir: str,
+) -> dict[str, Any]:
+    """선점을 획득한 뒤 실행되는 PSI 드리프트 검사 본문입니다."""
     logger.info("PSI 드리프트 모니터링 태스크 시작 (평가 윈도우=%d일)", evaluation_window_days)
     results: dict[str, Any] = {}
     has_failure = False
@@ -924,6 +966,34 @@ WEEKLY_RETRAIN_YIELD_BEFORE_SLOT_SECONDS = 10800
 WEEKLY_RETRAIN_WEEKDAY = 0
 WEEKLY_RETRAIN_HOUR = 3
 WEEKLY_RETRAIN_MINUTE = 0
+
+# arq 매일 04:00 크론과 기동 따라잡기가 함께 쓰는 PSI 드리프트 감시 선점 키입니다.
+DRIFT_MONITOR_CLAIM_KEY = "bidbox:schedule:drift_monitor_claim"
+DRIFT_MONITOR_CLAIM_TTL_SECONDS = 10800
+DRIFT_MONITOR_CATCHUP_JOB_NAME = "run_drift_monitor_catchup_task"
+DRIFT_MONITOR_CATCHUP_JOB_ID = "drift-monitor-catchup-startup"
+
+# 다음 드리프트 슬롯이 이 시간 이내로 임박하면 따라잡기는 크론에 양보합니다.
+DRIFT_MONITOR_YIELD_BEFORE_SLOT_SECONDS = 3600
+
+# 드리프트 감시 크론과 같은 시각(매일 04:00). arq cron 과 동일한 프로세스 로컬 시각 기준입니다.
+DRIFT_MONITOR_HOUR = 4
+DRIFT_MONITOR_MINUTE = 0
+
+# arq 월요일 05:00 크론과 기동 따라잡기가 함께 쓰는 낙찰결과 커버리지 감시 선점 키입니다.
+RESULT_COVERAGE_CLAIM_KEY = "bidbox:schedule:result_coverage_claim"
+RESULT_COVERAGE_CLAIM_TTL_SECONDS = 10800
+RESULT_COVERAGE_CATCHUP_JOB_NAME = "run_result_coverage_catchup_task"
+RESULT_COVERAGE_CATCHUP_JOB_ID = "result-coverage-catchup-startup"
+RESULT_COVERAGE_SCHEDULE_NAME = "result_coverage_monitor"
+
+# 다음 커버리지 슬롯이 이 시간 이내로 임박하면 따라잡기는 크론에 양보합니다.
+RESULT_COVERAGE_YIELD_BEFORE_SLOT_SECONDS = 3600
+
+# 커버리지 감시 크론과 같은 시각(월요일 05:00)입니다.
+RESULT_COVERAGE_WEEKDAY = 0
+RESULT_COVERAGE_HOUR = 5
+RESULT_COVERAGE_MINUTE = 0
 
 RELEASE_SCHEDULE_CLAIM_SCRIPT = """
 local val = redis.call('GET', KEYS[1])
@@ -1536,6 +1606,182 @@ def check_weekly_retrain_catchup_needed(
     return False, "weekly_retrain_up_to_date", details
 
 
+def get_latest_drift_monitor_time(db: Session | None = None) -> datetime | None:
+    """retrain_logs 에서 trigger_source='drift_monitor' 인 최신 created_at 을 조회합니다."""
+    from sqlalchemy import func, select
+
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
+    try:
+        return session.execute(
+            select(func.max(RetrainLog.created_at)).where(
+                RetrainLog.trigger_source == "drift_monitor"
+            )
+        ).scalar()
+    finally:
+        if own_session:
+            session.close()
+
+
+def _read_schedule_last_run_at(
+    schedule_name: str,
+    status_reader: Callable[[], Any] | None = None,
+) -> datetime | None:
+    """Redis 스케줄 상태에서 스케줄의 마지막 실행 시각을 파싱합니다.
+
+    조회 실패나 값 부재는 기록 없음(None)으로 취급합니다. 가벼운 읽기 전용
+    판정이라 한 번 더 도는 편이 놓치는 것보다 안전합니다.
+    """
+    if status_reader is None:
+        from src.tasks.worker import read_schedule_status
+
+        reader: Callable[[], Any] = read_schedule_status
+    else:
+        reader = status_reader
+    try:
+        status = reader()
+    except Exception:
+        return None
+    if not isinstance(status, dict):
+        return None
+    entry = status.get(schedule_name)
+    if not isinstance(entry, dict):
+        return None
+    raw = entry.get("last_run_at")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw))
+    except ValueError:
+        return None
+
+
+def check_drift_monitor_catchup_needed(
+    db: Session | None = None,
+    now: datetime | None = None,
+    tz: tzinfo | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
+    """기동 시 PSI 드리프트 감시(매일 04:00) 놓친 슬롯 보충 필요 여부를 판정합니다.
+
+    Returns:
+        (needed, reason, details)
+    """
+    if not settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED:
+        return (
+            False,
+            "disabled",
+            {"enabled": False, "reason": "AUTOMATION_SCHEDULE_CATCHUP_ENABLED is False"},
+        )
+    if not is_drift_monitor_enabled():
+        return (
+            False,
+            "disabled",
+            {"enabled": False, "reason": "ML_DRIFT_MONITOR_ENABLED is False"},
+        )
+
+    reference = now or utcnow()
+    last_slot = previous_cron_slot(reference, DRIFT_MONITOR_HOUR, DRIFT_MONITOR_MINUTE, tz=tz)
+    next_slot = next_cron_slot(reference, DRIFT_MONITOR_HOUR, DRIFT_MONITOR_MINUTE, tz=tz)
+    latest_drift = get_latest_drift_monitor_time(db)
+    details: dict[str, Any] = {
+        "enabled": True,
+        "last_drift_slot": last_slot.isoformat(),
+        "next_slot": next_slot.isoformat(),
+        "latest_drift_monitor_at": latest_drift.isoformat() if latest_drift else None,
+    }
+
+    # 다음 드리프트 슬롯이 잡 타임아웃 이내로 임박하면 따라잡기 대신 크론에 양보합니다.
+    remaining_seconds = (_as_utc(next_slot) - _as_utc(reference)).total_seconds()
+    if remaining_seconds <= DRIFT_MONITOR_YIELD_BEFORE_SLOT_SECONDS:
+        details["reason"] = (
+            f"다음 드리프트 슬롯({next_slot.isoformat()})까지 {remaining_seconds:.0f}초 남아 "
+            "크론 실행에 양보합니다."
+        )
+        return False, "next_drift_slot_imminent", details
+
+    if latest_drift is None:
+        details["reason"] = "이전 드리프트 감시 이력이 존재하지 않아 따라잡기를 실행합니다."
+        return True, "no_previous_drift_monitor", details
+
+    if _as_utc(latest_drift) < last_slot:
+        details["reason"] = (
+            f"마지막 드리프트 슬롯({last_slot.isoformat()}) 이후 이력이 없어 "
+            "놓친 슬롯을 보충합니다."
+        )
+        return True, "missed_drift_monitor", details
+
+    details["reason"] = "마지막 드리프트 슬롯 이후 이력이 있어 건너뜁니다."
+    return False, "drift_monitor_up_to_date", details
+
+
+def check_result_coverage_catchup_needed(
+    now: datetime | None = None,
+    tz: tzinfo | None = None,
+    status_reader: Callable[[], Any] | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
+    """기동 시 낙찰결과 커버리지 감시(월요일 05:00) 놓친 슬롯 보충 필요 여부를 판정합니다.
+
+    Returns:
+        (needed, reason, details)
+    """
+    if not settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED:
+        return (
+            False,
+            "disabled",
+            {"enabled": False, "reason": "AUTOMATION_SCHEDULE_CATCHUP_ENABLED is False"},
+        )
+
+    reference = now or utcnow()
+    last_slot = previous_cron_slot(
+        reference,
+        RESULT_COVERAGE_HOUR,
+        RESULT_COVERAGE_MINUTE,
+        weekday=RESULT_COVERAGE_WEEKDAY,
+        tz=tz,
+    )
+    next_slot = next_cron_slot(
+        reference,
+        RESULT_COVERAGE_HOUR,
+        RESULT_COVERAGE_MINUTE,
+        weekday=RESULT_COVERAGE_WEEKDAY,
+        tz=tz,
+    )
+    last_run_at = _read_schedule_last_run_at(RESULT_COVERAGE_SCHEDULE_NAME, status_reader)
+    details: dict[str, Any] = {
+        "enabled": True,
+        "last_coverage_slot": last_slot.isoformat(),
+        "next_slot": next_slot.isoformat(),
+        "latest_result_coverage_at": last_run_at.isoformat() if last_run_at else None,
+    }
+
+    # 다음 커버리지 슬롯이 임박하면 따라잡기 대신 크론에 양보합니다.
+    remaining_seconds = (_as_utc(next_slot) - _as_utc(reference)).total_seconds()
+    if remaining_seconds <= RESULT_COVERAGE_YIELD_BEFORE_SLOT_SECONDS:
+        details["reason"] = (
+            f"다음 커버리지 슬롯({next_slot.isoformat()})까지 {remaining_seconds:.0f}초 남아 "
+            "크론 실행에 양보합니다."
+        )
+        return False, "next_coverage_slot_imminent", details
+
+    if last_run_at is None:
+        details["reason"] = "이전 낙찰결과 커버리지 감시 기록이 없어 따라잡기를 실행합니다."
+        return True, "no_previous_result_coverage", details
+
+    if _as_utc(last_run_at) < last_slot:
+        details["reason"] = (
+            f"마지막 커버리지 슬롯({last_slot.isoformat()}) 이후 기록이 없어 "
+            "놓친 슬롯을 보충합니다."
+        )
+        return True, "missed_result_coverage", details
+
+    details["reason"] = "마지막 커버리지 슬롯 이후 기록이 있어 건너뜁니다."
+    return False, "result_coverage_up_to_date", details
+
+
 async def _enqueue_weekly_retrain_catchup(ctx: dict[str, Any]) -> None:
     """데이터 따라잡기 종료 후 주간 재학습 따라잡기를 큐에 적재합니다.
 
@@ -1596,6 +1842,149 @@ async def run_weekly_retrain_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]
     return result
 
 
+async def _enqueue_drift_monitor_catchup(ctx: dict[str, Any]) -> None:
+    """데이터 따라잡기 종료 후 PSI 드리프트 감시 따라잡기를 큐에 적재합니다.
+
+    적재 실패는 데이터 따라잡기 결과와 원장을 바꾸지 않고 경고 로그만 남깁니다.
+    """
+    redis = ctx.get("redis")
+    enqueue_job = getattr(redis, "enqueue_job", None)
+    if redis is None or enqueue_job is None:
+        logger.info("Arq redis 연결이 없어 PSI 드리프트 감시 따라잡기를 큐에 넣지 않습니다.")
+        return
+    try:
+        job = await enqueue_job(
+            DRIFT_MONITOR_CATCHUP_JOB_NAME,
+            _job_id=DRIFT_MONITOR_CATCHUP_JOB_ID,
+        )
+    except Exception as exc:
+        logger.warning("PSI 드리프트 감시 따라잡기 적재 실패: %s", exc)
+        return
+    if job is None:
+        logger.info(
+            "PSI 드리프트 감시 따라잡기 작업이 같은 job_id 로 이미 큐에 있거나 결과가 남아 "
+            "중복 적재를 건너뜁니다."
+        )
+
+
+async def _enqueue_result_coverage_catchup(ctx: dict[str, Any]) -> None:
+    """데이터 따라잡기 종료 후 낙찰결과 커버리지 감시 따라잡기를 큐에 적재합니다.
+
+    적재 실패는 데이터 따라잡기 결과와 원장을 바꾸지 않고 경고 로그만 남깁니다.
+    """
+    redis = ctx.get("redis")
+    enqueue_job = getattr(redis, "enqueue_job", None)
+    if redis is None or enqueue_job is None:
+        logger.info("Arq redis 연결이 없어 낙찰결과 커버리지 감시 따라잡기를 큐에 넣지 않습니다.")
+        return
+    try:
+        job = await enqueue_job(
+            RESULT_COVERAGE_CATCHUP_JOB_NAME,
+            _job_id=RESULT_COVERAGE_CATCHUP_JOB_ID,
+        )
+    except Exception as exc:
+        logger.warning("낙찰결과 커버리지 감시 따라잡기 적재 실패: %s", exc)
+        return
+    if job is None:
+        logger.info(
+            "낙찰결과 커버리지 감시 따라잡기 작업이 같은 job_id 로 이미 큐에 있거나 결과가 남아 "
+            "중복 적재를 건너뜁니다."
+        )
+
+
+async def _enqueue_monitor_catchups(ctx: dict[str, Any]) -> None:
+    """데이터 따라잡기 종료 후 세 따라잡기를 각각 격리해 큐에 적재합니다.
+
+    주간 재학습 적재는 기존 계약대로 항상 시도하고, 모니터 따라잡기는 따라잡기
+    시스템이 켜져 있을 때만 적재합니다. 한 적재의 예외가 나머지 적재를 막지 않습니다.
+    """
+    try:
+        await _enqueue_weekly_retrain_catchup(ctx)
+    except Exception as exc:
+        logger.warning("주간 재학습 따라잡기 적재 중 예외 발생: %s", exc)
+
+    if not settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED:
+        return
+
+    for enqueue in (_enqueue_drift_monitor_catchup, _enqueue_result_coverage_catchup):
+        try:
+            await enqueue(ctx)
+        except Exception as exc:
+            logger.warning("모니터 따라잡기 적재 중 예외 발생 (%s): %s", enqueue.__name__, exc)
+
+
+@traced_worker_task
+async def run_drift_monitor_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """기동 시 놓친 PSI 드리프트 감시를 보충하는 진입점 태스크입니다.
+
+    별도 선점을 잡지 않고 drift_monitor_task 의 공통 선점에 맡기므로, 이미 검사가
+    돌고 있으면 그대로 already_running 을 전달합니다.
+    """
+    needed, reason, details = await asyncio.to_thread(check_drift_monitor_catchup_needed)
+    logger.info(
+        "PSI 드리프트 감시 따라잡기 판정: needed=%s, reason=%s, details=%s",
+        needed,
+        reason,
+        details,
+    )
+
+    if not needed:
+        return {"status": "skipped", "reason": reason, "details": details}
+
+    logger.info("PSI 드리프트 감시 따라잡기 실행 시작 (details=%s)", details)
+    try:
+        outcome = await drift_monitor_task(ctx)
+    except Exception as exc:
+        logger.exception("PSI 드리프트 감시 따라잡기 실행 실패: %s", exc)
+        return {
+            "status": "failed",
+            "reason": "execution_failed",
+            "error": str(exc),
+            "catchup_details": details,
+        }
+
+    result = dict(outcome)
+    result["catchup_details"] = details
+    return result
+
+
+@traced_worker_task
+async def run_result_coverage_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """기동 시 놓친 낙찰결과 커버리지 감시를 보충하는 진입점 태스크입니다.
+
+    별도 선점을 잡지 않고 result_coverage_monitor_task 의 공통 선점에 맡기므로,
+    이미 감시가 돌고 있으면 그대로 already_running 을 전달합니다.
+    """
+    from src.tasks.coverage_tasks import result_coverage_monitor_task
+
+    needed, reason, details = await asyncio.to_thread(check_result_coverage_catchup_needed)
+    logger.info(
+        "낙찰결과 커버리지 감시 따라잡기 판정: needed=%s, reason=%s, details=%s",
+        needed,
+        reason,
+        details,
+    )
+
+    if not needed:
+        return {"status": "skipped", "reason": reason, "details": details}
+
+    logger.info("낙찰결과 커버리지 감시 따라잡기 실행 시작 (details=%s)", details)
+    try:
+        outcome = await result_coverage_monitor_task(ctx)
+    except Exception as exc:
+        logger.exception("낙찰결과 커버리지 감시 따라잡기 실행 실패: %s", exc)
+        return {
+            "status": "failed",
+            "reason": "execution_failed",
+            "error": str(exc),
+            "catchup_details": details,
+        }
+
+    result = dict(outcome)
+    result["catchup_details"] = details
+    return result
+
+
 @traced_worker_task
 @_record_schedule("schedule_catchup")
 async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -1603,7 +1992,7 @@ async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
     try:
         return await _run_schedule_catchup(ctx)
     finally:
-        await _enqueue_weekly_retrain_catchup(ctx)
+        await _enqueue_monitor_catchups(ctx)
 
 
 async def _run_schedule_catchup(ctx: dict[str, Any]) -> dict[str, Any]:
