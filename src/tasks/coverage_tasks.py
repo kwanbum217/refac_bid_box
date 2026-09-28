@@ -7,6 +7,10 @@ src/tasks/coverage_tasks.py
 동기 기저보다 10%p 이상 2주 연속 낮으면 MLOps 웹훅 경고를 보낸다. 계산은 읽기
 전용 src/app/services/result_coverage.py 에 위임하고, 여기서는 실행 순서와
 알림 발신만 담당한다.
+
+RESULT_COVERAGE_ALERT_SUPPRESS 로 지정한 원인 확인 경고는 만료일까지 알림 본문에서
+빼고, 억제된 경고만 남으면 알림을 보내지 않는다. 억제 여부와 무관하게 판정 목록
+전체는 반환 dict 의 alerts 에 그대로 담는다.
 """
 
 from __future__ import annotations
@@ -16,11 +20,13 @@ import logging
 from datetime import date
 from typing import Any
 
+from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.observability import traced_worker_task
 from src.app.services.result_coverage import (
     compute_result_match_rates,
     evaluate_match_rate_alerts,
+    parse_alert_suppressions,
 )
 from src.tasks.notifier import notify
 from src.tasks.scheduled_tasks import (
@@ -40,12 +46,27 @@ def _format_rate(rate: float | None) -> str:
     return f"{rate * 100:.1f}%" if rate is not None else "측정 불가"
 
 
+def _band_label(band: Any) -> str:
+    """규모 표기입니다. 경고 판정은 대형 행에서만 나오므로 미표기는 대형으로 봅니다."""
+    return "소형" if band == "small" else "대형"
+
+
+def _format_suppressed_summary(suppressed: list[dict[str, Any]]) -> str:
+    """억제 중인 경고를 알림 마지막 줄로 요약합니다. 예: 억제 중: Servc 대형(~2026-11-30)"""
+    entries = ", ".join(
+        f"{alert['category']} {_band_label(alert.get('band'))}(~{alert.get('suppressed_until')})"
+        for alert in suppressed
+    )
+    return f"억제 중: {entries}"
+
+
 def _collect_snapshot() -> dict[str, Any]:
     db = SessionLocal()
     try:
         as_of = date.today()
         rows = compute_result_match_rates(db, as_of=as_of)
-        alerts = evaluate_match_rate_alerts(rows)
+        suppressions = parse_alert_suppressions(settings.RESULT_COVERAGE_ALERT_SUPPRESS)
+        alerts = evaluate_match_rate_alerts(rows, suppressions=suppressions, today=as_of)
         return {
             "status": "ok",
             "as_of": as_of.isoformat(),
@@ -87,9 +108,11 @@ async def _run_result_coverage_monitor() -> dict[str, Any]:
         }
 
     alerts = result["alerts"]
-    if alerts:
+    active_alerts = [alert for alert in alerts if not alert.get("suppressed")]
+    suppressed_alerts = [alert for alert in alerts if alert.get("suppressed")]
+    if active_alerts:
         lines = []
-        for alert in alerts:
+        for alert in active_alerts:
             lines.append(
                 f"{alert['category']} {alert['week_start']} 주 대형: "
                 f"보정 {_format_rate(alert['adjusted_rate'])} / "
@@ -99,7 +122,15 @@ async def _run_result_coverage_monitor() -> dict[str, Any]:
             )
         lines.append("")
         lines.append("상세: uv run python scripts/result_match_rate_report.py")
+        if suppressed_alerts:
+            lines.append(_format_suppressed_summary(suppressed_alerts))
         await notify("낙찰결과 매칭률 경고", lines, level="warning")
+    elif suppressed_alerts:
+        logger.info(
+            "억제된 낙찰결과 매칭률 경고 %d건만 있어 알림을 보내지 않습니다: %s",
+            len(suppressed_alerts),
+            _format_suppressed_summary(suppressed_alerts),
+        )
     return result
 
 

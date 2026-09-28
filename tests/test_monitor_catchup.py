@@ -20,7 +20,7 @@ tests/test_monitor_catchup.py
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
@@ -672,6 +672,110 @@ async def test_coverage_alert_message_includes_calibrated_rates(monkeypatch):
     assert "보정 57.7%" in body
     assert "다주 기저 62.3%" in body
     assert "2주 연속" in body
+
+
+def _alert_payload(
+    category: str, *, suppressed: bool, suppressed_until: str | None
+) -> dict[str, Any]:
+    return {
+        "category": category,
+        "week_start": "2026-08-24",
+        "rate": 0.535,
+        "baseline_rate": 0.65,
+        "announcements": 454,
+        "baseline_announcements": 409,
+        "adjusted_rate": 0.577,
+        "baseline_multi_rate": 0.623,
+        "previous_week_start": "2026-08-17",
+        "previous_adjusted_rate": 0.58,
+        "previous_baseline_multi_rate": 0.64,
+        "suppressed": suppressed,
+        "suppressed_until": suppressed_until,
+    }
+
+
+@pytest.mark.asyncio
+async def test_coverage_task_skips_notify_when_only_suppressed(monkeypatch):
+    """억제된 경고만 있으면 알림을 보내지 않지만 판정 목록은 그대로 반환한다."""
+    alert = _alert_payload("Servc", suppressed=True, suppressed_until="2026-11-30")
+    monkeypatch.setattr(
+        coverage_tasks,
+        "_collect_snapshot",
+        lambda: {"status": "ok", "as_of": "2026-08-24", "alerts": [alert], "rows": 1},
+    )
+    sent: list[tuple[str, list[str], str]] = []
+
+    async def fake_notify(title, lines, *, level="info"):
+        sent.append((title, lines, level))
+
+    monkeypatch.setattr(coverage_tasks, "notify", fake_notify)
+
+    result = await coverage_tasks._run_result_coverage_monitor()
+
+    assert result["status"] == "ok"
+    assert result["alerts"] == [alert]
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_coverage_task_notifies_active_and_summarizes_suppressed(monkeypatch):
+    """억제와 비억제가 섞이면 비억제만 본문에 넣고 마지막에 억제 요약 줄을 붙인다."""
+    active = _alert_payload("Thng", suppressed=False, suppressed_until=None)
+    suppressed = _alert_payload("Servc", suppressed=True, suppressed_until="2026-11-30")
+    monkeypatch.setattr(
+        coverage_tasks,
+        "_collect_snapshot",
+        lambda: {
+            "status": "ok",
+            "as_of": "2026-08-24",
+            "alerts": [active, suppressed],
+            "rows": 2,
+        },
+    )
+    sent: list[tuple[str, list[str], str]] = []
+
+    async def fake_notify(title, lines, *, level="info"):
+        sent.append((title, lines, level))
+
+    monkeypatch.setattr(coverage_tasks, "notify", fake_notify)
+
+    result = await coverage_tasks._run_result_coverage_monitor()
+
+    assert len(sent) == 1
+    _title, lines, level = sent[0]
+    assert level == "warning"
+    body = "\n".join(lines)
+    assert "Thng 2026-08-24" in body
+    assert "Servc 2026-08-24" not in body
+    assert lines[-1] == "억제 중: Servc 대형(~2026-11-30)"
+    # 반환 dict 의 alerts 에는 억제 여부가 담긴 전체 목록이 남는다.
+    assert len(result["alerts"]) == 2
+
+
+def test_collect_snapshot_reads_suppression_from_settings(monkeypatch):
+    """스냅샷 수집이 설정을 파싱해 판정에 넘기고 오늘을 기준일로 쓴다."""
+    captured: dict[str, Any] = {}
+
+    class _DummyDb:
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(coverage_tasks, "SessionLocal", lambda: _DummyDb())
+    monkeypatch.setattr(coverage_tasks, "compute_result_match_rates", lambda db, *, as_of: [])
+
+    def fake_evaluate(rows, *, suppressions=None, today=None):
+        captured["suppressions"] = suppressions
+        captured["today"] = today
+        return []
+
+    monkeypatch.setattr(coverage_tasks, "evaluate_match_rate_alerts", fake_evaluate)
+    monkeypatch.setattr(settings, "RESULT_COVERAGE_ALERT_SUPPRESS", "Servc:large:2026-11-30")
+
+    result = coverage_tasks._collect_snapshot()
+
+    assert result["alerts"] == []
+    assert captured["suppressions"] == {("Servc", "large"): date(2026, 11, 30)}
+    assert captured["today"] == date.today()
 
 
 @pytest.mark.asyncio

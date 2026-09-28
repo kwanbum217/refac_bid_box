@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     # baseline이 없는 모델(예: Thng quantum_leap_v25_pro)은 drift_monitor_task에서
     # 예외 없이 건너뛰고 INSUFFICIENT_DATA로 기록하므로 오경보가 나지 않습니다.
     ML_DRIFT_MONITOR_ENABLED: bool = True
+    # 낙찰결과 매칭률 경고 임시 억제 목록입니다. 쉼표로 구분한 '분류:규모:만료일' 항목이며
+    # 규모는 large 만 허용합니다(예: 'Servc:large:2026-11-30'). 만료일 이하는 알림에서 빠지고
+    # 다음 날부터 다시 알립니다. 판정 결과에는 억제 사실이 suppressed 로 남습니다.
+    # 형식 오류 항목은 경고 로그를 남기고 무시합니다. 비어 있으면 억제하지 않습니다.
+    RESULT_COVERAGE_ALERT_SUPPRESS: str = ""
     # 통합 백업 크론(매일 03:00). 디스크·DB 부하가 있으므로 기본값은 비활성입니다.
     BACKUP_SCHEDULE_ENABLED: bool = False
     # 유지할 스냅샷 개수. 정기 백업 시 이 개수를 초과하는 오래된 스냅샷은 안전 검증 후 자동 정리됩니다.
