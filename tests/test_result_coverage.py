@@ -984,3 +984,237 @@ def test_suppression_none_matches_legacy_contract():
         "previous_baseline_multi_rate",
     ):
         assert with_none[0][key] == legacy[0][key]
+
+
+def test_later_cancelled_flag_toggles_denominator(isolated_db):
+    """000 등록공고 미매칭 + 001 취소공고는 플래그 켜짐에서만 분모에서 빠진다."""
+    db = isolated_db
+    _add_announcement(db, "2026-T00001", "000", "Servc", W, ntce_kind_nm="일반공고")
+    _add_announcement(db, "2026-T00001", "001", "Servc", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    off = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=False),
+        "Servc",
+        "small",
+        W,
+    )
+    assert off["announcements"] == 1
+    assert off["matched"] == 0
+    assert off["rate"] == pytest.approx(0.0)
+    assert off["later_cancelled_excluded"] == 1
+    assert off["cancel_adjusted_announcements"] == 0
+    assert off["cancel_adjusted_matched"] == 0
+    assert off["cancel_adjusted_rate"] is None
+
+    on = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert on["announcements"] == 0
+    assert on["matched"] == 0
+    assert on["rate"] is None
+    assert on["later_cancelled_excluded"] == 1
+    assert on["cancel_adjusted_announcements"] == 0
+    assert on["cancel_adjusted_matched"] == 0
+    assert on["cancel_adjusted_rate"] is None
+
+
+def test_later_cancelled_does_not_exclude_matched_rows(isolated_db):
+    """더 큰 차수 취소공고가 있어도 매칭된 행은 분모에서 빠지지 않는다."""
+    db = isolated_db
+    _add_announcement(db, "2026-U00001", "000", "Servc", W, ntce_kind_nm="일반공고")
+    _add_result(db, "2026-U00001", "000", "Servc", W)
+    _add_announcement(db, "2026-U00001", "001", "Servc", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    row = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 1
+    assert row["matched"] == 1
+    assert row["rate"] == pytest.approx(1.0)
+    assert row["later_cancelled_excluded"] == 0
+    assert row["cancel_adjusted_announcements"] == 1
+    assert row["cancel_adjusted_matched"] == 1
+    assert row["cancel_adjusted_rate"] == pytest.approx(1.0)
+
+
+def test_later_cancelled_smaller_ord_is_not_target(isolated_db):
+    """취소공고 차수가 공고 차수보다 작으면 대상이 아니다(001 공고, 000 취소)."""
+    db = isolated_db
+    _add_announcement(db, "2026-V00001", "000", "Servc", W, ntce_kind_nm="취소공고")
+    _add_announcement(db, "2026-V00001", "001", "Servc", W, ntce_kind_nm="일반공고")
+    db.commit()
+
+    row = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 1
+    assert row["matched"] == 0
+    assert row["later_cancelled_excluded"] == 0
+    assert row["cancel_adjusted_announcements"] == 1
+
+
+def test_later_cancelled_other_category_is_not_target(isolated_db):
+    """분류가 다르면 같은 공고번호의 취소공고라도 대상이 아니다."""
+    db = isolated_db
+    _add_announcement(db, "2026-W00001", "000", "Servc", W)
+    _add_announcement(db, "2026-W00001", "001", "Cnstwk", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    row = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 1
+    assert row["later_cancelled_excluded"] == 0
+    assert row["cancel_adjusted_announcements"] == 1
+
+
+def test_later_cancelled_max_ord_wins(isolated_db):
+    """취소공고가 여러 차수면 가장 큰 차수와 비교한다."""
+    db = isolated_db
+    _add_announcement(db, "2026-Y10001", "000", "Servc", W, ntce_kind_nm="일반공고")
+    _add_announcement(db, "2026-Y10001", "001", "Servc", W, ntce_kind_nm="취소공고")
+    _add_announcement(db, "2026-Y10001", "002", "Servc", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    on = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert on["announcements"] == 0
+    assert on["later_cancelled_excluded"] == 1
+
+
+def test_later_cancelled_applies_to_baseline_single_week(isolated_db):
+    """전년 단일 주 기저에도 같은 제외 규칙이 대칭 적용된다."""
+    db = isolated_db
+    baseline = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    _add_announcement(db, "2026-X00001", "001", "Thng", W)
+    _add_result(db, "2026-X00001", "001", "Thng", W)
+    _add_announcement(db, "2025-X00001", "000", "Thng", baseline)
+    _add_announcement(db, "2025-X00001", "001", "Thng", baseline, ntce_kind_nm="취소공고")
+    db.commit()
+
+    off = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=False),
+        "Thng",
+        "small",
+        W,
+    )
+    assert off["baseline_announcements"] == 1
+    assert off["baseline_matched"] == 0
+    assert off["baseline_cancel_adjusted_announcements"] == 0
+    assert off["baseline_cancel_adjusted_matched"] == 0
+    assert off["baseline_cancel_adjusted_rate"] is None
+
+    on = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Thng",
+        "small",
+        W,
+    )
+    assert on["baseline_announcements"] == 0
+    assert on["baseline_matched"] == 0
+    assert on["baseline_rate"] is None
+    assert on["baseline_cancel_adjusted_announcements"] == 0
+
+
+def test_later_cancelled_excluded_from_baseline_multi_and_adjusted(isolated_db):
+    """플래그 켜짐에서 baseline_multi 와 adjusted_rate 도 제외 집합 기준이다."""
+    db = isolated_db
+    center = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    _add_announcement(db, "2025-Z00001", "000", "Thng", center, presmpt_prce=LARGE_PRICE_THRESHOLD)
+    _add_announcement(
+        db,
+        "2025-Z00001",
+        "001",
+        "Thng",
+        center,
+        presmpt_prce=LARGE_PRICE_THRESHOLD,
+        ntce_kind_nm="취소공고",
+    )
+    _add_announcement(db, "2026-Z00001", "001", "Thng", W, presmpt_prce=LARGE_PRICE_THRESHOLD)
+    _add_result(db, "2026-Z00001", "001", "Thng", W)
+    db.commit()
+
+    off = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=False),
+        "Thng",
+        "large",
+        W,
+    )
+    assert off["baseline_multi_announcements"] == 1
+    assert off["baseline_multi_matched"] == 0
+    assert off["baseline_multi_rate"] == pytest.approx(0.0)
+    assert off["adjusted_rate"] == pytest.approx(1.0)
+
+    on = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Thng",
+        "large",
+        W,
+    )
+    assert on["baseline_multi_announcements"] == 0
+    assert on["baseline_multi_rate"] is None
+    assert on["adjusted_rate"] is None
+
+
+def test_later_cancelled_comparison_fields_always_present(isolated_db):
+    """플래그가 꺼져 있어도 비교 필드가 항상 채워지고 기존 필드는 그대로다."""
+    db = isolated_db
+    _add_announcement(db, "2026-N10001", "001", "Servc", W)
+    _add_result(db, "2026-N10001", "001", "Servc", W)
+    _add_announcement(db, "2026-N10001", "002", "Servc", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    row = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=False),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 1
+    assert row["matched"] == 1
+    assert row["later_cancelled_excluded"] == 0
+    assert row["cancel_adjusted_announcements"] == 1
+    assert row["cancel_adjusted_matched"] == 1
+    assert row["cancel_adjusted_rate"] == pytest.approx(1.0)
+    assert row["baseline_cancel_adjusted_announcements"] == 0
+    assert row["baseline_cancel_adjusted_matched"] == 0
+    assert row["baseline_cancel_adjusted_rate"] is None
+    # 002 취소공고는 매칭된 001 행을 대상으로 만들지 않는다.
+    assert row["later_cancelled_excluded"] == 0
+
+
+def test_later_cancelled_flag_defaults_from_settings(isolated_db, monkeypatch):
+    """인자를 주지 않으면 설정값을 따른다. 기본값은 꺼짐이다."""
+    from src.app.core.config import settings
+
+    db = isolated_db
+    _add_announcement(db, "2026-O00001", "000", "Servc", W)
+    _add_announcement(db, "2026-O00001", "001", "Servc", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    assert settings.RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED is False
+    monkeypatch.setattr(settings, "RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED", False)
+    off = _row_of(compute_result_match_rates(db, as_of=AS_OF, weeks=1), "Servc", "small", W)
+    assert off["announcements"] == 1
+
+    monkeypatch.setattr(settings, "RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED", True)
+    on = _row_of(compute_result_match_rates(db, as_of=AS_OF, weeks=1), "Servc", "small", W)
+    assert on["announcements"] == 0

@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     # 다음 날부터 다시 알립니다. 판정 결과에는 억제 사실이 suppressed 로 남습니다.
     # 형식 오류 항목은 경고 로그를 남기고 무시합니다. 비어 있으면 억제하지 않습니다.
     RESULT_COVERAGE_ALERT_SUPPRESS: str = ""
+    # 낙찰결과 매칭률에서 같은 공고번호·분류의 더 큰 정규화 차수에 취소공고 행이 있는
+    # 비취소 공고 행의 미매칭 건을 분모에서 뺄지 여부입니다. 현재 주와 전년 기저에
+    # 대칭 적용합니다. 기본값은 꺼짐이며, 플래그와 무관하게 비교 필드
+    # (later_cancelled_excluded, cancel_adjusted_*)는 결과 행에 남습니다.
+    RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED: bool = False
     # 통합 백업 크론(매일 03:00). 디스크·DB 부하가 있으므로 기본값은 비활성입니다.
     BACKUP_SCHEDULE_ENABLED: bool = False
     # 유지할 스냅샷 개수. 정기 백업 시 이 개수를 초과하는 오래된 스냅샷은 안전 검증 후 자동 정리됩니다.

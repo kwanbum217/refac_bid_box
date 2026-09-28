@@ -44,6 +44,7 @@ from typing import Any
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from src.app.core.config import settings
 from src.app.models.bids import BidAnnouncement, BidResult
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,8 @@ TARGET_CATEGORIES = ("Servc", "Cnstwk", "Thng")
 
 MYSQL_EXECUTION_LIMIT_HINT = "/*+ MAX_EXECUTION_TIME(120000) */"
 CANCELLED_NTCE_KIND = "취소공고"
+# 취소공고 차수 추가 조회의 공고번호 IN 목록 상한입니다.
+LATER_CANCELLED_QUERY_CHUNK = 1000
 BASELINE_OFFSET_DAYS = 364
 # 전년 기저를 364일 전 주 중심 앞뒤 2주, 총 5주 합산으로 넓힌다(A1).
 BASELINE_WINDOW_WEEKS = 2
@@ -226,12 +229,62 @@ def _notice_band_counts(
     return counts
 
 
+def _ord_as_int(value: Any) -> int:
+    """정규화 차수를 정수 비교용 값으로 바꾼다. 정수가 아니면 -1 이다."""
+    try:
+        return int(normalize_ord(value))
+    except ValueError:
+        return -1
+
+
+def _later_cancelled_max_ords(db: Session, numbers: set[str]) -> dict[tuple[str, str], int]:
+    """공고번호 집합의 취소공고 행에서 (공고번호, 분류)별 최대 정규화 차수를 모은다.
+
+    취소공고 행은 정본 조회에서 빠지므로 (bid_ntce_no, category, bid_ntce_ord) 만
+    따로 조회한다. 공고번호 IN 목록이 크므로 LATER_CANCELLED_QUERY_CHUNK 단위로 나눈다.
+    """
+    if not numbers:
+        return {}
+    max_ords: dict[tuple[str, str], int] = {}
+    ordered = sorted(numbers)
+    for idx in range(0, len(ordered), LATER_CANCELLED_QUERY_CHUNK):
+        chunk = ordered[idx : idx + LATER_CANCELLED_QUERY_CHUNK]
+        rows = _with_mysql_execution_limit(
+            db.query(
+                BidAnnouncement.bid_ntce_no,
+                BidAnnouncement.category,
+                BidAnnouncement.bid_ntce_ord,
+            ).filter(
+                BidAnnouncement.bid_ntce_no.in_(chunk),
+                BidAnnouncement.category.in_(TARGET_CATEGORIES),
+                BidAnnouncement.ntce_kind_nm == CANCELLED_NTCE_KIND,
+            )
+        ).all()
+        for no, category, ord_ in rows:
+            key = (no, category)
+            value = _ord_as_int(ord_)
+            if value > max_ords.get(key, -1):
+                max_ords[key] = value
+    return max_ords
+
+
+def _is_later_cancelled(
+    no: str, ord_: Any, category: str, max_cancel_ords: dict[tuple[str, str], int]
+) -> bool:
+    """같은 공고번호·분류의 더 큰 정규화 차수에 취소공고 행이 있으면 True 다."""
+    max_ord = max_cancel_ords.get((no, category))
+    if max_ord is None:
+        return False
+    return max_ord > _ord_as_int(ord_)
+
+
 def compute_result_match_rates(
     db: Session,
     *,
     as_of: date,
     weeks: int = 8,
     min_elapsed_days: int = 28,
+    exclude_later_cancelled: bool | None = None,
 ) -> list[dict[str, Any]]:
     """분류 x 성숙 개찰 주 x 규모별 매칭률과 전년 동기 매칭률을 계산한다.
 
@@ -239,6 +292,14 @@ def compute_result_match_rates(
     '취소공고' 가 아닌 것(NULL 포함)만 센다. 대형은 presmpt_prce >=
     LARGE_PRICE_THRESHOLD, 그 밖(NULL 포함)은 소형이다. 매칭은
     (bid_ntce_no, category, 정규화 차수)가 낙찰결과에 존재하는 것이다.
+
+    exclude_later_cancelled 가 True 면 같은 공고번호·분류의 더 큰 정규화 차수에
+    취소공고 행이 있는 비취소 공고 행 중 미매칭 건을 분모에서 뺀 집합으로
+    rate, baseline, baseline_multi, adjusted_rate, notice_* 를 계산한다. None 이면
+    settings.RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED 를 쓴다. 제외 여부와 무관하게
+    모든 행에는 비교 필드 later_cancelled_excluded(현재 주에서 빠질 미매칭 대상
+    행 수), cancel_adjusted_announcements/matched/rate, 전년 단일 주 기준
+    baseline_cancel_adjusted_announcements/matched/rate 를 싣는다.
 
     반환 행의 baseline_* 필드는 364일 전 같은 주 단일 주 값이고,
     baseline_multi_* 필드는 그 주를 중심으로 앞뒤 BASELINE_WINDOW_WEEKS 주를
@@ -314,8 +375,23 @@ def compute_result_match_rates(
         )
     result_keys = {(no, category, normalize_ord(ord_)) for no, ord_, category in result_rows}
 
+    if exclude_later_cancelled is None:
+        exclude_later_cancelled = settings.RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED
+
+    # 미매칭 행만 제외 대상이 될 수 있으므로 대상 후보 공고번호만 취소공고 차수를 조회한다.
+    lookup_numbers = {
+        no
+        for no, ord_, category, _price, openg_dt, _method in announcement_rows
+        if openg_dt is not None
+        and week_start(openg_dt.date()) in target_weeks
+        and (no, category, normalize_ord(ord_)) not in result_keys
+    }
+    max_cancel_ords = _later_cancelled_max_ords(db, lookup_numbers)
+
     band_counts: dict[tuple[str, date, str], list[int]] = {}
     method_counts: dict[tuple[str, date, str, str], list[int]] = {}
+    excluded_counts: dict[tuple[str, date, str], int] = {}
+    counted_rows: list[Any] = []
     for row in announcement_rows:
         no, ord_, category, presmpt_prce, openg_dt, bid_methd_nm = row
         if openg_dt is None:
@@ -326,6 +402,13 @@ def compute_result_match_rates(
         band = BAND_LARGE if (presmpt_prce or 0) >= LARGE_PRICE_THRESHOLD else BAND_SMALL
         method = bid_methd_nm if bid_methd_nm is not None else NULL_METHOD_LABEL
         is_matched = (no, category, normalize_ord(ord_)) in result_keys
+        is_excluded = not is_matched and _is_later_cancelled(no, ord_, category, max_cancel_ords)
+        if is_excluded:
+            excluded_key = (category, start, band)
+            excluded_counts[excluded_key] = excluded_counts.get(excluded_key, 0) + 1
+            if exclude_later_cancelled:
+                continue
+        counted_rows.append(row)
         band_bucket = band_counts.setdefault((category, start, band), [0, 0])
         band_bucket[0] += 1
         method_bucket = method_counts.setdefault((category, start, band, method), [0, 0])
@@ -334,7 +417,7 @@ def compute_result_match_rates(
             band_bucket[1] += 1
             method_bucket[1] += 1
 
-    notice_band_counts = _notice_band_counts(announcement_rows, result_keys, target_weeks)
+    notice_band_counts = _notice_band_counts(counted_rows, result_keys, target_weeks)
 
     rows: list[dict[str, Any]] = []
     for start in sorted(mature_starts):
@@ -343,8 +426,21 @@ def compute_result_match_rates(
         for category in TARGET_CATEGORIES:
             for band in (BAND_LARGE, BAND_SMALL):
                 announcements, matched = band_counts.get((category, start, band), [0, 0])
+                later_cancelled_excluded = excluded_counts.get((category, start, band), 0)
                 baseline_announcements, baseline_matched = band_counts.get(
                     (category, center, band), [0, 0]
+                )
+                baseline_excluded = excluded_counts.get((category, center, band), 0)
+                # 제외를 켜면 band_counts 가 이미 제외 집합이고, 끄면 원 분모에서 대상 건을 뺀다.
+                cancel_announcements = (
+                    announcements
+                    if exclude_later_cancelled
+                    else announcements - later_cancelled_excluded
+                )
+                baseline_cancel_announcements = (
+                    baseline_announcements
+                    if exclude_later_cancelled
+                    else baseline_announcements - baseline_excluded
                 )
                 baseline_multi_announcements, baseline_multi_matched = _sum_band_counts(
                     band_counts, category, band, window
@@ -394,6 +490,15 @@ def compute_result_match_rates(
                         "baseline_notice_matched": baseline_notice_matched,
                         "baseline_notice_rate": _rate(
                             baseline_notice_matched, baseline_notice_announcements
+                        ),
+                        "later_cancelled_excluded": later_cancelled_excluded,
+                        "cancel_adjusted_announcements": cancel_announcements,
+                        "cancel_adjusted_matched": matched,
+                        "cancel_adjusted_rate": _rate(matched, cancel_announcements),
+                        "baseline_cancel_adjusted_announcements": baseline_cancel_announcements,
+                        "baseline_cancel_adjusted_matched": baseline_matched,
+                        "baseline_cancel_adjusted_rate": _rate(
+                            baseline_matched, baseline_cancel_announcements
                         ),
                     }
                 )
