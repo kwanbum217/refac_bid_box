@@ -560,6 +560,22 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         # opencode-muse-spark 를 씁니다.
         "notes": "OpenRouter 경유 qwen3-coder-next 리뷰어. 2026-09-10 실호출 probe 통과. 빌더가 openrouter 계열이면 독립성이 깨지므로 배정하지 않는다. 유료 키를 소모하므로 자동 배정에서 제외한다.",
     },
+    "kilo-space-bunny": {
+        "id": "openrouter/stealth/space-bunny-alpha",
+        "provider": "openrouter",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": None,
+        "suitable_for": [
+            "reviewer",
+        ],
+        # 2026-09-28 사용자 지정으로 등록했습니다. 실행기는 Kilo CLI 이며
+        # scripts/orca_opencode_launch.py --binary kilo --variant max 로 TUI 를 띄웁니다.
+        # TUI 에는 --variant 가 없어 런처가 KILO_CONFIG_CONTENT 로 variant 를 고정한
+        # 에이전트를 주입합니다. CLI 는 모르는 등급을 무시하므로 등급은 런처가 제한합니다. probe_cmd 의 openrouter 항목은 opencode 로 부르므로
+        # 이 모델은 dispatch 에 --no-probe 를 줍니다.
+        "notes": "Kilo CLI 경유 OpenRouter Space Bunny Alpha 리뷰어. 2026-09-28 kilo run 실호출 통과. 빌더가 openrouter 계열이면 독립성이 깨지므로 배정하지 않는다. 자동 배정에서 제외한다.",
+    },
     "glm": {
         "id": "glm-5.2",
         "provider": "qwen",
