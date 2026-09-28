@@ -22,7 +22,7 @@ import shutil
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from enum import StrEnum
 from functools import wraps
 from pathlib import Path
@@ -543,6 +543,22 @@ def _check_search_index_parity() -> dict[str, Any]:
         db.close()
 
 
+def _acquire_weekly_retrain_claim() -> ScheduleClaimResult:
+    """주간 재학습 크론과 기동 따라잡기가 공유하는 선점을 원자적으로 획득합니다.
+
+    TTL 은 잡 타임아웃(3시간) 이상으로 잡습니다. Redis 에 접근할 수 없으면 호출부가
+    경고를 남기고 선점 없이 진행하도록 REDIS_UNAVAILABLE/COMMAND_ERROR 를 그대로 돌려줍니다.
+    """
+    from src.tasks.worker import SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS
+
+    ttl = max(int(SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS), WEEKLY_RETRAIN_CLAIM_TTL_SECONDS)
+    return acquire_schedule_claim(
+        "weekly_retrain",
+        key=WEEKLY_RETRAIN_CLAIM_KEY,
+        ttl_seconds=ttl,
+    )
+
+
 @traced_worker_task
 @_record_schedule("weekly_retrain")
 async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -550,62 +566,83 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     CATEGORY_MODEL_NAMES 의 각 카테고리에 대해 독립적으로 재학습을 수행(fan-out)합니다.
     한 카테고리가 실패해도 다른 카테고리는 중단 없이 계속 실행되며 각 결과가 개별 기록됩니다.
+    크론과 기동 따라잡기가 같은 선점 키를 공유해 같은 주 재학습이 겹치지 않습니다.
     """
     if not settings.ML_WEEKLY_RETRAIN_ENABLED:
         logger.info("주간 재학습이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
-    selected = settings.weekly_retrain_categories
-    unknown = [code for code in selected if code not in CATEGORY_MODEL_NAMES]
-    if unknown:
-        error_msg = f"ML_WEEKLY_RETRAIN_CATEGORIES 에 등록되지 않은 카테고리가 있습니다: {unknown}"
-        await notify_task_failure("주간 재학습 스케줄", error_msg)
-        return {"status": "failed", "trigger_source": "weekly_schedule", "error": error_msg}
-    categories = sorted(selected or CATEGORY_MODEL_NAMES.keys())
+    # arq 월요일 03:00 크론과 기동 따라잡기가 같은 키를 잡아 중복 학습을 막습니다.
+    claim = _acquire_weekly_retrain_claim()
+    if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+        logger.info("주간 재학습이 이미 실행 중이어서 건너뜁니다.")
+        return {"status": "skipped", "reason": "already_running"}
+    if not claim.acquired:
+        logger.warning(
+            "Redis 접근 불가로 주간 재학습 선점 없이 진행합니다 (key=%s, status=%s)",
+            WEEKLY_RETRAIN_CLAIM_KEY,
+            claim.status.value,
+        )
 
-    logger.info("주간 재학습 실행 시작 (카테고리 fan-out: %s)", categories)
-    results: dict[str, Any] = {}
-    has_failure = False
-
-    for category in categories:
-        try:
-            logger.info("주간 재학습 시작: 카테고리 %s", category)
-            cat_result = await run_retrain_pipeline_task(
-                ctx,
-                trigger_source="weekly_schedule",
-                category_code=category,
+    try:
+        selected = settings.weekly_retrain_categories
+        unknown = [code for code in selected if code not in CATEGORY_MODEL_NAMES]
+        if unknown:
+            error_msg = (
+                f"ML_WEEKLY_RETRAIN_CATEGORIES 에 등록되지 않은 카테고리가 있습니다: {unknown}"
             )
-            results[category] = cat_result
-        except Exception as exc:
-            logger.exception("주간 재학습 카테고리 %s 실패", category)
-            has_failure = True
-            results[category] = {
-                "status": "failed",
-                "category": category,
-                "error": str(exc),
-            }
+            await notify_task_failure("주간 재학습 스케줄", error_msg)
+            return {"status": "failed", "trigger_source": "weekly_schedule", "error": error_msg}
+        categories = sorted(selected or CATEGORY_MODEL_NAMES.keys())
 
-    all_succeeded = not has_failure
-    any_succeeded = any(
-        isinstance(r, dict) and r.get("status") in ("success", "skipped") for r in results.values()
-    )
-    status = "success" if all_succeeded else ("partial_failure" if any_succeeded else "failed")
-    outcome: dict[str, Any] = {
-        "status": status,
-        "trigger_source": "weekly_schedule",
-        "categories": results,
-    }
-    if has_failure:
-        errors = [
-            f"{cat}: {res['error']}"
-            for cat, res in results.items()
-            if isinstance(res, dict) and res.get("status") == "failed"
-        ]
-        error_msg = "; ".join(errors)
-        outcome["error"] = error_msg
-        await notify_task_failure("주간 재학습 스케줄", error_msg)
+        logger.info("주간 재학습 실행 시작 (카테고리 fan-out: %s)", categories)
+        results: dict[str, Any] = {}
+        has_failure = False
 
-    return outcome
+        for category in categories:
+            try:
+                logger.info("주간 재학습 시작: 카테고리 %s", category)
+                cat_result = await run_retrain_pipeline_task(
+                    ctx,
+                    trigger_source="weekly_schedule",
+                    category_code=category,
+                )
+                results[category] = cat_result
+            except Exception as exc:
+                logger.exception("주간 재학습 카테고리 %s 실패", category)
+                has_failure = True
+                results[category] = {
+                    "status": "failed",
+                    "category": category,
+                    "error": str(exc),
+                }
+
+        all_succeeded = not has_failure
+        any_succeeded = any(
+            isinstance(r, dict) and r.get("status") in ("success", "skipped")
+            for r in results.values()
+        )
+        status = "success" if all_succeeded else ("partial_failure" if any_succeeded else "failed")
+        outcome: dict[str, Any] = {
+            "status": status,
+            "trigger_source": "weekly_schedule",
+            "categories": results,
+        }
+        if has_failure:
+            errors = [
+                f"{cat}: {res['error']}"
+                for cat, res in results.items()
+                if isinstance(res, dict) and res.get("status") == "failed"
+            ]
+            error_msg = "; ".join(errors)
+            outcome["error"] = error_msg
+            await notify_task_failure("주간 재학습 스케줄", error_msg)
+
+        return outcome
+    finally:
+        # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
+        if claim.acquired and claim.token:
+            release_schedule_claim(key=WEEKLY_RETRAIN_CLAIM_KEY, token=claim.token)
 
 
 def _record_drift_log(
@@ -873,6 +910,20 @@ SCHEDULE_CATCHUP_COOLDOWN_KEY = "bidbox:schedule:catchup_cooldown"
 CATCHUP_LAST_ATTEMPT_KEY = SCHEDULE_CATCHUP_COOLDOWN_KEY
 CATCHUP_LEDGER_KEY = "bidbox:schedule:catchup_ledger"
 CATCHUP_LEDGER_TTL_SECONDS = 7 * 24 * 60 * 60
+
+# arq 월요일 03:00 크론과 기동 따라잡기가 함께 쓰는 단일 선점 키입니다.
+WEEKLY_RETRAIN_CLAIM_KEY = "bidbox:schedule:weekly_retrain_claim"
+WEEKLY_RETRAIN_CLAIM_TTL_SECONDS = 10800
+WEEKLY_RETRAIN_CATCHUP_JOB_NAME = "run_weekly_retrain_catchup_task"
+WEEKLY_RETRAIN_CATCHUP_JOB_ID = "weekly-retrain-catchup-startup"
+
+# 다음 주간 슬롯이 이 시간 이내로 임박하면 따라잡기는 크론에 양보합니다.
+WEEKLY_RETRAIN_YIELD_BEFORE_SLOT_SECONDS = 10800
+
+# 주간 재학습 크론과 같은 시각(월요일 03:00). arq cron 과 동일한 프로세스 로컬 시각 기준입니다.
+WEEKLY_RETRAIN_WEEKDAY = 0
+WEEKLY_RETRAIN_HOUR = 3
+WEEKLY_RETRAIN_MINUTE = 0
 
 RELEASE_SCHEDULE_CLAIM_SCRIPT = """
 local val = redis.call('GET', KEYS[1])
@@ -1230,8 +1281,92 @@ def is_catchup_in_cooldown(
         return False, None
 
 
+def resolve_schedule_timezone(tz: tzinfo | None = None) -> tzinfo:
+    """크론 슬롯을 해석할 타임존을 반환합니다.
+
+    기본값은 arq cron 이 발화하는 기준과 같은 프로세스 로컬 타임존입니다.
+    """
+    if tz is not None:
+        return tz
+    return datetime.now().astimezone().tzinfo or UTC
+
+
+def previous_cron_slot(
+    now: datetime,
+    hour: int,
+    minute: int = 0,
+    *,
+    weekday: int | None = None,
+    tz: tzinfo | None = None,
+) -> datetime:
+    """기준 시각 이전의 가장 최근 크론 슬롯을 UTC aware datetime 으로 계산합니다.
+
+    슬롯 시각은 tz 기준 벽시계 시각으로 해석합니다. weekday 는 월요일=0 이며
+    None 이면 매일 슬롯입니다. tz 기본값은 프로세스 로컬 타임존(arq cron 기준)입니다.
+    """
+    slot_tz = resolve_schedule_timezone(tz)
+    reference = _as_utc(now).astimezone(slot_tz)
+    candidate = reference.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if weekday is None:
+        if candidate > reference:
+            candidate -= timedelta(days=1)
+    else:
+        candidate -= timedelta(days=(candidate.weekday() - weekday) % 7)
+        if candidate > reference:
+            candidate -= timedelta(days=7)
+    return candidate.astimezone(UTC)
+
+
+def next_cron_slot(
+    now: datetime,
+    hour: int,
+    minute: int = 0,
+    *,
+    weekday: int | None = None,
+    tz: tzinfo | None = None,
+) -> datetime:
+    """기준 시각 이후의 가장 가까운 크론 슬롯을 UTC aware datetime 으로 계산합니다.
+
+    슬롯 시각은 tz 기준 벽시계 시각으로 해석합니다. weekday 는 월요일=0 이며
+    None 이면 매일 슬롯입니다. tz 기본값은 프로세스 로컬 타임존(arq cron 기준)입니다.
+    """
+    slot_tz = resolve_schedule_timezone(tz)
+    reference = _as_utc(now).astimezone(slot_tz)
+    candidate = reference.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if weekday is None:
+        if candidate <= reference:
+            candidate += timedelta(days=1)
+    else:
+        candidate += timedelta(days=(weekday - candidate.weekday()) % 7)
+        if candidate <= reference:
+            candidate += timedelta(days=7)
+    return candidate.astimezone(UTC)
+
+
+def get_latest_weekly_retrain_time(db: Session | None = None) -> datetime | None:
+    """retrain_logs 에서 trigger_source='weekly_schedule' 인 최신 created_at 을 조회합니다."""
+    from sqlalchemy import func, select
+
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
+    try:
+        return session.execute(
+            select(func.max(RetrainLog.created_at)).where(
+                RetrainLog.trigger_source == "weekly_schedule"
+            )
+        ).scalar()
+    finally:
+        if own_session:
+            session.close()
+
+
 def check_schedule_catchup_needed(
     db: Session | None = None,
+    tz: tzinfo | None = None,
 ) -> tuple[bool, str, dict[str, Any]]:
     """기동 시 스케줄 따라잡기 필요 여부를 판정합니다.
 
@@ -1306,16 +1441,10 @@ def check_schedule_catchup_needed(
         "threshold_hours": threshold_hours,
     }
 
-    # 마지막 크론 슬롯(매일 02:00 naive, UTC로 해석) 이후 수집이 없으면 놓친 슬롯으로 발화.
+    # 마지막 크론 슬롯(매일 02:00, 프로세스 로컬 시각) 이후 수집이 없으면 놓친 슬롯으로 발화.
     # 경과 시간이 임계치에 못 미쳐도 슬롯 누락이면 따라잡기를 돌린다.
-    now_naive = now.replace(tzinfo=None) if now.tzinfo else now
-    if now_naive.hour >= 2:
-        last_slot_naive = now_naive.replace(hour=2, minute=0, second=0, microsecond=0)
-    else:
-        last_slot_naive = (now_naive - timedelta(days=1)).replace(
-            hour=2, minute=0, second=0, microsecond=0
-        )
-    last_slot = _as_utc(last_slot_naive)
+    last_slot = previous_cron_slot(now, 2, 0, tz=tz)
+    last_slot_naive = last_slot.astimezone(resolve_schedule_timezone(tz)).replace(tzinfo=None)
     collected_aware = _as_utc(latest_collected_at)
 
     if collected_aware < last_slot:
@@ -1337,10 +1466,147 @@ def check_schedule_catchup_needed(
     return False, "threshold_not_exceeded", details
 
 
+def check_weekly_retrain_catchup_needed(
+    db: Session | None = None,
+    now: datetime | None = None,
+    tz: tzinfo | None = None,
+) -> tuple[bool, str, dict[str, Any]]:
+    """기동 시 주간 재학습(월요일 03:00) 놓친 슬롯 보충 필요 여부를 판정합니다.
+
+    Returns:
+        (needed, reason, details)
+    """
+    if not settings.AUTOMATION_SCHEDULE_CATCHUP_ENABLED:
+        return (
+            False,
+            "disabled",
+            {"enabled": False, "reason": "AUTOMATION_SCHEDULE_CATCHUP_ENABLED is False"},
+        )
+    if not settings.ML_WEEKLY_RETRAIN_ENABLED:
+        return (
+            False,
+            "disabled",
+            {"enabled": False, "reason": "ML_WEEKLY_RETRAIN_ENABLED is False"},
+        )
+
+    reference = now or utcnow()
+    last_slot = previous_cron_slot(
+        reference,
+        WEEKLY_RETRAIN_HOUR,
+        WEEKLY_RETRAIN_MINUTE,
+        weekday=WEEKLY_RETRAIN_WEEKDAY,
+        tz=tz,
+    )
+    next_slot = next_cron_slot(
+        reference,
+        WEEKLY_RETRAIN_HOUR,
+        WEEKLY_RETRAIN_MINUTE,
+        weekday=WEEKLY_RETRAIN_WEEKDAY,
+        tz=tz,
+    )
+    latest_retrain = get_latest_weekly_retrain_time(db)
+    details: dict[str, Any] = {
+        "enabled": True,
+        "last_weekly_slot": last_slot.isoformat(),
+        "next_slot": next_slot.isoformat(),
+        "latest_weekly_retrain_at": latest_retrain.isoformat() if latest_retrain else None,
+    }
+
+    # 다음 주간 슬롯이 잡 타임아웃(3시간) 이내로 임박하면 따라잡기 대신 크론에 양보합니다.
+    remaining_seconds = (_as_utc(next_slot) - _as_utc(reference)).total_seconds()
+    if remaining_seconds <= WEEKLY_RETRAIN_YIELD_BEFORE_SLOT_SECONDS:
+        details["reason"] = (
+            f"다음 주간 슬롯({next_slot.isoformat()})까지 {remaining_seconds:.0f}초 남아 "
+            "크론 실행에 양보합니다."
+        )
+        return False, "next_weekly_slot_imminent", details
+
+    if latest_retrain is None:
+        details["reason"] = "이전 주간 재학습 이력이 존재하지 않아 따라잡기를 실행합니다."
+        return True, "no_previous_weekly_retrain", details
+
+    if _as_utc(latest_retrain) < last_slot:
+        details["reason"] = (
+            f"마지막 주간 슬롯({last_slot.isoformat()}) 이후 주간 재학습 이력이 없어 "
+            "놓친 슬롯을 보충합니다."
+        )
+        return True, "missed_weekly_retrain", details
+
+    details["reason"] = "마지막 주간 슬롯 이후 주간 재학습 이력이 있어 건너뜁니다."
+    return False, "weekly_retrain_up_to_date", details
+
+
+async def _enqueue_weekly_retrain_catchup(ctx: dict[str, Any]) -> None:
+    """데이터 따라잡기 종료 후 주간 재학습 따라잡기를 큐에 적재합니다.
+
+    적재 실패는 데이터 따라잡기 결과와 원장을 바꾸지 않고 경고 로그만 남깁니다.
+    """
+    redis = ctx.get("redis")
+    enqueue_job = getattr(redis, "enqueue_job", None)
+    if redis is None or enqueue_job is None:
+        logger.info("Arq redis 연결이 없어 주간 재학습 따라잡기를 큐에 넣지 않습니다.")
+        return
+    try:
+        job = await enqueue_job(
+            WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
+            _job_id=WEEKLY_RETRAIN_CATCHUP_JOB_ID,
+        )
+    except Exception as exc:
+        logger.warning("주간 재학습 따라잡기 적재 실패: %s", exc)
+        return
+    if job is None:
+        logger.info(
+            "주간 재학습 따라잡기 작업이 같은 job_id 로 이미 큐에 있거나 결과가 남아 "
+            "중복 적재를 건너뜁니다."
+        )
+
+
+@traced_worker_task
+async def run_weekly_retrain_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """기동 시 놓친 주간 재학습을 보충하는 진입점 태스크입니다.
+
+    별도 선점을 잡지 않고 weekly_retrain_task 의 공통 선점에 맡기므로, 이미 학습이
+    돌고 있으면 그대로 already_running 을 전달합니다.
+    """
+    needed, reason, details = await asyncio.to_thread(check_weekly_retrain_catchup_needed)
+    logger.info(
+        "주간 재학습 따라잡기 판정: needed=%s, reason=%s, details=%s",
+        needed,
+        reason,
+        details,
+    )
+
+    if not needed:
+        return {"status": "skipped", "reason": reason, "details": details}
+
+    logger.info("주간 재학습 따라잡기 실행 시작 (details=%s)", details)
+    try:
+        outcome = await weekly_retrain_task(ctx)
+    except Exception as exc:
+        logger.exception("주간 재학습 따라잡기 실행 실패: %s", exc)
+        return {
+            "status": "failed",
+            "reason": "execution_failed",
+            "error": str(exc),
+            "catchup_details": details,
+        }
+
+    result = dict(outcome)
+    result["catchup_details"] = details
+    return result
+
+
 @traced_worker_task
 @_record_schedule("schedule_catchup")
 async def run_schedule_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """기동 시 누락된 스케줄 수집을 따라잡는 진입점 태스크입니다."""
+    try:
+        return await _run_schedule_catchup(ctx)
+    finally:
+        await _enqueue_weekly_retrain_catchup(ctx)
+
+
+async def _run_schedule_catchup(ctx: dict[str, Any]) -> dict[str, Any]:
     needed, reason, details = await asyncio.to_thread(check_schedule_catchup_needed)
     logger.info(
         "스케줄 따라잡기 판정: needed=%s, reason=%s, details=%s",

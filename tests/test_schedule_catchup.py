@@ -25,6 +25,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -42,6 +43,7 @@ from src.tasks.scheduled_tasks import (
     is_catchup_in_cooldown,
     load_catchup_ledger,
     nightly_schedule_task,
+    previous_cron_slot,
     record_catchup_attempt,
     release_schedule_claim,
     run_schedule_catchup_task,
@@ -83,6 +85,19 @@ def isolate_schedule_redis():
     set_schedule_redis_conn(fake_conn)
     yield fake_conn
     set_schedule_redis_conn(None)
+
+
+@pytest.fixture(autouse=True)
+def pin_schedule_timezone(monkeypatch):
+    """CI 러너(UTC)와 개발 호스트(KST) 어디서든 슬롯 회귀가 결정적이도록 타임존을 고정합니다.
+
+    명시 주입된 tz 는 그대로 존중하고, 기본값만 Asia/Seoul 로 바꿉니다.
+    """
+
+    def _pinned(tz=None):
+        return tz if tz is not None else ZoneInfo("Asia/Seoul")
+
+    monkeypatch.setattr(scheduled_tasks, "resolve_schedule_timezone", _pinned)
 
 
 def test_catchup_defaults_and_env_consistency():
@@ -129,7 +144,7 @@ def test_catchup_skipped_when_threshold_not_exceeded(monkeypatch):
         patch.object(scheduled_tasks, "get_latest_collection_time", return_value=recent_collected),
         patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
     ):
-        needed, reason, details = check_schedule_catchup_needed()
+        needed, reason, details = check_schedule_catchup_needed(tz=ZoneInfo("Asia/Seoul"))
         assert needed is False
         assert reason == "threshold_not_exceeded"
         assert details["elapsed_hours"] == 5.0
@@ -151,7 +166,7 @@ def test_catchup_needed_when_missed_0200_slot(monkeypatch):
         patch.object(scheduled_tasks, "get_latest_collection_time", return_value=latest_collected),
         patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
     ):
-        needed, reason, details = check_schedule_catchup_needed()
+        needed, reason, details = check_schedule_catchup_needed(tz=ZoneInfo("Asia/Seoul"))
         assert needed is True
         assert reason == "missed_schedule"
         assert details["elapsed_hours"] < 24
@@ -159,19 +174,20 @@ def test_catchup_needed_when_missed_0200_slot(monkeypatch):
 
 
 def test_catchup_skipped_when_before_0200_and_collected_after_yesterday_slot(monkeypatch):
-    """오늘 02:00 이전 재시작이고 어제 슬롯 이후 수집이 있으면 건너뜁니다."""
+    """오늘 02:00 이전 재시작(로컬 슬롯 기준)이고 어제 슬롯 이후 수집이 있으면 건너뜁니다."""
     monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
     monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS", 24)
 
     now = datetime(2026, 9, 8, 1, 0, 0, tzinfo=UTC)
-    latest_collected = datetime(2026, 9, 7, 12, 58, 50, tzinfo=UTC)
+    # tz=Asia/Seoul 에서 직전 일일 슬롯은 2026-09-07 17:00 UTC 이므로 그 이후 수집으로 둡니다.
+    latest_collected = datetime(2026, 9, 7, 18, 30, 0, tzinfo=UTC)
 
     with (
         patch.object(scheduled_tasks, "utcnow", return_value=now),
         patch.object(scheduled_tasks, "get_latest_collection_time", return_value=latest_collected),
         patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
     ):
-        needed, reason, _details = check_schedule_catchup_needed()
+        needed, reason, _details = check_schedule_catchup_needed(tz=ZoneInfo("Asia/Seoul"))
         assert needed is False
         assert reason == "threshold_not_exceeded"
 
@@ -225,7 +241,7 @@ def test_catchup_needed_when_threshold_exceeded(monkeypatch):
         patch.object(scheduled_tasks, "get_latest_collection_time", return_value=recent_collected),
         patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
     ):
-        needed, reason, details = check_schedule_catchup_needed()
+        needed, reason, details = check_schedule_catchup_needed(tz=ZoneInfo("Asia/Seoul"))
         assert needed is True
         assert reason == "threshold_exceeded"
         assert details["target_task"] == "development_data_refresh"
@@ -240,10 +256,52 @@ def test_catchup_needed_when_no_previous_collection(monkeypatch):
         patch.object(scheduled_tasks, "get_latest_collection_time", return_value=None),
         patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
     ):
-        needed, reason, details = check_schedule_catchup_needed()
+        needed, reason, details = check_schedule_catchup_needed(tz=ZoneInfo("Asia/Seoul"))
         assert needed is True
         assert reason == "no_previous_collection"
         assert details["latest_collected_at"] is None
+
+
+def test_previous_cron_slot_daily_0200_kst_returns_previous_day_1700_utc():
+    """Asia/Seoul 기준 02:00 슬롯은 전날 17:00 UTC 로 계산됩니다."""
+    now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
+    slot = previous_cron_slot(now, 2, 0, tz=ZoneInfo("Asia/Seoul"))
+    assert slot == datetime(2026, 9, 27, 17, 0, 0, tzinfo=UTC)
+
+
+def test_previous_cron_slot_uses_local_timezone_by_default(monkeypatch):
+    """tz 미지정 시 프로세스 로컬 타임존(arq cron 기준)을 씁니다."""
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "resolve_schedule_timezone",
+        lambda tz=None: ZoneInfo("Asia/Seoul"),
+    )
+    now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
+    slot = previous_cron_slot(now, 2, 0)
+    assert slot == datetime(2026, 9, 27, 17, 0, 0, tzinfo=UTC)
+
+
+def test_catchup_needed_when_missed_0200_kst_slot_regression(monkeypatch):
+    """회귀 고정값: 2026-09-28 00:20 UTC(09:20 KST) 기동, 마지막 수집 2026-09-27 03:11 UTC 이면
+    실제 02:00 KST 슬롯(2026-09-27 17:00 UTC)을 놓친 것으로 판정합니다."""
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS", 24)
+    monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False)
+
+    now = datetime(2026, 9, 28, 0, 20, 0, tzinfo=UTC)
+    latest_collected = datetime(2026, 9, 27, 3, 11, 0, tzinfo=UTC)
+
+    with (
+        patch.object(scheduled_tasks, "utcnow", return_value=now),
+        patch.object(scheduled_tasks, "get_latest_collection_time", return_value=latest_collected),
+        patch.object(scheduled_tasks, "is_catchup_in_cooldown", return_value=(False, None)),
+    ):
+        needed, reason, details = check_schedule_catchup_needed(tz=ZoneInfo("Asia/Seoul"))
+
+    assert needed is True
+    assert reason == "missed_schedule"
+    assert details["last_cron_slot"] == "2026-09-27T17:00:00+00:00"
 
 
 def test_catchup_skipped_when_in_cooldown(monkeypatch):
