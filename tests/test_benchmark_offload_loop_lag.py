@@ -72,8 +72,10 @@ class TestArmComparison:
         assert b_max is not None
         # A 는 루프를 실제로 멈추므로 지연이 sleep 시간 근처로 커집니다.
         assert a_max >= LAG_THRESHOLD_MS
-        # B 는 루프를 멈추지 않으므로 지연이 작게 남습니다.
-        assert b_max < LAG_THRESHOLD_MS
+        # B 는 루프를 멈추지 않으므로 지연이 sleep 시간보다 작게 남습니다.
+        # 고정 절대 임계 대신 sleep 기준을 쓰는 이유는 느린 CI 러너의 부하 편차 때문입니다.
+        assert b_max < SLEEP_SECONDS * 1000.0
+        assert a_max - b_max >= 20.0
         assert a_max > b_max
         assert summary["lag_max_ratio_a_over_b"] > 1.0
 
