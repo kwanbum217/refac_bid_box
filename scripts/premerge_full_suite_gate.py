@@ -85,14 +85,23 @@ def parse_pytest_counts(summary: str) -> dict[str, int]:
     return counts
 
 
+SUMMARY_HEADER_MARKER = "short test summary info"
+
+
 def extract_failed_nodeids(output: str) -> list[str]:
     """pytest short test summary info 의 FAILED/ERROR 줄에서 실패 nodeid 만 추출합니다.
 
     줄 앞뒤 공백과 ' - ' 뒤 실패 메시지를 버리고, 중복을 제거하되 출현 순서를 유지합니다.
+    요약 머리줄이 있으면 마지막 머리줄 뒤만 훑어 테스트 본문 로그나 traceback 의
+    'FAILED ' 로 시작하는 줄을 잡지 않습니다.
     """
+    lines = output.splitlines()
+    header_indexes = [i for i, line in enumerate(lines) if SUMMARY_HEADER_MARKER in line]
+    if header_indexes:
+        lines = lines[header_indexes[-1] + 1 :]
     nodeids: list[str] = []
     seen: set[str] = set()
-    for raw_line in output.splitlines():
+    for raw_line in lines:
         line = raw_line.strip()
         if not (line.startswith("FAILED ") or line.startswith("ERROR ")):
             continue

@@ -580,6 +580,21 @@ def test_extract_failed_nodeids_mixed_failed_and_error():
     ]
 
 
+def test_extract_failed_nodeids_ignores_body_log_before_summary_header():
+    """요약 머리줄이 있으면 그 앞의 본문 로그·traceback 의 FAILED 줄은 잡지 않습니다."""
+    output = "\n".join(
+        [
+            "FAILED this-is-body-log-line",
+            "ERROR while connecting - retry",
+            "=========================== short test summary info ============================",
+            "FAILED tests/test_x.py::test_alpha - AssertionError",
+            "ERROR tests/test_z.py - ImportError",
+            "1 failed, 1 error, 10 passed in 1.00s",
+        ]
+    )
+    assert extract_failed_nodeids(output) == ["tests/test_x.py::test_alpha", "tests/test_z.py"]
+
+
 def test_extract_failed_nodeids_from_stderr_only():
     """stdout 과 stderr 를 합친 출력에서 FAILED/ERROR 줄을 추출합니다."""
     output = "\n".join(["1 failed, 3215 passed", "FAILED tests/test_err.py::test_e - ValueError"])
