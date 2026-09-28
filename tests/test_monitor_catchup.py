@@ -636,6 +636,45 @@ async def test_coverage_task_records_failed_schedule_status(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_coverage_alert_message_includes_calibrated_rates(monkeypatch):
+    """커버리지 경고 문구에 보정률·다주 기저·2주 연속 표시가 들어갑니다."""
+    alert = {
+        "category": "Thng",
+        "week_start": "2026-08-24",
+        "rate": 0.535,
+        "baseline_rate": 0.65,
+        "announcements": 454,
+        "baseline_announcements": 409,
+        "adjusted_rate": 0.577,
+        "baseline_multi_rate": 0.623,
+        "previous_week_start": "2026-08-17",
+        "previous_adjusted_rate": 0.58,
+        "previous_baseline_multi_rate": 0.64,
+    }
+    monkeypatch.setattr(
+        coverage_tasks,
+        "_collect_snapshot",
+        lambda: {"status": "ok", "as_of": "2026-08-24", "alerts": [alert], "rows": 1},
+    )
+    sent: list[tuple[str, list[str], str]] = []
+
+    async def fake_notify(title, lines, *, level="info"):
+        sent.append((title, lines, level))
+
+    monkeypatch.setattr(coverage_tasks, "notify", fake_notify)
+
+    result = await coverage_tasks._run_result_coverage_monitor()
+
+    assert result["status"] == "ok"
+    _title, lines, level = sent[0]
+    assert level == "warning"
+    body = "\n".join(lines)
+    assert "보정 57.7%" in body
+    assert "다주 기저 62.3%" in body
+    assert "2주 연속" in body
+
+
+@pytest.mark.asyncio
 async def test_drift_schedule_success_statuses_unchanged(monkeypatch):
     """기본 success_statuses 를 쓰는 드리프트 감시는 정상 실행을 success True 로 기록합니다."""
     store_client = StatusStoreClient()

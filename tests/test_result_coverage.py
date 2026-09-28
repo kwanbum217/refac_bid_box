@@ -16,6 +16,8 @@ from sqlalchemy import event
 
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.result_coverage import (
+    BASELINE_OFFSET_DAYS,
+    BASELINE_WINDOW_WEEKS,
     LARGE_PRICE_THRESHOLD,
     MIN_WEEK_SAMPLES,
     NOTICE_LOOKBACK_DAYS,
@@ -44,6 +46,7 @@ def _add_announcement(
     presmpt_prce: int | None = None,
     ntce_kind_nm: str | None = None,
     ntce_dt: datetime | None = None,
+    bid_methd_nm: str | None = None,
 ) -> None:
     db.add(
         BidAnnouncement(
@@ -56,6 +59,7 @@ def _add_announcement(
             openg_dt=_openg(openg_day),
             presmpt_prce=presmpt_prce,
             ntce_kind_nm=ntce_kind_nm,
+            bid_methd_nm=bid_methd_nm,
         )
     )
 
@@ -69,6 +73,22 @@ def _add_result(db, no: str, ord_: str, category: str, openg_day: date) -> None:
             rl_openg_dt=_openg(openg_day),
         )
     )
+
+
+def _add_method_batch(db, prefix, day, method, total, matched, category="Thng"):
+    for i in range(total):
+        no = f"{prefix}{i:05d}"
+        _add_announcement(
+            db,
+            no,
+            "001",
+            category,
+            day,
+            presmpt_prce=LARGE_PRICE_THRESHOLD,
+            bid_methd_nm=method,
+        )
+        if i < matched:
+            _add_result(db, no, "001", category, day)
 
 
 def _row_of(rows, category, band, week_start):
@@ -85,10 +105,13 @@ def _row_of(rows, category, band, week_start):
 
 def _alert_row(
     *,
-    rate,
-    baseline_rate,
+    rate=0.5,
+    baseline_rate=0.6,
+    adjusted_rate=0.5,
+    baseline_multi_rate=0.6,
     announcements=MIN_WEEK_SAMPLES,
     baseline_announcements=MIN_WEEK_SAMPLES,
+    baseline_multi_announcements=MIN_WEEK_SAMPLES,
     band="large",
     category="Servc",
     week_start="2026-08-24",
@@ -103,6 +126,10 @@ def _alert_row(
         "baseline_announcements": baseline_announcements,
         "baseline_matched": 0,
         "baseline_rate": baseline_rate,
+        "baseline_multi_announcements": baseline_multi_announcements,
+        "baseline_multi_matched": 0,
+        "baseline_multi_rate": baseline_multi_rate,
+        "adjusted_rate": adjusted_rate,
     }
 
 
@@ -239,7 +266,9 @@ def test_returned_rows_match_previous_contract(isolated_db):
 
     rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
     assert len(rows) == 6
-    assert _row_of(rows, "Thng", "large", W) == {
+    row = _row_of(rows, "Thng", "large", W)
+    # 기존 필드 값은 수정 전 계약 그대로다.
+    existing_fields = {
         "category": "Thng",
         "week_start": W.isoformat(),
         "band": "large",
@@ -250,6 +279,12 @@ def test_returned_rows_match_previous_contract(isolated_db):
         "baseline_matched": 1,
         "baseline_rate": 1.0,
     }
+    assert {key: row[key] for key in existing_fields} == existing_fields
+    # A1 다주 기저와 A2 보정률 필드가 추가됐다. 기저 5주에 이 주 하나뿐이라 1.0 이다.
+    assert row["baseline_multi_announcements"] == 1
+    assert row["baseline_multi_matched"] == 1
+    assert row["baseline_multi_rate"] == 1.0
+    assert row["adjusted_rate"] == 1.0
 
 
 def test_overlapping_blocks_are_merged_without_double_count(isolated_db):
@@ -346,45 +381,243 @@ def test_large_announcement_older_than_180_day_lookback_counted(isolated_db):
     assert row["matched"] == 1
 
 
+def _two_alert_weeks(**kwargs):
+    return [
+        _alert_row(week_start="2026-08-24", **kwargs),
+        _alert_row(week_start="2026-08-17", **kwargs),
+    ]
+
+
 def test_alert_rule_boundaries():
-    # 세 조건이 모두 경계값(공고 100, 하락폭 0.10)일 때 경고다.
-    alerts = evaluate_match_rate_alerts([_alert_row(rate=0.5, baseline_rate=0.6)])
+    # 보정률 하락폭 경계 0.10, 표본 100 경계를 두 주 연속 만족하면 경고다.
+    alerts = evaluate_match_rate_alerts(_two_alert_weeks())
     assert len(alerts) == 1
     assert alerts[0]["category"] == "Servc"
     assert alerts[0]["week_start"] == "2026-08-24"
+    assert alerts[0]["previous_week_start"] == "2026-08-17"
+    assert alerts[0]["adjusted_rate"] == 0.5
+    assert alerts[0]["baseline_multi_rate"] == 0.6
+    assert alerts[0]["previous_adjusted_rate"] == 0.5
+    assert alerts[0]["previous_baseline_multi_rate"] == 0.6
+    # 기존 키는 그대로 유지된다.
+    assert alerts[0]["rate"] == 0.5
+    assert alerts[0]["baseline_rate"] == 0.6
+    assert alerts[0]["announcements"] == MIN_WEEK_SAMPLES
 
-    # 하락폭 0.10 미만은 경고가 아니다.
-    assert evaluate_match_rate_alerts([_alert_row(rate=0.5, baseline_rate=0.59)]) == []
+    # 보정률 하락폭 0.10 미만은 두 주 모두 만족해도 경고가 아니다.
+    assert (
+        evaluate_match_rate_alerts(_two_alert_weeks(adjusted_rate=0.501, baseline_multi_rate=0.6))
+        == []
+    )
 
     # 실측 공고 수 경계 미만은 경고가 아니다.
+    assert evaluate_match_rate_alerts(_two_alert_weeks(announcements=MIN_WEEK_SAMPLES - 1)) == []
+
+    # 다주 기저 공고 수 경계 미만은 경고가 아니다.
     assert (
         evaluate_match_rate_alerts(
-            [_alert_row(rate=0.5, baseline_rate=0.6, announcements=MIN_WEEK_SAMPLES - 1)]
+            _two_alert_weeks(baseline_multi_announcements=MIN_WEEK_SAMPLES - 1)
         )
         == []
     )
 
-    # 전년 공고 수 경계 미만은 경고가 아니다.
+    # 소형 행은 대상이 아니다.
     assert (
         evaluate_match_rate_alerts(
-            [_alert_row(rate=0.5, baseline_rate=0.6, baseline_announcements=MIN_WEEK_SAMPLES - 1)]
+            [
+                _alert_row(band="small", week_start="2026-08-24"),
+                _alert_row(band="small", week_start="2026-08-17"),
+            ]
         )
         == []
     )
 
-    # 소형 행은 대상이 아니고, 분류별 최근 성숙 주만 본다.
+
+def test_alert_requires_previous_week_row():
+    # 직전 성숙 주 대형 행이 없으면 경고하지 않는다.
+    assert evaluate_match_rate_alerts([_alert_row(week_start="2026-08-24")]) == []
+
+
+def test_alert_requires_both_consecutive_weeks():
+    # 최근 주만 조건을 넘고 직전 주는 미달이면 경고하지 않는다.
     rows = [
-        _alert_row(rate=0.5, baseline_rate=0.6, band="small"),
-        _alert_row(rate=0.5, baseline_rate=0.6, category="Cnstwk", week_start="2026-08-17"),
-        _alert_row(rate=0.9, baseline_rate=0.9, category="Cnstwk", week_start="2026-08-24"),
+        _alert_row(week_start="2026-08-24", adjusted_rate=0.4, baseline_multi_rate=0.6),
+        _alert_row(week_start="2026-08-17", adjusted_rate=0.55, baseline_multi_rate=0.6),
+    ]
+    assert evaluate_match_rate_alerts(rows) == []
+
+    # 두 주 모두 조건을 넘으면 최근 주를 경고로 보고한다.
+    rows = [
+        _alert_row(week_start="2026-08-24", adjusted_rate=0.4, baseline_multi_rate=0.6),
+        _alert_row(week_start="2026-08-17", adjusted_rate=0.45, baseline_multi_rate=0.6),
+    ]
+    alerts = evaluate_match_rate_alerts(rows)
+    assert len(alerts) == 1
+    assert alerts[0]["week_start"] == "2026-08-24"
+
+
+def test_alert_uses_adjusted_rate_not_raw_rate():
+    # 실측 매칭률은 크게 떨어졌지만 방식 구성 보정률이 다주 기저와 같으면 경고하지 않는다.
+    rows = [
+        _alert_row(
+            week_start="2026-08-24",
+            rate=0.5,
+            baseline_rate=0.8,
+            adjusted_rate=0.8,
+            baseline_multi_rate=0.8,
+        ),
+        _alert_row(
+            week_start="2026-08-17",
+            rate=0.5,
+            baseline_rate=0.8,
+            adjusted_rate=0.8,
+            baseline_multi_rate=0.8,
+        ),
+    ]
+    assert evaluate_match_rate_alerts(rows) == []
+
+
+def test_alert_requires_adjusted_and_multi_rates():
+    # 보정률이나 다주 기저가 계산되지 않으면(None) 경고하지 않는다.
+    rows = [
+        _alert_row(week_start="2026-08-24", adjusted_rate=None),
+        _alert_row(week_start="2026-08-17"),
     ]
     assert evaluate_match_rate_alerts(rows) == []
 
     rows = [
-        _alert_row(rate=0.5, baseline_rate=0.6, category="Cnstwk", week_start="2026-08-24"),
-        _alert_row(rate=0.9, baseline_rate=0.9, category="Cnstwk", week_start="2026-08-17"),
+        _alert_row(week_start="2026-08-24", baseline_multi_rate=None),
+        _alert_row(week_start="2026-08-17"),
     ]
-    assert len(evaluate_match_rate_alerts(rows)) == 1
+    assert evaluate_match_rate_alerts(rows) == []
+
+
+def test_baseline_multi_is_window_sum_not_mean_of_rates(isolated_db):
+    """A1 다주 기저는 5주 합산 비율이며 주별 비율의 단순 평균이 아니다."""
+    db = isolated_db
+    center = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    # 중심 주는 10건 전부 미매칭(단일 주 기저 0.0).
+    for i in range(10):
+        _add_announcement(
+            db, f"2025-W000{i}", "001", "Thng", center, presmpt_prce=LARGE_PRICE_THRESHOLD
+        )
+    # 앞뒤 2주도 10건 전부 미매칭.
+    for offset in (-2, -1, 1):
+        week = center + timedelta(days=7 * offset)
+        for i in range(10):
+            _add_announcement(
+                db,
+                f"2025-W1{offset}{i}",
+                "001",
+                "Thng",
+                week,
+                presmpt_prce=LARGE_PRICE_THRESHOLD,
+            )
+    # +2주만 100건 전부 매칭.
+    far_week = center + timedelta(days=7 * BASELINE_WINDOW_WEEKS)
+    for i in range(100):
+        no = f"2025-W2{i:04d}"
+        _add_announcement(db, no, "001", "Thng", far_week, presmpt_prce=LARGE_PRICE_THRESHOLD)
+        _add_result(db, no, "001", "Thng", far_week)
+    _add_announcement(db, "2026-W0001", "001", "Thng", W, presmpt_prce=LARGE_PRICE_THRESHOLD)
+    _add_result(db, "2026-W0001", "001", "Thng", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Thng", "large", W)
+    # 단일 주 기저(중심 주)는 그대로 10건 0매칭이다.
+    assert row["baseline_announcements"] == 10
+    assert row["baseline_matched"] == 0
+    assert row["baseline_rate"] == 0.0
+    # 5주 합산은 140건 100매칭이다. 주별 비율 단순 평균(0.2)과 달라야 한다.
+    assert row["baseline_multi_announcements"] == 140
+    assert row["baseline_multi_matched"] == 100
+    assert row["baseline_multi_rate"] == pytest.approx(100 / 140)
+    assert row["baseline_multi_rate"] != pytest.approx(0.2)
+
+
+def test_adjusted_rate_offsets_pure_composition_shift(isolated_db):
+    """A2 구성만 바뀌고 방식별 매칭률이 같으면 보정률이 다주 기저와 같아진다."""
+    db = isolated_db
+    center = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    _add_method_batch(db, "2025-C1", center, "전자입찰", 50, 25)
+    _add_method_batch(db, "2025-C2", center, "전자시담", 150, 135)
+    # 구성만 뒤집고 방식별 매칭률은 유지한다.
+    _add_method_batch(db, "2026-C1", W, "전자입찰", 150, 75)
+    _add_method_batch(db, "2026-C2", W, "전자시담", 50, 45)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Thng", "large", W)
+    assert row["announcements"] == 200
+    assert row["rate"] == pytest.approx(0.6)
+    assert row["baseline_multi_rate"] == pytest.approx(0.8)
+    assert row["adjusted_rate"] == pytest.approx(0.8)
+
+
+def test_adjusted_rate_substitutes_overall_for_missing_method(isolated_db):
+    """현재 주에 공고가 없는 방식은 현재 주 전체 매칭률로 대체한다."""
+    db = isolated_db
+    center = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    _add_method_batch(db, "2025-D1", center, "전자입찰", 100, 50)
+    _add_method_batch(db, "2025-D2", center, "전자시담", 100, 90)
+    # 현재 주에는 전자시담이 없다.
+    _add_method_batch(db, "2026-D1", W, "전자입찰", 100, 50)
+    _add_method_batch(db, "2026-D2", W, "전자계약", 100, 100)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Thng", "large", W)
+    assert row["rate"] == pytest.approx(0.75)
+    assert row["baseline_multi_rate"] == pytest.approx(0.7)
+    # 기저 구성비 0.5/0.5 에, 누락된 전자시담은 현재 전체 매칭률 0.75 로 대체된다.
+    assert row["adjusted_rate"] == pytest.approx(0.5 * 0.5 + 0.5 * 0.75)
+
+
+def test_null_bid_method_grouped_as_single_method(isolated_db):
+    """NULL 입찰방식은 '(null)' 한 방식으로 묶여 기저 구성비가 1.0 이 된다."""
+    db = isolated_db
+    center = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    for i in range(200):
+        no = f"2025-N{i:04d}"
+        _add_announcement(db, no, "001", "Thng", center, presmpt_prce=LARGE_PRICE_THRESHOLD)
+        if i < 100:
+            _add_result(db, no, "001", "Thng", center)
+    for i in range(100):
+        no = f"2026-N{i:04d}"
+        _add_announcement(
+            db, no, "001", "Thng", W, presmpt_prce=LARGE_PRICE_THRESHOLD, bid_methd_nm=None
+        )
+        if i < 40:
+            _add_result(db, no, "001", "Thng", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    row = _row_of(rows, "Thng", "large", W)
+    assert row["baseline_multi_rate"] == pytest.approx(0.5)
+    assert row["adjusted_rate"] == pytest.approx(0.4)
+    assert row["adjusted_rate"] == pytest.approx(row["rate"])
+
+
+def test_adjusted_rate_none_for_small_and_empty_week(isolated_db):
+    """소형 행과 현재 주 공고가 0 인 행, 기저가 빈 행은 adjusted_rate 가 None 이다."""
+    db = isolated_db
+    center = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    _add_method_batch(db, "2025-E1", center, "전자입찰", 120, 60)
+    for i in range(3):
+        _add_announcement(db, f"2026-E1{i}", "001", "Servc", W)
+    _add_announcement(db, "2026-E2001", "001", "Cnstwk", W, presmpt_prce=LARGE_PRICE_THRESHOLD)
+    _add_result(db, "2026-E2001", "001", "Cnstwk", W)
+    db.commit()
+
+    rows = compute_result_match_rates(db, as_of=AS_OF, weeks=1)
+    # Servc 는 대형 공고가 없어 대형 행 adjusted_rate 가 None, 소형 행도 None 이다.
+    assert _row_of(rows, "Servc", "large", W)["adjusted_rate"] is None
+    assert _row_of(rows, "Servc", "small", W)["adjusted_rate"] is None
+    # Cnstwk 대형은 공고가 1건이지만 기저 5주가 비어 보정할 수 없다.
+    assert _row_of(rows, "Cnstwk", "large", W)["adjusted_rate"] is None
+    # Thng 대형은 현재 주 공고가 0 이다.
+    assert _row_of(rows, "Thng", "large", W)["adjusted_rate"] is None
 
 
 @pytest.mark.asyncio
@@ -392,16 +625,24 @@ async def test_task_notifies_only_when_alert(isolated_db, monkeypatch):
     from src.tasks import coverage_tasks
 
     db = isolated_db
-    for i in range(MIN_WEEK_SAMPLES):
-        no = f"2026-E{i:05d}"
-        _add_announcement(db, no, "001", "Servc", W, presmpt_prce=LARGE_PRICE_THRESHOLD)
-        if i < MIN_WEEK_SAMPLES // 2:
-            _add_result(db, no, "001", "Servc", W)
-    baseline = W - timedelta(days=364)
-    for i in range(MIN_WEEK_SAMPLES):
-        no = f"2025-E{i:05d}"
-        _add_announcement(db, no, "001", "Servc", baseline, presmpt_prce=LARGE_PRICE_THRESHOLD)
-        _add_result(db, no, "001", "Servc", baseline)
+    # 최근 성숙 주와 직전 성숙 주 모두 대형 Servc 공고 100건이 전부 미매칭이다(A6 2주 연속).
+    for idx, start in enumerate((W, W - timedelta(days=7))):
+        for i in range(MIN_WEEK_SAMPLES):
+            _add_announcement(
+                db,
+                f"2026-E{idx}{i:04d}",
+                "001",
+                "Servc",
+                start,
+                presmpt_prce=LARGE_PRICE_THRESHOLD,
+            )
+    # 두 주의 5주 기저 창 합집합(6주)에 25건씩 모두 매칭을 둔다(합산 기저 1.0).
+    for w in range(6):
+        week = W - timedelta(days=385) + timedelta(days=7 * w)
+        for i in range(25):
+            no = f"2025-E{w}{i:04d}"
+            _add_announcement(db, no, "001", "Servc", week, presmpt_prce=LARGE_PRICE_THRESHOLD)
+            _add_result(db, no, "001", "Servc", week)
     db.commit()
 
     sent: list[tuple[str, list[str], str]] = []
@@ -415,13 +656,17 @@ async def test_task_notifies_only_when_alert(isolated_db, monkeypatch):
     result = await coverage_tasks.result_coverage_monitor_task({})
     assert result["status"] == "ok"
     assert len(result["alerts"]) == 1
+    assert result["alerts"][0]["category"] == "Servc"
+    assert result["alerts"][0]["week_start"] == W.isoformat()
     # 기본 weeks=8 이므로 8주 x 3분류 x 2규모 = 48 행이다.
     assert result["rows"] == 48
     assert len(sent) == 1
     title, lines, level = sent[0]
     assert level == "warning"
     assert "매칭률" in title
-    assert "uv run python scripts/result_match_rate_report.py" in "\n".join(lines)
+    body = "\n".join(lines)
+    assert "uv run python scripts/result_match_rate_report.py" in body
+    assert "2주 연속" in body
 
 
 @pytest.mark.asyncio

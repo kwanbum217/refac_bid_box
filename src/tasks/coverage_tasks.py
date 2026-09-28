@@ -3,9 +3,9 @@ src/tasks/coverage_tasks.py
 
 낙찰결과 매칭률 감시 주간 크론 태스크.
 
-개찰 완료 지 28일이 지난 최근 주의 대형 매칭률이 전년 동기보다 10%p 이상
-낮으면 MLOps 웹훅 경고를 보낸다. 계산은 읽기 전용
-src/app/services/result_coverage.py 에 위임하고, 여기서는 실행 순서와
+개찰 완료 지 28일이 지난 최근 주와 직전 주의 대형 보정 매칭률이 5주 합산 전년
+동기 기저보다 10%p 이상 2주 연속 낮으면 MLOps 웹훅 경고를 보낸다. 계산은 읽기
+전용 src/app/services/result_coverage.py 에 위임하고, 여기서는 실행 순서와
 알림 발신만 담당한다.
 """
 
@@ -92,8 +92,10 @@ async def _run_result_coverage_monitor() -> dict[str, Any]:
         for alert in alerts:
             lines.append(
                 f"{alert['category']} {alert['week_start']} 주 대형: "
-                f"실측 {_format_rate(alert['rate'])} / 전년 {_format_rate(alert['baseline_rate'])} "
-                f"(공고 {alert['announcements']:,}건)"
+                f"보정 {_format_rate(alert['adjusted_rate'])} / "
+                f"다주 기저 {_format_rate(alert['baseline_multi_rate'])}, 2주 연속 "
+                f"(실측 {_format_rate(alert['rate'])} / 전년 {_format_rate(alert['baseline_rate'])}, "
+                f"공고 {alert['announcements']:,}건)"
             )
         lines.append("")
         lines.append("상세: uv run python scripts/result_match_rate_report.py")
