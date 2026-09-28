@@ -684,3 +684,61 @@ def test_monitor_catchup_registered_with_one_hour_timeout():
     for name in ("run_drift_monitor_catchup_task", "run_result_coverage_catchup_task"):
         entry = entries[name]
         assert getattr(entry, "timeout_s", None) == worker.MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS
+
+
+# --------------------------------------------------------------------------- #
+# 상수 단일 정의 (cron 타임아웃과 TTL·양보 파생)
+# --------------------------------------------------------------------------- #
+
+
+def _cron_entry(name: str) -> Any:
+    for job in worker.WorkerSettings.cron_jobs:
+        target = getattr(job, "coroutine", job)
+        if getattr(target, "__name__", "") == name:
+            return job
+    raise AssertionError(f"cron 등록을 찾지 못했습니다: {name}")
+
+
+def test_monitor_claim_ttl_at_least_job_timeout():
+    """선점 TTL 은 잡 타임아웃 이상이어야 잡이 도는 동안 선점이 만료되지 않습니다."""
+    assert (
+        scheduled_tasks.DRIFT_MONITOR_CLAIM_TTL_SECONDS
+        >= scheduled_tasks.DRIFT_MONITOR_JOB_TIMEOUT_SECONDS
+    )
+    assert (
+        scheduled_tasks.RESULT_COVERAGE_CLAIM_TTL_SECONDS
+        >= scheduled_tasks.RESULT_COVERAGE_JOB_TIMEOUT_SECONDS
+    )
+
+
+def test_monitor_yield_equals_job_timeout():
+    assert (
+        scheduled_tasks.DRIFT_MONITOR_YIELD_BEFORE_SLOT_SECONDS
+        == scheduled_tasks.DRIFT_MONITOR_JOB_TIMEOUT_SECONDS
+    )
+    assert (
+        scheduled_tasks.RESULT_COVERAGE_YIELD_BEFORE_SLOT_SECONDS
+        == scheduled_tasks.RESULT_COVERAGE_JOB_TIMEOUT_SECONDS
+    )
+
+
+def test_monitor_timeout_ttl_yield_values_unchanged():
+    """단일 정의로 묶어도 timeout, TTL, 양보 값은 바뀌지 않습니다."""
+    assert scheduled_tasks.DRIFT_MONITOR_JOB_TIMEOUT_SECONDS == 3600
+    assert scheduled_tasks.RESULT_COVERAGE_JOB_TIMEOUT_SECONDS == 3600
+    assert scheduled_tasks.DRIFT_MONITOR_CLAIM_TTL_SECONDS == 10800
+    assert scheduled_tasks.RESULT_COVERAGE_CLAIM_TTL_SECONDS == 10800
+    assert scheduled_tasks.DRIFT_MONITOR_YIELD_BEFORE_SLOT_SECONDS == 3600
+    assert scheduled_tasks.RESULT_COVERAGE_YIELD_BEFORE_SLOT_SECONDS == 3600
+
+
+def test_monitor_cron_timeouts_use_job_timeout_constants():
+    drift_entry = _cron_entry("drift_monitor_task")
+    assert (
+        getattr(drift_entry, "timeout_s", None) == scheduled_tasks.DRIFT_MONITOR_JOB_TIMEOUT_SECONDS
+    )
+    coverage_entry = _cron_entry("result_coverage_monitor_task")
+    assert (
+        getattr(coverage_entry, "timeout_s", None)
+        == scheduled_tasks.RESULT_COVERAGE_JOB_TIMEOUT_SECONDS
+    )

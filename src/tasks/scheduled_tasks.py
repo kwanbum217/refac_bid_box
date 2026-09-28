@@ -553,16 +553,14 @@ def _check_search_index_parity() -> dict[str, Any]:
 def _acquire_weekly_retrain_claim() -> ScheduleClaimResult:
     """주간 재학습 크론과 기동 따라잡기가 공유하는 선점을 원자적으로 획득합니다.
 
-    TTL 은 잡 타임아웃(3시간) 이상으로 잡습니다. Redis 에 접근할 수 없으면 호출부가
-    경고를 남기고 선점 없이 진행하도록 REDIS_UNAVAILABLE/COMMAND_ERROR 를 그대로 돌려줍니다.
+    TTL 은 WEEKLY_RETRAIN_CLAIM_TTL_SECONDS 로, 잡 타임아웃 이상입니다. Redis 에
+    접근할 수 없으면 호출부가 경고를 남기고 선점 없이 진행하도록
+    REDIS_UNAVAILABLE/COMMAND_ERROR 를 그대로 돌려줍니다.
     """
-    from src.tasks.worker import SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS
-
-    ttl = max(int(SCHEDULE_CATCHUP_JOB_TIMEOUT_SECONDS), WEEKLY_RETRAIN_CLAIM_TTL_SECONDS)
     return acquire_schedule_claim(
         "weekly_retrain",
         key=WEEKLY_RETRAIN_CLAIM_KEY,
-        ttl_seconds=ttl,
+        ttl_seconds=WEEKLY_RETRAIN_CLAIM_TTL_SECONDS,
     )
 
 
@@ -738,16 +736,14 @@ def is_drift_monitor_enabled() -> bool:
 def _acquire_drift_monitor_claim() -> ScheduleClaimResult:
     """드리프트 크론과 기동 따라잡기가 공유하는 선점을 원자적으로 획득합니다.
 
-    TTL 은 잡 타임아웃 이상으로 잡습니다. Redis 에 접근할 수 없으면 호출부가
-    경고를 남기고 선점 없이 진행하도록 결과를 그대로 돌려줍니다.
+    TTL 은 DRIFT_MONITOR_CLAIM_TTL_SECONDS 로, 잡 타임아웃 이상입니다. Redis 에
+    접근할 수 없으면 호출부가 경고를 남기고 선점 없이 진행하도록 결과를 그대로
+    돌려줍니다.
     """
-    from src.tasks.worker import MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS
-
-    ttl = max(int(MONITOR_CATCHUP_JOB_TIMEOUT_SECONDS), DRIFT_MONITOR_CLAIM_TTL_SECONDS)
     return acquire_schedule_claim(
         "drift_monitor",
         key=DRIFT_MONITOR_CLAIM_KEY,
-        ttl_seconds=ttl,
+        ttl_seconds=DRIFT_MONITOR_CLAIM_TTL_SECONDS,
     )
 
 
@@ -960,14 +956,27 @@ CATCHUP_LAST_ATTEMPT_KEY = SCHEDULE_CATCHUP_COOLDOWN_KEY
 CATCHUP_LEDGER_KEY = "bidbox:schedule:catchup_ledger"
 CATCHUP_LEDGER_TTL_SECONDS = 7 * 24 * 60 * 60
 
+# 스케줄 작업별 cron 타임아웃(초). worker.py 의 cron 등록과 따라잡기 태스크 등록,
+# 그리고 선점 TTL·양보 시간이 모두 이 상수를 파생원으로 씁니다. 한 곳만 고치면
+# 나머지가 함께 움직여, 양보·TTL 이 cron 타임아웃과 어긋나지 않습니다.
+WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS = 10800
+DRIFT_MONITOR_JOB_TIMEOUT_SECONDS = 3600
+RESULT_COVERAGE_JOB_TIMEOUT_SECONDS = 3600
+
+# 선점 TTL 하한(초). 어떤 스케줄이든 잡 타임아웃 이상으로 선점을 유지해, 잡이 도는
+# 동안 선점이 만료되어 같은 작업이 겹쳐 도는 일을 막습니다.
+SCHEDULE_CLAIM_MIN_TTL_SECONDS = 10800
+
 # arq 월요일 03:00 크론과 기동 따라잡기가 함께 쓰는 단일 선점 키입니다.
 WEEKLY_RETRAIN_CLAIM_KEY = "bidbox:schedule:weekly_retrain_claim"
-WEEKLY_RETRAIN_CLAIM_TTL_SECONDS = 10800
+WEEKLY_RETRAIN_CLAIM_TTL_SECONDS = max(
+    WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS, SCHEDULE_CLAIM_MIN_TTL_SECONDS
+)
 WEEKLY_RETRAIN_CATCHUP_JOB_NAME = "run_weekly_retrain_catchup_task"
 WEEKLY_RETRAIN_CATCHUP_JOB_ID = "weekly-retrain-catchup-startup"
 
-# 다음 주간 슬롯이 이 시간 이내로 임박하면 따라잡기는 크론에 양보합니다.
-WEEKLY_RETRAIN_YIELD_BEFORE_SLOT_SECONDS = 10800
+# 다음 주간 슬롯이 잡 타임아웃 이내로 임박하면 따라잡기는 크론에 양보합니다.
+WEEKLY_RETRAIN_YIELD_BEFORE_SLOT_SECONDS = WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS
 
 # 주간 재학습 크론과 같은 시각(월요일 03:00). arq cron 과 동일한 프로세스 로컬 시각 기준입니다.
 WEEKLY_RETRAIN_WEEKDAY = 0
@@ -976,12 +985,14 @@ WEEKLY_RETRAIN_MINUTE = 0
 
 # arq 매일 04:00 크론과 기동 따라잡기가 함께 쓰는 PSI 드리프트 감시 선점 키입니다.
 DRIFT_MONITOR_CLAIM_KEY = "bidbox:schedule:drift_monitor_claim"
-DRIFT_MONITOR_CLAIM_TTL_SECONDS = 10800
+DRIFT_MONITOR_CLAIM_TTL_SECONDS = max(
+    DRIFT_MONITOR_JOB_TIMEOUT_SECONDS, SCHEDULE_CLAIM_MIN_TTL_SECONDS
+)
 DRIFT_MONITOR_CATCHUP_JOB_NAME = "run_drift_monitor_catchup_task"
 DRIFT_MONITOR_CATCHUP_JOB_ID = "drift-monitor-catchup-startup"
 
-# 다음 드리프트 슬롯이 이 시간 이내로 임박하면 따라잡기는 크론에 양보합니다.
-DRIFT_MONITOR_YIELD_BEFORE_SLOT_SECONDS = 3600
+# 다음 드리프트 슬롯이 잡 타임아웃 이내로 임박하면 따라잡기는 크론에 양보합니다.
+DRIFT_MONITOR_YIELD_BEFORE_SLOT_SECONDS = DRIFT_MONITOR_JOB_TIMEOUT_SECONDS
 
 # 드리프트 감시 크론과 같은 시각(매일 04:00). arq cron 과 동일한 프로세스 로컬 시각 기준입니다.
 DRIFT_MONITOR_HOUR = 4
@@ -989,13 +1000,15 @@ DRIFT_MONITOR_MINUTE = 0
 
 # arq 월요일 05:00 크론과 기동 따라잡기가 함께 쓰는 낙찰결과 커버리지 감시 선점 키입니다.
 RESULT_COVERAGE_CLAIM_KEY = "bidbox:schedule:result_coverage_claim"
-RESULT_COVERAGE_CLAIM_TTL_SECONDS = 10800
+RESULT_COVERAGE_CLAIM_TTL_SECONDS = max(
+    RESULT_COVERAGE_JOB_TIMEOUT_SECONDS, SCHEDULE_CLAIM_MIN_TTL_SECONDS
+)
 RESULT_COVERAGE_CATCHUP_JOB_NAME = "run_result_coverage_catchup_task"
 RESULT_COVERAGE_CATCHUP_JOB_ID = "result-coverage-catchup-startup"
 RESULT_COVERAGE_SCHEDULE_NAME = "result_coverage_monitor"
 
-# 다음 커버리지 슬롯이 이 시간 이내로 임박하면 따라잡기는 크론에 양보합니다.
-RESULT_COVERAGE_YIELD_BEFORE_SLOT_SECONDS = 3600
+# 다음 커버리지 슬롯이 잡 타임아웃 이내로 임박하면 따라잡기는 크론에 양보합니다.
+RESULT_COVERAGE_YIELD_BEFORE_SLOT_SECONDS = RESULT_COVERAGE_JOB_TIMEOUT_SECONDS
 
 # 커버리지 감시 크론과 같은 시각(월요일 05:00)입니다.
 RESULT_COVERAGE_WEEKDAY = 0
@@ -1441,6 +1454,36 @@ def get_latest_weekly_retrain_time(db: Session | None = None) -> datetime | None
             session.close()
 
 
+def get_weekly_retrain_records_since(
+    db: Session | None = None,
+    since: datetime | None = None,
+) -> list[tuple[datetime, dict[str, Any] | None]]:
+    """retrain_logs 에서 trigger_source='weekly_schedule' 이고 since 이후인 행의
+    (created_at, metrics_summary) 목록을 돌려줍니다.
+
+    metrics_summary 는 JSON 이라 DB 방언에 기대지 않고 파이썬에서 카테고리를
+    거릅니다. 슬롯 이후 행만 조회하므로 건수가 작습니다.
+    """
+    from sqlalchemy import select
+
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
+    try:
+        stmt = select(RetrainLog.created_at, RetrainLog.metrics_summary).where(
+            RetrainLog.trigger_source == "weekly_schedule"
+        )
+        if since is not None:
+            stmt = stmt.where(RetrainLog.created_at >= since)
+        return [(row[0], row[1]) for row in session.execute(stmt).all()]
+    finally:
+        if own_session:
+            session.close()
+
+
 def check_schedule_catchup_needed(
     db: Session | None = None,
     tz: tzinfo | None = None,
@@ -1550,6 +1593,10 @@ def check_weekly_retrain_catchup_needed(
 ) -> tuple[bool, str, dict[str, Any]]:
     """기동 시 주간 재학습(월요일 03:00) 놓친 슬롯 보충 필요 여부를 판정합니다.
 
+    설정된 카테고리마다 슬롯 이후 기록이 있는지 보므로, 일부 카테고리만 실패한
+    주도 needed=True 로 잡아 다시 실행합니다. details.missing_categories 에 빠진
+    카테고리를 담습니다.
+
     Returns:
         (needed, reason, details)
     """
@@ -1602,14 +1649,32 @@ def check_weekly_retrain_catchup_needed(
         details["reason"] = "이전 주간 재학습 이력이 존재하지 않아 따라잡기를 실행합니다."
         return True, "no_previous_weekly_retrain", details
 
-    if _as_utc(latest_retrain) < last_slot:
+    # 설정된 카테고리마다 슬롯 이후 기록이 있는지 봅니다. 한 카테고리만 늦어도 주
+    # 전체가 처리됨으로 판정되지 않게 하기 위함입니다.
+    categories = sorted(settings.weekly_retrain_categories or CATEGORY_MODEL_NAMES.keys())
+    details["categories"] = categories
+    records = get_weekly_retrain_records_since(db, since=_as_utc(last_slot).replace(tzinfo=None))
+    recognized: set[str] = set()
+    for _created_at, summary in records:
+        category = summary.get("category") if isinstance(summary, dict) else None
+        if category in categories:
+            recognized.add(category)
+        elif category is None and len(categories) == 1:
+            # category 가 없는 과거 행은 카테고리가 하나만 설정된 경우에만 인정합니다.
+            recognized.add(categories[0])
+
+    missing_categories = [code for code in categories if code not in recognized]
+    if missing_categories:
+        details["missing_categories"] = missing_categories
         details["reason"] = (
-            f"마지막 주간 슬롯({last_slot.isoformat()}) 이후 주간 재학습 이력이 없어 "
-            "놓친 슬롯을 보충합니다."
+            f"마지막 주간 슬롯({last_slot.isoformat()}) 이후 주간 재학습 이력이 없는 "
+            f"카테고리가 있습니다: {missing_categories}"
         )
         return True, "missed_weekly_retrain", details
 
-    details["reason"] = "마지막 주간 슬롯 이후 주간 재학습 이력이 있어 건너뜁니다."
+    details["reason"] = (
+        "마지막 주간 슬롯 이후 설정된 모든 카테고리의 주간 재학습 이력이 있어 건너뜁니다."
+    )
     return False, "weekly_retrain_up_to_date", details
 
 
