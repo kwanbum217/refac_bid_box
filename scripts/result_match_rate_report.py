@@ -40,12 +40,14 @@ def _print_table(as_of: str, rows: list[dict[str, Any]], alerts: list[dict[str, 
         f"{'분류':<8}{'주시작':<12}{'규모':<6}"
         f"{'공고':>8}{'매칭':>8}{'매칭률':>10}"
         f"{'전년공고':>10}{'전년매칭률':>12}"
+        f"{'보정률':>10}{'다주기저':>12}"
     )
     for row in rows:
         print(
             f"{row['category']:<8}{row['week_start']:<12}{BAND_LABELS.get(row['band'], row['band']):<6}"
             f"{row['announcements']:>8,}{row['matched']:>8,}{_format_rate(row['rate']):>10}"
             f"{row['baseline_announcements']:>10,}{_format_rate(row['baseline_rate']):>12}"
+            f"{_format_rate(row['adjusted_rate']):>10}{_format_rate(row['baseline_multi_rate']):>12}"
         )
 
     if alerts:
@@ -54,7 +56,9 @@ def _print_table(as_of: str, rows: list[dict[str, Any]], alerts: list[dict[str, 
         for alert in alerts:
             print(
                 f"  {alert['category']} {alert['week_start']} 주 대형: "
-                f"실측 {_format_rate(alert['rate'])} / 전년 {_format_rate(alert['baseline_rate'])}"
+                f"보정 {_format_rate(alert['adjusted_rate'])} / "
+                f"다주 기저 {_format_rate(alert['baseline_multi_rate'])}, 2주 연속 "
+                f"(실측 {_format_rate(alert['rate'])} / 전년 {_format_rate(alert['baseline_rate'])})"
             )
     else:
         print()

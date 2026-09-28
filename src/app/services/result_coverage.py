@@ -8,6 +8,16 @@ src/app/services/result_coverage.py
 수집 적재 건수만 보는 감시로는 잡히지 않았다. 이 모듈은 매칭률 자체를
 분류 x 개찰 주 x 규모(대형/소형)로 계산해 전년 동기와 비교한다.
 
+2026-09-28 물품 경고 보정(docs/analysis/thng_match_rate_20260824.md 8절)에서
+전년 단일 주 기저의 국지 변동과 입찰방식 구성 변화가 오탐을 키운다는 판정에
+따라 세 가지를 적용했다(사용자 채택 A1·A2·A6).
+
+- A1: 전년 기저를 364일 전 주 중심 앞뒤 BASELINE_WINDOW_WEEKS 주, 총 5주
+  합산 비율로 넓힌다(주별 비율의 단순 평균이 아니다).
+- A2: 대형 행에 기저 5주의 방식 구성비로 현재 주 방식별 매칭률을 가중한
+  adjusted_rate 를 추가한다.
+- A6: 분류별 최근 성숙 주와 직전 성숙 주가 모두 조건을 만족할 때만 경고한다.
+
 읽기 전용 함수다. DB 쓰기는 하지 않는다. openg_dt 에 인덱스가 없으므로 공고
 조회는 반드시 bid_ntce_dt 범위(ix_bid_ann_dt_cat)로 먼저 좁힌 뒤 openg_dt
 조건을 더한다. 차수 정규화와 주 집계는 파이썬에서 해 SQLite 테스트와 동작을
@@ -34,6 +44,11 @@ TARGET_CATEGORIES = ("Servc", "Cnstwk", "Thng")
 MYSQL_EXECUTION_LIMIT_HINT = "/*+ MAX_EXECUTION_TIME(120000) */"
 CANCELLED_NTCE_KIND = "취소공고"
 BASELINE_OFFSET_DAYS = 364
+# 전년 기저를 364일 전 주 중심 앞뒤 2주, 총 5주 합산으로 넓힌다(A1).
+BASELINE_WINDOW_WEEKS = 2
+# 분류별 최근 성숙 주와 직전 성숙 주가 연속으로 조건을 만족해야 경고한다(A6).
+CONSECUTIVE_ALERT_WEEKS = 2
+NULL_METHOD_LABEL = "(null)"
 
 BAND_LARGE = "large"
 BAND_SMALL = "small"
@@ -66,19 +81,31 @@ def _rate(matched: int, announcements: int) -> float | None:
     return matched / announcements
 
 
+def _baseline_window(center: date) -> list[date]:
+    """364일 전 주를 중심으로 앞뒤 BASELINE_WINDOW_WEEKS 주 시작 목록을 돌려준다."""
+    return [
+        center + timedelta(days=7 * offset)
+        for offset in range(-BASELINE_WINDOW_WEEKS, BASELINE_WINDOW_WEEKS + 1)
+    ]
+
+
 def _with_mysql_execution_limit(stmt: Any) -> Any:
     return stmt.prefix_with(MYSQL_EXECUTION_LIMIT_HINT, dialect="mysql")
 
 
 def _query_blocks(mature_starts: list[date]) -> list[tuple[date, date]]:
-    """현재 성숙 주 블록과 364일 전 동기 블록을 만들고 겹치거나 맞닿으면 하나로 합친다.
+    """현재 성숙 주 블록과 전년 동기 5주 기저 블록을 만들고 겹치거나 맞닿으면 합친다.
 
     각 블록은 (블록 시작, 블록 끝)이며 블록 끝은 그 목록의 가장 늦은 주 시작 + 6일이다.
+    전년 블록은 5주 기저를 덮도록 양끝을 7 * BASELINE_WINDOW_WEEKS 일씩 넓힌다.
     """
     baseline_starts = [s - timedelta(days=BASELINE_OFFSET_DAYS) for s in mature_starts]
+    margin = timedelta(days=7 * BASELINE_WINDOW_WEEKS)
     blocks = sorted(
-        (min(starts), max(starts) + timedelta(days=6))
-        for starts in (baseline_starts, mature_starts)
+        [
+            (min(baseline_starts) - margin, max(baseline_starts) + timedelta(days=6) + margin),
+            (min(mature_starts), max(mature_starts) + timedelta(days=6)),
+        ]
     )
     merged: list[tuple[date, date]] = [blocks[0]]
     for start, end in blocks[1:]:
@@ -88,6 +115,59 @@ def _query_blocks(mature_starts: list[date]) -> list[tuple[date, date]]:
         else:
             merged.append((start, end))
     return merged
+
+
+def _sum_band_counts(
+    counts: dict[tuple[str, date, str], list[int]],
+    category: str,
+    band: str,
+    weeks: list[date],
+) -> tuple[int, int]:
+    announcements = matched = 0
+    for week in weeks:
+        bucket = counts.get((category, week, band), [0, 0])
+        announcements += bucket[0]
+        matched += bucket[1]
+    return announcements, matched
+
+
+def _sum_method_counts(
+    counts: dict[tuple[str, date, str, str], list[int]],
+    category: str,
+    band: str,
+    weeks: list[date],
+) -> dict[str, list[int]]:
+    week_set = set(weeks)
+    agg: dict[str, list[int]] = {}
+    for (cat, week, bnd, method), bucket in counts.items():
+        if cat != category or bnd != band or week not in week_set:
+            continue
+        target = agg.setdefault(method, [0, 0])
+        target[0] += bucket[0]
+        target[1] += bucket[1]
+    return agg
+
+
+def _adjusted_rate(
+    current_methods: dict[str, list[int]],
+    baseline_weights: dict[str, float],
+    overall_rate: float,
+) -> float | None:
+    """기저 방식 구성비로 현재 주 방식별 매칭률을 가중합한다(A2).
+
+    현재 주에 공고가 없는 방식은 현재 주 전체 매칭률(overall_rate)로 대체한다.
+    """
+    if not baseline_weights:
+        return None
+    total = 0.0
+    for method, weight in baseline_weights.items():
+        current = current_methods.get(method)
+        if current is None or current[0] <= 0:
+            method_rate = overall_rate
+        else:
+            method_rate = current[1] / current[0]
+        total += weight * method_rate
+    return total
 
 
 def compute_result_match_rates(
@@ -103,9 +183,14 @@ def compute_result_match_rates(
     '취소공고' 가 아닌 것(NULL 포함)만 센다. 대형은 presmpt_prce >=
     LARGE_PRICE_THRESHOLD, 그 밖(NULL 포함)은 소형이다. 매칭은
     (bid_ntce_no, category, 정규화 차수)가 낙찰결과에 존재하는 것이다.
-    반환 행의 baseline_* 필드는 364일 전 같은 주의 값이다.
 
-    조회는 현재 성숙 주 구간과 전년 동기 구간 두 블록으로 좁혀 각 블록마다
+    반환 행의 baseline_* 필드는 364일 전 같은 주 단일 주 값이고,
+    baseline_multi_* 필드는 그 주를 중심으로 앞뒤 BASELINE_WINDOW_WEEKS 주를
+    합산한 값이다(A1). 대형 행의 adjusted_rate 는 기저 5주의 방식 구성비로
+    현재 주 방식별 매칭률을 가중한 보정률이다(A2). 소형 행과 현재 주 공고가
+    0 인 행, 기저 5주 공고가 0 인 행은 adjusted_rate 가 None 이다.
+
+    조회는 현재 성숙 주 구간과 전년 동기 5주 구간 두 블록으로 좁혀 각 블록마다
     공고는 bid_ntce_dt 를 [블록 시작 - NOTICE_LOOKBACK_DAYS 일, 블록 끝], openg_dt 를
     [블록 시작, 블록 끝]로, 결과는 rl_openg_dt 를 [블록 시작 - 14일,
     블록 끝 + 90일]로 가져온다. 두 블록이 겹치거나 맞닿으면 하나로 합친다.
@@ -114,9 +199,12 @@ def compute_result_match_rates(
     if not mature_starts:
         return []
 
-    target_weeks = set(mature_starts) | {
-        s - timedelta(days=BASELINE_OFFSET_DAYS) for s in mature_starts
-    }
+    baseline_windows: dict[date, list[date]] = {}
+    target_weeks: set[date] = set(mature_starts)
+    for start in mature_starts:
+        window = _baseline_window(start - timedelta(days=BASELINE_OFFSET_DAYS))
+        baseline_windows[start] = window
+        target_weeks.update(window)
 
     announcement_rows: list[Any] = []
     result_rows: list[Any] = []
@@ -131,6 +219,7 @@ def compute_result_match_rates(
                     BidAnnouncement.category,
                     BidAnnouncement.presmpt_prce,
                     BidAnnouncement.openg_dt,
+                    BidAnnouncement.bid_methd_nm,
                 ).filter(
                     BidAnnouncement.bid_ntce_dt
                     >= datetime.combine(
@@ -164,30 +253,56 @@ def compute_result_match_rates(
         )
     result_keys = {(no, category, normalize_ord(ord_)) for no, ord_, category in result_rows}
 
-    counts: dict[tuple[str, date, str], list[int]] = {}
+    band_counts: dict[tuple[str, date, str], list[int]] = {}
+    method_counts: dict[tuple[str, date, str, str], list[int]] = {}
     for row in announcement_rows:
-        no, ord_, category, presmpt_prce, openg_dt = row
+        no, ord_, category, presmpt_prce, openg_dt, bid_methd_nm = row
         if openg_dt is None:
             continue
         start = week_start(openg_dt.date())
         if start not in target_weeks:
             continue
         band = BAND_LARGE if (presmpt_prce or 0) >= LARGE_PRICE_THRESHOLD else BAND_SMALL
-        key = (category, start, band)
-        bucket = counts.setdefault(key, [0, 0])
-        bucket[0] += 1
-        if (no, category, normalize_ord(ord_)) in result_keys:
-            bucket[1] += 1
+        method = bid_methd_nm if bid_methd_nm is not None else NULL_METHOD_LABEL
+        is_matched = (no, category, normalize_ord(ord_)) in result_keys
+        band_bucket = band_counts.setdefault((category, start, band), [0, 0])
+        band_bucket[0] += 1
+        method_bucket = method_counts.setdefault((category, start, band, method), [0, 0])
+        method_bucket[0] += 1
+        if is_matched:
+            band_bucket[1] += 1
+            method_bucket[1] += 1
 
     rows: list[dict[str, Any]] = []
     for start in sorted(mature_starts):
-        baseline = start - timedelta(days=BASELINE_OFFSET_DAYS)
+        center = start - timedelta(days=BASELINE_OFFSET_DAYS)
+        window = baseline_windows[start]
         for category in TARGET_CATEGORIES:
             for band in (BAND_LARGE, BAND_SMALL):
-                announcements, matched = counts.get((category, start, band), [0, 0])
-                baseline_announcements, baseline_matched = counts.get(
-                    (category, baseline, band), [0, 0]
+                announcements, matched = band_counts.get((category, start, band), [0, 0])
+                baseline_announcements, baseline_matched = band_counts.get(
+                    (category, center, band), [0, 0]
                 )
+                baseline_multi_announcements, baseline_multi_matched = _sum_band_counts(
+                    band_counts, category, band, window
+                )
+                rate = _rate(matched, announcements)
+                baseline_multi_rate = _rate(baseline_multi_matched, baseline_multi_announcements)
+                adjusted_rate = None
+                if (
+                    band == BAND_LARGE
+                    and announcements > 0
+                    and baseline_multi_announcements > 0
+                    and rate is not None
+                ):
+                    baseline_methods = _sum_method_counts(method_counts, category, band, window)
+                    current_methods = _sum_method_counts(method_counts, category, band, [start])
+                    baseline_weights = {
+                        method: counts[0] / baseline_multi_announcements
+                        for method, counts in baseline_methods.items()
+                        if counts[0] > 0
+                    }
+                    adjusted_rate = _adjusted_rate(current_methods, baseline_weights, rate)
                 rows.append(
                     {
                         "category": category,
@@ -195,54 +310,73 @@ def compute_result_match_rates(
                         "band": band,
                         "announcements": announcements,
                         "matched": matched,
-                        "rate": _rate(matched, announcements),
+                        "rate": rate,
                         "baseline_announcements": baseline_announcements,
                         "baseline_matched": baseline_matched,
                         "baseline_rate": _rate(baseline_matched, baseline_announcements),
+                        "baseline_multi_announcements": baseline_multi_announcements,
+                        "baseline_multi_matched": baseline_multi_matched,
+                        "baseline_multi_rate": baseline_multi_rate,
+                        "adjusted_rate": adjusted_rate,
                     }
                 )
     return rows
 
 
-def evaluate_match_rate_alerts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """분류별 가장 최근 성숙 주의 대형 행에서 매칭률 급락 경고 대상을 판정한다.
+def _meets_alert_condition(row: dict[str, Any]) -> bool:
+    """한 성숙 주가 경고 조건을 만족하는지 본다(A6)."""
+    if row["announcements"] < MIN_WEEK_SAMPLES:
+        return False
+    if row["baseline_multi_announcements"] < MIN_WEEK_SAMPLES:
+        return False
+    adjusted_rate = row.get("adjusted_rate")
+    baseline_multi_rate = row.get("baseline_multi_rate")
+    if adjusted_rate is None or baseline_multi_rate is None:
+        return False
+    # 0.6 - 0.5 같은 부동소수점 오차로 경계값 0.10 이 밀리지 않게 6자리에서 반올림한다.
+    return round(baseline_multi_rate - adjusted_rate, 6) >= RATE_DROP_ALERT
 
-    announcements >= MIN_WEEK_SAMPLES, baseline_announcements >=
-    MIN_WEEK_SAMPLES, baseline_rate - rate >= RATE_DROP_ALERT 세 조건을
-    모두 만족해야 경고 대상이다.
+
+def evaluate_match_rate_alerts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """분류별 최근 성숙 주와 직전 성숙 주가 모두 조건을 만족할 때만 경고한다.
+
+    각 대형 행은 announcements >= MIN_WEEK_SAMPLES,
+    baseline_multi_announcements >= MIN_WEEK_SAMPLES,
+    baseline_multi_rate - adjusted_rate >= RATE_DROP_ALERT 를 만족해야 한다.
+    직전 성숙 주 대형 행이 없으면 경고하지 않는다(A6).
     """
-    latest_large: dict[str, dict[str, Any]] = {}
+    large_by_category: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         if row.get("band") != BAND_LARGE:
             continue
         category = str(row.get("category", ""))
-        current = latest_large.get(category)
-        if current is None or str(row["week_start"]) > str(current["week_start"]):
-            latest_large[category] = row
+        large_by_category.setdefault(category, []).append(row)
 
     alerts: list[dict[str, Any]] = []
     for category in TARGET_CATEGORIES:
-        candidate = latest_large.get(category)
-        if candidate is None:
+        candidates = sorted(
+            large_by_category.get(category, []),
+            key=lambda item: str(item["week_start"]),
+        )
+        if len(candidates) < CONSECUTIVE_ALERT_WEEKS:
             continue
-        row = candidate
-        if row["announcements"] < MIN_WEEK_SAMPLES:
+        latest = candidates[-1]
+        previous = candidates[-2]
+        if not _meets_alert_condition(latest) or not _meets_alert_condition(previous):
             continue
-        if row["baseline_announcements"] < MIN_WEEK_SAMPLES:
-            continue
-        if row["rate"] is None or row["baseline_rate"] is None:
-            continue
-        # 0.6 - 0.5 같은 부동소수점 오차로 경계값 0.10 이 밀리지 않게 6자리에서 반올림한다.
-        drop = round(row["baseline_rate"] - row["rate"], 6)
-        if drop >= RATE_DROP_ALERT:
-            alerts.append(
-                {
-                    "category": category,
-                    "week_start": row["week_start"],
-                    "rate": row["rate"],
-                    "baseline_rate": row["baseline_rate"],
-                    "announcements": row["announcements"],
-                    "baseline_announcements": row["baseline_announcements"],
-                }
-            )
+        alerts.append(
+            {
+                "category": category,
+                "week_start": latest["week_start"],
+                "rate": latest["rate"],
+                "baseline_rate": latest["baseline_rate"],
+                "announcements": latest["announcements"],
+                "baseline_announcements": latest["baseline_announcements"],
+                "adjusted_rate": latest["adjusted_rate"],
+                "baseline_multi_rate": latest["baseline_multi_rate"],
+                "previous_week_start": previous["week_start"],
+                "previous_adjusted_rate": previous["adjusted_rate"],
+                "previous_baseline_multi_rate": previous["baseline_multi_rate"],
+            }
+        )
     return alerts
