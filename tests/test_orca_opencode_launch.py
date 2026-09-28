@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from scripts.orca_opencode_launch import (
     REVIEWER_NOTICE,
     build_command,
     build_completion_message,
+    build_env,
     main,
     open_interactive_shell,
     resolve_shell,
@@ -327,19 +329,80 @@ def test_build_command_kilo_binary_with_variant():
     ]
 
 
-def test_build_command_rejects_variant_in_interactive_mode():
-    """대화형 TUI 에는 --variant 가 없으므로 조용히 버리지 않고 거부해야 합니다."""
+def test_build_command_rejects_variant_in_opencode_interactive_mode():
+    """opencode 대화형 TUI 에는 --variant 가 없으므로 조용히 버리지 않고 거부해야 합니다."""
     with pytest.raises(ValueError):
         build_command("openrouter/stealth/space-bunny-alpha", "지시문", variant="max")
 
 
-def test_main_rejects_variant_without_one_shot(tmp_path: Path):
+def test_main_rejects_variant_without_one_shot_for_opencode(tmp_path: Path):
     target = tmp_path / "preamble_variant.txt"
     target.write_text("지시문", encoding="utf-8")
     with pytest.raises(SystemExit) as exc:
         main(["--model", "m", "--preamble", str(target), "--variant", "max"])
     assert exc.value.code == 2
     assert target.exists()
+
+
+def test_build_command_kilo_interactive_variant_selects_injected_agent():
+    """kilo 대화형 등급은 --model 대신 주입 에이전트를 골라 TUI 로 띄워야 합니다."""
+    cmd = build_command(
+        "openrouter/stealth/space-bunny-alpha",
+        "지시문",
+        auto=True,
+        binary="kilo",
+        variant="max",
+    )
+    assert cmd == ["kilo", "--agent", "orca-worker", "--auto", "--prompt", "지시문"]
+
+
+def test_build_env_injects_kilo_agent_with_model_and_variant():
+    env = build_env(
+        {"PATH": "/bin"}, "openrouter/stealth/space-bunny-alpha", binary="kilo", variant="max"
+    )
+    agent = json.loads(env["KILO_CONFIG_CONTENT"])["agent"]["orca-worker"]
+    assert agent["model"] == "openrouter/stealth/space-bunny-alpha"
+    assert agent["variant"] == "max"
+    assert env["PATH"] == "/bin"
+
+
+def test_build_env_leaves_env_untouched_without_kilo_interactive_variant():
+    base = {"PATH": "/bin"}
+    assert build_env(base, "m", binary="opencode", variant=None) == base
+    assert build_env(base, "m", binary="kilo", variant=None) == base
+    assert build_env(base, "m", binary="kilo", one_shot=True, variant="max") == base
+
+
+def test_build_env_refuses_to_overwrite_existing_kilo_config():
+    with pytest.raises(ValueError):
+        build_env({"KILO_CONFIG_CONTENT": "{}"}, "m", binary="kilo", variant="max")
+
+
+@patch("scripts.orca_opencode_launch.os.execvpe")
+def test_main_kilo_interactive_execs_tui_with_injected_agent(
+    mock_exec: MagicMock, tmp_path: Path, monkeypatch
+):
+    monkeypatch.delenv("KILO_CONFIG_CONTENT", raising=False)
+    target = tmp_path / "preamble_kilo_tui.txt"
+    target.write_text("지시문", encoding="utf-8")
+    code = main(
+        [
+            "--binary",
+            "kilo",
+            "--model",
+            "openrouter/stealth/space-bunny-alpha",
+            "--preamble",
+            str(target),
+            "--variant",
+            "max",
+            "--auto",
+            "--no-commit-notice",
+        ]
+    )
+    assert code == 0
+    cmd, env = mock_exec.call_args[0][1], mock_exec.call_args[0][2]
+    assert cmd[:3] == ["kilo", "--agent", "orca-worker"]
+    assert json.loads(env["KILO_CONFIG_CONTENT"])["agent"]["orca-worker"]["variant"] == "max"
 
 
 def test_main_rejects_unknown_variant(tmp_path: Path):
