@@ -1,6 +1,6 @@
 """OpenCode 워커를 다른 CLI 워커와 같은 방식으로 터미널에 붙이는 런처.
 
-OpenCode CLI 를 Orca 워커로 씁니다. 터미널을 런처를 명령으로 지정해 먼저 만들고,
+OpenCode CLI 와 그 포크인 Kilo CLI(--binary kilo)를 Orca 워커로 씁니다. 터미널을 런처를 명령으로 지정해 먼저 만들고,
 런처는 preamble 파일이 나타날 때까지 기다렸다가 opencode 를 기동합니다.
 
 대화형 모드는 opencode --prompt [prompt] 로 기동하며 os.execvpe 로 제어권을 넘깁니다.
@@ -10,6 +10,11 @@ OpenCode CLI 를 Orca 워커로 씁니다. 터미널을 런처를 명령으로 �
     orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
       --command "uv run python scripts/orca_opencode_launch.py --model openai/gpt-5.6-turbo"
     orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json
+
+추론 등급(--variant)은 run 단발 모드에만 있어 --one-shot 과 함께만 받습니다. 두 CLI 모두
+모르는 값을 오류 없이 무시하므로 허용 값을 여기서 제한합니다.
+
+    --binary kilo --model openrouter/stealth/space-bunny-alpha --one-shot --variant max --auto
 """
 
 from __future__ import annotations
@@ -29,6 +34,8 @@ from scripts import orca_worker_launch_common as common  # noqa: E402
 PERMISSION_SETUP_FLAG = common.PERMISSION_SETUP_FLAG
 DEFAULT_PREAMBLE = common.DEFAULT_PREAMBLE
 DEFAULT_SHELL = "/bin/bash"
+SUPPORTED_BINARIES = ("opencode", "kilo")
+SUPPORTED_VARIANTS = ("low", "medium", "high", "xhigh", "max")
 COMMIT_NOTICE = common.COMMIT_NOTICE
 REVIEWER_NOTICE = common.REVIEWER_NOTICE
 
@@ -41,6 +48,8 @@ def build_command(
     *,
     one_shot: bool = False,
     auto: bool = False,
+    binary: str = "opencode",
+    variant: str | None = None,
 ) -> list[str]:
     """opencode 기동 명령 배열을 조립합니다.
 
@@ -48,14 +57,18 @@ def build_command(
     모델은 -m 또는 --model 로 provider/model 형태입니다.
     권한 자동 승인 인자(--auto)는 기본으로 붙이지 않으며 명시적으로 요청될 때만 포함합니다.
     """
+    if variant is not None and not one_shot:
+        raise ValueError("--variant 는 run 단발 모드(--one-shot)에서만 쓸 수 있습니다")
     if one_shot:
-        cmd = ["opencode", "run", "--model", model]
+        cmd = [binary, "run", "--model", model]
+        if variant is not None:
+            cmd.extend(["--variant", variant])
         if auto:
             cmd.append("--auto")
         cmd.append(prompt)
         return cmd
 
-    cmd = ["opencode", "--model", model]
+    cmd = [binary, "--model", model]
     if auto:
         cmd.append("--auto")
     cmd.extend(["--prompt", prompt])
@@ -114,6 +127,18 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="OpenCode 모델 ID (provider/model 형태, 예: openai/gpt-5.6-turbo, anthropic/claude-3-7-sonnet)",
     )
+    parser.add_argument(
+        "--binary",
+        choices=SUPPORTED_BINARIES,
+        default="opencode",
+        help="실행할 CLI (opencode 또는 kilo. 기본 opencode)",
+    )
+    parser.add_argument(
+        "--variant",
+        choices=SUPPORTED_VARIANTS,
+        default=None,
+        help="추론 등급. --one-shot 과 함께만 씁니다.",
+    )
     parser.add_argument("--preamble", type=Path, default=DEFAULT_PREAMBLE)
     parser.add_argument("--timeout-sec", type=float, default=300.0)
     parser.add_argument(
@@ -143,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
         help="단발 실행 종료 후 셸로 이어받지 않고 종료 코드를 그대로 반환합니다.",
     )
     args = parser.parse_args(argv)
+    if args.variant is not None and not args.one_shot:
+        parser.error("--variant 는 --one-shot 과 함께만 쓸 수 있습니다")
 
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
@@ -163,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
         prompt,
         one_shot=args.one_shot,
         auto=args.auto,
+        binary=args.binary,
+        variant=args.variant,
     )
 
     common.schedule_permission_setup(
@@ -172,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     mode = "run 단발" if args.one_shot else "대화형"
-    print(f"기동: opencode --model {args.model} ({mode}, 지시문 {len(prompt)}자)", flush=True)
+    print(f"기동: {args.binary} --model {args.model} ({mode}, 지시문 {len(prompt)}자)", flush=True)
 
     if args.one_shot:
         exit_code = run_opencode(cmd, env)
