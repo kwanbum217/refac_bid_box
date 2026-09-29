@@ -271,11 +271,18 @@ def _later_cancelled_max_ords(db: Session, numbers: set[str]) -> dict[tuple[str,
 def _is_later_cancelled(
     no: str, ord_: Any, category: str, max_cancel_ords: dict[tuple[str, str], int]
 ) -> bool:
-    """같은 공고번호·분류의 더 큰 정규화 차수에 취소공고 행이 있으면 True 다."""
+    """같은 공고번호·분류의 더 큰 정규화 차수에 취소공고 행이 있으면 True 다.
+
+    공고 행의 차수가 정수로 해석되지 않으면 '나중 차수 취소' 대상이 아니므로
+    False 를 돌려준다.
+    """
+    ord_value = _ord_as_int(ord_)
+    if ord_value < 0:
+        return False
     max_ord = max_cancel_ords.get((no, category))
     if max_ord is None:
         return False
-    return max_ord > _ord_as_int(ord_)
+    return max_ord > ord_value
 
 
 def compute_result_match_rates(

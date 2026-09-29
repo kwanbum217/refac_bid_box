@@ -21,6 +21,7 @@ from src.app.services.result_coverage import (
     LARGE_PRICE_THRESHOLD,
     MIN_WEEK_SAMPLES,
     NOTICE_LOOKBACK_DAYS,
+    _is_later_cancelled,
     compute_result_match_rates,
     evaluate_match_rate_alerts,
     normalize_ord,
@@ -1218,3 +1219,64 @@ def test_later_cancelled_flag_defaults_from_settings(isolated_db, monkeypatch):
     monkeypatch.setattr(settings, "RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED", True)
     on = _row_of(compute_result_match_rates(db, as_of=AS_OF, weeks=1), "Servc", "small", W)
     assert on["announcements"] == 0
+
+
+def test_later_cancelled_nonnumeric_announcement_ord_is_not_target(isolated_db):
+    """공고 행 차수가 'A1' 이면 더 큰 차수 취소공고가 있어도 대상이 아니다."""
+    db = isolated_db
+    _add_announcement(db, "2026-A20001", "A1", "Servc", W, ntce_kind_nm="일반공고")
+    _add_announcement(db, "2026-A20001", "001", "Servc", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    assert _is_later_cancelled("2026-A20001", "A1", "Servc", {("2026-A20001", "Servc"): 1}) is False
+
+    row = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 1
+    assert row["matched"] == 0
+    assert row["rate"] == pytest.approx(0.0)
+    assert row["later_cancelled_excluded"] == 0
+    assert row["cancel_adjusted_announcements"] == 1
+    assert row["cancel_adjusted_rate"] == pytest.approx(0.0)
+
+
+def test_later_cancelled_nonnumeric_cancel_ord_is_ignored(isolated_db):
+    """비숫자 취소 차수만 있는 공고는 숫자 공고 행의 대상이 아니다."""
+    db = isolated_db
+    _add_announcement(db, "2026-A30001", "000", "Servc", W, ntce_kind_nm="일반공고")
+    _add_announcement(db, "2026-A30001", "A1", "Servc", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    row = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 1
+    assert row["matched"] == 0
+    assert row["later_cancelled_excluded"] == 0
+    assert row["cancel_adjusted_announcements"] == 1
+
+
+def test_later_cancelled_numeric_ord_still_target(isolated_db):
+    """숫자 차수 000 공고 + 001 취소공고는 방어 추가 후에도 여전히 대상이다."""
+    db = isolated_db
+    _add_announcement(db, "2026-A40001", "000", "Servc", W, ntce_kind_nm="일반공고")
+    _add_announcement(db, "2026-A40001", "001", "Servc", W, ntce_kind_nm="취소공고")
+    db.commit()
+
+    assert _is_later_cancelled("2026-A40001", "000", "Servc", {("2026-A40001", "Servc"): 1}) is True
+
+    row = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_later_cancelled=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 0
+    assert row["later_cancelled_excluded"] == 1
