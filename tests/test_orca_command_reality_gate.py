@@ -10,20 +10,14 @@
 from __future__ import annotations
 
 import inspect
-import shutil
 
 import pytest
 
+from scripts import orca_level1_gate as orca_gate
 from scripts.orca_level1_gate import (
     check_command_reality,
     collect_script_options,
     run_gate10_command_reality,
-)
-
-# docker 도움말을 얻어야 판정할 수 있는 테스트에만 겁니다. 설정이 모듈 전역이면
-# docker 가 없는 환경에서 파이썬 스크립트 검사 테스트까지 함께 건너뜁니다.
-DOCKER_REQUIRED = pytest.mark.skipif(
-    shutil.which("docker") is None, reason="docker 실행기가 없어 도움말을 얻을 수 없습니다"
 )
 
 
@@ -34,7 +28,33 @@ def _write(tmp_path, rel: str, text: str) -> str:
     return rel
 
 
-@DOCKER_REQUIRED
+# docker 도움말 조회는 실행기 설치 여부에 따라 결과가 달라집니다. 조회가 실패하면
+# 검사 수가 0 이 되어 판정이 뒤집힙니다. 도움말을 고정 출력으로 바꾸고 실제 docker
+# 프로세스 호출은 가드로 막아, docker 없이도 같은 판정을 냅니다.
+_FAKE_HELP = {
+    "docker compose up": "-d, --no-deps, --force-recreate\n",
+    "docker compose config": "-q, --quiet\n",
+}
+
+
+def _fake_help(argv: list[str]) -> str:
+    """아는 키에는 그 플래그만 담고, 나머지 키에는 빈 옵션 목록을 돌려줍니다."""
+    return _FAKE_HELP.get(" ".join(argv), "")
+
+
+@pytest.fixture(autouse=True)
+def _fake_docker_help(monkeypatch):
+    monkeypatch.setattr(orca_gate, "_help_text", _fake_help)
+    real_run = orca_gate.subprocess.run
+
+    def _guarded_run(argv, *args, **kwargs):
+        if argv and argv[0] == "docker":
+            raise AssertionError(f"테스트가 docker 프로세스를 호출했습니다: {argv}")
+        return real_run(argv, *args, **kwargs)
+
+    monkeypatch.setattr(orca_gate.subprocess, "run", _guarded_run)
+
+
 def test_detects_nonexistent_flag(tmp_path):
     rel = _write(
         tmp_path,
@@ -46,7 +66,6 @@ def test_detects_nonexistent_flag(tmp_path):
     assert any("-e" in v for v in violations)
 
 
-@DOCKER_REQUIRED
 def test_accepts_valid_flags(tmp_path):
     rel = _write(
         tmp_path,
@@ -58,7 +77,6 @@ def test_accepts_valid_flags(tmp_path):
     assert violations == []
 
 
-@DOCKER_REQUIRED
 def test_inline_code_backticks_do_not_create_false_flags(tmp_path):
     rel = _write(tmp_path, "docs/inline.md", "실행은 `docker compose config -q` 입니다.\n")
     violations, _warnings, _skipped, _checked = check_command_reality(tmp_path, [rel])
@@ -79,7 +97,6 @@ def test_missing_script_path_is_warning_not_violation(tmp_path):
     assert any("scripts/nope.py" in w for w in warnings)
 
 
-@DOCKER_REQUIRED
 def test_gate_fails_on_violation_and_passes_otherwise(tmp_path):
     bad = _write(tmp_path, "docs/bad.md", "```bash\ndocker compose up -e FOO=bar app\n```\n")
     result = run_gate10_command_reality(tmp_path, [bad])
@@ -97,7 +114,6 @@ def test_unrelated_files_are_ignored(tmp_path):
     assert violations == []
 
 
-@DOCKER_REQUIRED
 def test_ignore_marker_exempts_intentional_counterexample(tmp_path):
     """문서가 일부러 적는 반례는 표시로 검사에서 뺍니다."""
     rel = _write(
