@@ -48,6 +48,7 @@ from src.ml.features import (
 )
 from src.ml.institution_history import attach_institution_history
 from src.ml.monitoring import (
+    apply_drift_persistence,
     check_dataset_drift,
     load_baseline_distributions,
 )
@@ -728,6 +729,51 @@ def _compute_drift_assessment_thread(
     )
 
 
+def _previous_window_drift(
+    model_name: str,
+    now: datetime,
+    window_days: int,
+) -> bool | None:
+    """겹치지 않는 직전 평가 창이 창 드리프트였는지 retrain_logs 에서 조회합니다.
+
+    구간은 [now - 2*window_days일 - 12시간, now - window_days일 + 12시간] 이며, 이번 창과
+    겹치지 않는 직전 창의 기록만 봅니다. 기록이 없거나(규칙 도입 이전) metrics_summary 에
+    window_drift 가 없으면 None 을 돌려줍니다.
+    """
+    from sqlalchemy import select
+
+    interval_start = now - timedelta(days=2 * window_days, hours=12)
+    interval_end = now - timedelta(days=window_days) + timedelta(hours=12)
+
+    session = SessionLocal()
+    try:
+        row = session.execute(
+            select(RetrainLog)
+            .where(
+                RetrainLog.trigger_source == "drift_monitor",
+                RetrainLog.champion_version == model_name,
+                RetrainLog.created_at >= interval_start,
+                RetrainLog.created_at <= interval_end,
+            )
+            .order_by(RetrainLog.created_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+    except Exception:
+        logger.warning(
+            "직전 창 드리프트 이력 조회에 실패해 보류(None)로 처리합니다 (model=%s)",
+            model_name,
+            exc_info=True,
+        )
+        return None
+    finally:
+        session.close()
+
+    if row is None or not isinstance(row.metrics_summary, dict):
+        return None
+    value = row.metrics_summary.get("window_drift")
+    return value if isinstance(value, bool) else None
+
+
 def is_drift_monitor_enabled() -> bool:
     """PSI 드리프트 모니터링 활성화 여부 확인. (기본값: False)"""
     return bool(settings.ML_DRIFT_MONITOR_ENABLED)
@@ -880,6 +926,18 @@ async def _run_drift_monitor(
                     }
                     continue
 
+                # 겹치지 않는 직전 창의 창 드리프트 여부로 지속성 조건을 적용합니다.
+                # 창 드리프트가 아니면 직전 창 값이 상태를 바꾸지 않아 조회를 생략합니다.
+                previous_window_drift: bool | None = None
+                if drift_verdict["status"] == "DRIFT_DETECTED":
+                    previous_window_drift = await asyncio.to_thread(
+                        _previous_window_drift,
+                        model_name,
+                        now,
+                        evaluation_window_days,
+                    )
+                drift_verdict = apply_drift_persistence(drift_verdict, previous_window_drift)
+
                 # retrain_logs 에 기록
                 await asyncio.to_thread(
                     _record_drift_log,
@@ -898,6 +956,7 @@ async def _run_drift_monitor(
                     "samples": drift_verdict["recent_samples"],
                     "drift_feature_count": drift_verdict["drift_feature_count"],
                     "drift_features": drift_verdict["drift_features"],
+                    "window_drift": drift_verdict.get("window_drift"),
                     "by_subgroup": drift_verdict.get("by_subgroup"),
                     "drift_subgroup_type": drift_verdict.get("drift_subgroup_type"),
                 }
@@ -935,7 +994,8 @@ async def _run_drift_monitor(
             "failed"
             if has_failure
             and not any(
-                r.get("status") in ("STABLE", "DRIFT_DETECTED", "INSUFFICIENT_DATA", "skipped")
+                r.get("status")
+                in ("STABLE", "DRIFT_DETECTED", "DRIFT_PENDING", "INSUFFICIENT_DATA", "skipped")
                 for r in results.values()
             )
             else ("partial_failure" if has_failure else "success")

@@ -188,7 +188,7 @@ def test_subgroup_drift_thresholds_and_relaxation(tmp_path):
         }
     )
 
-    result_mild = check_dataset_drift(baseline_dist, df_recent_mild)
+    result_mild = check_dataset_drift(baseline_dist, df_recent_mild, excluded_features=(), quorum=1)
     sub_0 = result_mild["by_subgroup"][SUBGROUP_KEY_WITH_LWLT]
     sub_1 = result_mild["by_subgroup"][SUBGROUP_KEY_MISSING_LWLT]
 
@@ -217,7 +217,9 @@ def test_subgroup_drift_thresholds_and_relaxation(tmp_path):
         }
     )
 
-    result_severe = check_dataset_drift(baseline_dist, df_recent_severe)
+    result_severe = check_dataset_drift(
+        baseline_dist, df_recent_severe, excluded_features=(), quorum=1
+    )
     sub_0_sev = result_severe["by_subgroup"][SUBGROUP_KEY_WITH_LWLT]
     sub_1_sev = result_severe["by_subgroup"][SUBGROUP_KEY_MISSING_LWLT]
 
@@ -263,7 +265,7 @@ def test_subgroup_either_group_triggers_overall_retrain(tmp_path):
         }
     )
 
-    res_with = check_dataset_drift(baseline_dist, df_with_drift)
+    res_with = check_dataset_drift(baseline_dist, df_with_drift, excluded_features=(), quorum=1)
     assert res_with["status"] == "DRIFT_DETECTED"
     assert res_with["overall_action"] == "TRIGGER_RETRAIN"
     assert res_with["drift_subgroup_type"] == "with_lwlt_only"
@@ -282,7 +284,7 @@ def test_subgroup_either_group_triggers_overall_retrain(tmp_path):
         }
     )
 
-    res_both = check_dataset_drift(baseline_dist, df_both_drift)
+    res_both = check_dataset_drift(baseline_dist, df_both_drift, excluded_features=(), quorum=1)
     assert res_both["status"] == "DRIFT_DETECTED"
     assert res_both["overall_action"] == "TRIGGER_RETRAIN"
     assert res_both["drift_subgroup_type"] == "both"
@@ -444,6 +446,19 @@ async def test_drift_monitor_task_end_to_end_subgroup(isolated_db, tmp_path, mon
         return df_recent
 
     monkeypatch.setattr("src.tasks.scheduled_tasks.build_training_dataset", _mock_build_dataset)
+
+    # 지속성·정족수 규칙 도입 이전의 단일 창 동작을 유지하기 위해 판정 인자를 고정합니다.
+    import src.tasks.scheduled_tasks as _sched
+
+    _real_check = _sched.check_dataset_drift
+
+    def _legacy_check(baseline_dist, df_feat, **kwargs):
+        kwargs.setdefault("excluded_features", ())
+        kwargs.setdefault("quorum", 1)
+        return _real_check(baseline_dist, df_feat, **kwargs)
+
+    monkeypatch.setattr("src.tasks.scheduled_tasks.check_dataset_drift", _legacy_check)
+    monkeypatch.setattr("src.tasks.scheduled_tasks._previous_window_drift", lambda *a, **k: True)
 
     mock_notify = AsyncMock()
     monkeypatch.setattr("src.tasks.scheduled_tasks.notify_drift_detected", mock_notify)
