@@ -157,6 +157,78 @@ def test_meili_search_supports_license_code_filter(monkeypatch):
     )
 
 
+def test_meili_search_single_license_codes_list_matches_legacy_filter(monkeypatch):
+    """코드 하나짜리 리스트는 기존 단일 코드 인자와 같은 필터 문자열을 만든다."""
+    response = Mock()
+    response.content = b"{}"
+    response.json.return_value = {"hits": [], "estimatedTotalHits": 0}
+    response.raise_for_status.return_value = None
+    request = Mock(return_value=response)
+    monkeypatch.setattr(httpx, "request", request)
+
+    MeiliSearchClient(base_url="http://search", master_key="test-key").search(
+        query="",
+        dataset="announcement",
+        category="Servc",
+        region=None,
+        sort=["bid_ntce_dt:desc"],
+        offset=0,
+        limit=20,
+        license_codes=["0036"],
+    )
+
+    assert request.call_args.kwargs["json"]["filter"] == (
+        'dataset = "announcement" AND category = "Servc" AND license_codes = "0036"'
+    )
+
+
+def test_meili_search_multiple_license_codes_uses_in_filter(monkeypatch):
+    """코드가 둘 이상이면 하나라도 해당하면 통과하는 IN 필터를 만든다."""
+    response = Mock()
+    response.content = b"{}"
+    response.json.return_value = {"hits": [], "estimatedTotalHits": 0}
+    response.raise_for_status.return_value = None
+    request = Mock(return_value=response)
+    monkeypatch.setattr(httpx, "request", request)
+
+    MeiliSearchClient(base_url="http://search", master_key="test-key").search(
+        query="",
+        dataset="announcement",
+        category=None,
+        region=None,
+        sort=["bid_ntce_dt:desc"],
+        offset=0,
+        limit=20,
+        license_codes=["1164", "1167", "2775"],
+    )
+
+    assert request.call_args.kwargs["json"]["filter"] == (
+        'dataset = "announcement" AND license_codes IN ["1164", "1167", "2775"]'
+    )
+
+
+def test_meili_search_omits_license_codes_in_filter_when_absent(monkeypatch):
+    response = Mock()
+    response.content = b"{}"
+    response.json.return_value = {"hits": [], "estimatedTotalHits": 0}
+    response.raise_for_status.return_value = None
+    request = Mock(return_value=response)
+    monkeypatch.setattr(httpx, "request", request)
+
+    MeiliSearchClient(base_url="http://search", master_key="test-key").search(
+        query="",
+        dataset="announcement",
+        category=None,
+        region=None,
+        sort=["bid_ntce_dt:desc"],
+        offset=0,
+        limit=20,
+        license_codes=None,
+    )
+
+    assert "license_codes" not in request.call_args.kwargs["json"]["filter"]
+
+
 def test_configure_index_supports_full_dataset_pagination_and_rate_filter(monkeypatch):
     response = Mock(content=b"")
     response.raise_for_status.return_value = None

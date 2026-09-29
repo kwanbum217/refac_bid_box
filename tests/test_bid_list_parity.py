@@ -330,3 +330,72 @@ def test_bid_list_industry_filter_mysql_fallback(monkeypatch, isolated_db):
     ids_invalid = [row.id for row in page_invalid.object_list]
     assert ann_telco.id in ids_invalid
     assert ann_other.id in ids_invalid
+
+
+def test_bid_list_multi_license_filter_meili_db_parity(monkeypatch, isolated_db):
+    """Meili(license_codes 배열 IN)와 DB(LIKE OR) 경로가 같은 공고 집합을 낸다.
+
+    Meili 쪽 기대값은 실제 색인 문서의 license_codes 배열이 질의 코드와 하나라도
+    겹치는지로 계산하고, DB 쪽은 같은 조건을 LIKE OR 로 실행해 대조합니다.
+    """
+    from src.app.core.config import settings
+    from src.app.services.search_index import announcement_document, extract_license_codes
+
+    monkeypatch.setattr(settings, "MEILI_ENABLED", False, raising=False)
+    now = utcnow()
+    guard = _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-LIC-PARITY-GUARD",
+        bid_ntce_nm="경비 공고",
+        category="Servc",
+        bid_ntce_dt=now,
+    )
+    cleaning = _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-LIC-PARITY-CLEAN",
+        bid_ntce_nm="위생 공고",
+        category="Servc",
+        bid_ntce_dt=now,
+    )
+    neither = _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-LIC-PARITY-NONE",
+        bid_ntce_nm="해당 없음",
+        category="Servc",
+        bid_ntce_dt=now,
+    )
+    limit_texts = {
+        "ANN-LIC-PARITY-GUARD": "경비업/1164",
+        "ANN-LIC-PARITY-CLEAN": "[위생관리업/1167]",
+        "ANN-LIC-PARITY-NONE": "세무사업/9999",
+    }
+    isolated_db.add_all(
+        [
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=ntce_no,
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                lcns_lmt_nm=text,
+                collected_at=now,
+            )
+            for ntce_no, text in limit_texts.items()
+        ]
+    )
+    isolated_db.commit()
+
+    query_codes = {"1164", "1167"}
+
+    meili_ids: set[int] = set()
+    for row in (guard, cleaning, neither):
+        document = announcement_document(
+            row, license_codes=extract_license_codes(limit_texts[row.bid_ntce_no])
+        )
+        if set(document["license_codes"]) & query_codes:
+            meili_ids.add(int(document["source_id"]))
+
+    db_page = bid_queries.list_announcements(isolated_db, lic="1164,1167")
+    db_ids = {row.id for row in db_page.object_list if row.bid_ntce_no.startswith("ANN-LIC-PARITY")}
+
+    assert meili_ids == {guard.id, cleaning.id}
+    assert db_ids == meili_ids

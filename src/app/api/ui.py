@@ -179,7 +179,7 @@ def bid_list(
 ):
     if user is None:
         return _login_redirect(request)
-    normalized_lic = bid_queries.normalize_license_code(lic)
+    normalized_lic = ",".join(bid_queries.normalize_license_codes(lic))
     qualification_only = qual == "1"
     try:
         page_obj = bid_queries.list_announcements(

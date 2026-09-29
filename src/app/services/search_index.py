@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -209,6 +209,7 @@ class MeiliSearchClient:
         offset: int,
         limit: int,
         license_code: str | None = None,
+        license_codes: Sequence[str] | None = None,
         qualification_only: bool = False,
     ) -> SearchPage:
         filters = [f"dataset = {json.dumps(dataset, ensure_ascii=False)}"]
@@ -216,7 +217,17 @@ class MeiliSearchClient:
             filters.append(f"category = {json.dumps(category, ensure_ascii=False)}")
         if region:
             filters.append(f"region_codes = {json.dumps(region, ensure_ascii=False)}")
-        if license_code:
+        # 코드 하나면 기존과 같은 등호 필터를, 둘 이상이면 하나라도 해당하면 통과하는
+        # IN 필터를 만듭니다.
+        if license_codes:
+            if len(license_codes) == 1:
+                filters.append(
+                    f"license_codes = {json.dumps(license_codes[0], ensure_ascii=False)}"
+                )
+            else:
+                encoded = ", ".join(json.dumps(code, ensure_ascii=False) for code in license_codes)
+                filters.append(f"license_codes IN [{encoded}]")
+        elif license_code:
             filters.append(f"license_codes = {json.dumps(license_code, ensure_ascii=False)}")
         if qualification_only:
             filters.append("qualification_analyzable = true")

@@ -179,6 +179,31 @@ def normalize_license_code(lic: str | None) -> str:
     return candidate if len(candidate) == 4 and candidate.isdigit() else ""
 
 
+MAX_LICENSE_FILTER_CODES = 10
+
+
+def normalize_license_codes(lic: str | None) -> list[str]:
+    """쉼표로 구분한 업종 코드를 정규화합니다.
+
+    각 토큰의 앞뒤 공백을 제거해 4자리 숫자만 남기고, 처음 나온 순서를 유지하며
+    중복을 제거합니다. 필터 문자열이 비대해지지 않도록 최대 MAX_LICENSE_FILTER_CODES
+    개까지만 받습니다.
+    """
+    codes: list[str] = []
+    seen: set[str] = set()
+    for token in (lic or "").split(","):
+        candidate = token.strip()
+        if len(candidate) != 4 or not candidate.isdigit():
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        codes.append(candidate)
+        if len(codes) >= MAX_LICENSE_FILTER_CODES:
+            break
+    return codes
+
+
 def get_top_industry_choices(db: Session, limit: int = 200) -> list[dict[str, Any]]:
     cached = cache.get(TOP_INDUSTRY_CHOICES_CACHE_KEY)
     if isinstance(cached, list):
@@ -491,7 +516,7 @@ def _search_index_page(
     region: str | None,
     sort: list[str],
     page_number: int,
-    license_code: str | None = None,
+    license_codes: list[str] | None = None,
     qualification_only: bool = False,
 ) -> OffsetPage:
     from src.app.services.search_index import MeiliSearchClient
@@ -505,8 +530,12 @@ def _search_index_page(
         "offset": (page_number - 1) * PAGE_SIZE,
         "limit": PAGE_SIZE,
     }
-    if license_code is not None:
-        search_kwargs["license_code"] = license_code
+    # 코드 하나면 기존 단일 코드 인자를 그대로 써 검색 필터 문자열을 보존합니다.
+    if license_codes:
+        if len(license_codes) == 1:
+            search_kwargs["license_code"] = license_codes[0]
+        else:
+            search_kwargs["license_codes"] = license_codes
     if qualification_only:
         search_kwargs["qualification_only"] = True
     result = MeiliSearchClient().search(**search_kwargs)
@@ -543,7 +572,7 @@ def list_announcements(
     qualification_only: bool = False,
 ) -> OffsetPage:
     region_code = normalize_region_code(region)
-    license_code = normalize_license_code(lic)
+    license_codes = normalize_license_codes(lic)
     sort_key = normalize_bid_sort(sort)
     page_number = max(page, 1)
     query = (q or "").strip()
@@ -560,7 +589,7 @@ def list_announcements(
                 dataset="announcement",
                 category=cat or None,
                 region=region_code or None,
-                license_code=license_code or None,
+                license_codes=license_codes or None,
                 qualification_only=qualification_only,
                 sort=_announcement_search_sort(sort_key),
                 page_number=page_number,
@@ -588,17 +617,19 @@ def list_announcements(
     if region_code:
         stmt = stmt.where(_region_match_clause(BID_REGION_BY_CODE[region_code]["aliases"]))
 
-    if license_code:
-        pattern = f"%/{license_code}%"
+    if license_codes:
+        # 여러 코드는 각 코드의 LIKE 조건을 OR 로 묶어, 하나라도 참가자격이면 통과시킵니다.
+        like_clauses: list[Any] = []
+        for code in license_codes:
+            pattern = f"%/{code}%"
+            like_clauses.append(BidAnnouncementLicenseLimit.lcns_lmt_nm.like(pattern))
+            like_clauses.append(BidAnnouncementLicenseLimit.permsn_indstryty_list.like(pattern))
         has_license = (
             select(1)
             .where(
                 BidAnnouncementLicenseLimit.bid_ntce_no == BidAnnouncement.bid_ntce_no,
                 BidAnnouncementLicenseLimit.bid_ntce_ord == BidAnnouncement.bid_ntce_ord,
-                or_(
-                    BidAnnouncementLicenseLimit.lcns_lmt_nm.like(pattern),
-                    BidAnnouncementLicenseLimit.permsn_indstryty_list.like(pattern),
-                ),
+                or_(*like_clauses),
             )
             .exists()
         )
