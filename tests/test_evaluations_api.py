@@ -205,7 +205,7 @@ def test_score_table_input_drives_server_calculation(client, isolated_db, as_use
     assert payload["rule_id"] == ATTACH_01_RULE_ID
     # 하한율과 기준비율은 규칙 레지스트리 선언값. API 는 아무 산식 상수도 두지 않는다.
     assert payload["lower_bound_rate"] == pytest.approx(ATTACH_01_LWLT_RATE)
-    assert payload["base_rate"] == pytest.approx(90.0)
+    assert payload["base_rate"] == pytest.approx(93.0)
     # 용역 적격심사는 A값을 적용하지 않는다. raw_data 에 A값이 있어도 두 필드는 항상 null 이다.
     assert payload["a_value_amount"] is None
     assert payload["min_bid_amount_with_a"] is None
@@ -224,25 +224,25 @@ def test_score_table_input_drives_server_calculation(client, isolated_db, as_use
     # x = ROUND_HALF_UP(407,448,800 / 500,000,000, 4) = 0.8149
     base = scenarios["기준"]
     assert base["bid_to_estimated_ratio"] == pytest.approx(0.8149)
-    # P = 20 - 2 * |0.90 - 0.8149| * 100 = 2.98
-    assert base["price_score"] == pytest.approx(2.98)
-    # Q = (60 + 15) + 0 + 0 = 75, 총점 = 77.98 < T 95
+    # P = 20 - 2 * |0.93 - 0.8149| * 100 = -3.02
+    assert base["price_score"] == pytest.approx(-3.02)
+    # Q = (60 + 15) + 0 + 0 = 75, 총점 = 71.98 < T 95
     assert base["qualification_score"] == pytest.approx(75.0)
-    assert base["total_score"] == pytest.approx(77.98)
+    assert base["total_score"] == pytest.approx(71.98)
     assert base["pass_threshold"] == pytest.approx(95.0)
     assert base["is_qualified"] is False
-    assert scenarios["하단"]["price_score"] == pytest.approx(6.30)
-    assert scenarios["상단"]["price_score"] == pytest.approx(-0.22)
+    assert scenarios["하단"]["price_score"] == pytest.approx(0.30)
+    assert scenarios["상단"]["price_score"] == pytest.approx(-6.22)
     # 근로조건 이행계획 0점 경고가 각 시나리오에 남는다
     assert any("근로조건 이행계획" in w for w in base["warnings"])
-    # P_req = 95 - 75 = 20 = B 이므로 역산 하한이 기준비율 자체(90%) 로 실질 구속된다
-    assert payload["min_possible_bid_rate"] == pytest.approx(90.0)
+    # P_req = 95 - 75 = 20 = B 이므로 역산 하한이 기준비율 자체(93%) 로 실질 구속된다
+    assert payload["min_possible_bid_rate"] == pytest.approx(93.0)
 
     # 가격 보완 판정: 도메인 결과를 지수 표기 없는 문자열·정수로 옮긴다
     pc = payload["price_compensation"]
     assert pc is not None
-    assert pc["score_status"] == "already_sufficient"
-    assert pc["score_status_label"] == "하한율로 이미 통과"
+    assert pc["score_status"] == "compensate"
+    assert pc["score_status_label"] == "입찰가격으로 보완"
     assert pc["amount_status"] == "verified"
     assert pc["floor_score_basis"] == "forward_verified"
     # pass_threshold 는 배점표 통과점수 T 이지 비밀번호가 아니다 (S105 오탐)
@@ -250,27 +250,27 @@ def test_score_table_input_drives_server_calculation(client, isolated_db, as_use
     assert pc["non_price_score"] == "75"
     assert pc["p_req"] == "20"
     assert pc["max_price_score"] == "20"
-    assert pc["score_gap"] == "0"
-    assert pc["score_slack"] == "0"
-    assert pc["floor_price_score"] == "20"
-    assert pc["base_rate_percent"] == "90"
+    assert pc["score_gap"] == "6"
+    assert pc["score_slack"] is None
+    assert pc["floor_price_score"] == "14"
+    assert pc["base_rate_percent"] == "93"
     assert pc["announcement_lwlt_rate"] == "89.995"
-    assert pc["calculated_rate_percent"] == "90"
-    assert pc["effective_rate_percent"] == "90"
+    assert pc["calculated_rate_percent"] == "93"
+    assert pc["effective_rate_percent"] == "93"
     assert pc["binding_constraint"] == "CALCULATED_SCORE_RATE"
     assert pc["score_floor_amount"] == 449_975_000
-    # 하한 금액으로 이미 P_req 를 충족하므로 금액을 더 올리지 않는다
+    # 하한 금액(기준비율 0.90)은 P_req 20 에 못 미치므로 기준비율 격자까지 금액을 올린다
     pc_scenarios = {s["scenario_name"]: s for s in pc["scenarios"]}
     assert list(pc_scenarios) == ["하단", "기준", "상단"]
     assert [pc_scenarios[name]["complement_bid_amount"] for name in ("하단", "기준", "상단")] == [
-        440_975_500,
-        449_975_000,
-        458_974_500,
+        455_675_500,
+        464_975_000,
+        474_274_500,
     ]
     for row in pc_scenarios.values():
-        assert row["row_status"] == "already_sufficient"
-        assert row["verified_price_ratio"] == "0.9000"
-        assert row["bid_rate_percent"] == "89.995"
+        assert row["row_status"] == "compensate"
+        assert row["verified_price_ratio"] == "0.9300"
+        assert row["bid_rate_percent"] == "92.995"
         assert row["verified_price_score"] == "20"
         assert row["ratio_steps_raised"] == 0
         assert row["meets_p_req"] is True
@@ -294,13 +294,14 @@ def test_announcement_lower_rate_binds_when_score_is_easy(client, isolated_db, a
     assert response.status_code == 200, response.text
     payload = response.json()
     scenarios = {s["scenario_name"]: s for s in payload["scenario_results"]}
-    # x = 0.8980 -> P = 20 - 2*0.20 = 19.60, Q = 83 -> 총점 102.60 >= 95
+    # x = 0.8980 -> P = 20 - 2*3.20 = 13.60, Q = 83 -> 총점 96.60 >= 95
     assert scenarios["기준"]["bid_to_estimated_ratio"] == pytest.approx(0.8980)
-    assert scenarios["기준"]["price_score"] == pytest.approx(19.60)
-    assert scenarios["기준"]["total_score"] == pytest.approx(102.60)
+    assert scenarios["기준"]["price_score"] == pytest.approx(13.60)
+    assert scenarios["기준"]["total_score"] == pytest.approx(96.60)
     assert scenarios["기준"]["is_qualified"] is True
     assert scenarios["하단"]["is_qualified"] is True
-    assert scenarios["상단"]["is_qualified"] is True
+    # 상단은 x = 0.8804 -> P = 10.08, Q = 83 -> 총점 93.08 < 95 이다
+    assert scenarios["상단"]["is_qualified"] is False
     # P_req = 12 -> 역산 86.0% < 공고 하한율 89.995% 이므로 하한율이 구속한다
     assert payload["min_possible_bid_rate"] == pytest.approx(ATTACH_01_LWLT_RATE)
 
@@ -630,8 +631,8 @@ def test_server_scores_are_not_the_requested_ones(client, isolated_db, as_user):
     echoed = _echoed_sentinel_paths(payload)
     assert echoed == [], f"클라이언트가 보낸 {SENTINEL_SCORE} 가 응답에 되돌아왔습니다: {echoed}"
     base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
-    assert base["price_score"] == pytest.approx(2.98)
-    assert base["total_score"] == pytest.approx(77.98)
+    assert base["price_score"] == pytest.approx(-3.02)
+    assert base["total_score"] == pytest.approx(71.98)
 
 
 def test_disqualification_makes_the_announcement_unqualified(client, isolated_db, as_user):
@@ -652,7 +653,7 @@ def test_disqualification_makes_the_announcement_unqualified(client, isolated_db
     assert response.status_code == 200, response.text
     payload = response.json()
     base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
-    assert base["total_score"] == pytest.approx(102.60)
+    assert base["total_score"] == pytest.approx(96.60)
     assert base["is_qualified"] is False
     assert any("결격" in w for w in base["warnings"])
 

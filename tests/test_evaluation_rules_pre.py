@@ -9,6 +9,7 @@ from src.app.services.evaluation_rules import (
     BLOCK_CODE_RULE_NOT_FOUND,
     BLOCK_CODE_RULE_REGIME_MISMATCH,
     POST_20260526_RULES,
+    POST_20260727_RULES,
     PRE_20230501_RULES,
     PRE_20250901_RULES,
     PRE_20260526_RULES,
@@ -19,7 +20,15 @@ from src.app.services.evaluation_rules import (
 )
 
 FACILITY_METHOD = "적격심사제-시설분야용역 적격심사 추정가격 5억원 미만"
+INSURANCE_METHOD = "적격심사제-보험용역 적격심사 추정가격 5억원미만"
+PASSENGER_METHOD = "적격심사제-여객 육상운송용역 적격심사 추정가격 5억원미만"
+SW_SME_METHOD = "적격심사제-소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만"
 POST_FACILITY_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_01"
+POST_INSURANCE_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_02"
+POST_PASSENGER_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_03"
+POST_SW_SME_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_04"
+POST_20260727_PASSENGER_RULE_ID = "SERVC_QUAL_POST_20260727_ATTACH_03"
+POST_20260727_SW_SME_RULE_ID = "SERVC_QUAL_POST_20260727_ATTACH_04"
 PRE_20250901_FACILITY_RULE_ID = "SERVC_QUAL_PRE_20250901_ATTACH_01"
 PRE_20230501_FACILITY_RULE_ID = "SERVC_QUAL_PRE_20230501_ATTACH_01"
 HIGH_BASE_RATE_SERVICE_TYPES = {"FACILITY", "PASSENGER_TRANSPORT", "SW_SME"}
@@ -135,6 +144,115 @@ class TestAnnouncementDateRegimeRouting:
         assert earlier.is_blocked is False
         assert earlier.rule is not None
         assert earlier.rule.rule_id == PRE_20230501_FACILITY_RULE_ID
+
+
+class TestPostRegimeRouting20260727:
+    """제2026-390호(2026-07-27 시행) 구간 라우팅과 기준비율 검증."""
+
+    def test_260_bundle_rates_at_2026_06_01(self) -> None:
+        facility = _resolve(FACILITY_METHOD, bid_ntce_dt="2026-06-01", rate="89.995")
+        assert facility.is_blocked is False
+        assert facility.rule is not None
+        assert facility.rule.rule_id == POST_FACILITY_RULE_ID
+        assert facility.rule.base_rate == Decimal("0.93")
+        assert facility.effective_lwlt_rate == Decimal("89.995")
+
+        insurance = _resolve(INSURANCE_METHOD, bid_ntce_dt="2026-06-01", rate="47.995")
+        assert insurance.rule is not None
+        assert insurance.rule.rule_id == POST_INSURANCE_RULE_ID
+        assert insurance.rule.base_rate == Decimal("0.88")
+        assert insurance.effective_lwlt_rate == Decimal("47.995")
+
+        passenger = _resolve(PASSENGER_METHOD, bid_ntce_dt="2026-06-01", rate="87.995")
+        assert passenger.rule is not None
+        assert passenger.rule.rule_id == POST_PASSENGER_RULE_ID
+        assert passenger.rule.base_rate == Decimal("0.91")
+        assert passenger.effective_lwlt_rate == Decimal("87.995")
+
+        sw_sme = _resolve(SW_SME_METHOD, bid_ntce_dt="2026-06-01", rate="87.995")
+        assert sw_sme.rule is not None
+        assert sw_sme.rule.rule_id == POST_SW_SME_RULE_ID
+        assert sw_sme.rule.base_rate == Decimal("0.91")
+        assert sw_sme.effective_lwlt_rate == Decimal("87.995")
+
+    def test_2026_07_27_boundary_upgrades_passenger_and_sw_sme(self) -> None:
+        before = _resolve(PASSENGER_METHOD, bid_ntce_dt="2026-07-26", rate="87.995")
+        assert before.is_blocked is False
+        assert before.rule is not None
+        assert before.rule.rule_id == POST_PASSENGER_RULE_ID
+        assert before.rule.base_rate == Decimal("0.91")
+        assert before.effective_lwlt_rate == Decimal("87.995")
+
+        on = _resolve(PASSENGER_METHOD, bid_ntce_dt="2026-07-27", rate="89.995")
+        assert on.is_blocked is False
+        assert on.rule is not None
+        assert on.rule.rule_id == POST_20260727_PASSENGER_RULE_ID
+        assert on.rule.base_rate == Decimal("0.93")
+        assert on.effective_lwlt_rate == Decimal("89.995")
+
+        sw_sme = _resolve(SW_SME_METHOD, bid_ntce_dt="2026-07-27", rate="89.995")
+        assert sw_sme.rule is not None
+        assert sw_sme.rule.rule_id == POST_20260727_SW_SME_RULE_ID
+        assert sw_sme.rule.base_rate == Decimal("0.93")
+        assert sw_sme.effective_lwlt_rate == Decimal("89.995")
+
+        facility = _resolve(FACILITY_METHOD, bid_ntce_dt="2026-07-27", rate="89.995")
+        assert facility.rule is not None
+        assert facility.rule.rule_id == POST_FACILITY_RULE_ID
+        assert facility.rule.base_rate == Decimal("0.93")
+
+    def test_default_call_without_announcement_date_uses_2026_07_27_bundle(self) -> None:
+        sw_sme = _resolve(SW_SME_METHOD, rate="89.995")
+        assert sw_sme.is_blocked is False
+        assert sw_sme.rule is not None
+        assert sw_sme.rule.rule_id == POST_20260727_SW_SME_RULE_ID
+        assert sw_sme.rule.base_rate == Decimal("0.93")
+
+        passenger = _resolve(PASSENGER_METHOD, rate="89.995")
+        assert passenger.rule is not None
+        assert passenger.rule.rule_id == POST_20260727_PASSENGER_RULE_ID
+
+        facility = _resolve(FACILITY_METHOD, rate="89.995")
+        assert facility.rule is not None
+        assert facility.rule.rule_id == POST_FACILITY_RULE_ID
+
+
+class TestPost20260727Declaration:
+    """제2026-390호 벌의 선언 내용과 제2026-260호 벌 객체 재사용 검증."""
+
+    def test_bundle_has_fourteen_unique_ids(self) -> None:
+        assert len(POST_20260727_RULES) == 14
+        rule_ids = [rule.rule_id for rule in POST_20260727_RULES]
+        assert len(rule_ids) == len(set(rule_ids))
+        assert rule_ids == [
+            "SERVC_QUAL_POST_20260526_ATTACH_01",
+            "SERVC_QUAL_POST_20260526_ATTACH_02",
+            POST_20260727_PASSENGER_RULE_ID,
+            POST_20260727_SW_SME_RULE_ID,
+            *[f"SERVC_QUAL_POST_20260526_ATTACH_{index:02d}" for index in range(5, 15)],
+        ]
+
+    def test_only_passenger_and_sw_sme_are_new_objects(self) -> None:
+        assert POST_20260727_RULES[0] is POST_20260526_RULES[0]
+        assert POST_20260727_RULES[1] is POST_20260526_RULES[1]
+        for reused, original in zip(POST_20260727_RULES[4:], POST_20260526_RULES[4:], strict=True):
+            assert reused is original
+        rule_ids = {rule.rule_id for rule in POST_20260727_RULES}
+        assert POST_PASSENGER_RULE_ID not in rule_ids
+        assert POST_SW_SME_RULE_ID not in rule_ids
+
+    def test_upgraded_rules_cite_390_notice(self) -> None:
+        upgraded = {rule.rule_id: rule for rule in POST_20260727_RULES}
+        for rule_id in (POST_20260727_PASSENGER_RULE_ID, POST_20260727_SW_SME_RULE_ID):
+            rule = upgraded[rule_id]
+            assert rule.effective_date == "2026-07-27"
+            assert rule.base_rate == Decimal("0.93")
+            assert rule.lwlt_rate == Decimal("89.995")
+            assert "제2026-390호" in rule.source
+
+    def test_260_upgraded_rules_cite_260_notice(self) -> None:
+        for rule in POST_20260526_RULES[:4]:
+            assert "제2026-260호" in rule.source
 
 
 class TestPreRulesDeclaration:
