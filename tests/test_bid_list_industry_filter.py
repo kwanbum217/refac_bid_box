@@ -368,3 +368,236 @@ def test_top_industry_choices_uses_cache(isolated_db):
     choices3 = bid_queries.get_top_industry_choices(isolated_db)
     codes3 = [c["code"] for c in choices3]
     assert "0037" in codes3
+
+
+# --------------------------------------------------------------------------- #
+# (g) normalize_license_codes: 공백·중복·비숫자·5자리·11개 초과
+# --------------------------------------------------------------------------- #
+
+
+def test_normalize_license_codes_keeps_single_code():
+    assert bid_queries.normalize_license_codes("0036") == ["0036"]
+
+
+def test_normalize_license_codes_strips_spaces_around_tokens():
+    assert bid_queries.normalize_license_codes(" 1164 , 1167 ,1165") == [
+        "1164",
+        "1167",
+        "1165",
+    ]
+
+
+def test_normalize_license_codes_deduplicates_in_first_seen_order():
+    assert bid_queries.normalize_license_codes("1167,1164,1167,1164") == ["1167", "1164"]
+
+
+def test_normalize_license_codes_drops_invalid_tokens():
+    # 3자리·영문·5자리·내부 공백은 버리고 4자리 숫자만 남긴다.
+    assert bid_queries.normalize_license_codes("123,abcd,0036,12345,00 36,1164") == [
+        "0036",
+        "1164",
+    ]
+
+
+@pytest.mark.parametrize("raw", [None, "", "   ", ",,,"])
+def test_normalize_license_codes_returns_empty_for_blank(raw):
+    assert bid_queries.normalize_license_codes(raw) == []
+
+
+def test_normalize_license_codes_caps_at_ten_codes():
+    raw = ",".join(f"100{i}" for i in range(11))
+    codes = bid_queries.normalize_license_codes(raw)
+    assert codes == [f"100{i}" for i in range(10)]
+    assert len(codes) == bid_queries.MAX_LICENSE_FILTER_CODES
+
+
+# --------------------------------------------------------------------------- #
+# (h) /bids/?lic=a,b,c 가 여러 코드를 리스트로 넘긴다
+# --------------------------------------------------------------------------- #
+
+
+def test_bids_route_passes_multiple_lic_codes_to_search(monkeypatch, logged_in_client):
+    search_mock = Mock(return_value=SearchPage(ids=[], has_next=False))
+    monkeypatch.setattr(settings, "MEILI_ENABLED", True, raising=False)
+    monkeypatch.setattr("src.app.services.search_index.MeiliSearchClient.search", search_mock)
+
+    response = logged_in_client.get("/bids/", params={"lic": "1164,1167,1165,1168,2775"})
+    assert response.status_code == 200
+    assert search_mock.call_args.kwargs["license_codes"] == [
+        "1164",
+        "1167",
+        "1165",
+        "1168",
+        "2775",
+    ]
+    assert "license_code" not in search_mock.call_args.kwargs
+
+
+# --------------------------------------------------------------------------- #
+# (i) DB 대체 경로: 두 코드 중 하나만 있어도 포함, 둘 다 없으면 제외
+# --------------------------------------------------------------------------- #
+
+
+def test_bids_multi_lic_mysql_fallback_matches_any_code(monkeypatch, isolated_db):
+    monkeypatch.setattr(settings, "MEILI_ENABLED", False, raising=False)
+    now = utcnow()
+    ann_guard = BidAnnouncement(
+        bid_ntce_no="ANN-MULTI-GUARD",
+        bid_ntce_ord="000",
+        bid_ntce_nm="경비 공고",
+        category="Servc",
+        bid_ntce_dt=now,
+        collected_at=now,
+    )
+    ann_clean = BidAnnouncement(
+        bid_ntce_no="ANN-MULTI-CLEAN",
+        bid_ntce_ord="000",
+        bid_ntce_nm="위생 공고",
+        category="Servc",
+        bid_ntce_dt=now,
+        collected_at=now,
+    )
+    ann_none = BidAnnouncement(
+        bid_ntce_no="ANN-MULTI-NONE",
+        bid_ntce_ord="000",
+        bid_ntce_nm="해당 없음",
+        category="Servc",
+        bid_ntce_dt=now,
+        collected_at=now,
+    )
+    isolated_db.add_all([ann_guard, ann_clean, ann_none])
+    isolated_db.commit()
+    isolated_db.add_all(
+        [
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no="ANN-MULTI-GUARD",
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                lcns_lmt_nm="경비업/1164",
+                collected_at=now,
+            ),
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no="ANN-MULTI-CLEAN",
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                permsn_indstryty_list="[위생관리업/1167]",
+                collected_at=now,
+            ),
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no="ANN-MULTI-NONE",
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                lcns_lmt_nm="세무사업/9999",
+                collected_at=now,
+            ),
+        ]
+    )
+    isolated_db.commit()
+
+    page = bid_queries.list_announcements(isolated_db, lic="1164,1167")
+    ids = {row.id for row in page.object_list}
+
+    assert ann_guard.id in ids
+    assert ann_clean.id in ids
+    assert ann_none.id not in ids
+
+
+# --------------------------------------------------------------------------- #
+# (j) qual=1 과 여러 코드 필터의 교집합
+# --------------------------------------------------------------------------- #
+
+QUALIFICATION_RAW = {
+    "prearngPrceDcsnMthdNm": "복수예가",
+    "sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만",
+    "sucsfbidLwltRate": "89.995",
+    "srvceDivNm": "일반용역",
+}
+
+
+def test_bids_multi_lic_with_qualification_only_returns_intersection(monkeypatch, isolated_db):
+    monkeypatch.setattr(settings, "MEILI_ENABLED", False, raising=False)
+    now = utcnow()
+    analyzable = BidAnnouncement(
+        bid_ntce_no="ANN-QUAL-LIC",
+        bid_ntce_ord="000",
+        bid_ntce_nm="적격 경비 공고",
+        category="Servc",
+        presmpt_prce=500_000_000,
+        bid_ntce_dt=now,
+        collected_at=now,
+        raw_data=dict(QUALIFICATION_RAW),
+    )
+    licensed_only = BidAnnouncement(
+        bid_ntce_no="ANN-QUAL-OTHER",
+        bid_ntce_ord="000",
+        bid_ntce_nm="적격 아님",
+        category="Servc",
+        bid_ntce_dt=now,
+        collected_at=now,
+    )
+    isolated_db.add_all([analyzable, licensed_only])
+    isolated_db.commit()
+    isolated_db.add_all(
+        [
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no="ANN-QUAL-LIC",
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                lcns_lmt_nm="경비업/1164",
+                collected_at=now,
+            ),
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no="ANN-QUAL-OTHER",
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                lcns_lmt_nm="경비업/1164",
+                collected_at=now,
+            ),
+        ]
+    )
+    isolated_db.commit()
+
+    page = bid_queries.list_announcements(isolated_db, lic="1164", qualification_only=True)
+    ids = {row.id for row in page.object_list}
+
+    assert analyzable.id in ids
+    assert licensed_only.id not in ids
+
+
+# --------------------------------------------------------------------------- #
+# (k) 페이지 링크에 여러 코드 lic 가 유지된다
+# --------------------------------------------------------------------------- #
+
+
+def test_bids_page_preserves_multiple_lic_codes_in_pagination(
+    monkeypatch, logged_in_client, isolated_db
+):
+    now = utcnow()
+    row = BidAnnouncement(
+        bid_ntce_no="PAGINATE-MULTI-LIC",
+        bid_ntce_ord="000",
+        bid_ntce_nm="여러 코드 페이지 공고",
+        category="Servc",
+        bid_ntce_dt=now,
+        collected_at=now,
+    )
+    isolated_db.add(row)
+    isolated_db.commit()
+
+    search_mock = Mock(return_value=SearchPage(ids=[row.id], has_next=True))
+    monkeypatch.setattr(settings, "MEILI_ENABLED", True, raising=False)
+    monkeypatch.setattr("src.app.services.search_index.MeiliSearchClient.search", search_mock)
+
+    response = logged_in_client.get("/bids/", params={"lic": "1164,1167", "page": 1})
+    assert response.status_code == 200
+    html = response.text
+
+    assert 'value="1164,1167"' in html
+    assert "lic=1164%2C1167" in html
+    assert "page=2" in html
+    assert search_mock.call_args.kwargs["license_codes"] == ["1164", "1167"]

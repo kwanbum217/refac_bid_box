@@ -49,7 +49,7 @@
                         id="lic-input"
                         list="industry-list"
                         value="{{ lic }}"
-                        placeholder="업종 코드 (선택)"
+                        placeholder="업종 코드 (쉼표로 여러 개)"
                         class="search-input w-36 bg-white border border-slate-200 rounded-md px-3 py-2 text-sm outline-none transition-all"
                     >
                     <datalist id="industry-list">
@@ -194,7 +194,7 @@
 
                 <div class="flex items-center space-x-2">
                     {% if page_obj.has_previous %}
-                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
                         이전
                     </a>
                     {% endif %}
@@ -204,7 +204,7 @@
                     </span>
 
                     {% if page_obj.has_next %}
-                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
                         다음
                     </a>
                     {% endif %}
