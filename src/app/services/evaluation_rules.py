@@ -289,8 +289,470 @@ SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT = EvaluationRule(
     base_rate=Decimal("0.90"),
 )
 
-# 2026-05-26 개정 전 규칙 저장소 (과거 분석 재현용 예약)
-PRE_20260526_RULES: tuple[EvaluationRule, ...] = ()
+# 2025-09-01 시행 개정 전 규칙 14종 (제2025-257호·제2026-15호).
+# 하한율은 2025-09-01 이상 2026-05-26 미만 구간 공고의 실측 최빈값입니다.
+PRE_20250901_RULES: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_01",
+        service_type="FACILITY",
+        table_name="시설분야용역 적격심사 (개정 전)",
+        description="시설분야용역 적격심사 추정가격 5억원 미만 / 5억원 이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "시설분야용역 적격심사 추정가격 5억원 미만",
+            "시설분야용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("87.995"),
+        base_rate=Decimal("0.91"),
+        sample_count=1748,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_02",
+        service_type="INSURANCE",
+        table_name="보험용역 적격심사 (개정 전)",
+        description="보험용역 적격심사 추정가격 5억원미만 / 5억원이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "보험용역 적격심사 추정가격 5억원미만",
+            "보험용역 적격심사 추정가격 5억원이상",
+        ),
+        lwlt_rate=Decimal("47.995"),
+        base_rate=Decimal("0.88"),
+        sample_count=845,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_03",
+        service_type="PASSENGER_TRANSPORT",
+        table_name="여객 육상운송용역 적격심사 (개정 전)",
+        description="여객 육상운송용역 적격심사 추정가격 5억원미만 / 5억원이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "여객 육상운송용역 적격심사 추정가격 5억원미만",
+            "여객 육상운송용역 적격심사 추정가격 5억원이상",
+        ),
+        lwlt_rate=Decimal("87.995"),
+        base_rate=Decimal("0.91"),
+        sample_count=1492,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_04",
+        service_type="SW_SME",
+        table_name="소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 (개정 전)",
+        description="소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만 / 5억원 이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만",
+            "소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("87.995"),
+        base_rate=Decimal("0.91"),
+        sample_count=188,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_05",
+        service_type="SW_NON_SME",
+        table_name="소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 (개정 전)",
+        description="소프트웨어용역(중소기업자간 경쟁제품 비대상) 고시금액미만 / 5억원 미만 고시금액이상 / 5억원 이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 추정가격 고시금액미만",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 고시금액 미만",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만-추정가격 고시금액이상",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=138,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_06",
+        service_type="ACADEMIC",
+        table_name="학술연구용역 적격심사 (고시금액 미만, 개정 전)",
+        description="학술연구용역 적격심사 추정가격 고시금액 미만",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "학술연구용역 적격심사 추정가격 고시금액 미만",
+            "학술연구용역 적격심사 추정가격 고시금액미만",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=407,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_07",
+        service_type="ACADEMIC",
+        table_name="학술연구용역 적격심사 (고시금액 이상, 개정 전)",
+        description="학술연구용역 적격심사 추정가격 5억원 미만 고시금액 이상 / 5억원 이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "학술연구용역 적격심사 추정가격 5억원 미만 고시금액 이상",
+            "학술연구용역 적격심사 추정가격 5억원미만 고시금액이상",
+            "학술연구용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        sample_count=93,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_08",
+        service_type="WASTE",
+        table_name="폐기물처리용역 적격심사 (고시금액 미만, 개정 전)",
+        description="폐기물처리용역 적격심사 추정가격 고시금액미만",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "폐기물처리용역 적격심사 추정가격 고시금액미만",
+            "폐기물처리용역 적격심사 추정가격 고시금액 미만",
+            "폐기물처리용역 추정가격 고시금액 미만",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=491,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_09",
+        service_type="WASTE",
+        table_name="폐기물처리용역 적격심사 (고시금액 이상, 개정 전)",
+        description="폐기물처리용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상 / 5억원이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "폐기물처리용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상",
+            "폐기물처리용역 적격심사 추정가격 5억원 미만-추정가격 고시금액 이상",
+            "폐기물처리용역 적격심사 추정가격 5억원미만 고시금액이상",
+            "폐기물처리용역 적격심사 추정가격 5억원 미만 고시금액 이상",
+            "폐기물처리용역 적격심사 추정가격 5억원이상",
+            "폐기물처리용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        sample_count=116,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_10",
+        service_type="FREIGHT",
+        table_name="화물 육상운송용역 적격심사 (고시금액 미만, 개정 전)",
+        description="화물 육상운송용역 적격심사 추정가격 고시금액미만",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "화물 육상운송용역 적격심사 추정가격 고시금액미만",
+            "화물 육상운송용역 적격심사 추정가격 고시금액 미만",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=111,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_11",
+        service_type="FREIGHT",
+        table_name="화물 육상운송용역 적격심사 (고시금액 이상, 개정 전)",
+        description="화물 육상운송용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상 / 5억원이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "화물 육상운송용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상",
+            "화물 육상운송용역 적격심사 추정가격 5억원 미만-추정가격 고시금액 이상",
+            "화물 육상운송용역 적격심사 추정가격 5억원이상",
+            "화물 육상운송용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        sample_count=50,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_15",
+        service_type="REPAIR_INSPECTION",
+        table_name="수리ㆍ점검용역 적격심사 (개정 전 전용)",
+        description="수리ㆍ점검용역 적격심사 고시금액 미만 / 5억원 미만 고시금액 이상 / 5억원 이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "수리ㆍ점검용역 적격심사 고시금액 미만",
+            "수리ㆍ점검용역 적격심사 5억원 미만 고시금액 이상",
+            "수리ㆍ점검용역 적격심사 5억원 이상",
+            "수리ㆍ점검용역 적격심사 추정가격 고시금액 미만",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=431,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_16",
+        service_type="LEASE",
+        table_name="임대차 적격심사 (개정 전 전용)",
+        description="임대차 적격심사 추정가격 고시금액 미만 / 고시금액 이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "임대차 적격심사 추정가격 고시금액 미만",
+            "임대차 적격심사 추정가격 고시금액 이상",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=299,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20250901_ATTACH_17",
+        service_type="DEMAND_AGENCY",
+        table_name="수요기관 지정형 적격심사 (개정 전 전용)",
+        description="수요기관 지정형 적격심사 추정가격 고시금액 미만 / 고시금액 이상",
+        effective_date="2025-09-01",
+        source="조달청 일반용역 적격심사 세부기준 제2025-257호(시행 2025-09-01)·제2026-15호(시행 2026-03-01), 하한율 실측 최빈",
+        patterns=(
+            "수요기관 지정형 적격심사 추정가격 고시금액 미만",
+            "수요기관 지정형 적격심사 추정가격 고시금액 이상",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=195,
+    ),
+)
+
+# 2023-05-01 시행 개정 전 규칙 14종 (제2023-53호).
+# 별표 1·11 배점표는 제2025-257호와 다르지만, 규칙 레지스트리가 담는 식별 문자열·하한율·기준비율은
+# 같아 같은 별표 범위를 한 벌로 표현합니다. 하한율은 2025-01-01 이상 2025-09-01 미만 구간 실측 최빈값입니다.
+PRE_20230501_RULES: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_01",
+        service_type="FACILITY",
+        table_name="시설분야용역 적격심사 (개정 전)",
+        description="시설분야용역 적격심사 추정가격 5억원 미만 / 5억원 이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "시설분야용역 적격심사 추정가격 5억원 미만",
+            "시설분야용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("87.995"),
+        base_rate=Decimal("0.91"),
+        sample_count=986,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_02",
+        service_type="INSURANCE",
+        table_name="보험용역 적격심사 (개정 전)",
+        description="보험용역 적격심사 추정가격 5억원미만 / 5억원이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "보험용역 적격심사 추정가격 5억원미만",
+            "보험용역 적격심사 추정가격 5억원이상",
+        ),
+        lwlt_rate=Decimal("47.995"),
+        base_rate=Decimal("0.88"),
+        sample_count=625,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_03",
+        service_type="PASSENGER_TRANSPORT",
+        table_name="여객 육상운송용역 적격심사 (개정 전)",
+        description="여객 육상운송용역 적격심사 추정가격 5억원미만 / 5억원이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "여객 육상운송용역 적격심사 추정가격 5억원미만",
+            "여객 육상운송용역 적격심사 추정가격 5억원이상",
+        ),
+        lwlt_rate=Decimal("87.995"),
+        base_rate=Decimal("0.91"),
+        sample_count=1258,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_04",
+        service_type="SW_SME",
+        table_name="소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 (개정 전)",
+        description="소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만 / 5억원 이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만",
+            "소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("87.995"),
+        base_rate=Decimal("0.91"),
+        sample_count=132,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_05",
+        service_type="SW_NON_SME",
+        table_name="소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 (개정 전)",
+        description="소프트웨어용역(중소기업자간 경쟁제품 비대상) 고시금액미만 / 5억원 미만 고시금액이상 / 5억원 이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 추정가격 고시금액미만",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 고시금액 미만",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만-추정가격 고시금액이상",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=69,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_06",
+        service_type="ACADEMIC",
+        table_name="학술연구용역 적격심사 (고시금액 미만, 개정 전)",
+        description="학술연구용역 적격심사 추정가격 고시금액 미만",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "학술연구용역 적격심사 추정가격 고시금액 미만",
+            "학술연구용역 적격심사 추정가격 고시금액미만",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=389,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_07",
+        service_type="ACADEMIC",
+        table_name="학술연구용역 적격심사 (고시금액 이상, 개정 전)",
+        description="학술연구용역 적격심사 추정가격 5억원 미만 고시금액 이상 / 5억원 이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "학술연구용역 적격심사 추정가격 5억원 미만 고시금액 이상",
+            "학술연구용역 적격심사 추정가격 5억원미만 고시금액이상",
+            "학술연구용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        sample_count=66,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_08",
+        service_type="WASTE",
+        table_name="폐기물처리용역 적격심사 (고시금액 미만, 개정 전)",
+        description="폐기물처리용역 적격심사 추정가격 고시금액미만",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "폐기물처리용역 적격심사 추정가격 고시금액미만",
+            "폐기물처리용역 적격심사 추정가격 고시금액 미만",
+            "폐기물처리용역 추정가격 고시금액 미만",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=429,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_09",
+        service_type="WASTE",
+        table_name="폐기물처리용역 적격심사 (고시금액 이상, 개정 전)",
+        description="폐기물처리용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상 / 5억원이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "폐기물처리용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상",
+            "폐기물처리용역 적격심사 추정가격 5억원 미만-추정가격 고시금액 이상",
+            "폐기물처리용역 적격심사 추정가격 5억원미만 고시금액이상",
+            "폐기물처리용역 적격심사 추정가격 5억원 미만 고시금액 이상",
+            "폐기물처리용역 적격심사 추정가격 5억원이상",
+            "폐기물처리용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        sample_count=75,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_10",
+        service_type="FREIGHT",
+        table_name="화물 육상운송용역 적격심사 (고시금액 미만, 개정 전)",
+        description="화물 육상운송용역 적격심사 추정가격 고시금액미만",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "화물 육상운송용역 적격심사 추정가격 고시금액미만",
+            "화물 육상운송용역 적격심사 추정가격 고시금액 미만",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=69,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_11",
+        service_type="FREIGHT",
+        table_name="화물 육상운송용역 적격심사 (고시금액 이상, 개정 전)",
+        description="화물 육상운송용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상 / 5억원이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "화물 육상운송용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상",
+            "화물 육상운송용역 적격심사 추정가격 5억원 미만-추정가격 고시금액 이상",
+            "화물 육상운송용역 적격심사 추정가격 5억원이상",
+            "화물 육상운송용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        sample_count=57,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_15",
+        service_type="REPAIR_INSPECTION",
+        table_name="수리ㆍ점검용역 적격심사 (개정 전 전용)",
+        description="수리ㆍ점검용역 적격심사 고시금액 미만 / 5억원 미만 고시금액 이상 / 5억원 이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "수리ㆍ점검용역 적격심사 고시금액 미만",
+            "수리ㆍ점검용역 적격심사 5억원 미만 고시금액 이상",
+            "수리ㆍ점검용역 적격심사 5억원 이상",
+            "수리ㆍ점검용역 적격심사 추정가격 고시금액 미만",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=265,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_16",
+        service_type="LEASE",
+        table_name="임대차 적격심사 (개정 전 전용)",
+        description="임대차 적격심사 추정가격 고시금액 미만 / 고시금액 이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "임대차 적격심사 추정가격 고시금액 미만",
+            "임대차 적격심사 추정가격 고시금액 이상",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=249,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_PRE_20230501_ATTACH_17",
+        service_type="DEMAND_AGENCY",
+        table_name="수요기관 지정형 적격심사 (개정 전 전용)",
+        description="수요기관 지정형 적격심사 추정가격 고시금액 미만 / 고시금액 이상",
+        effective_date="2023-05-01",
+        source="조달청 일반용역 적격심사 세부기준 제2023-53호(시행 2023-05-01), 하한율 실측 최빈",
+        patterns=(
+            "수요기관 지정형 적격심사 추정가격 고시금액 미만",
+            "수요기관 지정형 적격심사 추정가격 고시금액 이상",
+        ),
+        lwlt_rate=Decimal("84.245"),
+        base_rate=Decimal("0.88"),
+        sample_count=159,
+    ),
+)
+
+# 2026-05-26 개정 전 규칙 호환 별칭 (제2023-53호 + 제2025-257호·제2026-15호)
+PRE_20260526_RULES: tuple[EvaluationRule, ...] = PRE_20230501_RULES + PRE_20250901_RULES
+
+# 공고일 시행일 구간 경계 (내림차순). 공고일이 속한 구간의 벌로 계산합니다.
+RULE_REGIME_BOUNDARIES: tuple[tuple[date, tuple[EvaluationRule, ...]], ...] = (
+    (date(2026, 5, 26), POST_20260526_RULES),
+    (date(2025, 9, 1), PRE_20250901_RULES),
+    (date(2023, 5, 1), PRE_20230501_RULES),
+)
 
 
 # 차단 사유 코드 상수
@@ -447,6 +909,39 @@ def _parse_announcement_date(value: date | str | None) -> date | None:
         return None
 
 
+def _rules_for_announcement_date(announced: date | None) -> tuple[EvaluationRule, ...]:
+    """공고일이 속한 시행일 구간의 규칙 벌을 고릅니다.
+
+    공고일이 없으면 기존과 같이 현행 벌을 쓰고, 가장 이른 구간보다 앞선 공고일은
+    가장 이른 개정 전 벌을 돌려주어 시행일 대조에서 차단되게 합니다.
+    """
+    if announced is None:
+        return POST_20260526_RULES
+    for start, rules in RULE_REGIME_BOUNDARIES:
+        if announced >= start:
+            return rules
+    return PRE_20230501_RULES
+
+
+def _allocate_rules_for_announcement(
+    announced: date | None,
+    method_name: str | None,
+) -> tuple[EvaluationRule, ...]:
+    """기본 호출의 규칙 벌을 공고일로 고르고, 개정 전 벌 미매칭 시 현행 벌과 대조합니다.
+
+    개정 전 구간 공고라도 현행 벌에만 있는 이름(개정 전 별표에 없는 일반 띠)은
+    현행 별표로 매칭해 시행일 대조에서 기존과 같이 RULE_REGIME_MISMATCH 로 차단합니다.
+    """
+    regime_rules = _rules_for_announcement_date(announced)
+    if regime_rules is POST_20260526_RULES or not method_name:
+        return regime_rules
+    if match_rule_by_mthd_nm(method_name, rules=regime_rules) is not None:
+        return regime_rules
+    if match_rule_by_mthd_nm(method_name, rules=POST_20260526_RULES) is not None:
+        return POST_20260526_RULES
+    return regime_rules
+
+
 def resolve_evaluation_rule(
     category: str | None,
     prearng_prce_dcsn_mthd_nm: str | None,
@@ -454,7 +949,7 @@ def resolve_evaluation_rule(
     sucsfbid_lwlt_rate: Decimal | str | float | None = None,
     tech_ablt_evl_rt: Decimal | str | float | None = None,
     bid_prce_evl_rt: Decimal | str | float | None = None,
-    rules: Sequence[EvaluationRule] = POST_20260526_RULES,
+    rules: Sequence[EvaluationRule] | None = None,
     srvce_div_nm: str | None = None,
     sucsfbid_mthd_cd: str | None = None,
     bid_ntce_dt: date | str | None = None,
@@ -462,12 +957,20 @@ def resolve_evaluation_rule(
     """낙찰방법 출처를 정하고 별표를 판별한 뒤 공고일과 별표 시행일을 대조합니다.
 
     [추가 판별]
+    - 규칙 벌(rules)을 명시하지 않으면 공고일로 시행일 구간 벌을 고릅니다.
+      공고일 2026-05-26 이상은 현행 벌, 2025-09-01 이상은 제2025-257호 벌,
+      2023-05-01 이상은 제2023-53호 벌이며, 공고일이 없으면 현행 벌을 씁니다.
+      고른 벌에 이름이 없으면 현행 벌까지 대조하고, 어느 벌에도 없으면 RULE_NOT_FOUND 입니다.
     - 원문 낙찰방법이 '공고서참조'면 sucsfbidMthdCd 계열명으로 판별
     - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).
       공고일이 없으면 대조하지 않고, 있는데 읽을 수 없으면 차단 대신 경고만 남깁니다.
     """
     method_name, method_source, method_warnings = resolve_method_name(
         sucsfbid_mthd_nm, sucsfbid_mthd_cd
+    )
+    announced = _parse_announcement_date(bid_ntce_dt)
+    allocated_rules = (
+        rules if rules is not None else _allocate_rules_for_announcement(announced, method_name)
     )
     result = _resolve_by_method_name(
         category=category,
@@ -476,7 +979,7 @@ def resolve_evaluation_rule(
         sucsfbid_lwlt_rate=sucsfbid_lwlt_rate,
         tech_ablt_evl_rt=tech_ablt_evl_rt,
         bid_prce_evl_rt=bid_prce_evl_rt,
-        rules=rules,
+        rules=allocated_rules,
         srvce_div_nm=srvce_div_nm,
     )
     result = replace(
@@ -503,7 +1006,6 @@ def resolve_evaluation_rule(
     if bid_ntce_dt is None:
         return result
     effective_date = date.fromisoformat(result.rule.effective_date)
-    announced = _parse_announcement_date(bid_ntce_dt)
     if announced is None:
         return replace(
             result,
@@ -518,8 +1020,8 @@ def resolve_evaluation_rule(
             is_blocked=True,
             block_reason_code=BLOCK_CODE_RULE_REGIME_MISMATCH,
             block_reason_message=(
-                f"공고일({announced})이 별표 시행일({effective_date})보다 앞서 현행 별표로 "
-                "계산하지 않습니다. 개정 전 별표는 등록되어 있지 않습니다."
+                f"공고일({announced})이 별표 시행일({effective_date})보다 앞서 해당 별표로 "
+                "계산하지 않습니다."
             ),
             effective_lwlt_rate=None,
             rate_source=None,
@@ -741,9 +1243,12 @@ def _resolve_by_method_name(
 def resolve_evaluation_rule_from_raw_data(
     category: str | None,
     raw_data: dict[str, Any] | None,
-    rules: Sequence[EvaluationRule] = POST_20260526_RULES,
+    rules: Sequence[EvaluationRule] | None = None,
 ) -> RuleResolutionResult:
-    """raw_data 딕셔너리에서 기관 필드를 추출하여 적격심사 규칙을 판별합니다."""
+    """raw_data 딕셔너리에서 기관 필드를 추출하여 적격심사 규칙을 판별합니다.
+
+    rules 를 명시하지 않으면 bidNtceDt 로 고른 시행일 구간 벌로 판별합니다.
+    """
     if raw_data is None:
         raw_data = {}
 
