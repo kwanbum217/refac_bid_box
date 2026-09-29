@@ -1204,14 +1204,15 @@ def test_later_cancelled_comparison_fields_always_present(isolated_db):
 
 def test_later_cancelled_flag_defaults_from_settings(isolated_db, monkeypatch):
     """인자를 주지 않으면 설정값을 따른다. 기본값은 꺼짐이다."""
-    from src.app.core.config import settings
+    from src.app.core.config import Settings, settings
 
     db = isolated_db
     _add_announcement(db, "2026-O00001", "000", "Servc", W)
     _add_announcement(db, "2026-O00001", "001", "Servc", W, ntce_kind_nm="취소공고")
     db.commit()
 
-    assert settings.RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED is False
+    # 로컬 .env 에서 켜 두었을 수 있으므로 실행 값이 아니라 코드 기본값을 검사한다.
+    assert Settings.model_fields["RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED"].default is False
     monkeypatch.setattr(settings, "RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED", False)
     off = _row_of(compute_result_match_rates(db, as_of=AS_OF, weeks=1), "Servc", "small", W)
     assert off["announcements"] == 1
