@@ -41,6 +41,7 @@ from src.app.models.chatbot import PipelineExecution
 from src.app.models.predictions import RetrainLog
 from src.app.services.automation_orchestrator import STATUS_RUNNING
 from src.ml.dataset import build_training_dataset
+from src.ml.drift_verdict import DRIFT_EVALUATION_WINDOW_DAYS
 from src.ml.features import (
     apply_categorical_dtypes,
     build_feature_frame,
@@ -797,7 +798,7 @@ def _acquire_drift_monitor_claim() -> ScheduleClaimResult:
 @_record_schedule("drift_monitor")
 async def drift_monitor_task(
     ctx: dict[str, Any],
-    evaluation_window_days: int = 7,
+    evaluation_window_days: int = DRIFT_EVALUATION_WINDOW_DAYS,
     registry_dir: str = "ml_registry",
 ) -> dict[str, Any]:
     """매일 04:00 주기적 PSI 드리프트 검사 태스크.

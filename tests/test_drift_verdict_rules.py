@@ -2,7 +2,8 @@
 tests/test_drift_verdict_rules.py
 
 PSI 드리프트 판정 규칙(제외 특징, 정족수, 지속성) 검증 테스트.
-- 달력 4종과 is_post_regime_shift 는 PSI 를 계산하되 판정에서 제외
+- 달력 4종, is_post_regime_shift, 감시 창 안에서만 누적 계산되는 기관 이력 특징 3종은
+  PSI 를 계산하되 판정에서 제외
 - 제외 후 비제외 드리프트 특징이 정족수(2개) 이상일 때만 창 드리프트
 - 정족수 미만이면 STABLE + below_quorum
 - 직전 겹치지 않는 창이 창 드리프트일 때만 DRIFT_DETECTED, 아니면 DRIFT_PENDING
@@ -10,6 +11,7 @@ PSI 드리프트 판정 규칙(제외 특징, 정족수, 지속성) 검증 테�
 - 여섯 계약(제외 상수, 정족수, 지속성, 기존 동작 하위 호환)을 단위로 고정
 """
 
+import inspect
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -20,6 +22,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.app.core.config import settings
 from src.app.models.predictions import RetrainLog
+from src.ml.drift_verdict import DRIFT_EVALUATION_WINDOW_DAYS
 from src.ml.monitoring import (
     DRIFT_FEATURE_QUORUM,
     DRIFT_PERSISTENCE_WINDOWS,
@@ -38,14 +41,14 @@ def _constant_frame(values: dict[str, float], n: int = 200) -> pd.DataFrame:
 
 def _grouped_frame(
     price: float,
-    inst_rate: float,
+    other_rate: float,
     month_sin: float,
     n: int = 100,
 ) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "log_price": [price] * (2 * n),
-            "inst_hist_rate": [inst_rate] * (2 * n),
+            "notice_duration": [other_rate] * (2 * n),
             "month_sin": [month_sin] * (2 * n),
             "lwlt_rate_missing": [0.0] * n + [1.0] * n,
         }
@@ -72,12 +75,28 @@ def test_excluded_features_default_constants():
                 "weekday_sin",
                 "weekday_cos",
                 "is_post_regime_shift",
+                "inst_hist_rate",
+                "inst_sample_cnt",
+                "inst_ewm_rate",
             }
         )
         == DRIFT_VERDICT_EXCLUDED_FEATURES
     )
     assert DRIFT_FEATURE_QUORUM == 2
     assert DRIFT_PERSISTENCE_WINDOWS == 2
+
+
+def test_drift_evaluation_window_constant_and_task_default():
+    """기본 평가 창 상수가 28일이고 drift_monitor_task 기본값이 그 상수입니다."""
+    assert DRIFT_EVALUATION_WINDOW_DAYS == 28
+    default = inspect.signature(drift_monitor_task).parameters["evaluation_window_days"].default
+    assert default == DRIFT_EVALUATION_WINDOW_DAYS
+
+
+def test_institution_features_excluded_repeat_not_excluded():
+    """기관 누적 특징 3종은 제외 목록에 있고 repeat_* 는 제외 목록에 없습니다."""
+    assert {"inst_hist_rate", "inst_sample_cnt", "inst_ewm_rate"} <= DRIFT_VERDICT_EXCLUDED_FEATURES
+    assert not any(name.startswith("repeat_") for name in DRIFT_VERDICT_EXCLUDED_FEATURES)
 
 
 def test_calendar_and_regime_only_drift_is_stable(tmp_path):
@@ -114,6 +133,37 @@ def test_calendar_and_regime_only_drift_is_stable(tmp_path):
     assert "excluded_from_verdict" not in result["drift_results"]["log_price"]
 
 
+def test_institution_history_only_drift_is_stable(tmp_path):
+    """기관 누적 특징 3종만 드리프트하면 STABLE 이고 excluded_drift_features 에 실립니다."""
+    feature_columns = ["log_price", "inst_hist_rate", "inst_sample_cnt", "inst_ewm_rate"]
+    baseline_frame = _constant_frame(
+        {"log_price": 10.0, "inst_hist_rate": 1.0, "inst_sample_cnt": 2.0, "inst_ewm_rate": 1.0}
+    )
+    recent_frame = _constant_frame(
+        {"log_price": 10.0, "inst_hist_rate": 50.0, "inst_sample_cnt": 90.0, "inst_ewm_rate": 80.0}
+    )
+    baseline = save_baseline_distributions(
+        df_feat=baseline_frame,
+        feature_columns=feature_columns,
+        target_dir=tmp_path / "baseline",
+        model_name="servc_model",
+        model_version="v_001",
+    )
+
+    result = check_dataset_drift(baseline, recent_frame)
+
+    assert result["status"] == "STABLE"
+    assert result["overall_action"] == "STABLE"
+    assert result["drift_feature_count"] == 0
+    assert result["below_quorum"] is False
+    excluded_names = {feat["feature"] for feat in result["excluded_drift_features"]}
+    assert excluded_names == {"inst_hist_rate", "inst_sample_cnt", "inst_ewm_rate"}
+    assert all(
+        result["drift_results"][name]["excluded_from_verdict"] is True for name in excluded_names
+    )
+    assert result["drift_results"]["log_price"]["drift_detected"] is False
+
+
 def test_single_non_excluded_drift_is_stable_below_quorum(tmp_path):
     """비제외 특징 1개만 드리프트하면 STABLE 이고 below_quorum True 입니다."""
     baseline_frame = _constant_frame({"log_price": 10.0, "inst_hist_rate": 1.0})
@@ -137,11 +187,11 @@ def test_single_non_excluded_drift_is_stable_below_quorum(tmp_path):
 
 def test_quorum_reached_is_drift_detected(tmp_path):
     """비제외 특징이 정족수 2개 이상일 때만 DRIFT_DETECTED / TRIGGER_RETRAIN 입니다."""
-    baseline_frame = _constant_frame({"log_price": 10.0, "inst_hist_rate": 1.0})
-    recent_frame = _constant_frame({"log_price": 25.0, "inst_hist_rate": -5.0})
+    baseline_frame = _constant_frame({"log_price": 10.0, "notice_duration": 1.0})
+    recent_frame = _constant_frame({"log_price": 25.0, "notice_duration": -5.0})
     baseline = save_baseline_distributions(
         df_feat=baseline_frame,
-        feature_columns=["log_price", "inst_hist_rate"],
+        feature_columns=["log_price", "notice_duration"],
         target_dir=tmp_path / "baseline",
         model_name="servc_model",
         model_version="v_001",
@@ -155,7 +205,7 @@ def test_quorum_reached_is_drift_detected(tmp_path):
     assert result["drift_feature_count"] == 2
     assert {feat["feature"] for feat in result["drift_features"]} == {
         "log_price",
-        "inst_hist_rate",
+        "notice_duration",
     }
 
 
@@ -164,7 +214,7 @@ def test_subgroup_path_applies_same_rules(tmp_path):
     baseline_frame = _grouped_frame(10.0, 1.0, -0.9)
     baseline = save_baseline_distributions(
         df_feat=baseline_frame,
-        feature_columns=["log_price", "inst_hist_rate", "month_sin", "lwlt_rate_missing"],
+        feature_columns=["log_price", "notice_duration", "month_sin", "lwlt_rate_missing"],
         target_dir=tmp_path / "baseline",
         model_name="servc_model",
         model_version="v_001",
@@ -530,3 +580,41 @@ async def test_run_drift_monitor_skips_previous_lookup_when_stable(
 
     assert outcome["status"] == "success"
     assert all(result["status"] == "STABLE" for result in outcome["categories"].values())
+
+
+@pytest.mark.asyncio
+async def test_drift_monitor_default_window_passes_28_to_previous_lookup(
+    isolated_db, tmp_path, monkeypatch
+):
+    """기본 창으로 실행하면 직전 창 조회에 window_days=28 이 전달됩니다."""
+    monkeypatch.setattr(settings, "ML_DRIFT_MONITOR_ENABLED", True)
+    monkeypatch.setattr("src.tasks.scheduled_tasks.SessionLocal", lambda: isolated_db)
+    _write_baselines(tmp_path)
+
+    monkeypatch.setattr(
+        "src.tasks.scheduled_tasks._compute_drift_assessment_thread",
+        lambda *args, **kwargs: {
+            "status": "DRIFT_DETECTED",
+            "overall_action": "TRIGGER_RETRAIN",
+            "drift_feature_count": 2,
+            "drift_features": [{"feature": "log_price", "psi": 0.5, "sample_size": 150}],
+            "drift_results": {},
+            "total_features_checked": 2,
+            "recent_samples": 150,
+            "baseline_version": "v_20260928_001",
+        },
+    )
+
+    captured: dict[str, int] = {}
+
+    def _spy_previous(model_name, now, window_days):
+        captured["window_days"] = window_days
+        return None
+
+    monkeypatch.setattr("src.tasks.scheduled_tasks._previous_window_drift", _spy_previous)
+    monkeypatch.setattr("src.tasks.scheduled_tasks.notify_drift_detected", AsyncMock())
+
+    outcome = await drift_monitor_task({}, registry_dir=str(tmp_path))
+
+    assert outcome["status"] == "success"
+    assert captured["window_days"] == DRIFT_EVALUATION_WINDOW_DAYS == 28

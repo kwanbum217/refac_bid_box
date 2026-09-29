@@ -4,15 +4,22 @@ src/ml/drift_verdict.py
 PSI 드리프트 판정 규칙.
 
 평가 창과 기준선 구성의 차이를 그대로 반영해 구조적으로 오탐하는 달력 특징 4종과
-is_post_regime_shift 를 판정에서 제외하고, 제외 후 드리프트 특징이 정족수 이상일 때만
-창 드리프트로 인정합니다. 겹치지 않는 직전 창까지 창 드리프트였을 때만 알림 단계로
-확정합니다. monitoring.py 를 import 하지 않아 순환을 만들지 않습니다.
+is_post_regime_shift, 감시 창 안에서만 누적 계산되는 기관 이력 특징 3종을 판정에서
+제외하고, 제외 후 드리프트 특징이 정족수 이상일 때만 창 드리프트로 인정합니다.
+겹치지 않는 직전 창까지 창 드리프트였을 때만 알림 단계로 확정합니다.
+monitoring.py 를 import 하지 않아 순환을 만들지 않습니다.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+# 기본 평가 창(일). 감시 경로는 이 창 프레임 안에서만 기관 이력을 누적 계산하므로,
+# 창이 짧으면 누적 깊이가 기준선과 달라져 소표본 범주·금액 특징까지 오탐합니다.
+DRIFT_EVALUATION_WINDOW_DAYS = 28
+
+# inst_* 는 감시 창 안에서만 누적 계산되어 기준선과 누적 깊이가 달라지는 구조적
+# 오탐이므로 판정에서 제외합니다.
 DRIFT_VERDICT_EXCLUDED_FEATURES = frozenset(
     {
         "month_sin",
@@ -20,6 +27,9 @@ DRIFT_VERDICT_EXCLUDED_FEATURES = frozenset(
         "weekday_sin",
         "weekday_cos",
         "is_post_regime_shift",
+        "inst_hist_rate",
+        "inst_sample_cnt",
+        "inst_ewm_rate",
     }
 )
 
@@ -30,6 +40,7 @@ DRIFT_FEATURE_QUORUM = 2
 DRIFT_PERSISTENCE_WINDOWS = 2
 
 __all__ = [
+    "DRIFT_EVALUATION_WINDOW_DAYS",
     "DRIFT_FEATURE_QUORUM",
     "DRIFT_PERSISTENCE_WINDOWS",
     "DRIFT_VERDICT_EXCLUDED_FEATURES",
