@@ -44,7 +44,7 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
         table_name="시설분야용역 적격심사",
         description="시설분야용역 적격심사 추정가격 5억원 미만 / 5억원 이상",
         effective_date="2026-05-26",
-        source="조달청 일반용역 적격심사 세부기준 (2026-05-26 개정)",
+        source="조달청 공고 제2026-260호 (2026-05-26 시행)",
         patterns=(
             "시설분야용역 적격심사 추정가격 5억원 미만",
             "시설분야용역 적격심사 추정가격 5억원 이상",
@@ -52,7 +52,7 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
             "시설분야용역 적격심사 추정가격 5억원이상",
         ),
         lwlt_rate=Decimal("89.995"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.93"),
         sample_count=213,
     ),
     EvaluationRule(
@@ -61,7 +61,7 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
         table_name="보험용역 적격심사",
         description="보험용역 적격심사 추정가격 5억원미만 / 5억원이상 (실측 정본 47.995)",
         effective_date="2026-05-26",
-        source="조달청 일반용역 적격심사 세부기준 (2026-05-26 개정)",
+        source="조달청 공고 제2026-260호 (2026-05-26 시행)",
         patterns=(
             "보험용역 적격심사 추정가격 5억원미만",
             "보험용역 적격심사 추정가격 5억원이상",
@@ -69,7 +69,7 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
             "보험용역 적격심사 추정가격 5억원 이상",
         ),
         lwlt_rate=Decimal("47.995"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.88"),
         sample_count=195,
     ),
     EvaluationRule(
@@ -78,13 +78,13 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
         table_name="여객 육상운송용역 적격심사",
         description="여객 육상운송용역 적격심사 추정가격 5억원미만",
         effective_date="2026-05-26",
-        source="조달청 일반용역 적격심사 세부기준 (2026-05-26 개정)",
+        source="조달청 공고 제2026-260호 (2026-05-26 시행)",
         patterns=(
             "여객 육상운송용역 적격심사 추정가격 5억원미만",
             "여객 육상운송용역 적격심사 추정가격 5억원 미만",
         ),
         lwlt_rate=Decimal("87.995"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.91"),
         sample_count=55,
     ),
     EvaluationRule(
@@ -93,7 +93,7 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
         table_name="소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사",
         description="소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만 / 5억원 이상",
         effective_date="2026-05-26",
-        source="조달청 일반용역 적격심사 세부기준 (2026-05-26 개정)",
+        source="조달청 공고 제2026-260호 (2026-05-26 시행)",
         patterns=(
             "소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만",
             "소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 이상",
@@ -101,7 +101,7 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
             "소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원이상",
         ),
         lwlt_rate=Decimal("87.995"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.91"),
         sample_count=33,
     ),
     EvaluationRule(
@@ -274,6 +274,31 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
         base_rate=Decimal("0.90"),
         sample_count=18,
     ),
+)
+
+# 2026-07-27 개정 후 일반용역 적격심사 별표 14종 (조달청 공고 제2026-390호).
+# 여객 육상운송용역(ATTACH_03)과 소프트웨어용역 중소기업자간 경쟁제품 대상(ATTACH_04)만
+# 기준비율과 낙찰하한율이 오르고, 나머지 12종은 제2026-260호 벌의 같은 객체를 재사용합니다.
+POST_20260727_RULES: tuple[EvaluationRule, ...] = (
+    POST_20260526_RULES[0],
+    POST_20260526_RULES[1],
+    replace(
+        POST_20260526_RULES[2],
+        rule_id="SERVC_QUAL_POST_20260727_ATTACH_03",
+        effective_date="2026-07-27",
+        source="조달청 공고 제2026-390호 (2026-07-27 시행)",
+        lwlt_rate=Decimal("89.995"),
+        base_rate=Decimal("0.93"),
+    ),
+    replace(
+        POST_20260526_RULES[3],
+        rule_id="SERVC_QUAL_POST_20260727_ATTACH_04",
+        effective_date="2026-07-27",
+        source="조달청 공고 제2026-390호 (2026-07-27 시행)",
+        lwlt_rate=Decimal("89.995"),
+        base_rate=Decimal("0.93"),
+    ),
+    *POST_20260526_RULES[4:],
 )
 
 # 기술용역은 식별 문자열별 고정 규칙으로 환원하지 않고 공고 하한율만 사용합니다.
@@ -749,6 +774,7 @@ PRE_20260526_RULES: tuple[EvaluationRule, ...] = PRE_20230501_RULES + PRE_202509
 
 # 공고일 시행일 구간 경계 (내림차순). 공고일이 속한 구간의 벌로 계산합니다.
 RULE_REGIME_BOUNDARIES: tuple[tuple[date, tuple[EvaluationRule, ...]], ...] = (
+    (date(2026, 7, 27), POST_20260727_RULES),
     (date(2026, 5, 26), POST_20260526_RULES),
     (date(2025, 9, 1), PRE_20250901_RULES),
     (date(2023, 5, 1), PRE_20230501_RULES),
@@ -912,11 +938,11 @@ def _parse_announcement_date(value: date | str | None) -> date | None:
 def _rules_for_announcement_date(announced: date | None) -> tuple[EvaluationRule, ...]:
     """공고일이 속한 시행일 구간의 규칙 벌을 고릅니다.
 
-    공고일이 없으면 기존과 같이 현행 벌을 쓰고, 가장 이른 구간보다 앞선 공고일은
+    공고일이 없으면 현행 벌인 제2026-390호 벌을 쓰고, 가장 이른 구간보다 앞선 공고일은
     가장 이른 개정 전 벌을 돌려주어 시행일 대조에서 차단되게 합니다.
     """
     if announced is None:
-        return POST_20260526_RULES
+        return POST_20260727_RULES
     for start, rules in RULE_REGIME_BOUNDARIES:
         if announced >= start:
             return rules
@@ -929,16 +955,21 @@ def _allocate_rules_for_announcement(
 ) -> tuple[EvaluationRule, ...]:
     """기본 호출의 규칙 벌을 공고일로 고르고, 개정 전 벌 미매칭 시 현행 벌과 대조합니다.
 
+    제2026-260호 벌과 제2026-390호 벌은 그 자체가 개정 후 벌이므로 그대로 돌려줍니다.
     개정 전 구간 공고라도 현행 벌에만 있는 이름(개정 전 별표에 없는 일반 띠)은
     현행 별표로 매칭해 시행일 대조에서 기존과 같이 RULE_REGIME_MISMATCH 로 차단합니다.
     """
     regime_rules = _rules_for_announcement_date(announced)
-    if regime_rules is POST_20260526_RULES or not method_name:
+    if (
+        regime_rules is POST_20260526_RULES
+        or regime_rules is POST_20260727_RULES
+        or not method_name
+    ):
         return regime_rules
     if match_rule_by_mthd_nm(method_name, rules=regime_rules) is not None:
         return regime_rules
-    if match_rule_by_mthd_nm(method_name, rules=POST_20260526_RULES) is not None:
-        return POST_20260526_RULES
+    if match_rule_by_mthd_nm(method_name, rules=POST_20260727_RULES) is not None:
+        return POST_20260727_RULES
     return regime_rules
 
 
@@ -958,8 +989,9 @@ def resolve_evaluation_rule(
 
     [추가 판별]
     - 규칙 벌(rules)을 명시하지 않으면 공고일로 시행일 구간 벌을 고릅니다.
-      공고일 2026-05-26 이상은 현행 벌, 2025-09-01 이상은 제2025-257호 벌,
-      2023-05-01 이상은 제2023-53호 벌이며, 공고일이 없으면 현행 벌을 씁니다.
+      공고일 2026-07-27 이상은 제2026-390호 벌, 2026-05-26 이상은 제2026-260호 벌,
+      2025-09-01 이상은 제2025-257호 벌, 2023-05-01 이상은 제2023-53호 벌이며,
+      공고일이 없으면 현행인 제2026-390호 벌을 씁니다.
       고른 벌에 이름이 없으면 현행 벌까지 대조하고, 어느 벌에도 없으면 RULE_NOT_FOUND 입니다.
     - 원문 낙찰방법이 '공고서참조'면 sucsfbidMthdCd 계열명으로 판별
     - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).

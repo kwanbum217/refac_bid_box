@@ -10,6 +10,7 @@ from src.app.services.evaluation_rules import (
     BLOCK_CODE_NOT_SERVC,
     BLOCK_CODE_RULE_NOT_FOUND,
     POST_20260526_RULES,
+    POST_20260727_RULES,
     get_rule_by_id,
     resolve_evaluation_rule,
     resolve_evaluation_rule_from_raw_data,
@@ -36,14 +37,14 @@ REAL_ANNOUNCEMENT_CASES = [
         "R26BK01721708",
         "적격심사제-여객 육상운송용역 적격심사 추정가격 5억원미만",
         "89.995",
-        "SERVC_QUAL_POST_20260526_ATTACH_03",
+        "SERVC_QUAL_POST_20260727_ATTACH_03",
         216_840_000,
     ),
     (
         "R26BK01719469",
         "적격심사제-소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만",
         "89.995",
-        "SERVC_QUAL_POST_20260526_ATTACH_04",
+        "SERVC_QUAL_POST_20260727_ATTACH_04",
         162_096_000,
     ),
     (
@@ -150,66 +151,82 @@ def test_real_announcement_string_resolves_to_expected_star(
 
 # 레지스트리 기본값과 실제 공고값이 달랐던 DB 행이다. 이 테스트는 기본값을 복사해
 # 넣어 매칭하는 동어반복이 아니라 공고값 우선 경고를 보호한다.
+# 여객과 소프트웨어 대상 두 행은 제2026-260호 벌에서만 기본값이 달라 공고일을 명시한다.
 REAL_MISMATCH_CASES = [
     (
         "R26BK01656148",
         "적격심사제-시설분야용역 적격심사 추정가격 5억원 미만",
         "87.995",
         "89.995",
+        None,
     ),
     (
         "R26BK01721708",
         "적격심사제-여객 육상운송용역 적격심사 추정가격 5억원미만",
         "89.995",
         "87.995",
+        "2026-06-01",
     ),
     (
         "R26BK01719469",
         "적격심사제-소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만",
         "89.995",
         "87.995",
+        "2026-06-01",
     ),
     (
         "R26BK01547916",
         "적격심사제-소프트웨어용역(중소기업자간 경쟁제품 비대상) 추정가격 고시금액미만",
         "84.245",
         "86.245",
+        None,
     ),
     (
         "R26BK01676174",
         "적격심사제-학술연구용역 적격심사 추정가격 고시금액 미만",
         "84.245",
         "86.245",
+        None,
     ),
     (
         "R26BK01678121",
         "적격심사제-폐기물처리용역 적격심사 추정가격 고시금액미만",
         "87.745",
         "86.245",
+        None,
     ),
     (
         "R26BK01595105",
         "적격심사제-폐기물처리용역 적격심사 추정가격 5억원미만-추정가격 고시금액이상",
         "87.745",
         "82.495",
+        None,
     ),
     (
         "R26BK01686463",
         "적격심사제-추정가격 2억원 미만인 용역",
         "86.245",
         "87.745",
+        None,
     ),
     (
         "R26BK01674713",
         "적격심사제-추정가격 5억원 미만 2억원 이상인 용역",
         "86.245",
         "86.745",
+        None,
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("bid_ntce_no", "announcement_method", "announcement_rate", "registry_rate"),
+    (
+        "bid_ntce_no",
+        "announcement_method",
+        "announcement_rate",
+        "registry_rate",
+        "bid_ntce_dt",
+    ),
     REAL_MISMATCH_CASES,
     ids=[case[0] for case in REAL_MISMATCH_CASES],
 )
@@ -218,12 +235,14 @@ def test_real_announcement_rate_wins_over_registry_default(
     announcement_method: str,
     announcement_rate: str,
     registry_rate: str,
+    bid_ntce_dt: str | None,
 ) -> None:
     result = resolve_evaluation_rule(
         category="Servc",
         prearng_prce_dcsn_mthd_nm="복수예가",
         sucsfbid_mthd_nm=announcement_method,
         sucsfbid_lwlt_rate=announcement_rate,
+        bid_ntce_dt=bid_ntce_dt,
     )
 
     assert bid_ntce_no.startswith("R26BK")
@@ -236,7 +255,7 @@ def test_real_announcement_rate_wins_over_registry_default(
 
 def test_real_star_cases_cover_all_registry_rule_ids() -> None:
     expected_ids = {case[3] for case in REAL_ANNOUNCEMENT_CASES}
-    assert expected_ids == {rule.rule_id for rule in POST_20260526_RULES}
+    assert expected_ids == {rule.rule_id for rule in POST_20260727_RULES}
 
 
 @pytest.mark.parametrize(
@@ -371,7 +390,7 @@ class TestMovedNormalizedPatternMatching:
             ),
             (
                 "적격심사제-소프트웨어용역-중소기업자간 경쟁제품 대상-적격심사 추정가격 5억원 미만",
-                "SERVC_QUAL_POST_20260526_ATTACH_04",
+                "SERVC_QUAL_POST_20260727_ATTACH_04",
                 "87.995",
             ),
         ],
