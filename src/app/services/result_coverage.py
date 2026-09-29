@@ -29,6 +29,14 @@ src/app/services/result_coverage.py
 추가했다. 판정 규칙(5주 기저·방식 보정·2주 연속)은 바꾸지 않으며, 억제 대상도
 판정 결과에는 suppressed 표시와 함께 남는다. 기본값은 억제 없음이다.
 
+2026-09-29 나라장터 대조(docs/analysis/servc_g2b_manual_checklist_20260928.md 4.1절)에서
+직찰·설계공모·수의계약 공고는 전자개찰 대상이 아니라 낙찰결과 API 에 결과가 거의 오지
+않는데도 매칭률 분모에 들어가 왜곡한다고 판정했다. 플래그
+RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS 를 켜면 입찰방식이 '전자' 로 시작하지 않는 직찰·우편
+계열 공고를 매칭 여부와 무관하게 분모와 분자에서 뺀다. 현재 주와 전년 기저에 대칭
+적용하고, 비교 필드 offline_excluded 와 offline_adjusted_* 는 플래그와 무관하게 각 행에
+남긴다. 기본값은 꺼짐이다.
+
 읽기 전용 함수다. DB 쓰기는 하지 않는다. openg_dt 에 인덱스가 없으므로 공고
 조회는 반드시 bid_ntce_dt 범위(ix_bid_ann_dt_cat)로 먼저 좁힌 뒤 openg_dt
 조건을 더한다. 차수 정규화와 주 집계는 파이썬에서 해 SQLite 테스트와 동작을
@@ -66,6 +74,9 @@ BASELINE_WINDOW_WEEKS = 2
 # 분류별 최근 성숙 주와 직전 성숙 주가 연속으로 조건을 만족해야 경고한다(A6).
 CONSECUTIVE_ALERT_WEEKS = 2
 NULL_METHOD_LABEL = "(null)"
+# 나라장터 전자개찰 대상은 입찰방식이 '전자' 로 시작하는 공고뿐이다. 직찰·우편 계열은
+# 전자입찰이 아니므로 낙찰결과 API 에 결과가 거의 오지 않는다.
+ONLINE_METHOD_PREFIX = "전자"
 
 BAND_LARGE = "large"
 BAND_SMALL = "small"
@@ -285,6 +296,20 @@ def _is_later_cancelled(
     return max_ord > ord_value
 
 
+def _is_offline_bid(bid_methd_nm: str | None) -> bool:
+    """입찰방식이 나라장터 전자개찰 대상이 아니면 True 다.
+
+    값이 없거나 공백뿐이면 False 다. 앞뒤 공백을 제거한 값이 '전자' 로 시작하면
+    False 이고('전자입찰', '전자시담' 등), 그 밖의 직찰·우편 계열이면 True 다.
+    """
+    if bid_methd_nm is None:
+        return False
+    method = bid_methd_nm.strip()
+    if not method:
+        return False
+    return not method.startswith(ONLINE_METHOD_PREFIX)
+
+
 def compute_result_match_rates(
     db: Session,
     *,
@@ -292,6 +317,7 @@ def compute_result_match_rates(
     weeks: int = 8,
     min_elapsed_days: int = 28,
     exclude_later_cancelled: bool | None = None,
+    exclude_offline_bids: bool | None = None,
 ) -> list[dict[str, Any]]:
     """분류 x 성숙 개찰 주 x 규모별 매칭률과 전년 동기 매칭률을 계산한다.
 
@@ -307,6 +333,14 @@ def compute_result_match_rates(
     모든 행에는 비교 필드 later_cancelled_excluded(현재 주에서 빠질 미매칭 대상
     행 수), cancel_adjusted_announcements/matched/rate, 전년 단일 주 기준
     baseline_cancel_adjusted_announcements/matched/rate 를 싣는다.
+
+    exclude_offline_bids 가 True 면 입찰방식이 '전자' 로 시작하지 않는 직찰·우편 계열
+    공고 행을 매칭 여부와 무관하게 분모와 분자에서 뺀 집합으로 같은 파생 계산을 한다.
+    None 이면 settings.RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS 를 쓴다. 두 제외 규칙은 함께
+    켤 수 있고, 비교 필드 offline_excluded(현재 주 오프라인 행 수, 매칭 포함),
+    offline_adjusted_announcements/matched/rate 와 전년 단일 주 기준
+    baseline_offline_adjusted_announcements/matched/rate 는 플래그와 무관하게 싣는다.
+    비교 필드는 각자 자기 규칙만 반영한다.
 
     반환 행의 baseline_* 필드는 364일 전 같은 주 단일 주 값이고,
     baseline_multi_* 필드는 그 주를 중심으로 앞뒤 BASELINE_WINDOW_WEEKS 주를
@@ -384,6 +418,8 @@ def compute_result_match_rates(
 
     if exclude_later_cancelled is None:
         exclude_later_cancelled = settings.RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED
+    if exclude_offline_bids is None:
+        exclude_offline_bids = settings.RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS
 
     # 미매칭 행만 제외 대상이 될 수 있으므로 대상 후보 공고번호만 취소공고 차수를 조회한다.
     lookup_numbers = {
@@ -395,9 +431,13 @@ def compute_result_match_rates(
     }
     max_cancel_ords = _later_cancelled_max_ords(db, lookup_numbers)
 
+    # band_counts 는 켜진 제외 규칙이 적용된 집합이고, base_band_counts 는 규칙 적용 전
+    # 원 집합이다. 비교 필드는 자기 규칙만 반영해야 하므로 원 집합에서 각 규칙 대상만 뺀다.
     band_counts: dict[tuple[str, date, str], list[int]] = {}
+    base_band_counts: dict[tuple[str, date, str], list[int]] = {}
     method_counts: dict[tuple[str, date, str, str], list[int]] = {}
     excluded_counts: dict[tuple[str, date, str], int] = {}
+    offline_counts: dict[tuple[str, date, str], list[int]] = {}
     counted_rows: list[Any] = []
     for row in announcement_rows:
         no, ord_, category, presmpt_prce, openg_dt, bid_methd_nm = row
@@ -409,14 +449,26 @@ def compute_result_match_rates(
         band = BAND_LARGE if (presmpt_prce or 0) >= LARGE_PRICE_THRESHOLD else BAND_SMALL
         method = bid_methd_nm if bid_methd_nm is not None else NULL_METHOD_LABEL
         is_matched = (no, category, normalize_ord(ord_)) in result_keys
+        is_offline = _is_offline_bid(bid_methd_nm)
+        counts_key = (category, start, band)
+        base_bucket = base_band_counts.setdefault(counts_key, [0, 0])
+        base_bucket[0] += 1
+        if is_matched:
+            base_bucket[1] += 1
+        if is_offline:
+            offline_bucket = offline_counts.setdefault(counts_key, [0, 0])
+            offline_bucket[0] += 1
+            if is_matched:
+                offline_bucket[1] += 1
         is_excluded = not is_matched and _is_later_cancelled(no, ord_, category, max_cancel_ords)
         if is_excluded:
-            excluded_key = (category, start, band)
-            excluded_counts[excluded_key] = excluded_counts.get(excluded_key, 0) + 1
+            excluded_counts[counts_key] = excluded_counts.get(counts_key, 0) + 1
             if exclude_later_cancelled:
                 continue
+        if is_offline and exclude_offline_bids:
+            continue
         counted_rows.append(row)
-        band_bucket = band_counts.setdefault((category, start, band), [0, 0])
+        band_bucket = band_counts.setdefault(counts_key, [0, 0])
         band_bucket[0] += 1
         method_bucket = method_counts.setdefault((category, start, band, method), [0, 0])
         method_bucket[0] += 1
@@ -433,22 +485,35 @@ def compute_result_match_rates(
         for category in TARGET_CATEGORIES:
             for band in (BAND_LARGE, BAND_SMALL):
                 announcements, matched = band_counts.get((category, start, band), [0, 0])
+                base_announcements, base_matched = base_band_counts.get(
+                    (category, start, band), [0, 0]
+                )
                 later_cancelled_excluded = excluded_counts.get((category, start, band), 0)
+                offline_announcements, offline_matched = offline_counts.get(
+                    (category, start, band), [0, 0]
+                )
                 baseline_announcements, baseline_matched = band_counts.get(
                     (category, center, band), [0, 0]
                 )
+                baseline_base_announcements, baseline_base_matched = base_band_counts.get(
+                    (category, center, band), [0, 0]
+                )
                 baseline_excluded = excluded_counts.get((category, center, band), 0)
-                # 제외를 켜면 band_counts 가 이미 제외 집합이고, 끄면 원 분모에서 대상 건을 뺀다.
-                cancel_announcements = (
-                    announcements
-                    if exclude_later_cancelled
-                    else announcements - later_cancelled_excluded
+                baseline_offline_announcements, baseline_offline_matched = offline_counts.get(
+                    (category, center, band), [0, 0]
                 )
-                baseline_cancel_announcements = (
-                    baseline_announcements
-                    if exclude_later_cancelled
-                    else baseline_announcements - baseline_excluded
+                # 비교 필드는 각 규칙만 반영한다. 취소 제외는 미매칭 건만, 오프라인 제외는
+                # 매칭 여부와 무관하게 전부 뺀다.
+                cancel_announcements = base_announcements - later_cancelled_excluded
+                cancel_matched = base_matched
+                baseline_cancel_announcements = baseline_base_announcements - baseline_excluded
+                baseline_cancel_matched = baseline_base_matched
+                offline_adjusted_announcements = base_announcements - offline_announcements
+                offline_adjusted_matched = base_matched - offline_matched
+                baseline_offline_adjusted_announcements = (
+                    baseline_base_announcements - baseline_offline_announcements
                 )
+                baseline_offline_adjusted_matched = baseline_base_matched - baseline_offline_matched
                 baseline_multi_announcements, baseline_multi_matched = _sum_band_counts(
                     band_counts, category, band, window
                 )
@@ -500,12 +565,26 @@ def compute_result_match_rates(
                         ),
                         "later_cancelled_excluded": later_cancelled_excluded,
                         "cancel_adjusted_announcements": cancel_announcements,
-                        "cancel_adjusted_matched": matched,
-                        "cancel_adjusted_rate": _rate(matched, cancel_announcements),
+                        "cancel_adjusted_matched": cancel_matched,
+                        "cancel_adjusted_rate": _rate(cancel_matched, cancel_announcements),
                         "baseline_cancel_adjusted_announcements": baseline_cancel_announcements,
-                        "baseline_cancel_adjusted_matched": baseline_matched,
+                        "baseline_cancel_adjusted_matched": baseline_cancel_matched,
                         "baseline_cancel_adjusted_rate": _rate(
-                            baseline_matched, baseline_cancel_announcements
+                            baseline_cancel_matched, baseline_cancel_announcements
+                        ),
+                        "offline_excluded": offline_announcements,
+                        "offline_adjusted_announcements": offline_adjusted_announcements,
+                        "offline_adjusted_matched": offline_adjusted_matched,
+                        "offline_adjusted_rate": _rate(
+                            offline_adjusted_matched, offline_adjusted_announcements
+                        ),
+                        "baseline_offline_adjusted_announcements": (
+                            baseline_offline_adjusted_announcements
+                        ),
+                        "baseline_offline_adjusted_matched": baseline_offline_adjusted_matched,
+                        "baseline_offline_adjusted_rate": _rate(
+                            baseline_offline_adjusted_matched,
+                            baseline_offline_adjusted_announcements,
                         ),
                     }
                 )

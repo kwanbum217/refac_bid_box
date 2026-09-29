@@ -22,6 +22,7 @@ from src.app.services.result_coverage import (
     MIN_WEEK_SAMPLES,
     NOTICE_LOOKBACK_DAYS,
     _is_later_cancelled,
+    _is_offline_bid,
     compute_result_match_rates,
     evaluate_match_rate_alerts,
     normalize_ord,
@@ -624,7 +625,13 @@ def test_adjusted_rate_none_for_small_and_empty_week(isolated_db):
 
 @pytest.mark.asyncio
 async def test_task_notifies_only_when_alert(isolated_db, monkeypatch):
+    from src.app.core.config import settings
     from src.tasks import coverage_tasks
+
+    # 로컬 .env 의 운영값과 무관하게 코드 기본값으로 고정한다.
+    monkeypatch.setattr(settings, "RESULT_COVERAGE_ALERT_SUPPRESS", "")
+    monkeypatch.setattr(settings, "RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED", False)
+    monkeypatch.setattr(settings, "RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS", False)
 
     db = isolated_db
     # 최근 성숙 주와 직전 성숙 주 모두 대형 Servc 공고 100건이 전부 미매칭이다(A6 2주 연속).
@@ -1281,3 +1288,223 @@ def test_later_cancelled_numeric_ord_still_target(isolated_db):
     )
     assert row["announcements"] == 0
     assert row["later_cancelled_excluded"] == 1
+
+
+def test_is_offline_bid_classification():
+    """전자로 시작하지 않는 입찰방식만 오프라인이고 None·공백은 오프라인이 아니다."""
+    assert _is_offline_bid(None) is False
+    assert _is_offline_bid("") is False
+    assert _is_offline_bid("   ") is False
+    assert _is_offline_bid("전자입찰") is False
+    assert _is_offline_bid("전자시담") is False
+    assert _is_offline_bid(" 전자시담(2인 이상) ") is False
+    assert _is_offline_bid("직찰") is True
+    assert _is_offline_bid(" 직찰 ") is True
+    assert _is_offline_bid("직찰/우편") is True
+    assert _is_offline_bid("우편/상시") is True
+
+
+def test_offline_flag_excludes_unmatched_from_denominator(isolated_db):
+    """직찰 미매칭 행은 플래그 켜짐에서만 분모에서 빠진다."""
+    db = isolated_db
+    _add_announcement(db, "2026-AA0001", "001", "Servc", W, bid_methd_nm="직찰")
+    db.commit()
+
+    off = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_offline_bids=False),
+        "Servc",
+        "small",
+        W,
+    )
+    assert off["announcements"] == 1
+    assert off["matched"] == 0
+    assert off["rate"] == pytest.approx(0.0)
+    assert off["offline_excluded"] == 1
+    assert off["offline_adjusted_announcements"] == 0
+    assert off["offline_adjusted_matched"] == 0
+    assert off["offline_adjusted_rate"] is None
+
+    on = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_offline_bids=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert on["announcements"] == 0
+    assert on["matched"] == 0
+    assert on["rate"] is None
+    assert on["offline_excluded"] == 1
+    assert on["offline_adjusted_announcements"] == 0
+    assert on["offline_adjusted_rate"] is None
+
+
+def test_offline_flag_excludes_matched_from_numerator_and_denominator(isolated_db):
+    """오프라인 매칭 행도 켜짐에서 분모와 분자 모두에서 빠진다."""
+    db = isolated_db
+    _add_announcement(db, "2026-AB0001", "001", "Servc", W, bid_methd_nm="직찰/우편")
+    _add_result(db, "2026-AB0001", "001", "Servc", W)
+    db.commit()
+
+    off = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_offline_bids=False),
+        "Servc",
+        "small",
+        W,
+    )
+    assert off["announcements"] == 1
+    assert off["matched"] == 1
+    assert off["rate"] == pytest.approx(1.0)
+    assert off["offline_excluded"] == 1
+
+    on = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_offline_bids=True),
+        "Servc",
+        "small",
+        W,
+    )
+    assert on["announcements"] == 0
+    assert on["matched"] == 0
+    assert on["rate"] is None
+    assert on["offline_excluded"] == 1
+    assert on["offline_adjusted_announcements"] == 0
+    assert on["offline_adjusted_matched"] == 0
+    assert on["offline_adjusted_rate"] is None
+
+
+def test_offline_flag_applies_to_baseline_symmetrically(isolated_db):
+    """플래그가 전년 단일 주와 5주 기저에도 대칭 적용된다."""
+    db = isolated_db
+    center = W - timedelta(days=BASELINE_OFFSET_DAYS)
+    _add_announcement(db, "2026-AC0001", "001", "Thng", W, bid_methd_nm="직찰")
+    _add_result(db, "2026-AC0001", "001", "Thng", W)
+    _add_announcement(db, "2025-AC0001", "001", "Thng", center, bid_methd_nm="직찰")
+    _add_announcement(
+        db, "2025-AC0002", "001", "Thng", center + timedelta(days=7), bid_methd_nm="우편/상시"
+    )
+    db.commit()
+
+    off = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_offline_bids=False),
+        "Thng",
+        "small",
+        W,
+    )
+    assert off["announcements"] == 1
+    assert off["matched"] == 1
+    assert off["baseline_announcements"] == 1
+    assert off["baseline_matched"] == 0
+    assert off["baseline_rate"] == pytest.approx(0.0)
+    assert off["baseline_multi_announcements"] == 2
+    assert off["baseline_multi_matched"] == 0
+    assert off["offline_excluded"] == 1
+    assert off["baseline_offline_adjusted_announcements"] == 0
+    assert off["baseline_offline_adjusted_matched"] == 0
+    assert off["baseline_offline_adjusted_rate"] is None
+
+    on = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_offline_bids=True),
+        "Thng",
+        "small",
+        W,
+    )
+    assert on["announcements"] == 0
+    assert on["matched"] == 0
+    assert on["rate"] is None
+    assert on["baseline_announcements"] == 0
+    assert on["baseline_matched"] == 0
+    assert on["baseline_rate"] is None
+    assert on["baseline_multi_announcements"] == 0
+    assert on["baseline_multi_matched"] == 0
+    assert on["baseline_multi_rate"] is None
+    assert on["adjusted_rate"] is None
+    assert on["offline_excluded"] == 1
+    assert on["baseline_offline_adjusted_announcements"] == 0
+    assert on["baseline_offline_adjusted_rate"] is None
+
+
+def test_offline_comparison_fields_always_present(isolated_db):
+    """플래그가 꺼져 있어도 비교 필드가 채워지고 기존 필드는 오프라인 행을 포함한다."""
+    db = isolated_db
+    _add_announcement(db, "2026-AD0001", "001", "Servc", W, bid_methd_nm="전자입찰")
+    _add_result(db, "2026-AD0001", "001", "Servc", W)
+    _add_announcement(db, "2026-AD0002", "001", "Servc", W, bid_methd_nm="우편/상시")
+    db.commit()
+
+    row = _row_of(
+        compute_result_match_rates(db, as_of=AS_OF, weeks=1, exclude_offline_bids=False),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 2
+    assert row["matched"] == 1
+    assert row["rate"] == pytest.approx(0.5)
+    assert row["offline_excluded"] == 1
+    assert row["offline_adjusted_announcements"] == 1
+    assert row["offline_adjusted_matched"] == 1
+    assert row["offline_adjusted_rate"] == pytest.approx(1.0)
+    assert row["baseline_offline_adjusted_announcements"] == 0
+    assert row["baseline_offline_adjusted_matched"] == 0
+    assert row["baseline_offline_adjusted_rate"] is None
+
+
+def test_offline_flag_defaults_from_settings(isolated_db, monkeypatch):
+    """인자를 주지 않으면 설정값을 따르며 기본값은 꺼짐이다."""
+    from src.app.core.config import Settings, settings
+
+    db = isolated_db
+    _add_announcement(db, "2026-AE0001", "001", "Servc", W, bid_methd_nm="직찰")
+    db.commit()
+
+    # 로컬 .env 값에 의존하지 않도록 코드 기본값을 검사한다.
+    assert Settings.model_fields["RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS"].default is False
+    monkeypatch.setattr(settings, "RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS", False)
+    off = _row_of(compute_result_match_rates(db, as_of=AS_OF, weeks=1), "Servc", "small", W)
+    assert off["announcements"] == 1
+
+    monkeypatch.setattr(settings, "RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS", True)
+    on = _row_of(compute_result_match_rates(db, as_of=AS_OF, weeks=1), "Servc", "small", W)
+    assert on["announcements"] == 0
+
+
+def test_both_exclusion_flags_apply_each_rule_independently(isolated_db):
+    """두 플래그가 함께 켜지면 두 규칙 모두 적용되고 비교 필드는 각자 자기 규칙만 반영한다."""
+    db = isolated_db
+    # 직찰 매칭 행은 오프라인 규칙만 뺀다.
+    _add_announcement(db, "2026-AF0001", "001", "Servc", W, bid_methd_nm="직찰")
+    _add_result(db, "2026-AF0001", "001", "Servc", W)
+    # 000 일반공고 미매칭 + 001 취소공고는 취소 규칙만 뺀다.
+    _add_announcement(
+        db, "2026-AF0002", "000", "Servc", W, ntce_kind_nm="일반공고", bid_methd_nm="전자입찰"
+    )
+    _add_announcement(db, "2026-AF0002", "001", "Servc", W, ntce_kind_nm="취소공고")
+    # 순수 매칭 행은 어느 규칙도 빼지 않는다.
+    _add_announcement(db, "2026-AF0003", "001", "Servc", W, bid_methd_nm="전자입찰")
+    _add_result(db, "2026-AF0003", "001", "Servc", W)
+    db.commit()
+
+    row = _row_of(
+        compute_result_match_rates(
+            db,
+            as_of=AS_OF,
+            weeks=1,
+            exclude_later_cancelled=True,
+            exclude_offline_bids=True,
+        ),
+        "Servc",
+        "small",
+        W,
+    )
+    assert row["announcements"] == 1
+    assert row["matched"] == 1
+    assert row["rate"] == pytest.approx(1.0)
+    assert row["later_cancelled_excluded"] == 1
+    assert row["offline_excluded"] == 1
+    # 취소 규칙만 반영한 비교 필드는 오프라인 매칭 행을 유지한다.
+    assert row["cancel_adjusted_announcements"] == 2
+    assert row["cancel_adjusted_matched"] == 2
+    assert row["cancel_adjusted_rate"] == pytest.approx(1.0)
+    # 오프라인 규칙만 반영한 비교 필드는 취소 대상 행을 유지한다.
+    assert row["offline_adjusted_announcements"] == 2
+    assert row["offline_adjusted_matched"] == 1
+    assert row["offline_adjusted_rate"] == pytest.approx(0.5)
