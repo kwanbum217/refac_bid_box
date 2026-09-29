@@ -203,7 +203,7 @@ def test_check_dataset_drift_multi_feature(tmp_path):
             "srvce_div_nm": ["일반용역"] * 95 + ["기술용역"] * 55,
         }
     )
-    result_stable = check_dataset_drift(baseline_dist, df_stable)
+    result_stable = check_dataset_drift(baseline_dist, df_stable, excluded_features=(), quorum=1)
     assert result_stable["status"] == "STABLE"
     assert result_stable["overall_action"] == "STABLE"
     assert result_stable["drift_feature_count"] == 0
@@ -216,7 +216,7 @@ def test_check_dataset_drift_multi_feature(tmp_path):
             "srvce_div_nm": ["일반용역"] * 95 + ["기술용역"] * 55,
         }
     )
-    result_drift = check_dataset_drift(baseline_dist, df_drift)
+    result_drift = check_dataset_drift(baseline_dist, df_drift, excluded_features=(), quorum=1)
     assert result_drift["status"] == "DRIFT_DETECTED"
     assert result_drift["overall_action"] == "TRIGGER_RETRAIN"
     assert result_drift["drift_feature_count"] >= 1
@@ -300,6 +300,8 @@ async def test_drift_monitor_task_records_and_notifies(isolated_db, tmp_path, mo
         return df_recent_drift
 
     monkeypatch.setattr("src.tasks.scheduled_tasks.build_training_dataset", _mock_build_dataset)
+    # 지속성 규칙 도입 이전의 단일 창 동작을 유지하기 위해 직전 창 드리프트를 True 로 고정합니다.
+    monkeypatch.setattr("src.tasks.scheduled_tasks._previous_window_drift", lambda *a, **k: True)
 
     mock_notify = AsyncMock()
     monkeypatch.setattr("src.tasks.scheduled_tasks.notify_drift_detected", mock_notify)

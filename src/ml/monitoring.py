@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,14 @@ import numpy as np
 import pandas as pd
 
 from src.app.core.timeutil import utcnow
+from src.ml.drift_verdict import (
+    DRIFT_FEATURE_QUORUM,
+    DRIFT_PERSISTENCE_WINDOWS,
+    DRIFT_VERDICT_EXCLUDED_FEATURES,
+    apply_drift_persistence,
+    summarize_drift_verdict,
+    tag_subgroup_entries,
+)
 from src.ml.features import CATEGORICAL_FEATURES, MISSING_CATEGORY
 from src.ml.psi import (
     DEFAULT_MIN_SAMPLES,
@@ -34,11 +43,15 @@ __all__ = [
     "DEFAULT_PSI_THRESHOLD",
     "DEFAULT_PSI_THRESHOLD_MISSING_LWLT",
     "DEFAULT_PSI_THRESHOLD_WITH_LWLT",
+    "DRIFT_FEATURE_QUORUM",
+    "DRIFT_PERSISTENCE_WINDOWS",
+    "DRIFT_VERDICT_EXCLUDED_FEATURES",
     "LWLT_RATE_MISSING_COLUMN",
     "SUBGROUP_KEY_MISSING_LWLT",
     "SUBGROUP_KEY_WITH_LWLT",
     "SUBGROUP_THRESHOLDS",
     "InsufficientSampleError",
+    "apply_drift_persistence",
     "calculate_categorical_psi",
     "calculate_psi",
     "check_dataset_drift",
@@ -223,6 +236,8 @@ def _evaluate_feature_drift_on_frame(
     effective_threshold: float,
     effective_min_samples: int,
     evaluation_window_days: int = 7,
+    excluded_features: frozenset[str] = frozenset(),
+    quorum: int = DRIFT_FEATURE_QUORUM,
 ) -> dict[str, Any]:
     """단일 프레임에 대한 특징별 PSI 계산 및 종합 판정."""
     results_by_feature: dict[str, dict[str, Any]] = {}
@@ -340,32 +355,10 @@ def _evaluate_feature_drift_on_frame(
                         "reason": "Baseline 히스토그램 정보 부족",
                     }
 
-    drift_features = [
-        {"feature": name, "psi": r["psi"], "sample_size": r["sample_size"]}
-        for name, r in results_by_feature.items()
-        if r.get("drift_detected") is True
-    ]
-
-    has_drift = len(drift_features) > 0
-    has_insufficient = any(
-        r.get("action") == "INSUFFICIENT_DATA" for r in results_by_feature.values()
-    )
-
-    if has_drift:
-        overall_action = "TRIGGER_RETRAIN"
-        verdict_status = "DRIFT_DETECTED"
-    elif has_insufficient:
-        overall_action = "INSUFFICIENT_DATA"
-        verdict_status = "INSUFFICIENT_DATA"
-    else:
-        overall_action = "STABLE"
-        verdict_status = "STABLE"
+    verdict = summarize_drift_verdict(results_by_feature, excluded_features, quorum)
 
     return {
-        "status": verdict_status,
-        "overall_action": overall_action,
-        "drift_feature_count": len(drift_features),
-        "drift_features": drift_features,
+        **verdict,
         "total_features_checked": len(results_by_feature),
         "evaluation_window_days": evaluation_window_days,
         "recent_samples": recent_row_count,
@@ -379,18 +372,27 @@ def check_dataset_drift(
     threshold: float | None = None,
     min_samples: int | None = None,
     evaluation_window_days: int = 7,
+    excluded_features: Iterable[str] | None = None,
+    quorum: int | None = None,
 ) -> dict[str, Any]:
     """최근 데이터셋(Single Source of Truth features.py 로 구축됨)과 baseline 간 다차원 PSI 계산.
 
     - baseline 에 by_lwlt_missing 키가 있고 df_recent 에 lwlt_rate_missing 컬럼이 있으면
       lwlt_rate_missing(0.0: with_lwlt, 1.0: missing_lwlt) 집단별로 분리 평가를 수행합니다.
     - with_lwlt 임계는 0.2, missing_lwlt 임계는 0.25 로 완화 적용됩니다.
-    - 두 집단 중 하나라도 TRIGGER_RETRAIN 이면 전체 모델이 TRIGGER_RETRAIN (DRIFT_DETECTED)이 됩니다.
+    - 두 집단 중 하나라도 창 드리프트이면 전체 모델이 TRIGGER_RETRAIN (DRIFT_DETECTED)이 됩니다.
     - missing_lwlt 단독 미달 시 drift_subgroup_type="missing_lwlt_only" 로 라벨이 차별화됩니다.
     - 표본 부족(100건) 기준은 집단별로 각각 적용됩니다.
     - by_lwlt_missing 키가 없는 옛 baseline 이나 lwlt_rate_missing 특징이 없는 모델에서는
       단일 집단 방식으로 평가하며 로그를 남깁니다.
+    - excluded_features 는 창 구성 차이로 구조적 오탐하는 특징으로, PSI 는 계산하되 판정에서
+      뺍니다. quorum 미만의 비제외 드리프트만으로는 STABLE 로 두고 below_quorum 을 남깁니다.
     """
+    effective_excluded = DRIFT_VERDICT_EXCLUDED_FEATURES
+    if excluded_features is not None:
+        effective_excluded = frozenset(excluded_features)
+    effective_quorum = DRIFT_FEATURE_QUORUM if quorum is None else quorum
+
     psi_cfg = baseline_dist.get("psi_config", {})
     effective_threshold = (
         threshold
@@ -444,6 +446,7 @@ def check_dataset_drift(
                 "overall_action": "INSUFFICIENT_DATA",
                 "drift_feature_count": 0,
                 "drift_features": [],
+                "excluded_drift_features": [],
                 "total_features_checked": len(sub_0_feat_dist),
                 "recent_samples": len(recent_sub_0),
                 "threshold": sub_0_thresh,
@@ -457,6 +460,8 @@ def check_dataset_drift(
                 effective_threshold=sub_0_thresh,
                 effective_min_samples=effective_min_samples,
                 evaluation_window_days=evaluation_window_days,
+                excluded_features=effective_excluded,
+                quorum=effective_quorum,
             )
             sub_0_res["threshold"] = sub_0_thresh
 
@@ -467,6 +472,7 @@ def check_dataset_drift(
                 "overall_action": "INSUFFICIENT_DATA",
                 "drift_feature_count": 0,
                 "drift_features": [],
+                "excluded_drift_features": [],
                 "total_features_checked": len(sub_1_feat_dist),
                 "recent_samples": len(recent_sub_1),
                 "threshold": sub_1_thresh,
@@ -480,6 +486,8 @@ def check_dataset_drift(
                 effective_threshold=sub_1_thresh,
                 effective_min_samples=effective_min_samples,
                 evaluation_window_days=evaluation_window_days,
+                excluded_features=effective_excluded,
+                quorum=effective_quorum,
             )
             sub_1_res["threshold"] = sub_1_thresh
 
@@ -488,15 +496,21 @@ def check_dataset_drift(
         sub_0_insufficient = sub_0_res.get("status") == "INSUFFICIENT_DATA"
         sub_1_insufficient = sub_1_res.get("status") == "INSUFFICIENT_DATA"
 
-        combined_drift_features: list[dict[str, Any]] = []
-        for feat in sub_0_res.get("drift_features", []):
-            combined_drift_features.append(
-                {**feat, "subgroup": "with_lwlt", "subgroup_key": SUBGROUP_KEY_WITH_LWLT}
-            )
-        for feat in sub_1_res.get("drift_features", []):
-            combined_drift_features.append(
-                {**feat, "subgroup": "missing_lwlt", "subgroup_key": SUBGROUP_KEY_MISSING_LWLT}
-            )
+        combined_drift_features = [
+            *tag_subgroup_entries(sub_0_res["drift_features"], "with_lwlt", SUBGROUP_KEY_WITH_LWLT),
+            *tag_subgroup_entries(
+                sub_1_res["drift_features"], "missing_lwlt", SUBGROUP_KEY_MISSING_LWLT
+            ),
+        ]
+
+        combined_excluded_features = [
+            *tag_subgroup_entries(
+                sub_0_res["excluded_drift_features"], "with_lwlt", SUBGROUP_KEY_WITH_LWLT
+            ),
+            *tag_subgroup_entries(
+                sub_1_res["excluded_drift_features"], "missing_lwlt", SUBGROUP_KEY_MISSING_LWLT
+            ),
+        ]
 
         if sub_0_drift or sub_1_drift:
             overall_action = "TRIGGER_RETRAIN"
@@ -527,6 +541,9 @@ def check_dataset_drift(
             "overall_action": overall_action,
             "drift_feature_count": len(combined_drift_features),
             "drift_features": combined_drift_features,
+            "excluded_drift_features": combined_excluded_features,
+            "excluded_features": sorted(effective_excluded),
+            "quorum": effective_quorum,
             "total_features_checked": len(sub_0_feat_dist) + len(sub_1_feat_dist),
             "evaluation_window_days": evaluation_window_days,
             "baseline_version": baseline_dist.get("model_version", ""),
@@ -557,6 +574,8 @@ def check_dataset_drift(
         effective_threshold=effective_threshold,
         effective_min_samples=effective_min_samples,
         evaluation_window_days=evaluation_window_days,
+        excluded_features=effective_excluded,
+        quorum=effective_quorum,
     )
     result["baseline_version"] = baseline_dist.get("model_version", "")
     return result
