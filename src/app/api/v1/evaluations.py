@@ -6,6 +6,7 @@ src/app/api/v1/evaluations.py
 | 기능 | 엔드포인트 |
 | --- | --- |
 | 통합 분석 | POST /api/v1/evaluations/analyze |
+| 별표 규칙 메타 | GET /api/v1/evaluations/rules |
 | 프로필 목록 | GET /api/v1/evaluations/profiles |
 | 프로필 생성 | POST /api/v1/evaluations/profiles |
 | 프로필 조회 | GET /api/v1/evaluations/profiles/{profile_id} |
@@ -70,6 +71,7 @@ from src.app.schemas.predictions import PredictPriceRequest
 from src.app.services.evaluation_rules import (
     METHOD_FAMILY_BY_CODE,
     METHOD_SOURCE_CODE,
+    POST_20260727_RULES,
     EvaluationRule,
     RuleResolutionResult,
     resolve_evaluation_rule_from_raw_data,
@@ -814,6 +816,68 @@ def analyze_evaluation(
         )
 
     return response
+
+
+# =============================================================================
+# 별표 규칙 메타 엔드포인트
+# =============================================================================
+
+# 산식 카드의 별표 표를 채우는 메타. 규칙 값은 evaluation_rules.py 가 유일한 정본이며
+# 이 계층은 값을 만들지 않고 직렬화만 합니다. 기관별·지역별 산식은 아직 코드에 없어,
+# 목록에 없는 산식이 있는 것처럼 보이지 않게 범위를 응답에 명시합니다.
+SERVC_RULE_META_SCOPE_NOTE = (
+    "기관별·지역별 산식은 아직 코드에 없습니다. 이 목록은 조달청 일반용역 적격심사 별표 "
+    "14종만 포함하며, 그 밖의 산식이 있는 것으로 해석해서는 안 됩니다."
+)
+
+
+def _serialize_rule_meta(rule: EvaluationRule) -> dict[str, str]:
+    """규칙 객체를 산식 표 여섯 열과 식별자로 옮깁니다.
+
+    기준비율·낙찰하한율은 float 를 거치지 않고 format_decimal_plain 문자열로 냅니다.
+    float 로 바꾸면 표시에 반올림 오차가 생깁니다.
+    """
+    return {
+        "rule_id": rule.rule_id,
+        "service_type": rule.service_type,
+        "table_name": rule.table_name,
+        "description": rule.description,
+        "effective_date": rule.effective_date,
+        "source": rule.source,
+        "base_rate": format_decimal_plain(rule.base_rate),
+        "lwlt_rate": format_decimal_plain(rule.lwlt_rate),
+    }
+
+
+@router.get("/rules", summary="일반용역 적격심사 별표 규칙 메타 목록")
+def list_evaluation_rules_meta(
+    bid_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """산식 카드의 별표 표를 채울 조달청 일반용역 적격심사 별표 14종 메타를 돌려줍니다.
+
+    값은 evaluation_rules.py 의 현행 규칙 상수에서 그대로 읽습니다. 여기서 값을 만들지 않습니다.
+    기관별·지역별 산식은 아직 코드에 없어 목록에 넣지 않고 scope_note 로 그 사실을 알립니다.
+    bid_id 가 주어지면 그 공고에 매칭된 별표를 matched_rule 로 함께 돌려주고, 매칭되지
+    않으면 null 로 두고 목록만 돌려줍니다. 규칙은 공개 정보라 인증을 요구하지 않습니다.
+    """
+    matched_rule: dict[str, str] | None = None
+    if bid_id is not None:
+        bid = _get_bid_or_404(db, bid_id)
+        raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+        resolution = resolve_evaluation_rule_from_raw_data(
+            category=bid.category,
+            raw_data=raw_data,
+        )
+        matched = resolution.rule
+        if matched is not None:
+            matched_rule = _serialize_rule_meta(matched)
+
+    return {
+        "scope_note": SERVC_RULE_META_SCOPE_NOTE,
+        "rules": [_serialize_rule_meta(rule) for rule in POST_20260727_RULES],
+        "matched_rule": matched_rule,
+    }
 
 
 # =============================================================================

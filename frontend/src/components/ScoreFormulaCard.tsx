@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { ChangeEvent } from 'react';
 
 export type ScoreTableField = 'maxPriceScore' | 'multiplier' | 'passThreshold' | 'nonPriceScore';
@@ -15,9 +16,8 @@ export interface ScoreFormulaCardProps {
   onChange: (field: ScoreTableField, value: string) => void;
   onRecalculate: () => void;
   isRecalculating?: boolean;
+  bidId?: number | null;
 }
-
-const MISSING_LABEL = '미제공';
 
 const CARD_STYLE = {
   backgroundColor: '#1e293b',
@@ -86,6 +86,28 @@ const INPUT_STYLE = {
   fontSize: '13px',
 } as const;
 
+const NOTE_STYLE = {
+  color: '#94a3b8',
+  fontSize: '12px',
+  lineHeight: 1.6,
+  margin: '8px 0 0',
+} as const;
+
+const SCOPE_NOTE_STYLE = {
+  color: '#fbbf24',
+  backgroundColor: '#1f2937',
+  border: '1px solid #7c5c1a',
+  borderRadius: '8px',
+  padding: '10px 12px',
+  fontSize: '12px',
+  lineHeight: 1.6,
+  margin: '12px 0 0',
+} as const;
+
+const MATCHED_ROW_STYLE = {
+  backgroundColor: '#1e3a5f',
+} as const;
+
 const isBlank = (value: unknown): boolean =>
   value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
 
@@ -105,46 +127,72 @@ const pick = (source: unknown, keys: string[]): unknown => {
   return undefined;
 };
 
-export interface RuleInfo {
-  tableName: string | null;
-  serviceType: string | null;
-  baseRate: string | null;
-  lwltRate: string | null;
-  effectiveDate: string | null;
-  source: string | null;
+export interface RuleMeta {
+  ruleId: string;
+  serviceType: string;
+  tableName: string;
+  description: string;
+  effectiveDate: string;
+  source: string;
+  baseRate: string;
+  lwltRate: string;
 }
 
-// 별표 규칙 값은 백엔드 응답에 실린 것만 읽는다. 프런트에서 수치를 만들지 않는다.
-export const extractRuleInfo = (prediction: Record<string, unknown> | null): RuleInfo => {
-  const root = prediction ?? {};
-  const verdict = pick(root, ['score_verdict', 'scoreVerdict']);
-  const rule = pick(root, [
-    'evaluation_rule',
-    'evaluationRule',
-    'applied_rule',
-    'appliedRule',
-    'rule',
-    'formula',
-    'formula_rule',
-  ]);
-  const ruleObject = rule ?? pick(verdict, ['rule', 'evaluation_rule', 'evaluationRule']);
-  const sources: unknown[] = [ruleObject, verdict, root];
+interface RuleMetaState {
+  status: 'loading' | 'ready' | 'error';
+  scopeNote: string | null;
+  rules: RuleMeta[];
+  matchedRule: RuleMeta | null;
+}
 
-  const first = (keys: string[]): string | null => {
-    for (const source of sources) {
-      const value = pick(source, keys);
-      if (value !== undefined) return asText(value);
-    }
-    return null;
-  };
+const EMPTY_RULE_META: RuleMetaState = {
+  status: 'loading',
+  scopeNote: null,
+  rules: [],
+  matchedRule: null,
+};
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+
+const readText = (record: Record<string, unknown>, key: string): string => {
+  const value = record[key];
+  if (value === null || value === undefined) return '';
+  return typeof value === 'string' ? value : String(value);
+};
+
+// 별표 규칙 값은 /api/v1/evaluations/rules 응답에서만 읽는다. 프런트에서 수치를 만들지 않는다.
+// 응답 필드명이 확정됐으므로 여러 후보 키를 훑는 탐색은 두지 않는다.
+export const normalizeRuleMeta = (value: unknown): RuleMeta | null => {
+  const record = asRecord(value);
+  if (!record) return null;
+  const ruleId = readText(record, 'rule_id');
+  if (ruleId === '') return null;
   return {
-    tableName: first(['table_name', 'tableName', 'rule_name', 'ruleName']),
-    serviceType: first(['service_type', 'serviceType']),
-    baseRate: first(['base_rate', 'baseRate']),
-    lwltRate: first(['lwlt_rate', 'lwltRate', 'lower_bound_rate', 'lowerBoundRate']),
-    effectiveDate: first(['effective_date', 'effectiveDate']),
-    source: first(['source', 'source_notice', 'sourceNotice']),
+    ruleId,
+    serviceType: readText(record, 'service_type'),
+    tableName: readText(record, 'table_name'),
+    description: readText(record, 'description'),
+    effectiveDate: readText(record, 'effective_date'),
+    source: readText(record, 'source'),
+    baseRate: readText(record, 'base_rate'),
+    lwltRate: readText(record, 'lwlt_rate'),
+  };
+};
+
+const parseRuleMetaState = (data: unknown): RuleMetaState => {
+  const record = asRecord(data) ?? {};
+  const rawRules = Array.isArray(record.rules) ? record.rules : [];
+  const rules: RuleMeta[] = [];
+  for (const item of rawRules) {
+    const rule = normalizeRuleMeta(item);
+    if (rule) rules.push(rule);
+  }
+  return {
+    status: 'ready',
+    scopeNote: typeof record.scope_note === 'string' ? record.scope_note : null,
+    rules,
+    matchedRule: normalizeRuleMeta(record.matched_rule),
   };
 };
 
@@ -186,11 +234,31 @@ export default function ScoreFormulaCard({
   onChange,
   onRecalculate,
   isRecalculating = false,
+  bidId = null,
 }: ScoreFormulaCardProps) {
-  const rule = extractRuleInfo(prediction);
+  const [ruleMeta, setRuleMeta] = useState<RuleMetaState>(EMPTY_RULE_META);
   const verdict = extractVerdict(prediction);
 
-  const hasRuleInfo = Object.values(rule).some((value) => value !== null);
+  // 별표 메타는 카드가 직접 받아 산식 표를 채운다. 실패해도 점수 판정 카드는 그대로 둔다.
+  useEffect(() => {
+    let cancelled = false;
+    const query = bidId === null ? '' : `?bid_id=${encodeURIComponent(String(bidId))}`;
+    setRuleMeta((prev) => ({ ...prev, status: 'loading' }));
+    fetch(`/api/v1/evaluations/rules${query}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((data) => {
+        if (cancelled) return;
+        setRuleMeta(parseRuleMetaState(data));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Rule meta fetch error:', err);
+        setRuleMeta({ status: 'error', scopeNote: null, rules: [], matchedRule: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bidId]);
 
   const missingInputs: string[] = [];
   if (isBlank(scoreTable.maxPriceScore)) missingInputs.push('가격 배점한도(B)');
@@ -248,15 +316,6 @@ export default function ScoreFormulaCard({
   const handleInput = (field: ScoreTableField) => (event: ChangeEvent<HTMLInputElement>) =>
     onChange(field, event.target.value);
 
-  const formulaRows: { label: string; value: string }[] = [
-    { label: '별표명', value: rule.tableName ?? MISSING_LABEL },
-    { label: '용역유형', value: rule.serviceType ?? MISSING_LABEL },
-    { label: '기준비율', value: rule.baseRate ?? MISSING_LABEL },
-    { label: '낙찰하한율', value: rule.lwltRate ?? MISSING_LABEL },
-    { label: '시행일', value: rule.effectiveDate ?? MISSING_LABEL },
-    { label: '출처고시', value: rule.source ?? MISSING_LABEL },
-  ];
-
   return (
     <div style={CARD_STYLE}>
       <h3 style={{ margin: '0 0 4px', fontSize: '16px', color: '#f8fafc' }}>정량평가 산식과 점수 판정</h3>
@@ -266,38 +325,53 @@ export default function ScoreFormulaCard({
 
       {/* 카드 1: 적용 산식 */}
       <div style={SECTION_STYLE}>
-        <h4 style={SECTION_TITLE_STYLE}>적용 산식</h4>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={TABLE_STYLE}>
-            <thead>
-              <tr>
-                <th style={TH_STYLE}>별표명</th>
-                <th style={TH_STYLE}>용역유형</th>
-                <th style={TH_STYLE}>기준비율</th>
-                <th style={TH_STYLE}>낙찰하한율</th>
-                <th style={TH_STYLE}>시행일</th>
-                <th style={TH_STYLE}>출처고시</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hasRuleInfo ? (
+        <h4 style={SECTION_TITLE_STYLE}>일반용역 적격심사 별표</h4>
+        {ruleMeta.status === 'loading' && (
+          <p style={NOTE_STYLE}>별표 규칙 정보를 불러오는 중입니다.</p>
+        )}
+        {ruleMeta.status === 'error' && (
+          <p style={{ ...NOTE_STYLE, color: '#fca5a5' }}>
+            별표 규칙 정보를 불러오지 못했습니다. 예측 결과와 점수 판정은 그대로 표시됩니다.
+          </p>
+        )}
+        {ruleMeta.status === 'ready' && ruleMeta.rules.length === 0 && (
+          <p style={NOTE_STYLE}>표시할 별표 규칙이 없습니다.</p>
+        )}
+        {ruleMeta.rules.length > 0 && (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={TABLE_STYLE}>
+              <thead>
                 <tr>
-                  {formulaRows.map((row) => (
-                    <td key={row.label} style={TD_STYLE}>
-                      {row.value}
-                    </td>
-                  ))}
+                  <th style={TH_STYLE}>별표명</th>
+                  <th style={TH_STYLE}>용역유형</th>
+                  <th style={TH_STYLE}>기준비율</th>
+                  <th style={TH_STYLE}>낙찰하한율</th>
+                  <th style={TH_STYLE}>시행일</th>
+                  <th style={TH_STYLE}>출처고시</th>
                 </tr>
-              ) : (
-                <tr>
-                  <td colSpan={6} style={{ ...TD_STYLE, color: '#94a3b8' }}>
-                    백엔드 응답에 별표 규칙 정보가 없어 적용 산식 값을 표시하지 못했습니다.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {ruleMeta.rules.map((row) => {
+                  const isMatched = ruleMeta.matchedRule?.ruleId === row.ruleId;
+                  return (
+                    <tr key={row.ruleId} style={isMatched ? MATCHED_ROW_STYLE : undefined}>
+                      <td style={TD_STYLE}>
+                        {row.tableName}
+                        {isMatched ? ' (선택 공고 적용)' : ''}
+                      </td>
+                      <td style={TD_STYLE}>{row.serviceType}</td>
+                      <td style={TD_STYLE}>{row.baseRate}</td>
+                      <td style={TD_STYLE}>{row.lwltRate}</td>
+                      <td style={TD_STYLE}>{row.effectiveDate}</td>
+                      <td style={TD_STYLE}>{row.source}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {ruleMeta.scopeNote && <p style={SCOPE_NOTE_STYLE}>{ruleMeta.scopeNote}</p>}
       </div>
 
       {/* 카드 2: 가격평점 판정 */}

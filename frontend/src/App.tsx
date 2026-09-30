@@ -748,6 +748,7 @@ export default function App() {
             onChange={handleScoreTableChange}
             onRecalculate={handlePredict}
             isRecalculating={isPredicting}
+            bidId={selectedBid?.id ?? null}
           />
         </section>
       )}
