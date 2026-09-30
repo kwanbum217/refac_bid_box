@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -29,10 +30,20 @@ from src.app.schemas.predictions import (
     PredictionResponse,
     PredictPriceRequest,
     PredictPriceResponse,
+    PredictPriceScoreVerdict,
 )
 from src.app.services.bid_queries import (
     DEFAULT_PREDICTION_MODEL,
     DEFAULT_PREDICTION_MODEL_BY_CATEGORY,
+)
+from src.app.services.evaluation_rules import (
+    RuleResolutionResult,
+    resolve_evaluation_rule_from_raw_data,
+)
+from src.app.services.evaluation_scoring import format_decimal_plain
+from src.app.services.price_score_verification import (
+    invert_pass_bid_range,
+    verify_price_score,
 )
 from src.ml.dataset import announcement_feature_payload
 from src.ml.features import build_feature_dict
@@ -82,6 +93,250 @@ def _classify_lwlt_missing_reason(
     if "최저" in combined:
         return "제도적 부재 (최저가낙찰제)"
     return "제도적 부재 (낙찰하한율 미적용 공고)"
+
+
+# ==============================================================================
+# 정량평가 점수 통과 판정 (price_score_verification 정본 연동)
+# ==============================================================================
+# 가격배점한도 B·평점계수 k·통과점수 T 는 공고 데이터에 없어 사용자가 공고문
+# 적격심사 배점표를 보고 입력합니다. 규칙 레지스트리가 실측으로 확정한 값이
+# 아니므로 추측값을 넣지 않습니다. 하나라도 없으면 점수를 만들지 않습니다.
+_SCORE_TABLE_LABELS: dict[str, str] = {
+    "max_price_score": "가격 배점한도(B)",
+    "multiplier": "평점 계수(k)",
+    "pass_threshold": "적격 통과점수(T)",  # nosec B105 - 배점표 항목 표기이지 비밀번호가 아닙니다
+}
+
+
+def _decimal_or_none(value: Any) -> Decimal | None:
+    try:
+        return Decimal(str(value).strip())
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _plain(value: Decimal | None) -> str | None:
+    """Decimal 을 지수 표기 없는 평문 문자열로 만듭니다 (없으면 None)."""
+    return format_decimal_plain(value) if value is not None else None
+
+
+def _announcement_lwlt_rate(raw: dict[str, Any]) -> Decimal | None:
+    """공고 raw_data 의 낙찰하한율(백분율, 예 89.995)을 Decimal 로 읽습니다."""
+    rate = _decimal_or_none(raw.get("sucsfbidLwltRate"))
+    if rate is None or rate <= 0:
+        return None
+    return rate
+
+
+def _score_table_attempted(payload: PredictPriceRequest) -> bool:
+    """배점표 입력을 하나라도 준 요청인지 봅니다.
+
+    안 준 요청은 판정 대상이 아니므로 기존 불확실성 경고를 건드리지 않습니다.
+    """
+    return any(
+        value is not None
+        for value in (
+            payload.max_price_score,
+            payload.multiplier,
+            payload.pass_threshold,
+            payload.non_price_score,
+        )
+    )
+
+
+def _join_warning(existing: str | None, extra: str) -> str:
+    return f"{existing} {extra}" if existing else extra
+
+
+def _interval_overlap_ratio(
+    predicted_low: int | None,
+    predicted_high: int | None,
+    pass_low: Decimal | None,
+    pass_high: Decimal | None,
+) -> Decimal | None:
+    """예측 구간과 통과 구간의 교집합 금액을 예측 구간 폭으로 나눈 겹침 비율."""
+    if predicted_low is None or predicted_high is None or pass_low is None or pass_high is None:
+        return None
+    width = Decimal(predicted_high) - Decimal(predicted_low)
+    if width <= 0:
+        return None
+    overlap = min(Decimal(predicted_high), pass_high) - max(Decimal(predicted_low), pass_low)
+    if overlap <= 0:
+        return Decimal("0")
+    return overlap / width
+
+
+def _score_verdict(
+    payload: PredictPriceRequest,
+    bid: BidAnnouncement,
+    pred_price: Decimal,
+    optimal_price: int,
+    price_low: int | None,
+    price_high: int | None,
+) -> PredictPriceScoreVerdict:
+    """추천가와 예측 구간을 price_score_verification 정본 함수로 채점합니다.
+
+    산식은 재구현하지 않고 verify_price_score·invert_pass_bid_range 만 호출합니다.
+    B·k·T 가 하나라도 없거나 규칙을 판별하지 못하면 점수를 만들지 않고 사유를 담습니다.
+    """
+    raw: dict[str, Any] = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    missing = [
+        name
+        for name, value in (
+            ("max_price_score", payload.max_price_score),
+            ("multiplier", payload.multiplier),
+            ("pass_threshold", payload.pass_threshold),
+        )
+        if value is None
+    ]
+
+    base_rate: Decimal | None = None
+    unavailable: list[str] = []
+    rule_result: RuleResolutionResult | None
+    try:
+        rule_result = resolve_evaluation_rule_from_raw_data(category=bid.category, raw_data=raw)
+    except Exception as exc:
+        rule_result = None
+        unavailable.append(f"적격심사 규칙 판별 중 오류가 발생했습니다 ({exc}).")
+    if rule_result is not None:
+        if rule_result.is_blocked:
+            code = rule_result.block_reason_code or "RULE_BLOCKED"
+            reason = (
+                rule_result.block_reason_message
+                or "낙찰방법으로 적격심사 규칙을 판별하지 못했습니다."
+            )
+            unavailable.append(f"적격심사 규칙 판별 차단({code}): {reason}")
+        elif rule_result.rule is None:
+            unavailable.append(
+                "낙찰방법으로 적격심사 규칙을 찾지 못해 기준비율을 확정할 수 없습니다."
+            )
+        else:
+            base_rate = _decimal_or_none(rule_result.rule.base_rate)
+            if base_rate is None or base_rate <= 0:
+                base_rate = None
+                unavailable.append("기준비율이 없거나 0 이하라 평점을 계산할 수 없습니다.")
+
+    if missing:
+        labels = ", ".join(_SCORE_TABLE_LABELS[name] for name in missing)
+        unavailable.append(
+            f"공고문 적격심사 배점표({labels})를 입력해야 점수를 계산할 수 있습니다."
+        )
+    if pred_price <= 0:
+        unavailable.append("예정가격이 0보다 커야 합니다.")
+
+    if unavailable:
+        return PredictPriceScoreVerdict(verifiable=False, unavailable_reasons=unavailable)
+
+    assert payload.max_price_score is not None
+    assert payload.multiplier is not None
+    assert payload.pass_threshold is not None
+    assert base_rate is not None
+    max_price_score = Decimal(str(payload.max_price_score))
+    multiplier = Decimal(str(payload.multiplier))
+    pass_threshold = Decimal(str(payload.pass_threshold))
+    if payload.non_price_score is None:
+        q_assumed = True
+        non_price_score = Decimal("0")
+    else:
+        q_assumed = False
+        non_price_score = Decimal(str(payload.non_price_score))
+
+    optimal_result = verify_price_score(
+        bid_price=Decimal(optimal_price),
+        pred_price=pred_price,
+        base_rate=base_rate,
+        max_price_score=max_price_score,
+        multiplier=multiplier,
+    )
+    low_score: Decimal | None = None
+    high_score: Decimal | None = None
+    if price_low is not None:
+        low_score = verify_price_score(
+            bid_price=Decimal(price_low),
+            pred_price=pred_price,
+            base_rate=base_rate,
+            max_price_score=max_price_score,
+            multiplier=multiplier,
+        ).score
+    if price_high is not None:
+        high_score = verify_price_score(
+            bid_price=Decimal(price_high),
+            pred_price=pred_price,
+            base_rate=base_rate,
+            max_price_score=max_price_score,
+            multiplier=multiplier,
+        ).score
+
+    range_result = invert_pass_bid_range(
+        pass_threshold=pass_threshold,
+        non_price_score=non_price_score,
+        base_rate=base_rate,
+        max_price_score=max_price_score,
+        multiplier=multiplier,
+        pred_price=pred_price,
+        announcement_lwlt_rate=_announcement_lwlt_rate(raw),
+    )
+
+    verdict = PredictPriceScoreVerdict(
+        verifiable=True,
+        base_rate=format_decimal_plain(base_rate),
+        max_price_score=format_decimal_plain(max_price_score),
+        multiplier=format_decimal_plain(multiplier),
+        pass_threshold=format_decimal_plain(pass_threshold),
+        non_price_score=format_decimal_plain(non_price_score),
+        non_price_score_assumed_zero=q_assumed,
+        optimal_price_score=_plain(optimal_result.score),
+        price_low_score=_plain(low_score),
+        price_high_score=_plain(high_score),
+        pass_range_status=range_result.status,
+        pass_range_reasons=list(range_result.reasons),
+    )
+
+    if q_assumed:
+        verdict.uncertainty_note = (
+            "비가격 정량점수 합계 Q 를 0 으로 가정해 통과 가능 구간을 역산했습니다. "
+            "Q 는 실제 수행능력 점수가 나오기 전에는 알 수 없어, 이 가정에 따라 구간이 "
+            "실제보다 관대하거나 엄격할 수 있습니다."
+        )
+
+    if range_result.is_feasible:
+        verdict.pass_ratio_low = _plain(range_result.ratio_low)
+        verdict.pass_ratio_high = _plain(range_result.ratio_high)
+        verdict.pass_amount_low = (
+            int(range_result.amount_low) if range_result.amount_low is not None else None
+        )
+        verdict.pass_amount_high = (
+            int(range_result.amount_high) if range_result.amount_high is not None else None
+        )
+        verdict.effective_ratio_low = _plain(range_result.effective_ratio_low)
+        verdict.effective_ratio_high = _plain(range_result.effective_ratio_high)
+        verdict.effective_amount_low = (
+            int(range_result.effective_amount_low)
+            if range_result.effective_amount_low is not None
+            else None
+        )
+        verdict.effective_amount_high = (
+            int(range_result.effective_amount_high)
+            if range_result.effective_amount_high is not None
+            else None
+        )
+        effective_low = (
+            range_result.effective_amount_low
+            if range_result.effective_amount_low is not None
+            else range_result.amount_low
+        )
+        effective_high = (
+            range_result.effective_amount_high
+            if range_result.effective_amount_high is not None
+            else range_result.amount_high
+        )
+        if effective_low is not None and effective_high is not None:
+            verdict.optimal_price_passes = effective_low <= Decimal(optimal_price) <= effective_high
+        verdict.predicted_interval_overlap_ratio = _plain(
+            _interval_overlap_ratio(price_low, price_high, effective_low, effective_high)
+        )
+
+    return verdict
 
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
@@ -279,6 +534,28 @@ def predict_price_api(
     if lwlt_missing:
         message += " (낙찰하한율 부재 공고로 예측 불확실성이 큽니다)"
 
+    # 정량평가 점수 통과 판정. 배점표 B·k·T 는 공고 데이터에 없어 사용자 입력이
+    # 정본이며, 없으면 점수를 만들지 않고 사유만 돌려줍니다.
+    score_verdict = _score_verdict(
+        payload=payload,
+        bid=bid,
+        pred_price=Decimal(str(reference_amount)),
+        optimal_price=optimal_price,
+        price_low=price_low,
+        price_high=price_high,
+    )
+    if not score_verdict.verifiable:
+        reason_text = "; ".join(score_verdict.unavailable_reasons)
+        message += f" (정량평가 점수 통과 판정을 하지 못했습니다: {reason_text})"
+        # 배점표를 주지 않은 요청은 판정 대상이 아니므로 기존 불확실성 경고를
+        # 건드리지 않습니다. 배점표를 줬는데도 판정하지 못했을 때만 이유를 덧붙입니다.
+        if _score_table_attempted(payload):
+            uncertainty_warning = _join_warning(
+                uncertainty_warning, f"정량평가 점수 판정 불가: {reason_text}"
+            )
+    elif score_verdict.uncertainty_note is not None:
+        uncertainty_warning = _join_warning(uncertainty_warning, score_verdict.uncertainty_note)
+
     t_model = t_point_infer + t_interval_infer
     c_model = c_point_infer + c_interval_infer
     t_total = max(0.0, time.perf_counter() - t_start)
@@ -321,6 +598,7 @@ def predict_price_api(
         extreme_prediction_warning=extreme_prediction_warning,
         uncertainty_warning=uncertainty_warning,
         message=message,
+        score_verdict=score_verdict,
     )
 
 
