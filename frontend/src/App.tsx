@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { processChatStream, buildChatRequestBody } from './chatStreamHandler';
+import ScoreFormulaCard, {
+  type ScoreTableField,
+  type ScoreTableInputs,
+} from './components/ScoreFormulaCard';
 
 const hasVisualizations = (vis: any): boolean => {
   if (!vis) return false;
@@ -74,6 +78,18 @@ export default function App() {
   const [categoryCode, setCategoryCode] = useState<string>('Thng');
   const [predictionResult, setPredictionResult] = useState<any>(null);
   const [isPredicting, setIsPredicting] = useState<boolean>(false);
+
+  // 적격심사 배점표 값. 공고 데이터에 없어 사용자가 입력하며 기본값을 넣지 않는다.
+  const [scoreTable, setScoreTable] = useState<ScoreTableInputs>({
+    maxPriceScore: '',
+    multiplier: '',
+    passThreshold: '',
+    nonPriceScore: '',
+  });
+
+  const handleScoreTableChange = (field: ScoreTableField, value: string) => {
+    setScoreTable((prev) => ({ ...prev, [field]: value }));
+  };
 
   // 챗봇 스트리밍 상태
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; text: string; docs?: any[]; visualizations?: any }[]>([]);
@@ -162,14 +178,33 @@ export default function App() {
       // 공고가 선택된 경우 원본 predict_price_api 경로를 쓴다.
       // 공고명/기관명이 전달돼야 quantum_leap 모델의 업종 판별과 지역 승수가 적용된다.
       if (selectedBid) {
+        // 배점표 입력은 전부 선택값이다. 비어 있으면 요청에 넣지 않아 추측값이 서버로 가지 않게 한다.
+        const scorePayload: Record<string, number> = {};
+        const pushScore = (key: string, raw: string) => {
+          const trimmed = raw.trim();
+          if (trimmed === '') return;
+          const value = Number(trimmed);
+          if (Number.isFinite(value) && value > 0) scorePayload[key] = value;
+        };
+        pushScore('max_price_score', scoreTable.maxPriceScore);
+        pushScore('multiplier', scoreTable.multiplier);
+        pushScore('pass_threshold', scoreTable.passThreshold);
+        pushScore('non_price_score', scoreTable.nonPriceScore);
+
         const res = await fetch('/api/v1/predictions/predict-price', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bid_id: selectedBid.id, user_price: String(basePrice) }),
+          body: JSON.stringify({
+            bid_id: selectedBid.id,
+            user_price: String(basePrice),
+            ...scorePayload,
+          }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        // 기존 표시 별칭을 유지하면서 score_verdict 등 전체 응답을 보관한다.
         setPredictionResult({
+          ...data,
           model_version: data.model_name,
           predicted_price: data.optimal_price,
           predicted_rate: data.prediction_rate,
@@ -705,6 +740,16 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {/* 정량평가 산식 및 점수 판정 카드 */}
+          <ScoreFormulaCard
+            prediction={predictionResult}
+            scoreTable={scoreTable}
+            onChange={handleScoreTableChange}
+            onRecalculate={handlePredict}
+            isRecalculating={isPredicting}
+            bidId={selectedBid?.id ?? null}
+          />
         </section>
       )}
 
