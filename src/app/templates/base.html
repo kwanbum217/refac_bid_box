@@ -143,6 +143,7 @@
                 {% if hide_sidebar %}
                     {% if user %}
                         <form action="{{ url('accounts:logout') }}" method="POST" style="display:inline;margin:0;padding:0;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 cursor-pointer">
                                 <i class="fas fa-sign-out-alt text-[11px]"></i>
                                 로그아웃
