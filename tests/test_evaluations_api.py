@@ -25,6 +25,7 @@ from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.bids import BidAnnouncement
 from src.app.schemas.predictions import PredictPriceResponse
+from src.app.services.evaluation_rules import QUANT_SECTION_2
 
 # 규칙 레지스트리가 확정한 별표 1 (시설분야용역 5억원 미만) 의 실측 낙찰하한율
 ATTACH_01_LWLT_RATE = 89.995
@@ -32,7 +33,11 @@ ATTACH_01_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_01"
 
 # 공고문 배점표를 사용자가 입력한 상태를 재현하는 값이다.
 # 규칙 레지스트리의 값이 아니라 요청 본문으로 보내는 테스트 데이터이므로 여기서 자유롭게 고른다.
-SCORE_TABLE = {"max_price_score": 20, "multiplier": 2, "pass_threshold": 95}
+SCORE_TABLE = {"max_price_score": 60, "multiplier": 2, "pass_threshold": 95}
+# 별표 2 시설분야 5억원 이상 구간의 배점한도 안에 드는 기본 정량평가 입력입니다.
+# 이행실적 20(배점한도 20) + 경영상태 10(AAA~A-, 배점한도 10) + 근로조건 10 = 수행능력 계 40.
+DEFAULT_QUANT_ITEMS = {"performance": 20, "labor_plan": 10}
+DEFAULT_MANAGEMENT_GRADE = "AAA ~ A-"
 # 브라우저가 보낸 점수를 서버가 되돌려주는지 검사하는 센티넬 값입니다.
 SENTINEL_SCORE = 999
 
@@ -166,10 +171,9 @@ def _analysis_payload(
     qualification: dict | None = None,
 ) -> dict:
     qualification_input = {
-        "performance_score": 60,
-        "management_score": 15,
-        "labor_plan_score": 0,
-        "credibility_score": 0,
+        "quant_items": dict(DEFAULT_QUANT_ITEMS),
+        "management_grade": DEFAULT_MANAGEMENT_GRADE,
+        "reputation_items": None,
         "disqualification": False,
         # 브라우저가 계산해서 보낸 값. 서버는 이것을 신뢰하지 않는다.
         "price_score": SENTINEL_SCORE,
@@ -224,19 +228,17 @@ def test_score_table_input_drives_server_calculation(client, isolated_db, as_use
     # x = ROUND_HALF_UP(407,448,800 / 500,000,000, 4) = 0.8149
     base = scenarios["기준"]
     assert base["bid_to_estimated_ratio"] == pytest.approx(0.8149)
-    # P = 20 - 2 * |0.93 - 0.8149| * 100 = -3.02
-    assert base["price_score"] == pytest.approx(-3.02)
-    # Q = (60 + 15) + 0 + 0 = 75, 총점 = 71.98 < T 95
-    assert base["qualification_score"] == pytest.approx(75.0)
-    assert base["total_score"] == pytest.approx(71.98)
+    # P = 60 - 2 * |0.93 - 0.8149| * 100 = 36.98
+    assert base["price_score"] == pytest.approx(36.98)
+    # Q = 이행실적 20 + 경영상태 10 + 근로조건 10 = 40, 총점 = 76.98 < T 95
+    assert base["qualification_score"] == pytest.approx(40.0)
+    assert base["total_score"] == pytest.approx(76.98)
     assert base["pass_threshold"] == pytest.approx(95.0)
     assert base["is_qualified"] is False
-    assert scenarios["하단"]["price_score"] == pytest.approx(0.30)
-    assert scenarios["상단"]["price_score"] == pytest.approx(-6.22)
-    # 근로조건 이행계획 0점 경고가 각 시나리오에 남는다
-    assert any("근로조건 이행계획" in w for w in base["warnings"])
-    # P_req = 95 - 75 = 20 = B 이므로 역산 하한이 기준비율 자체(93%) 로 실질 구속된다
-    assert payload["min_possible_bid_rate"] == pytest.approx(93.0)
+    assert scenarios["하단"]["price_score"] == pytest.approx(40.30)
+    assert scenarios["상단"]["price_score"] == pytest.approx(33.78)
+    # P_req = 95 - 40 = 55 이므로 역산 하한 90.5% 가 공고 하한율 89.995% 를 앞선다
+    assert payload["min_possible_bid_rate"] == pytest.approx(90.5)
 
     # 가격 보완 판정: 도메인 결과를 지수 표기 없는 문자열·정수로 옮긴다
     pc = payload["price_compensation"]
@@ -247,31 +249,31 @@ def test_score_table_input_drives_server_calculation(client, isolated_db, as_use
     assert pc["floor_score_basis"] == "forward_verified"
     # pass_threshold 는 배점표 통과점수 T 이지 비밀번호가 아니다 (S105 오탐)
     assert pc["pass_threshold"] == "95"  # noqa: S105
-    assert pc["non_price_score"] == "75"
-    assert pc["p_req"] == "20"
-    assert pc["max_price_score"] == "20"
-    assert pc["score_gap"] == "6"
+    assert pc["non_price_score"] == "40"
+    assert pc["p_req"] == "55"
+    assert pc["max_price_score"] == "60"
+    assert pc["score_gap"] == "1"
     assert pc["score_slack"] is None
-    assert pc["floor_price_score"] == "14"
+    assert pc["floor_price_score"] == "54"
     assert pc["base_rate_percent"] == "93"
     assert pc["announcement_lwlt_rate"] == "89.995"
-    assert pc["calculated_rate_percent"] == "93"
-    assert pc["effective_rate_percent"] == "93"
+    assert pc["calculated_rate_percent"] == "90.5"
+    assert pc["effective_rate_percent"] == "90.5"
     assert pc["binding_constraint"] == "CALCULATED_SCORE_RATE"
     assert pc["score_floor_amount"] == 449_975_000
-    # 하한 금액(기준비율 0.90)은 P_req 20 에 못 미치므로 기준비율 격자까지 금액을 올린다
+    # 하한 금액은 P_req 55 에 못 미치므로 보완 금액까지 금액을 올린다
     pc_scenarios = {s["scenario_name"]: s for s in pc["scenarios"]}
     assert list(pc_scenarios) == ["하단", "기준", "상단"]
     assert [pc_scenarios[name]["complement_bid_amount"] for name in ("하단", "기준", "상단")] == [
-        455_675_500,
-        464_975_000,
-        474_274_500,
+        443_425_500,
+        452_475_000,
+        461_524_500,
     ]
     for row in pc_scenarios.values():
         assert row["row_status"] == "compensate"
-        assert row["verified_price_ratio"] == "0.9300"
-        assert row["bid_rate_percent"] == "92.995"
-        assert row["verified_price_score"] == "20"
+        assert row["verified_price_ratio"] == "0.9050"
+        assert row["bid_rate_percent"] == "90.495"
+        assert row["verified_price_score"] == "55"
         assert row["ratio_steps_raised"] == 0
         assert row["meets_p_req"] is True
 
@@ -287,22 +289,32 @@ def test_announcement_lower_rate_binds_when_score_is_easy(client, isolated_db, a
             bid.id,
             candidate_bid_amount=449_000_000,
             score_table=SCORE_TABLE,
-            qualification={"labor_plan_score": 8},
+            qualification={
+                "quant_items": {"performance": 20, "labor_plan": 10},
+                "reputation_items": {
+                    "sme_support": 1.5,
+                    "disabled_company": 1.5,
+                    "woman_company": 0.75,
+                    "employment_type_a": 0.5,
+                },
+            },
         ),
     )
 
     assert response.status_code == 200, response.text
     payload = response.json()
     scenarios = {s["scenario_name"]: s for s in payload["scenario_results"]}
-    # x = 0.8980 -> P = 20 - 2*3.20 = 13.60, Q = 83 -> 총점 96.60 >= 95
+    # Q = 20(실적) + 10(경영 AAA~A-) + 10(근로조건) + 4.25(신인도 상한) = 44.25
+    assert scenarios["기준"]["qualification_score"] == pytest.approx(44.25)
+    # x = 0.8980 -> P = 60 - 2*3.20 = 53.60 -> 총점 97.85 >= 95
     assert scenarios["기준"]["bid_to_estimated_ratio"] == pytest.approx(0.8980)
-    assert scenarios["기준"]["price_score"] == pytest.approx(13.60)
-    assert scenarios["기준"]["total_score"] == pytest.approx(96.60)
+    assert scenarios["기준"]["price_score"] == pytest.approx(53.60)
+    assert scenarios["기준"]["total_score"] == pytest.approx(97.85)
     assert scenarios["기준"]["is_qualified"] is True
     assert scenarios["하단"]["is_qualified"] is True
-    # 상단은 x = 0.8804 -> P = 10.08, Q = 83 -> 총점 93.08 < 95 이다
+    # 상단은 x = 0.8804 -> P = 50.08, Q = 44.25 -> 총점 94.33 < 95 이다
     assert scenarios["상단"]["is_qualified"] is False
-    # P_req = 12 -> 역산 86.0% < 공고 하한율 89.995% 이므로 하한율이 구속한다
+    # P_req = 50.75 -> 역산 88.375% < 공고 하한율 89.995% 이므로 하한율이 구속한다
     assert payload["min_possible_bid_rate"] == pytest.approx(ATTACH_01_LWLT_RATE)
 
 
@@ -316,10 +328,15 @@ def test_price_compensation_reports_impossible_without_duplicating_warning(
     """
     as_user(10)
     bid = _create_bid(isolated_db)
-    # Q = 75 이고 T 를 100 으로 올리면 P_req = 25 > B 20 이다.
+    # Q = 30(이행실적 20 + 경영상태 10) 이고 T 를 100 으로 올리면 P_req = 70 > B 60 이다.
     table = {**SCORE_TABLE, "pass_threshold": 100}
 
-    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id, score_table=table))
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id, score_table=table, qualification={"quant_items": {"performance": 20}}
+        ),
+    )
 
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -327,8 +344,8 @@ def test_price_compensation_reports_impossible_without_duplicating_warning(
     assert pc is not None
     assert pc["score_status"] == "impossible"
     assert pc["score_status_label"] == "보완 불가"
-    assert pc["p_req"] == "25"
-    assert pc["score_gap"] == "5"
+    assert pc["p_req"] == "70"
+    assert pc["score_gap"] == "10"
     assert pc["score_slack"] is None
     assert pc["guidance"] == (
         "가격점수 만점으로도 통과점수에 닿지 않습니다. 대수 투찰률은 투찰 권고가 아닙니다."
@@ -339,7 +356,7 @@ def test_price_compensation_reports_impossible_without_duplicating_warning(
         assert row["meets_p_req"] is False
     # 도메인 계약: P_req > B 사유 경고는 응답 전체에 정확히 한 번만 실린다
     capacity_warning = (
-        "수행능력 점수(75.0점) 부족으로 가격점수 만점(20.0점)을 받아도 "
+        "수행능력 점수(30.0점) 부족으로 가격점수 만점(60.0점)을 받아도 "
         "통과점수(100.0점)에 도달할 수 없습니다."
     )
     assert payload["warnings"].count(capacity_warning) == 1
@@ -461,7 +478,10 @@ def test_declared_score_table_computes_without_user_input(client, isolated_db, a
     as_user(10)
     bid = _academic_bid(isolated_db)
 
-    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(bid.id, qualification={"quant_items": {"performance": 10}}),
+    )
 
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -482,7 +502,12 @@ def test_user_input_overrides_declared_score_table(client, isolated_db, as_user)
     bid = _academic_bid(isolated_db)
     override = {"max_price_score": 60, "multiplier": 5, "pass_threshold": 88}
 
-    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id, score_table=override))
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id, score_table=override, qualification={"quant_items": {"performance": 10}}
+        ),
+    )
 
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -507,7 +532,9 @@ def test_user_input_equal_to_declared_value_is_not_an_override(client, isolated_
     response = client.post(
         ANALYZE_URL,
         json=_analysis_payload(
-            bid.id, score_table={"max_price_score": 70, "multiplier": 4, "pass_threshold": 85}
+            bid.id,
+            score_table={"max_price_score": 70, "multiplier": 4, "pass_threshold": 85},
+            qualification={"quant_items": {"performance": 10}},
         ),
     )
 
@@ -551,7 +578,10 @@ def test_partially_confirmed_score_table_requires_only_missing_field(client, iso
         },
     )
 
-    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(bid.id, qualification={"quant_items": {"performance": 20}}),
+    )
 
     assert response.status_code == 200, response.text
     payload = response.json()
@@ -759,8 +789,8 @@ def test_server_scores_are_not_the_requested_ones(client, isolated_db, as_user):
     echoed = _echoed_sentinel_paths(payload)
     assert echoed == [], f"클라이언트가 보낸 {SENTINEL_SCORE} 가 응답에 되돌아왔습니다: {echoed}"
     base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
-    assert base["price_score"] == pytest.approx(-3.02)
-    assert base["total_score"] == pytest.approx(71.98)
+    assert base["price_score"] == pytest.approx(36.98)
+    assert base["total_score"] == pytest.approx(76.98)
 
 
 def test_disqualification_makes_the_announcement_unqualified(client, isolated_db, as_user):
@@ -774,14 +804,24 @@ def test_disqualification_makes_the_announcement_unqualified(client, isolated_db
             bid.id,
             candidate_bid_amount=449_000_000,
             score_table=SCORE_TABLE,
-            qualification={"labor_plan_score": 8, "disqualification": True},
+            qualification={
+                "quant_items": {"performance": 20, "labor_plan": 10},
+                "reputation_items": {
+                    "sme_support": 1.5,
+                    "disabled_company": 1.5,
+                    "woman_company": 0.75,
+                    "employment_type_a": 0.5,
+                },
+                "disqualification": True,
+            },
         ),
     )
 
     assert response.status_code == 200, response.text
     payload = response.json()
     base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
-    assert base["total_score"] == pytest.approx(96.60)
+    # Q = 44.25, P = 53.60 -> 총점 97.85 이지만 결격사유가 있어 적격이 아니다
+    assert base["total_score"] == pytest.approx(97.85)
     assert base["is_qualified"] is False
     assert any("결격" in w for w in base["warnings"])
 
@@ -1131,3 +1171,191 @@ def test_no_forbidden_marketing_phrases():
     for phrase in forbidden:
         for text in texts:
             assert phrase not in text, phrase
+
+
+# --------------------------------------------------------------------------- #
+# 8. 별표 배점표 검증: 배점한도 초과·배점표 밖 항목은 자르지 않고 막는다
+# --------------------------------------------------------------------------- #
+
+
+def _active_band(payload: dict) -> dict:
+    table = payload["quant_score_table"]
+    return next(band for band in table["bands"] if band["band_key"] == table["active_band_key"])
+
+
+def test_quant_score_table_payload_declares_sections_and_band(client, isolated_db, as_user):
+    """적용 별표 배점표가 심사분야 번호·항목명·배점한도와 근거 경로를 함께 전달한다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)
+
+    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id, score_table=SCORE_TABLE))
+
+    payload = response.json()
+    table = payload["quant_score_table"]
+    assert table["attachment"] == "별표 2"
+    assert table["active_band_key"] == "over_500m"
+    items = {item["item_key"]: item for item in _active_band(payload)["items"]}
+    assert items["performance"]["limit"] == "20"
+    assert items["management"]["limit_kind"] == "credit_grade"
+    # 근로조건은 별표 2 에만 있고 심사분야 번호가 II(로마 숫자) 다
+    assert items["labor_plan"]["limit"] == "10"
+    assert items["labor_plan"]["section_no"] == QUANT_SECTION_2
+    assert "docs/analysis/" in items["performance"]["source"]
+    # 결격사유는 합계 정합성에서 분리된다
+    assert items["disqualification"]["limit_kind"] == "disqualification"
+    assert any(grade["grade_group"] == "AAA ~ A-" for grade in table["credit_grades"])
+    assert any(item["item_code"] == "sme_support" for item in table["reputation_items"])
+
+
+def test_quant_item_exceeding_limit_blocks_scoring(client, isolated_db, as_user):
+    """배점한도를 넘긴 항목은 조용히 자르지 않고 사유와 함께 계산을 막는다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            score_table=SCORE_TABLE,
+            qualification={"quant_items": {"performance": 20, "labor_plan": 20}},
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "QUANT_LIMIT_EXCEEDED" in payload["blocked_reason"]
+    assert "근로조건 이행계획" in payload["blocked_reason"]
+    assert payload["price_compensation"] is None
+    # 적용 배점표는 그대로 전달되어 사용자가 한도를 볼 수 있다
+    assert payload["quant_score_table"]["attachment"] == "별표 2"
+
+
+def test_quant_item_not_in_table_blocks_scoring(client, isolated_db, as_user):
+    """배점표에 없는 항목(시설분야의 기술능력)은 입력 자체를 막는다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)  # 별표 2 시설분야에는 기술능력 항목이 없다
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            score_table=SCORE_TABLE,
+            qualification={"quant_items": {"performance": 20, "technical_capacity": 5}},
+        ),
+    )
+
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "QUANT_ITEM_NOT_IN_TABLE" in payload["blocked_reason"]
+
+
+def test_labor_plan_is_rejected_outside_facility(client, isolated_db, as_user):
+    """근로조건 이행계획은 별표 2 밖에서 입력할 수 없다."""
+    as_user(10)
+    bid = _academic_bid(isolated_db)  # 별표 1 학술연구
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            score_table=SCORE_TABLE,
+            qualification={"quant_items": {"performance": 10, "labor_plan": 5}},
+        ),
+    )
+
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "QUANT_ITEM_NOT_IN_TABLE" in payload["blocked_reason"]
+
+
+def test_unknown_management_grade_blocks_scoring(client, isolated_db, as_user):
+    """별표 10 에 없는 등급은 임의 점수로 바꾸지 않고 막는다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            score_table=SCORE_TABLE,
+            qualification={
+                "quant_items": {"performance": 20},
+                "management_grade": "존재하지않는등급",
+            },
+        ),
+    )
+
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "QUANT_GRADE_UNKNOWN" in payload["blocked_reason"]
+
+
+def test_management_grade_uses_annex_10_score_for_band_limit(client, isolated_db, as_user):
+    """경영상태는 배점한도 기준(10점)에 맞는 별표 10 점수로 환산된다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)  # 별표 2 5억원 이상: 경영상태 배점한도 10
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            score_table=SCORE_TABLE,
+            qualification={"quant_items": {"performance": 20}, "management_grade": "BBB+"},
+        ),
+    )
+
+    payload = response.json()
+    # Q = 이행실적 20 + 경영상태 9.8 = 29.8
+    base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
+    assert base["qualification_score"] == pytest.approx(29.8)
+
+
+def test_reputation_items_sum_and_cap(client, isolated_db, as_user):
+    """신인도는 항목 합계를 내고 가점 상한 4.25 를 적용한다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            score_table=SCORE_TABLE,
+            qualification={
+                "quant_items": {"performance": 20},
+                "reputation_items": {"job_creation": 3.0, "disabled_employment": 2.0},
+            },
+        ),
+    )
+
+    payload = response.json()
+    # 항목 합계 5.0 -> 가점 상한 4.25, Q = 20 + 10(경영) + 4.25 = 34.25
+    base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
+    assert base["qualification_score"] == pytest.approx(34.25)
+
+
+def test_reputation_items_penalty_cap(client, isolated_db, as_user):
+    """신인도 감점 합계는 감점 상한 -5.0 으로 제한된다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            score_table=SCORE_TABLE,
+            qualification={
+                "quant_items": {"performance": 20},
+                "reputation_items": {
+                    "wage_arrears": -2.0,
+                    "delayed_delivery": -2.0,
+                    "unfair_subcontract": -2.0,
+                },
+            },
+        ),
+    )
+
+    payload = response.json()
+    # 감점 합계 -6.0 -> 감점 상한 -5.0, Q = 20 + 10 - 5 = 25
+    base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
+    assert base["qualification_score"] == pytest.approx(25.0)

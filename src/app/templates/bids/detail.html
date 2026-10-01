@@ -423,64 +423,35 @@
                         </div>
                     </div>
 
-                    <!-- 2. 정량평가 입력표 -->
+                    <!-- 2. 정량평가 입력표. 항목 구성과 배점한도는 적용 별표 규칙 선언이 정본이라
+                         하드코딩하지 않고 서버 응답(quant_score_table)으로 그린다. -->
                     <div id="qualification-section" class="space-y-3 border-t border-slate-200 pt-4">
-                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">정량평가 입력</h3>
+                        <div class="flex items-center justify-between gap-2">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">정량평가 입력</h3>
+                            <span id="quant-attachment" class="badge badge-gray text-[10px]">적용 별표 확인 중</span>
+                        </div>
+                        <p id="quant-band-note" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-amber-700"></p>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm" id="qualification-input-table">
                                 <thead>
                                     <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                        <th class="p-2 pr-4">심사분야</th>
                                         <th class="p-2 pr-4">항목</th>
                                         <th class="p-2 pr-4 text-right">점수</th>
-                                        <th class="p-2 pr-4 text-right">최대</th>
+                                        <th class="p-2 pr-4 text-right">배점한도</th>
                                         <th class="p-2">비고</th>
                                     </tr>
                                 </thead>
-                                <tbody class="divide-y divide-slate-100">
-                                    <tr>
-                                        <td class="py-2 pr-4 font-medium text-slate-700">수행능력 - 실적</td>
-                                        <td class="py-2 pr-4 text-right">
-                                            <input type="number" id="input-performance" step="0.01" min="0" max="30"
-                                                   class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
-                                        </td>
-                                        <td class="py-2 pr-4 text-right text-slate-400">30.00</td>
-                                        <td class="py-2 text-slate-500">실적 평가 점수</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="py-2 pr-4 font-medium text-slate-700">수행능력 - 경영상태</td>
-                                        <td class="py-2 pr-4 text-right">
-                                            <input type="number" id="input-management" step="0.01" min="0" max="20"
-                                                   class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
-                                        </td>
-                                        <td class="py-2 pr-4 text-right text-slate-400">20.00</td>
-                                        <td class="py-2 text-slate-500">신용평가등급 등</td>
-                                    </tr>
-                                    <tr class="bg-amber-50">
-                                        <td class="py-2 pr-4 font-medium text-slate-700">근로조건 이행계획 <i class="fas fa-exclamation-circle text-amber-500 ml-1 cursor-pointer" title="단순노무용역 필수 항목. 0점 시 사실상 통과 불가"></i></td>
-                                        <td class="py-2 pr-4 text-right">
-                                            <input type="number" id="input-labor-plan" step="0.01" min="0" max="10"
-                                                   class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
-                                        </td>
-                                        <td class="py-2 pr-4 text-right text-slate-400">10.00</td>
-                                        <td class="py-2 text-amber-700 font-semibold">단순노무용역 필수, 0점 불가</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="py-2 pr-4 font-medium text-slate-700">신인도 가감점</td>
-                                        <td class="py-2 pr-4 text-right">
-                                            <input type="number" id="input-credibility" step="0.01" min="-5" max="5"
-                                                   class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
-                                        </td>
-                                        <td class="py-2 pr-4 text-right text-slate-400">±5.00</td>
-                                        <td class="py-2 text-slate-500">양수 가점, 음수 감점</td>
-                                    </tr>
+                                <tbody id="qualification-tbody" class="divide-y divide-slate-100"></tbody>
+                                <tbody id="score-table-tbody" class="divide-y divide-slate-100">
                                     <tr class="bg-blue-50">
-                                        <td class="py-2 pr-4 font-medium text-slate-700" colspan="4">
+                                        <td class="py-2 pr-4 font-medium text-slate-700" colspan="5">
                                             <span class="font-bold text-blue-700">공고문 적격심사 배점표</span>
-                                            <span class="text-xs text-slate-600 ml-2">아래 셋을 입력해야 가격점수와 총점이 계산됩니다. 공고문의 적격심사 세부기준 별표에서 확인하십시오.</span>
+                                            <span class="text-xs text-slate-600 ml-2">아래 셋을 입력해야 가격점수와 총점이 계산됩니다. 규칙이 확정한 값은 자동으로 채워집니다.</span>
                                         </td>
                                     </tr>
                                     <tr class="bg-blue-50">
-                                        <td class="py-2 pr-4 font-medium text-slate-700">가격 배점한도 (B)</td>
+                                        <td class="py-2 pr-4 font-medium text-slate-700" colspan="2">가격 배점한도 (B)</td>
                                         <td class="py-2 pr-4 text-right">
                                             <input type="number" id="input-max-price-score" step="0.01" min="0"
                                                    class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
@@ -489,7 +460,7 @@
                                         <td class="py-2 text-slate-500">입찰가격 평점의 만점</td>
                                     </tr>
                                     <tr class="bg-blue-50">
-                                        <td class="py-2 pr-4 font-medium text-slate-700">평점 계수 (k)</td>
+                                        <td class="py-2 pr-4 font-medium text-slate-700" colspan="2">평점 계수 (k)</td>
                                         <td class="py-2 pr-4 text-right">
                                             <input type="number" id="input-multiplier" step="0.01" min="0"
                                                    class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
@@ -498,7 +469,7 @@
                                         <td class="py-2 text-slate-500">기준비율 편차에 곱하는 값</td>
                                     </tr>
                                     <tr class="bg-blue-50">
-                                        <td class="py-2 pr-4 font-medium text-slate-700">통과점수 (T)</td>
+                                        <td class="py-2 pr-4 font-medium text-slate-700" colspan="2">통과점수 (T)</td>
                                         <td class="py-2 pr-4 text-right">
                                             <input type="number" id="input-pass-threshold" step="0.01" min="0"
                                                    class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
@@ -508,6 +479,14 @@
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                        <div id="reputation-section" class="hidden mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+                            <div class="flex items-center justify-between gap-2">
+                                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest">신인도 가점·감점 (별표 11)</h4>
+                                <span id="reputation-cap-note" class="text-[10px] font-semibold text-slate-500"></span>
+                            </div>
+                            <div id="reputation-rows" class="space-y-1"></div>
+                            <div class="text-xs font-semibold text-slate-600">선택 합계(상한 적용 전): <span id="reputation-total" class="tabular-nums">0</span></div>
                         </div>
                         <div class="flex items-center gap-3 mt-3">
                             <label class="flex items-center gap-2 cursor-pointer">
@@ -1119,6 +1098,171 @@ $(document).ready(function() {
         $block.removeClass('hidden');
     }
 
+    // 적용 별표 배점표(quant_score_table)를 정량평가 입력표로 그린다. 항목 구성과 배점한도는
+    // 서버 응답이 정본이며 화면에 30/20/10/±5 같은 값을 하드코딩하지 않는다. 배점표에 없는
+    // 항목은 그리지 않고, 없는 항목 값은 서버가 계산을 막는다.
+    let quantScoreTable = null;
+
+    function activeQuantBand(table) {
+        if (!table || !Array.isArray(table.bands)) return null;
+        const key = table.active_band_key;
+        return table.bands.find(function(band) { return band.band_key === key; }) || null;
+    }
+
+    function quantScoreCell(item) {
+        if (item.limit_kind === 'absent' || item.limit == null) {
+            return '<span class="text-xs font-semibold text-slate-400">배점표 없음</span>';
+        }
+        const min = item.limit_min != null ? item.limit_min : 0;
+        return '<input type="number" data-quant-item="' + escapeHtml(item.item_key) + '" step="0.01"'
+            + ' min="' + escapeHtml(String(min)) + '" max="' + escapeHtml(String(item.limit)) + '"'
+            + ' class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">';
+    }
+
+    function quantManagementCell(item, table) {
+        const grades = Array.isArray(table.credit_grades) ? table.credit_grades : [];
+        const useTwenty = Number(item.limit) >= 20;
+        let options = '<option value="">선택 안 함</option>';
+        grades.forEach(function(grade) {
+            const score = useTwenty ? grade.score_at_20 : grade.score_at_10;
+            options += '<option value="' + escapeHtml(grade.grade_group) + '">'
+                + escapeHtml(grade.grade_group) + ' (' + escapeHtml(score) + '점)</option>';
+        });
+        return '<select id="input-management-grade" class="w-40 bg-white border border-slate-200 rounded px-2 py-1 text-sm font-semibold focus:border-primary outline-none">'
+            + options + '</select>';
+    }
+
+    function quantRow(item, table) {
+        let inputCell;
+        if (item.limit_kind === 'credit_grade') {
+            inputCell = quantManagementCell(item, table);
+        } else if (item.limit_kind === 'reputation') {
+            inputCell = '<span class="text-xs font-semibold text-slate-500">아래 신인도 항목에서 선택</span>';
+        } else {
+            inputCell = quantScoreCell(item);
+        }
+        return '<tr>'
+            + '<td class="py-2 pr-4 text-xs font-semibold text-slate-500">' + escapeHtml(item.section_no) + '</td>'
+            + '<td class="py-2 pr-4 font-medium text-slate-700">' + escapeHtml(item.item_name) + '</td>'
+            + '<td class="py-2 pr-4 text-right">' + inputCell + '</td>'
+            + '<td class="py-2 pr-4 text-right text-slate-400">' + (item.limit == null ? '-' : escapeHtml(String(item.limit))) + '</td>'
+            + '<td class="py-2 text-slate-500">' + escapeHtml(item.note || '') + '</td>'
+            + '</tr>';
+    }
+
+    function reputationControl(item) {
+        const options = Array.isArray(item.options) ? item.options : [];
+        if (item.option_kind === 'range' && options.length === 2) {
+            return '<input type="number" data-reputation-item="' + escapeHtml(item.item_code) + '" step="0.01"'
+                + ' min="' + escapeHtml(options[0]) + '" max="' + escapeHtml(options[1]) + '" value="0"'
+                + ' class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">';
+        }
+        let selectOptions = '<option value="0">미해당</option>';
+        options.forEach(function(value) {
+            selectOptions += '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '점</option>';
+        });
+        return '<select data-reputation-item="' + escapeHtml(item.item_code) + '"'
+            + ' class="w-32 bg-white border border-slate-200 rounded px-2 py-1 text-sm font-semibold focus:border-primary outline-none">'
+            + selectOptions + '</select>';
+    }
+
+    function collectReputationItems() {
+        const items = {};
+        $('#reputation-rows').find('[data-reputation-item]').each(function() {
+            const value = parseFloat($(this).val());
+            if (Number.isFinite(value) && value !== 0) {
+                items[$(this).data('reputation-item')] = value;
+            }
+        });
+        return items;
+    }
+
+    function updateReputationTotal() {
+        let total = 0;
+        const items = collectReputationItems();
+        Object.keys(items).forEach(function(code) { total += items[code]; });
+        $('#reputation-total').text(total.toFixed(2));
+    }
+
+    function renderReputationSection(table) {
+        const $section = $('#reputation-section');
+        const items = table && Array.isArray(table.reputation_items) ? table.reputation_items : [];
+        const $rows = $('#reputation-rows');
+        $rows.empty();
+        if (items.length === 0) {
+            $section.addClass('hidden');
+            return;
+        }
+        items.forEach(function(item) {
+            $rows.append('<div class="flex items-center justify-between gap-2">'
+                + '<span class="text-xs text-slate-600">' + escapeHtml(item.item_name) + '</span>'
+                + reputationControl(item) + '</div>');
+        });
+        $('#reputation-cap-note').text('가점 상한 ' + table.reputation_max_bonus + ' · 감점 상한 ' + table.reputation_max_penalty);
+        $section.removeClass('hidden');
+        updateReputationTotal();
+    }
+
+    function renderQuantInputs(table) {
+        quantScoreTable = table || null;
+        const $tbody = $('#qualification-tbody');
+        const $bandNote = $('#quant-band-note');
+        $tbody.empty();
+        $('#reputation-section').addClass('hidden');
+        if (!table) {
+            $('#quant-attachment').text('적용 별표 배점표 미확인');
+            $bandNote.addClass('hidden').text('');
+            return;
+        }
+        const band = activeQuantBand(table);
+        $('#quant-attachment').text(
+            table.attachment + ' ' + table.table_name + (band ? ' · ' + band.band_label : '')
+        );
+        if (!band) {
+            $bandNote.removeClass('hidden').text(table.band_note || '적용 구간을 확정하지 못했습니다.');
+            return;
+        }
+        const rows = [];
+        band.items.forEach(function(item) {
+            if (item.limit_kind === 'price' || item.limit_kind === 'disqualification') return;
+            rows.push(quantRow(item, table));
+        });
+        $tbody.html(rows.join(''));
+        $bandNote.toggleClass('hidden', !table.band_note);
+        if (table.band_note) $bandNote.text(table.band_note);
+        renderReputationSection(table);
+    }
+
+    function collectQuantItems() {
+        const items = {};
+        $('#qualification-tbody').find('[data-quant-item]').each(function() {
+            const value = parseFloat($(this).val());
+            if (Number.isFinite(value) && value !== 0) {
+                items[$(this).data('quant-item')] = value;
+            }
+        });
+        return items;
+    }
+
+    function collectManagementGrade() {
+        const value = $('#input-management-grade').val();
+        return value ? value : null;
+    }
+
+    // 정량평가 입력을 서버 계약(quant_items·management_grade·reputation_items)으로 모은다.
+    function buildQualificationInput() {
+        const reputationItems = collectReputationItems();
+        return {
+            quant_items: collectQuantItems(),
+            management_grade: collectManagementGrade(),
+            reputation_items: Object.keys(reputationItems).length > 0 ? reputationItems : null,
+            disqualification: $('#input-disqualification').is(':checked')
+        };
+    }
+
+    // 신인도 선택 합계는 입력값 표시용이며, 상한 적용과 점수 확정은 서버가 한다.
+    $(document).on('change input', '#reputation-rows [data-reputation-item]', updateReputationTotal);
+
     function setEvaluationScopeBadge(data) {
         const defaultText = '일반용역 적격심사만 지원 (약 6%)';
         let badgeText = defaultText;
@@ -1296,16 +1440,11 @@ $(document).ready(function() {
             data: JSON.stringify({
                 bid_id: bidId,
                 candidate_bid_amount: 1,
-                qualification_input: {
-                    performance_score: 0,
-                    management_score: 0,
-                    labor_plan_score: 0,
-                    credibility_score: 0,
-                    disqualification: false
-                }
+                qualification_input: buildQualificationInput()
             }),
             success: function(data) {
                 $('#evaluation-loading').addClass('hidden');
+                renderQuantInputs(data.quant_score_table);
                 renderRuleScoreTable(data.score_table);
                 if (renderNegotiation(data)) {
                     return;
@@ -1344,11 +1483,8 @@ $(document).ready(function() {
     // 분석 실행 버튼
     $('#btn-evaluate').click(function() {
         const candidateBidAmount = $('#user-price').val().replace(/\D/g, '');
-        const performanceScore = parseFloat($('#input-performance').val()) || 0;
-        const managementScore = parseFloat($('#input-management').val()) || 0;
-        const laborPlanScore = parseFloat($('#input-labor-plan').val()) || 0;
-        const credibilityScore = parseFloat($('#input-credibility').val()) || 0;
-        const disqualification = $('#input-disqualification').is(':checked');
+        // 정량평가 입력은 적용 별표 배점표가 그린 입력란에서 모은다.
+        const qualificationInput = buildQualificationInput();
         // 공고문 배점표. 규칙 레지스트리가 확정하지 못한 값이라 사용자 입력이 정본이다.
         // 셋 중 하나라도 비면 서버가 MISSING_SCORE_TABLE 로 점수 계산을 차단한다.
         const maxPriceScore = parseFloat($('#input-max-price-score').val());
@@ -1360,8 +1496,9 @@ $(document).ready(function() {
             return;
         }
 
-        // 근로조건 이행계획 0점 경고
-        if (laborPlanScore === 0) {
+        // 근로조건 이행계획은 별표 2 시설분야에만 있는 항목이라 입력란이 있을 때만 경고한다.
+        const laborInput = $('#qualification-tbody [data-quant-item="labor_plan"]');
+        if (laborInput.length > 0 && (parseFloat(laborInput.val()) || 0) === 0) {
             if (!confirm('근로조건 이행계획 점수가 0점입니다. 단순노무용역의 경우 사실상 통과가 불가할 수 있습니다. 계속하시겠습니까?')) {
                 return;
             }
@@ -1389,11 +1526,10 @@ $(document).ready(function() {
                 bid_id: bidId,
                 candidate_bid_amount: parseInt(candidateBidAmount),
                 qualification_input: {
-                    performance_score: performanceScore,
-                    management_score: managementScore,
-                    labor_plan_score: laborPlanScore,
-                    credibility_score: credibilityScore,
-                    disqualification: disqualification,
+                    quant_items: qualificationInput.quant_items,
+                    management_grade: qualificationInput.management_grade,
+                    reputation_items: qualificationInput.reputation_items,
+                    disqualification: qualificationInput.disqualification,
                     max_price_score: Number.isFinite(maxPriceScore) ? maxPriceScore : null,
                     multiplier: Number.isFinite(multiplier) ? multiplier : null,
                     pass_threshold: Number.isFinite(passThreshold) ? passThreshold : null
@@ -1432,6 +1568,7 @@ $(document).ready(function() {
                     renderLowerBoundWarnings(data.warnings, data.lower_bound_rate);
                     renderNegotiationDistribution(data);
                     renderPriceCompensation(data.price_compensation);
+                    renderQuantInputs(data.quant_score_table);
                     renderRuleScoreTable(data.score_table);
 
                     // 시나리오 결과표
