@@ -17,9 +17,9 @@ from src.app.services.evaluation_rules import (
     BLOCK_CODE_RULE_NOT_FOUND,
     CREDIT_GRADE_SCORES,
     POST_20260526_RULES,
+    QUANT_FIXED_TOTAL_LIMIT,
     QUANT_ITEM_LABOR_PLAN,
     QUANT_ITEM_TECHNICAL,
-    QUANT_LIMIT_KIND_DISQUALIFICATION,
     QUANT_LIMIT_KIND_REPUTATION,
     QUANT_SCORE_TABLES,
     REPUTATION_ITEMS,
@@ -29,7 +29,9 @@ from src.app.services.evaluation_rules import (
     demand_agency_credit_deduction,
     get_rule_by_id,
     list_all_rules,
+    quant_band_scored_limit_total,
     quant_score_table_for_rule,
+    quant_score_tables_total_audit,
     resolve_evaluation_rule,
     resolve_evaluation_rule_from_raw_data,
 )
@@ -713,12 +715,13 @@ class TestQuantScoreTableDeclaration:
     """별표 1~9 심사항목 배점한도 규칙 선언 검증.
 
     각 항목은 (심사분야 번호, 항목명, 배점한도)를 함께 갖고, 추정가격 5억원 이상/미만
-    구간이 다르면 구간별로 값을 가진다. 합계 100 정합성은 결격사유(-20)를 제외한
-    수행능력 계 + 입찰가격으로 검증한다.
+    구간이 다르면 구간별로 값을 가진다. 합계 100 정합성은 신인도(가감분)와 결격사유(-20)를
+    제외한 배점한도 합으로 검증한다. 별표 9 는 선택평가항목을 수요기관이 정하는 범위
+    구조라 고정 합계로 검증하지 않는다.
     """
 
-    # 합계 100 검증 대상 별표. 별표 9 는 입찰가격이 60~70 범위이고 선택평가항목을 수요기관이
-    # 정하므로 고정 합계로 검증하지 않는다.
+    # 고정 합계 100 검증 대상 별표. 별표 9 는 입찰가격이 60~70 범위이고 선택평가항목을
+    # 수요기관이 정하므로 고정 합계로 검증하지 않는다.
     REQUIRED_ATTACHMENTS: ClassVar[dict[str, set[str]]] = {
         "별표 1": {"over_500m", "under_500m"},
         "별표 2": {"over_500m", "under_500m"},
@@ -742,21 +745,56 @@ class TestQuantScoreTableDeclaration:
             assert attachment in bands, attachment
             assert set(bands[attachment]) == expected_keys, attachment
 
-    def test_every_band_sums_to_100(self) -> None:
-        bands = self._bands_by_attachment()
-        excluded = {QUANT_LIMIT_KIND_REPUTATION, QUANT_LIMIT_KIND_DISQUALIFICATION}
-        for attachment, expected_keys in self.REQUIRED_ATTACHMENTS.items():
-            for band_key in expected_keys:
-                band = bands[attachment][band_key]
-                total = sum(
-                    (
-                        item.limit
-                        for item in band.items
-                        if item.limit is not None and item.limit_kind not in excluded
-                    ),
-                    Decimal("0"),
-                )
-                assert total == Decimal("100"), f"{attachment} {band_key} 합계 {total}"
+    def test_all_bands_are_audited(self) -> None:
+        """QUANT_SCORE_TABLES 의 23개 구간 전부가 합계 감사 대상이다."""
+        rows = quant_score_tables_total_audit()
+        assert len(rows) == 23
+        assert len({(row.table_key, row.band_key) for row in rows}) == 23
+        # 감사 행은 각 구간의 산입 합계를 공유 함수로 그대로 계산한 값이다.
+        by_key = {(row.table_key, row.band_key): row for row in rows}
+        for table_key, table in QUANT_SCORE_TABLES.items():
+            for band in table.bands:
+                row = by_key[(table_key, band.band_key)]
+                assert row.attachment == table.attachment
+                assert row.scored_limit_total == quant_band_scored_limit_total(band)
+                assert row.total_limit == band.total_limit
+                assert row.total_is_fixed == band.total_is_fixed
+
+    def test_fixed_bands_sum_to_100_excluding_reputation_and_disqualification(self) -> None:
+        """신인도·결격사유를 제외한 배점한도 합이 모든 고정 구간에서 100 이다."""
+        rows = quant_score_tables_total_audit()
+        fixed = [row for row in rows if row.total_is_fixed]
+        assert len(fixed) == 22
+        violations = [
+            f"{row.attachment} {row.band_key}={row.scored_limit_total}"
+            for row in fixed
+            if row.scored_limit_total != QUANT_FIXED_TOTAL_LIMIT
+        ]
+        assert violations == [], f"합계 100 위반 구간: {violations}"
+
+    def test_previous_attempt_totals_do_not_recur(self) -> None:
+        """반려 사유였던 104.25·169.25 가 어떤 구간에서도 나오지 않는다.
+
+        신인도 항목은 가감분으로만 처리하므로 배점한도 합계에 산입되는 limit 을 두지 않는다.
+        """
+        totals = {row.scored_limit_total for row in quant_score_tables_total_audit()}
+        assert Decimal("104.25") not in totals
+        assert Decimal("169.25") not in totals
+        for table in QUANT_SCORE_TABLES.values():
+            for band in table.bands:
+                for item in band.items:
+                    if item.limit_kind == QUANT_LIMIT_KIND_REPUTATION:
+                        assert item.limit is None, table.attachment
+
+    def test_annex_9_total_is_agency_determined_range(self) -> None:
+        """별표 9 는 항목 상한 합 165 이고 합계 100 은 수요기관이 범위에서 정한다."""
+        rows = {row.attachment: row for row in quant_score_tables_total_audit()}
+        annex_9 = rows["별표 9"]
+        assert annex_9.total_is_fixed is False
+        assert annex_9.scored_limit_total == Decimal("165")
+        assert annex_9.total_limit == QUANT_FIXED_TOTAL_LIMIT
+        # 하한(경영상태 10 + 입찰가격 60)은 합계 100 안에 들어간다.
+        assert Decimal("70") < annex_9.total_limit < annex_9.scored_limit_total
 
     def test_items_carry_section_name_and_source(self) -> None:
         for table in QUANT_SCORE_TABLES.values():
@@ -800,8 +838,10 @@ class TestQuantScoreTableDeclaration:
             for band in table.bands:
                 reputation = [i for i in band.items if i.limit_kind == QUANT_LIMIT_KIND_REPUTATION]
                 assert len(reputation) == 1, table.attachment
-                assert reputation[0].limit == REPUTATION_MAX_BONUS
+                # 신인도는 계·합계에 0으로 산입되므로 합계 대상 limit 을 두지 않는다.
+                assert reputation[0].limit is None
                 assert reputation[0].limit_min == REPUTATION_MAX_PENALTY
+                assert reputation[0].note
 
     def test_credit_grade_scores_follow_annex_10(self) -> None:
         by_group = {grade.grade_group: grade for grade in CREDIT_GRADE_SCORES}

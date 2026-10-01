@@ -1535,6 +1535,15 @@ QUANT_LIMIT_KIND_REPUTATION = "reputation"
 QUANT_LIMIT_KIND_PRICE = "price"
 QUANT_LIMIT_KIND_DISQUALIFICATION = "disqualification"
 
+# 배점한도 합계(합계 100 정합성)에서 제외하는 항목 종류입니다. 원문 배점표는 신인도를
+# 가점/감점 범위로만 적고 계·합계에는 0으로 산입하며(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:44),
+# 결격사유(-20)는 감점 항목이라 별도 심사번호로 분리합니다. 두 항목을 빼고 더한 값이
+# 배점표의 합계 100 과 같아야 합니다.
+QUANT_LIMIT_KIND_TOTAL_EXCLUDED: frozenset[str] = frozenset(
+    {QUANT_LIMIT_KIND_REPUTATION, QUANT_LIMIT_KIND_DISQUALIFICATION}
+)
+QUANT_FIXED_TOTAL_LIMIT = Decimal("100")
+
 # 입력 항목 식별자. 화면 입력란과 서버 검증이 공유하는 안정 키입니다.
 QUANT_ITEM_PERFORMANCE = "performance"
 QUANT_ITEM_MANAGEMENT = "management"
@@ -1568,6 +1577,13 @@ _QUANT_SRC_BKT = "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:152
 
 _QUANT_NOTE_ABSENT = "원문 배점표에 '-' 로 표기되어 입력할 수 없는 항목입니다."
 _QUANT_NOTE_RANGE = "원문이 범위(예: 10점 이상 30점 이하)로 표기한 항목입니다."
+_QUANT_NOTE_REPUTATION = (
+    "신인도는 가점 상한 4.25·감점 상한 -5.0 범위이며 원문 계·합계에는 0으로 산입됩니다."
+)
+_QUANT_NOTE_RANGE_TOTAL = (
+    "별표 9 는 수요기관이 심사분야별 배점한도를 20% 범위에서 조정하고 입찰가격을 60~70 사이에서 "
+    "정하므로 항목 상한 합계가 100 과 다릅니다. 합계 100 은 수요기관 선택값으로 정해집니다."
+)
 
 # 심사분야 번호는 원문 표기를 그대로 씁니다(로마 숫자 I, II, III, IV). 표기 문자를
 # 유니코드 이스케이프로 선언해 소스에는 ASCII 로 남깁니다.
@@ -1599,12 +1615,18 @@ class QuantScoreItem:
 
 @dataclass(frozen=True)
 class QuantScoreBand:
-    """추정가격 구간 하나의 심사항목 배점한도 묶음."""
+    """추정가격 구간 하나의 심사항목 배점한도 묶음.
+
+    total_is_fixed 가 True 면 신인도·결격사유를 뺀 항목 배점한도 합이 total_limit 과
+    같아야 합니다. 별표 9 처럼 수요기관이 배점을 정하는 범위 구조는 False 이며,
+    합계 100 을 항목 상한 합으로 검증하지 않습니다.
+    """
 
     band_key: str
     band_label: str
     items: tuple[QuantScoreItem, ...]
     total_limit: Decimal
+    total_is_fixed: bool = True
 
 
 @dataclass(frozen=True)
@@ -1646,15 +1668,20 @@ def _qi(
 
 
 def _reputation_item(section_no: str, section_name: str) -> QuantScoreItem:
-    """신인도 항목. 가점 상한 4.25 와 감점 상한 -5.0 을 함께 갖습니다."""
+    """신인도 항목. 가점 상한 4.25·감점 상한 -5.0 범위이며 계·합계에는 0으로 산입합니다.
+
+    원문 배점표가 신인도를 가감분으로만 적고 계·합계에는 0을 넣으므로, 배점한도 합계에
+    산입되는 limit 은 두지 않습니다. 가점 상한은 REPUTATION_MAX_BONUS 로만 노출합니다.
+    """
     return _qi(
         section_no,
         section_name,
         QUANT_ITEM_REPUTATION,
         "신인도",
-        Decimal("4.25"),
+        None,
         kind=QUANT_LIMIT_KIND_REPUTATION,
         limit_min=Decimal("-5"),
+        note=_QUANT_NOTE_REPUTATION,
         source=_QUANT_SRC_REPUTATION,
     )
 
@@ -1732,7 +1759,8 @@ def _performance_section(
 def _band(
     band_key: str,
     *groups: tuple[QuantScoreItem, ...],
-    total_limit: Decimal = Decimal("100"),
+    total_limit: Decimal = QUANT_FIXED_TOTAL_LIMIT,
+    total_is_fixed: bool = True,
 ) -> QuantScoreBand:
     """구간 하나를 만듭니다. 심사분야별 항목 묶음을 순서대로 이어 붙입니다."""
     items = tuple(item for group in groups for item in group)
@@ -1741,6 +1769,7 @@ def _band(
         band_label=QUANT_BAND_LABELS[band_key],
         items=items,
         total_limit=total_limit,
+        total_is_fixed=total_is_fixed,
     )
 
 
@@ -2044,14 +2073,15 @@ def _attachment_8_table() -> QuantScoreTable:
 def _attachment_9_table() -> QuantScoreTable:
     """별표 9 수요기관 지정형. 기본평가·선택평가와 입찰가격 60~70 범위 구조입니다.
 
-    원문이 범위로 표기하므로 limit 은 상한, limit_min 은 하한입니다. 합계 100 은
-    범위 안에서 수요기관이 정하므로 별표 1~5의2 처럼 고정 합계로 검증하지 않습니다.
+    원문이 범위로 표기하므로 limit 은 상한, limit_min 은 하한입니다. 항목 상한을 모두
+    더하면 165 이지만 합계 100 은 수요기관이 범위 안에서 정하므로, 별표 1~5의2 처럼
+    항목 합으로 검증하지 않습니다(total_is_fixed=False).
     """
     return QuantScoreTable(
         attachment="별표 9",
         table_name="수요기관 지정형 적격심사",
         source=_QUANT_SRC_ATTACH,
-        note=_QUANT_NOTE_RANGE,
+        note=_QUANT_NOTE_RANGE_TOTAL,
         bands=(
             _band(
                 QUANT_BAND_SINGLE,
@@ -2115,6 +2145,7 @@ def _attachment_9_table() -> QuantScoreTable:
                     _price_item(QUANT_SECTION_2, Decimal("70"), kind=QUANT_LIMIT_KIND_RANGE),
                     _disqualification_item(QUANT_SECTION_3),
                 ),
+                total_is_fixed=False,
             ),
         ),
     )
@@ -2181,6 +2212,55 @@ def quant_score_table_for_rule(rule: EvaluationRule) -> QuantScoreTable | None:
     """
     suffix = "_".join(rule.rule_id.rsplit("_", 2)[-2:])
     return QUANT_SCORE_TABLES.get(suffix)
+
+
+def quant_band_scored_limit_total(band: QuantScoreBand) -> Decimal:
+    """구간의 배점한도 합계. 신인도(가감분)와 결격사유(감점)는 산입하지 않습니다.
+
+    원문 배점표는 신인도를 계·합계에 0으로 넣고 결격사유는 별도 심사번호로 분리합니다
+    (docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:44,57). 두 항목을 빼고
+    남은 배점한도를 더한 값이 별표 합계 100 과 같아야 합니다.
+    """
+    return sum(
+        (
+            item.limit
+            for item in band.items
+            if item.limit is not None and item.limit_kind not in QUANT_LIMIT_KIND_TOTAL_EXCLUDED
+        ),
+        Decimal("0"),
+    )
+
+
+@dataclass(frozen=True)
+class QuantTotalAuditRow:
+    """구간별 배점한도 합계 점검 한 줄.
+
+    같은 별표를 고시금액 미만 전용 규칙과 공용 규칙이 함께 쓰므로(예: ATTACH_06·ATTACH_07)
+    별표명만으로는 구간을 특정할 수 없습니다. table_key(규칙 ID 접미사)를 함께 갖습니다.
+    """
+
+    table_key: str
+    attachment: str
+    band_key: str
+    scored_limit_total: Decimal
+    total_limit: Decimal
+    total_is_fixed: bool
+
+
+def quant_score_tables_total_audit() -> tuple[QuantTotalAuditRow, ...]:
+    """QUANT_SCORE_TABLES 의 모든 구간 합계를 신인도·결격사유 제외로 계산해 돌려줍니다."""
+    return tuple(
+        QuantTotalAuditRow(
+            table_key=table_key,
+            attachment=table.attachment,
+            band_key=band.band_key,
+            scored_limit_total=quant_band_scored_limit_total(band),
+            total_limit=band.total_limit,
+            total_is_fixed=band.total_is_fixed,
+        )
+        for table_key, table in QUANT_SCORE_TABLES.items()
+        for band in table.bands
+    )
 
 
 def select_quant_band(
