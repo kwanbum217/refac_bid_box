@@ -453,3 +453,75 @@ class TestExplicitRulesCalls:
         matched = match_rule_by_mthd_nm(method, rules=PRE_20250901_RULES)
         assert matched is not None
         assert matched.rule_id == "SERVC_QUAL_PRE_20250901_ATTACH_15"
+
+
+class TestScoreTableDeclaration:
+    """개정 3세대 42건의 배점표(B·k·T) 판정: 확정값만 실리고 미확정은 None."""
+
+    def test_all_rules_carry_a_declaration_source(self) -> None:
+        """42건 전부가 출처 또는 미확인 사유를 남긴다."""
+        rules = PRE_20230501_RULES + PRE_20250901_RULES + POST_20260526_RULES
+        assert len(rules) == 42
+        for rule in rules:
+            assert rule.score_table_source, rule.rule_id
+            assert rule.score_table_source.strip() != ""
+
+    def test_pre_20230501_has_no_confirmed_values(self) -> None:
+        """제2023-53호 판은 배점표가 조사 범위 밖이라 전량 None 이다."""
+        for rule in PRE_20230501_RULES:
+            assert rule.max_price_score is None, rule.rule_id
+            assert rule.multiplier is None, rule.rule_id
+            assert rule.pass_threshold is None, rule.rule_id
+
+    def test_pre_20250901_confirmed_values(self) -> None:
+        """제2025-257호·제2026-15호 판의 확정 배점표."""
+        by_id = {rule.rule_id: rule for rule in PRE_20250901_RULES}
+        academic_under = by_id["SERVC_QUAL_PRE_20250901_ATTACH_06"]
+        assert academic_under.max_price_score == Decimal("70")
+        assert academic_under.multiplier == Decimal("4")
+        assert academic_under.pass_threshold == Decimal("85")
+
+        insurance = by_id["SERVC_QUAL_PRE_20250901_ATTACH_02"]
+        assert insurance.max_price_score is None
+        assert insurance.multiplier == Decimal("0.375")
+        assert insurance.pass_threshold == Decimal("85")
+
+        lease = by_id["SERVC_QUAL_PRE_20250901_ATTACH_16"]
+        assert lease.max_price_score == Decimal("70")
+        assert lease.multiplier is None
+
+    def test_facility_passenger_and_sw_sme_stay_unconfirmed(self) -> None:
+        """문서 간 불일치가 있는 시설분야·여객·SW(대상)은 세대를 가리지 않고 미확정이다."""
+        for rules in (PRE_20230501_RULES, PRE_20250901_RULES, POST_20260526_RULES):
+            for rule in rules:
+                if rule.service_type in HIGH_BASE_RATE_SERVICE_TYPES:
+                    assert rule.max_price_score is None, rule.rule_id
+                    assert rule.multiplier is None, rule.rule_id
+                    assert rule.pass_threshold is None, rule.rule_id
+
+    def test_post_confirmed_values_and_unmapped_bands(self) -> None:
+        """제2026-260호 판의 확정값과 일반 띠 미확인."""
+        by_id = {rule.rule_id: rule for rule in POST_20260526_RULES}
+        academic_under = by_id["SERVC_QUAL_POST_20260526_ATTACH_06"]
+        assert academic_under.max_price_score == Decimal("70")
+        assert academic_under.multiplier == Decimal("4")
+        assert academic_under.pass_threshold == Decimal("85")
+
+        assert by_id["SERVC_QUAL_POST_20260526_ATTACH_01"].multiplier is None
+        for index in (12, 13, 14):
+            rule = by_id[f"SERVC_QUAL_POST_20260526_ATTACH_{index:02d}"]
+            assert rule.max_price_score is None
+            assert rule.multiplier is None
+            assert rule.pass_threshold is None
+
+    def test_confirmed_values_cite_a_document_path(self) -> None:
+        """값을 실은 규칙은 근거 문서 경로가 사유 문자열에 남는다."""
+        for rules in (PRE_20250901_RULES, POST_20260526_RULES):
+            for rule in rules:
+                if (
+                    rule.max_price_score is None
+                    and rule.multiplier is None
+                    and rule.pass_threshold is None
+                ):
+                    continue
+                assert "docs/analysis/" in (rule.score_table_source or ""), rule.rule_id

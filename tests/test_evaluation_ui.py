@@ -478,3 +478,54 @@ class TestEvaluationUIPriceCompensation:
         assert (
             "기준비율을 넘기면 가격점수가 다시 내려갑니다. 결격사유는 가격점수로 보완되지 않습니다."
         ) in template_content
+
+
+class TestEvaluationUIScoreTableDeclaration:
+    """규칙 선언 배점표(B·k·T) 자동 채움과 집중 미확인·덮어쓰기 표시 검증.
+
+    값의 정본은 서버 응답(score_table)이며, 화면은 규칙 선언값을 입력란 기본값으로
+    채우고 사용자가 바꾼 필드는 덮어쓰기로 구분해 표시합니다.
+    """
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def template_content(cls):
+        path = Path("src/app/templates/bids/detail.html")
+        return path.read_text(encoding="utf-8")
+
+    def test_declared_score_table_block_exists(self, template_content):
+        """규칙 선언 배점표 블록과 B·k·T 표시 요소가 있다."""
+        assert 'id="score-table-rule"' in template_content
+        assert 'id="score-table-b"' in template_content
+        assert 'id="score-table-k"' in template_content
+        assert 'id="score-table-t"' in template_content
+        assert 'id="score-table-source"' in template_content
+        assert "규칙 선언 배점표" in template_content
+
+    def test_unconfirmed_warning_exists(self, template_content):
+        """미확정(None) 규칙을 알리는 집중 미확인 경고 경로가 있다."""
+        assert 'id="score-table-unconfirmed"' in template_content
+        assert 'id="score-table-unconfirmed-fields"' in template_content
+        assert "집중 미확인" in template_content
+
+    def test_override_notice_exists(self, template_content):
+        """사용자 직접 입력을 덮어쓰기로 구분해 표시하는 경로가 있다."""
+        assert 'id="score-table-override"' in template_content
+        assert 'id="score-table-override-fields"' in template_content
+        assert "덮어씁니다" in template_content
+
+    def test_autofill_reads_server_payload(self, template_content):
+        """서버 응답의 선언값·미확정·덮어쓰기 필드를 그대로 사용한다."""
+        assert "renderRuleScoreTable" in template_content
+        assert "fillScoreTableInput" in template_content
+        assert "scoreTable.missing_fields" in template_content
+        assert "scoreTable.override_fields" in template_content
+        assert "scoreTable.source" in template_content
+
+    def test_autofill_does_not_overwrite_user_input(self, template_content):
+        """규칙 선언값은 비어 있는 입력란에만 채워 사용자가 넣은 값을 덮지 않는다."""
+        assert "$.trim($input.val()) === ''" in template_content
+
+    def test_declared_table_rendered_in_both_flows(self, template_content):
+        """규칙 카드 로드와 분석 실행 두 흐름 모두에서 선언 배점표를 반영한다."""
+        assert template_content.count("renderRuleScoreTable(data.score_table)") == 2
