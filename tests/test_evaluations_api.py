@@ -436,6 +436,134 @@ def test_missing_score_table_keeps_scenarios_and_floor_amounts(
     assert spy_scenario_builder[0][2]["drwt_prdprc_num"] == 3
 
 
+# --------------------------------------------------------------------------- #
+# 2b. 규칙 선언 배점표(B·k·T): 선언값 자동 적용과 사용자 덮어쓰기
+# --------------------------------------------------------------------------- #
+
+# 학술연구용역 고시금액 미만(별표1). 규칙 레지스트리가 B=70·k=4·T=85 를 선언한 규칙이다.
+ACADEMIC_METHOD = "학술연구용역 적격심사 추정가격 고시금액 미만"
+ACADEMIC_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_06"
+ACADEMIC_LWLT_RATE = "86.245"
+
+
+def _academic_bid(db):
+    return _create_bid(
+        db,
+        raw_overrides={
+            "sucsfbidMthdNm": ACADEMIC_METHOD,
+            "sucsfbidLwltRate": ACADEMIC_LWLT_RATE,
+        },
+    )
+
+
+def test_declared_score_table_computes_without_user_input(client, isolated_db, as_user):
+    """규칙이 B·k·T 를 선언한 별표는 사용자 입력 없이도 점수를 계산한다."""
+    as_user(10)
+    bid = _academic_bid(isolated_db)
+
+    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["blocked"] is False
+    assert payload["rule_id"] == ACADEMIC_RULE_ID
+    assert payload["score_table"]["max_price_score"] == "70"
+    assert payload["score_table"]["multiplier"] == "4"
+    assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 T
+    assert payload["score_table"]["missing_fields"] == []
+    assert payload["score_table"]["override_fields"] == []
+    assert payload["score_table"]["source"]
+
+
+def test_user_input_overrides_declared_score_table(client, isolated_db, as_user):
+    """사용자 직접 입력은 규칙 선언값을 덮어쓰고 그 사실이 표시된다."""
+    as_user(10)
+    bid = _academic_bid(isolated_db)
+    override = {"max_price_score": 60, "multiplier": 5, "pass_threshold": 88}
+
+    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id, score_table=override))
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is False
+    assert payload["score_table"]["override_fields"] == [
+        "max_price_score",
+        "multiplier",
+        "pass_threshold",
+    ]
+    assert payload["score_table"]["missing_fields"] == []
+    # 계산에는 덮어쓴 값이 쓰인다.
+    assert payload["price_compensation"]["max_price_score"] == "60"
+    assert payload["price_compensation"]["pass_threshold"] == "88"  # noqa: S105 - 배점표 T
+    assert any("덮어썼습니다" in w for w in payload["warnings"])
+
+
+def test_user_input_equal_to_declared_value_is_not_an_override(client, isolated_db, as_user):
+    """선언값과 같은 값을 다시 보낸 것은 덮어쓰기로 보지 않는다."""
+    as_user(10)
+    bid = _academic_bid(isolated_db)
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id, score_table={"max_price_score": 70, "multiplier": 4, "pass_threshold": 85}
+        ),
+    )
+
+    payload = response.json()
+    assert payload["blocked"] is False
+    assert payload["score_table"]["override_fields"] == []
+
+
+def test_unconfirmed_score_table_still_blocks_with_reason(client, isolated_db, as_user):
+    """규칙이 확정하지 못한 배점표는 입력이 없으면 MISSING_SCORE_TABLE 로 차단한다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)  # 시설분야 ATTACH_01: 문서 간 불일치로 B·k·T 미확정
+
+    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
+    assert payload["score_table"]["max_price_score"] is None
+    assert payload["score_table"]["multiplier"] is None
+    assert payload["score_table"]["pass_threshold"] is None
+    assert payload["score_table"]["missing_fields"] == [
+        "max_price_score",
+        "multiplier",
+        "pass_threshold",
+    ]
+    assert "미확인" in payload["score_table"]["source"]
+    assert any("집중 미확인" in w for w in payload["warnings"])
+
+
+def test_partially_confirmed_score_table_requires_only_missing_field(client, isolated_db, as_user):
+    """일부만 확정된 규칙은 확정된 값을 자동 적용하고 미확정 필드만 입력을 요구한다."""
+    as_user(10)
+    # 별표1 학술연구 고시금액 이상: k=2·T=85 는 확정, B 는 추정가격 구간에서 갈려 미확인.
+    bid = _create_bid(
+        isolated_db,
+        raw_overrides={
+            "sucsfbidMthdNm": "학술연구용역 적격심사 추정가격 5억원 미만 고시금액 이상",
+            "sucsfbidLwltRate": "82.495",
+        },
+    )
+
+    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert payload["score_table"]["max_price_score"] is None
+    assert payload["score_table"]["multiplier"] == "2"
+    assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 T
+    assert payload["score_table"]["missing_fields"] == ["max_price_score"]
+    # 확정된 평점계수·통과점수만 미확인 목록에 오르지 않는다.
+    assert "평점계수" not in payload["blocked_reason"]
+
+
 def test_floor_amount_without_a_value_is_still_reported(client, isolated_db, as_user):
     """A값이 없는 공고도 낙찰하한율 기준 최저 투찰금액은 제공된다."""
     as_user(10)

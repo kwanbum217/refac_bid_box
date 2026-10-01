@@ -16,7 +16,7 @@ from src.app.services.evaluation_scoring import format_decimal_plain
 
 RULES_URL = "/api/v1/evaluations/rules"
 
-# 규칙 표 여섯 열과 식별자 필드. 응답 항목은 이 키들을 모두 가져야 합니다.
+# 규칙 표 여섯 열과 식별자, 그리고 규칙 선언 배점표(B·k·T) 필드. 응답 항목은 이 키를 모두 가진다.
 META_KEYS = {
     "rule_id",
     "service_type",
@@ -26,6 +26,10 @@ META_KEYS = {
     "source",
     "base_rate",
     "lwlt_rate",
+    "max_price_score",
+    "multiplier",
+    "pass_threshold",
+    "score_table_source",
 }
 DISPLAY_KEYS = ("table_name", "service_type", "base_rate", "lwlt_rate", "effective_date", "source")
 
@@ -105,6 +109,20 @@ def test_rules_values_come_from_registry_single_source(client):
             "source": rule.source,
             "base_rate": format_decimal_plain(rule.base_rate),
             "lwlt_rate": format_decimal_plain(rule.lwlt_rate),
+            "max_price_score": (
+                format_decimal_plain(rule.max_price_score)
+                if rule.max_price_score is not None
+                else None
+            ),
+            "multiplier": (
+                format_decimal_plain(rule.multiplier) if rule.multiplier is not None else None
+            ),
+            "pass_threshold": (
+                format_decimal_plain(rule.pass_threshold)
+                if rule.pass_threshold is not None
+                else None
+            ),
+            "score_table_source": rule.score_table_source,
         }
         for rule in POST_20260727_RULES
     ]
@@ -115,6 +133,44 @@ def test_rules_values_come_from_registry_single_source(client):
     assert first["rule_id"] == "SERVC_QUAL_POST_20260526_ATTACH_01"
     assert first["base_rate"] == "0.93"
     assert first["lwlt_rate"] == "89.995"
+
+
+def test_confirmed_score_table_is_string_and_unconfirmed_is_null(client):
+    """확정된 배점표는 문자열로, 확정 근거가 없는 배점표는 null 로 직렬화한다."""
+    rules = {row["rule_id"]: row for row in client.get(RULES_URL).json()["rules"]}
+
+    # 별표1 학술연구 고시금액 미만은 원문으로 B=70·k=4·T=85 가 확정된 규칙이다.
+    academic = rules["SERVC_QUAL_POST_20260526_ATTACH_06"]
+    assert academic["max_price_score"] == "70"
+    assert academic["multiplier"] == "4"
+    assert academic["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T 이지 비밀번호가 아니다
+    assert isinstance(academic["score_table_source"], str)
+    assert academic["score_table_source"].strip() != ""
+
+    # 시설분야는 문서 간 불일치(91 대 93)로 확정하지 않아 셋 다 null 이고 사유가 남는다.
+    facility = rules["SERVC_QUAL_POST_20260526_ATTACH_01"]
+    assert facility["max_price_score"] is None
+    assert facility["multiplier"] is None
+    assert facility["pass_threshold"] is None
+    assert "미확인" in facility["score_table_source"]
+
+    # 일반 띠는 별표 귀속 자체가 미확인이라 null 이고 사유가 남는다.
+    general = rules["SERVC_QUAL_POST_20260526_ATTACH_12"]
+    assert general["pass_threshold"] is None
+    assert "미확인" in general["score_table_source"]
+
+
+def test_matched_rule_carries_declared_score_table(client, isolated_db):
+    """bid_id 로 매칭된 별표도 선언 배점표를 함께 돌려준다."""
+    bid = _create_bid(isolated_db)
+
+    payload = client.get(RULES_URL, params={"bid_id": bid.id}).json()
+
+    matched = payload["matched_rule"]
+    assert matched is not None
+    assert matched["rule_id"] == FACILITY_RULE_ID
+    assert matched["max_price_score"] is None
+    assert matched["score_table_source"] is not None
 
 
 def test_scope_note_states_agency_and_region_formula_absent(client):

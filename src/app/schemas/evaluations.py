@@ -299,6 +299,31 @@ class PriceCompensation(BaseModel):
     )
 
 
+class RuleScoreTable(BaseModel):
+    """규칙이 선언한 배점표(B·k·T)와 출처, 미확정·덮어쓰기 표시.
+
+    값은 규칙 레지스트리 선언값을 지수 표기 없는 문자열로 옮긴 것이고(미확정은 null),
+    사용자 직접 입력은 이 선언값을 덮어쓰는 용도입니다. missing_fields 는 규칙이
+    확정하지 못해 사용자가 입력해야 하는 필드, override_fields 는 사용자가 선언값과
+    다르게 입력한 필드입니다.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    max_price_score: str | None = Field(
+        None, description="규칙 선언 가격배점한도 B (미확정이면 null)"
+    )
+    multiplier: str | None = Field(None, description="규칙 선언 평점계수 k (미확정이면 null)")
+    pass_threshold: str | None = Field(None, description="규칙 선언 통과점수 T (미확정이면 null)")
+    source: str | None = Field(None, description="선언값 또는 미확정 사유의 근거 (문서 경로)")
+    missing_fields: list[str] = Field(
+        default_factory=list, description="규칙이 확정하지 못해 사용자 입력이 필요한 필드"
+    )
+    override_fields: list[str] = Field(
+        default_factory=list, description="사용자가 규칙 선언값과 다르게 입력한 필드"
+    )
+
+
 class EvaluationResponse(BaseModel):
     """적격심사 정량평가 및 투찰 분석 응답.
 
@@ -397,6 +422,10 @@ class EvaluationResponse(BaseModel):
     price_compensation: PriceCompensation | None = Field(
         default=None,
         description=("정량점수 부족분의 입찰가격 보완 판정. 계산을 차단한 응답에서는 null 입니다."),
+    )
+    score_table: RuleScoreTable | None = Field(
+        default=None,
+        description="규칙이 선언한 배점표(B·k·T)·출처·미확정/덮어쓰기 표시",
     )
     warnings: list[str] = Field(
         default_factory=list,

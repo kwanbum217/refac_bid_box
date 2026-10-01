@@ -21,8 +21,9 @@ src/app/api/v1/evaluations.py
 
 본 파일은 산식 상수를 하나도 가지지 않습니다. 규칙 판별과 낙찰하한율은 evaluation_rules,
 점수 계산과 적격 판정과 역산은 evaluation_scoring, 모델 출처는 predict_price_api 가 정본입니다.
-가격배점한도(B)·평점계수(k)·통과점수(T) 는 규칙 레지스트리가 실측으로 확정하지 않은 값이라
-사용자가 공고문 배점표로 입력하며, 입력이 없으면 추측 대신 점수 계산만 차단합니다.
+가격배점한도(B)·평점계수(k)·통과점수(T) 는 규칙 레지스트리가 원문으로 확정한 규칙만 선언값을
+갖고, 확정하지 못한 규칙은 사용자가 공고문 배점표로 입력합니다. 사용자 입력은 규칙 선언값을
+덮어쓰는 용도이며, 선언값도 입력도 없으면 추측 대신 점수 계산만 차단합니다.
 
 차단 코드:
 - 규칙 판별 차단 (evaluation_rules): NOT_SERVC, NON_PRED_PRICE, MANUAL_EVALUATION, RULE_NOT_FOUND,
@@ -65,6 +66,7 @@ from src.app.schemas.evaluations import (
     PriceCompensationScenario,
     PriceScenarioConfig,
     QualificationInput,
+    RuleScoreTable,
     ScenarioEvaluationResult,
 )
 from src.app.schemas.predictions import PredictPriceRequest
@@ -98,9 +100,10 @@ router = APIRouter(prefix="/evaluations", tags=["Evaluations"])
 # 헬퍼 함수
 # =============================================================================
 
-# 규칙 레지스트리는 별표 식별 문자열과 낙찰하한율만 실측으로 확정했습니다.
-# 가격배점한도(B)·평점계수(k)·통과점수(T) 는 별표마다 다르고 공고 데이터에 없으므로
-# 사용자가 공고문 배점표를 입력합니다. 이 계층은 세 값을 추측하지 않습니다.
+# 규칙 레지스트리는 별표 식별 문자열과 낙찰하한율을 실측으로 확정했고, 가격배점한도(B)·
+# 평점계수(k)·통과점수(T) 는 원문 별표 문서로 확정된 규칙만 선언값을 갖습니다. 확정하지
+# 못한 규칙은 사용자가 공고문 배점표를 입력하며, 사용자 입력은 규칙 선언값을 덮어씁니다.
+# 이 계층은 선언값도 입력도 없는 값을 추측하지 않습니다.
 SCORE_TABLE_LABELS: dict[str, str] = {
     "max_price_score": "가격배점한도",
     "multiplier": "평점계수",
@@ -168,13 +171,19 @@ def _get_snapshot_or_404(db: Session, snapshot_id: int, user_id: int) -> BidEval
 def _score_table(
     qualification: QualificationInput,
     rule: EvaluationRule,
-) -> tuple[ScoreTable | None, list[str]]:
-    """가격점수에 필요한 배점표 파라미터를 사용자 입력에서 읽습니다.
+) -> tuple[ScoreTable | None, list[str], list[str]]:
+    """가격점수에 필요한 배점표 파라미터를 규칙 선언값과 사용자 입력으로 정합니다.
 
-    가격배점한도·평점계수·통과점수는 규칙 레지스트리가 실측으로 확정하지 못한 값이라
-    공고문 배점표에서 읽은 사용자 입력이 정본입니다. 하나라도 없으면 추측하지 않고
-    결측 필드명만 돌려 점수 계산을 차단합니다. 기준비율은 규칙 객체의 선언값을 씁니다.
+    규칙 레지스트리가 원문으로 확정한 선언값이 기본이고, 사용자 직접 입력은 그 선언값을
+    덮어쓰는 용도입니다. 선언값도 입력도 없는 필드는 추측하지 않고, 결측 필드명과 사용자가
+    선언값과 다르게 입력한 필드명을 함께 돌려 점수 계산을 차단합니다. 기준비율은 규칙
+    객체의 선언값을 씁니다.
     """
+    declared: dict[str, Decimal | None] = {
+        "max_price_score": rule.max_price_score,
+        "multiplier": rule.multiplier,
+        "pass_threshold": rule.pass_threshold,
+    }
     supplied: dict[str, float | None] = {
         "max_price_score": qualification.max_price_score,
         "multiplier": qualification.multiplier,
@@ -182,13 +191,21 @@ def _score_table(
     }
     resolved: dict[str, Decimal] = {}
     missing: list[str] = []
-    for field_name, value in supplied.items():
-        if value is None:
-            missing.append(field_name)
-        else:
-            resolved[field_name] = Decimal(str(value))
+    overridden: list[str] = []
+    for field_name, declared_value in declared.items():
+        user_value = supplied[field_name]
+        if user_value is None:
+            if declared_value is None:
+                missing.append(field_name)
+            else:
+                resolved[field_name] = declared_value
+            continue
+        user_decimal = Decimal(str(user_value))
+        resolved[field_name] = user_decimal
+        if declared_value is not None and user_decimal != declared_value:
+            overridden.append(field_name)
     if missing:
-        return None, missing
+        return None, missing, overridden
 
     return (
         ScoreTable(
@@ -198,6 +215,27 @@ def _score_table(
             base_rate=rule.base_rate,
         ),
         [],
+        overridden,
+    )
+
+
+def _rule_score_table_payload(
+    rule: EvaluationRule,
+    missing_fields: list[str],
+    override_fields: list[str],
+) -> RuleScoreTable:
+    """규칙 선언 배점표와 미확정·덮어쓰기 표시를 응답 스키마로 옮깁니다."""
+    return RuleScoreTable(
+        max_price_score=(
+            format_decimal_plain(rule.max_price_score) if rule.max_price_score is not None else None
+        ),
+        multiplier=(format_decimal_plain(rule.multiplier) if rule.multiplier is not None else None),
+        pass_threshold=(
+            format_decimal_plain(rule.pass_threshold) if rule.pass_threshold is not None else None
+        ),
+        source=rule.score_table_source,
+        missing_fields=list(missing_fields),
+        override_fields=list(override_fields),
     )
 
 
@@ -432,6 +470,7 @@ def _score_table_missing_response(
     pred_price: Decimal,
     scenarios: list[ScenarioPrice],
     missing_fields: list[str],
+    override_fields: list[str],
 ) -> EvaluationResponse:
     """배점표 입력이 없어 점수는 계산하지 않습니다. 하한율과 시나리오 구간은 그대로 전달합니다."""
     assert rule_result.rule is not None
@@ -454,7 +493,11 @@ def _score_table_missing_response(
         *rule_result.warnings,
         floor_note,
         "가격점수·종합점수·적격 판정·최저 투찰률 역산은 배점표를 입력한 뒤에 계산됩니다.",
+        f"집중 미확인: 규칙이 확정하지 못한 배점표 항목({labels})은 공고문 적격심사 "
+        "별표에서 확인해 입력해야 합니다.",
     ]
+    if rule.score_table_source:
+        warnings.append(f"배점표 근거: {rule.score_table_source}")
     return EvaluationResponse(
         status="blocked",
         rule_id=rule.rule_id,
@@ -473,6 +516,7 @@ def _score_table_missing_response(
         a_value_amount=None,
         min_bid_amount_with_a=None,
         scenario_results=_unscored_scenario_results(scenarios, candidate_bid_amount),
+        score_table=_rule_score_table_payload(rule, missing_fields, override_fields),
         warnings=warnings,
     )
 
@@ -573,6 +617,7 @@ def _success_response(
     pred_price: Decimal,
     scenarios: list[ScenarioPrice],
     provenance: ModelProvenance,
+    override_fields: list[str],
 ) -> EvaluationResponse:
     """규칙 판별 결과와 evaluation_scoring 계산 결과를 응답 스키마로 담습니다."""
     assert rule_result.rule is not None
@@ -587,6 +632,9 @@ def _success_response(
     warnings = list(rule_result.warnings)
     if provenance.actual_model is None:
         warnings.append(f"모델 출처를 확정할 수 없습니다. {provenance.fallback_reason}")
+    if override_fields:
+        override_labels = ", ".join(SCORE_TABLE_LABELS.get(name, name) for name in override_fields)
+        warnings.append(f"사용자 입력이 규칙 선언 배점표를 덮어썼습니다: {override_labels}")
 
     # 용역 적격심사는 A값을 적용하지 않습니다. 최저 투찰금액은 예정가격 * 하한율입니다.
     min_bid_result = calculate_min_bid_amount(
@@ -647,6 +695,7 @@ def _success_response(
             for scenario in scenarios
         ],
         price_compensation=_price_compensation_payload(compensation_result),
+        score_table=_rule_score_table_payload(rule, [], override_fields),
         warnings=warnings,
     )
 
@@ -746,7 +795,7 @@ def _analyze_bid(
 
     scenarios = _scenario_prices(bid, payload.price_scenarios)
 
-    table, missing_fields = _score_table(payload.qualification_input, rule)
+    table, missing_fields, override_fields = _score_table(payload.qualification_input, rule)
     if table is None:
         return _score_table_missing_response(
             bid=bid,
@@ -755,6 +804,7 @@ def _analyze_bid(
             pred_price=pred_price,
             scenarios=scenarios,
             missing_fields=missing_fields,
+            override_fields=override_fields,
         )
 
     return _success_response(
@@ -765,6 +815,7 @@ def _analyze_bid(
         pred_price=pred_price,
         scenarios=scenarios,
         provenance=_model_provenance(payload, request, db),
+        override_fields=override_fields,
     )
 
 
@@ -831,11 +882,12 @@ SERVC_RULE_META_SCOPE_NOTE = (
 )
 
 
-def _serialize_rule_meta(rule: EvaluationRule) -> dict[str, str]:
-    """규칙 객체를 산식 표 여섯 열과 식별자로 옮깁니다.
+def _serialize_rule_meta(rule: EvaluationRule) -> dict[str, str | None]:
+    """규칙 객체를 산식 표 여섯 열과 식별자, 그리고 선언 배점표로 옮깁니다.
 
-    기준비율·낙찰하한율은 float 를 거치지 않고 format_decimal_plain 문자열로 냅니다.
-    float 로 바꾸면 표시에 반올림 오차가 생깁니다.
+    기준비율·낙찰하한율과 배점표(B·k·T)는 float 를 거치지 않고 format_decimal_plain
+    문자열로 내거나, 규칙이 확정하지 못한 값은 null 로 냅니다. float 로 바꾸면 표시에
+    반올림 오차가 생깁니다.
     """
     return {
         "rule_id": rule.rule_id,
@@ -846,6 +898,16 @@ def _serialize_rule_meta(rule: EvaluationRule) -> dict[str, str]:
         "source": rule.source,
         "base_rate": format_decimal_plain(rule.base_rate),
         "lwlt_rate": format_decimal_plain(rule.lwlt_rate),
+        "max_price_score": (
+            format_decimal_plain(rule.max_price_score) if rule.max_price_score is not None else None
+        ),
+        "multiplier": (
+            format_decimal_plain(rule.multiplier) if rule.multiplier is not None else None
+        ),
+        "pass_threshold": (
+            format_decimal_plain(rule.pass_threshold) if rule.pass_threshold is not None else None
+        ),
+        "score_table_source": rule.score_table_source,
     }
 
 
@@ -861,7 +923,7 @@ def list_evaluation_rules_meta(
     bid_id 가 주어지면 그 공고에 매칭된 별표를 matched_rule 로 함께 돌려주고, 매칭되지
     않으면 null 로 두고 목록만 돌려줍니다. 규칙은 공개 정보라 인증을 요구하지 않습니다.
     """
-    matched_rule: dict[str, str] | None = None
+    matched_rule: dict[str, str | None] | None = None
     if bid_id is not None:
         bid = _get_bid_or_404(db, bid_id)
         raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}

@@ -34,6 +34,206 @@ class EvaluationRule:
     lwlt_rate: Decimal
     base_rate: Decimal = Decimal("0.90")
     sample_count: int = 0
+    # 가격배점한도(B)·평점계수(k)·통과점수(T). 규칙 레지스트리가 원문으로 확정한 규칙만 값을 갖고,
+    # 확정 근거가 없는 규칙은 추측하지 않고 None 으로 둡니다. 사용자 직접 입력은 이 선언값을
+    # 덮어쓰는 용도로만 남습니다. 출처(또는 미확인 사유)는 score_table_source 에 남깁니다.
+    max_price_score: Decimal | None = None
+    multiplier: Decimal | None = None
+    pass_threshold: Decimal | None = None
+    score_table_source: str | None = None
+
+
+# 배점표(B·k·T) 판정표는 원문 별표 문서에서 확정된 값만 담습니다.
+# 근거 문서:
+# - docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md (개정 전 제2025-257호·제2026-15호)
+# - docs/analysis/servc_post_rules_audit_20260929.md (개정 후 제2026-260호)
+# - docs/analysis/20260930_score_params_acquisition.md (별표9 실측·통과점수)
+# 고시금액(용역 2.3억) 출처: src/ml/features.py:34-37 NOTICE_AMOUNT_BY_YEAR
+_SCORE_DOC_PRE = "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:152-179"
+_SCORE_DOC_POST = "docs/analysis/servc_post_rules_audit_20260929.md:96-131"
+_SCORE_DOC_MEASURED = "docs/analysis/20260930_score_params_acquisition.md:135-148"
+_SCORE_SRC_PRE = (
+    f"{_SCORE_DOC_PRE} (제2025-257호·제2026-15호 별표별 입찰가격 계산식·배점한도·통과점수)"
+)
+_SCORE_SRC_POST = f"{_SCORE_DOC_POST} (제2026-260호 별표별 입찰가격 계산식) 및 {_SCORE_DOC_MEASURED} (통과점수·별표9 실측)"
+_SCORE_REASON_PRE_20230501 = (
+    "미확인: 제2023-53호 판의 별표 배점표(B·k·T)는 조사 범위 밖입니다 "
+    "(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:655-661)"
+)
+_SCORE_REASON_DOC_CONFLICT = (
+    "미확인: 문서 간 기준비율·계수 불일치(시설분야 91 대 93, 여객·SW(대상) 계수 4)로 "
+    "확정하지 않습니다 (docs/analysis/servc_post_rules_audit_20260929.md:168-169)"
+)
+_SCORE_REASON_UNMAPPED_BAND = (
+    "미확인: 일반 띠는 별표 1~9 에 같은 이름이 없어 별표 귀속이 미확인입니다 "
+    "(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:299-312)"
+)
+_SCORE_REASON_UNKNOWN_RULE = "미확인: 배점표 판정표에 없는 규칙이라 값을 만들지 않습니다."
+_SCORE_NOTE_B_SPLIT = "B는 추정가격 5억원 미만 70/이상 60 으로 갈려 미확인"
+_SCORE_NOTE_K_SPLIT = "k는 고시금액 미만 4/이상 2 로 갈려 미확인"
+
+ScoreTableEntry = tuple[Decimal | None, Decimal | None, Decimal | None, str]
+
+_SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
+    # 2025-09-01 시행 판 (제2025-257호·제2026-15호)
+    "SERVC_QUAL_PRE_20250901_ATTACH_01": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_PRE_20250901_ATTACH_02": (
+        None,
+        Decimal("0.375"),
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표6 보험: k=0.375 단일·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_03": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_PRE_20250901_ATTACH_04": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_PRE_20250901_ATTACH_05": (
+        None,
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표3 SW 비대상: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_06": (
+        Decimal("70"),
+        Decimal("4"),
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표1 학술연구 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억)",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_07": (
+        None,
+        Decimal("2"),
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표1 학술연구 고시금액 이상: k=2·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_08": (
+        Decimal("70"),
+        Decimal("4"),
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표4 폐기물 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억)",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_09": (
+        None,
+        Decimal("2"),
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표4 폐기물 고시금액 이상: k=2·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_10": (
+        Decimal("70"),
+        Decimal("4"),
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표5의2 화물 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억)",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_11": (
+        None,
+        Decimal("2"),
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표5의2 화물 고시금액 이상: k=2·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_15": (
+        None,
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표7 수리·점검: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_16": (
+        Decimal("70"),
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표8 임대차: B=70 단일·T=85; {_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_17": (
+        None,
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_PRE} (별표9 수요기관 지정형: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+    ),
+    # 2023-05-01 시행 판 (제2023-53호). 배점표는 원문 범위 밖이라 전량 미확인입니다.
+    **{
+        f"SERVC_QUAL_PRE_20230501_ATTACH_{index:02d}": (
+            None,
+            None,
+            None,
+            _SCORE_REASON_PRE_20230501,
+        )
+        for index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17)
+    },
+    # 2026-05-26 시행 판 (제2026-260호)
+    "SERVC_QUAL_POST_20260526_ATTACH_01": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_POST_20260526_ATTACH_02": (
+        None,
+        Decimal("0.375"),
+        Decimal("85"),
+        f"{_SCORE_SRC_POST} (별표6 보험: k=0.375 단일·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_03": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_POST_20260526_ATTACH_04": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_POST_20260526_ATTACH_05": (
+        None,
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_POST} (별표3 SW 비대상: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_06": (
+        Decimal("70"),
+        Decimal("4"),
+        Decimal("85"),
+        f"{_SCORE_SRC_POST} (별표1 학술연구 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억)",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_07": (
+        None,
+        Decimal("2"),
+        Decimal("85"),
+        f"{_SCORE_SRC_POST} (별표1 학술연구 고시금액 이상: k=2·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_08": (
+        Decimal("70"),
+        Decimal("4"),
+        Decimal("85"),
+        f"{_SCORE_SRC_POST} (별표4 폐기물 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억)",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_09": (
+        None,
+        Decimal("2"),
+        Decimal("85"),
+        f"{_SCORE_SRC_POST} (별표4 폐기물 고시금액 이상: k=2·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_10": (
+        Decimal("70"),
+        Decimal("4"),
+        Decimal("85"),
+        f"{_SCORE_SRC_POST} (별표5의2 화물 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억)",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_11": (
+        None,
+        Decimal("2"),
+        Decimal("85"),
+        f"{_SCORE_SRC_POST} (별표5의2 화물 고시금액 이상: k=2·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_12": (None, None, None, _SCORE_REASON_UNMAPPED_BAND),
+    "SERVC_QUAL_POST_20260526_ATTACH_13": (None, None, None, _SCORE_REASON_UNMAPPED_BAND),
+    "SERVC_QUAL_POST_20260526_ATTACH_14": (None, None, None, _SCORE_REASON_UNMAPPED_BAND),
+}
+
+
+def _with_score_table(rules: tuple[EvaluationRule, ...]) -> tuple[EvaluationRule, ...]:
+    """선언된 배점표 판정표를 규칙 객체에 반영합니다.
+
+    표에 값이 있으면 그대로 대입하고, 없으면 값을 만들지 않고 미확인 사유만 남깁니다.
+    """
+    enriched: list[EvaluationRule] = []
+    for rule in rules:
+        max_price_score, multiplier, pass_threshold, source = _SCORE_TABLE_DECLARATIONS.get(
+            rule.rule_id,
+            (None, None, None, _SCORE_REASON_UNKNOWN_RULE),
+        )
+        enriched.append(
+            replace(
+                rule,
+                max_price_score=max_price_score,
+                multiplier=multiplier,
+                pass_threshold=pass_threshold,
+                score_table_source=source,
+            )
+        )
+    return tuple(enriched)
 
 
 # 2026-05-26 개정 후 일반용역 적격심사 실측 정본 별표 14종
@@ -275,6 +475,8 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
         sample_count=18,
     ),
 )
+
+POST_20260526_RULES = _with_score_table(POST_20260526_RULES)
 
 # 2026-07-27 개정 후 일반용역 적격심사 별표 14종 (조달청 공고 제2026-390호).
 # 여객 육상운송용역(ATTACH_03)과 소프트웨어용역 중소기업자간 경쟁제품 대상(ATTACH_04)만
@@ -541,6 +743,8 @@ PRE_20250901_RULES: tuple[EvaluationRule, ...] = (
     ),
 )
 
+PRE_20250901_RULES = _with_score_table(PRE_20250901_RULES)
+
 # 2023-05-01 시행 개정 전 규칙 14종 (제2023-53호).
 # 별표 1·11 배점표는 제2025-257호와 다르지만, 규칙 레지스트리가 담는 식별 문자열·하한율·기준비율은
 # 같아 같은 별표 범위를 한 벌로 표현합니다. 하한율은 2025-01-01 이상 2025-09-01 미만 구간 실측 최빈값입니다.
@@ -768,6 +972,8 @@ PRE_20230501_RULES: tuple[EvaluationRule, ...] = (
         sample_count=159,
     ),
 )
+
+PRE_20230501_RULES = _with_score_table(PRE_20230501_RULES)
 
 # 2026-05-26 개정 전 규칙 호환 별칭 (제2023-53호 + 제2025-257호·제2026-15호)
 PRE_20260526_RULES: tuple[EvaluationRule, ...] = PRE_20230501_RULES + PRE_20250901_RULES
