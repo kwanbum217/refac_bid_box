@@ -72,17 +72,25 @@ class TestEvaluationUITemplate:
         assert "정량평가 입력" in template_content
 
     def test_qualification_input_fields(self, template_content):
-        """4개 입력 필드(수행실적, 경영상태, 근로조건이행계획, 신인도)가 있다."""
-        assert 'id="input-performance"' in template_content
-        assert 'id="input-management"' in template_content
-        assert 'id="input-labor-plan"' in template_content
-        assert 'id="input-credibility"' in template_content
+        """정량평가 입력은 적용 별표 규칙 선언으로 그려지고 배점이 하드코딩되어 있지 않다."""
+        assert 'id="quant-attachment"' in template_content
+        assert 'id="quant-band-note"' in template_content
+        assert 'id="qualification-tbody"' in template_content
+        assert 'id="reputation-section"' in template_content
+        assert "renderQuantInputs" in template_content
+        # 고정 입력란과 단일 가감점 표기(플러스마이너스 5.00)가 사라졌다.
+        assert 'id="input-performance"' not in template_content
+        assert 'id="input-management"' not in template_content
+        assert 'id="input-labor-plan"' not in template_content
+        assert 'id="input-credibility"' not in template_content
+        assert "\u00b15.00" not in template_content
 
-    def test_labor_plan_required_warning(self, template_content):
-        """근로조건 이행계획 필수 안내가 있다."""
+    def test_labor_plan_is_declared_not_hardcoded(self, template_content):
+        """근로조건 이행계획은 별표 2 전용 항목이라 정적으로 고정하지 않고 선언으로 그린다."""
         assert "근로조건 이행계획" in template_content
-        assert "단순노무용역 필수" in template_content
-        assert "0점 불가" in template_content or "0점 시 사실상 통과 불가" in template_content
+        assert "단순노무용역" in template_content
+        # 근로조건 입력란은 배점표 항목(item_key=labor_plan)에서 만들어진다.
+        assert "labor_plan" in template_content
 
     def test_disqualification_checkbox(self, template_content):
         """결격사유 체크박스가 있다."""
@@ -332,10 +340,9 @@ class TestEvaluationUISchemaAlignment:
         template_content = template_path.read_text(encoding="utf-8")
 
         input_fields = [
-            "performance_score",
-            "management_score",
-            "labor_plan_score",
-            "credibility_score",
+            "quant_items",
+            "management_grade",
+            "reputation_items",
             "disqualification",
         ]
 
@@ -344,11 +351,13 @@ class TestEvaluationUISchemaAlignment:
 
         # 템플릿 입력 필드 id 확인
         template_input_ids = [
-            'id="input-performance"',
-            'id="input-management"',
-            'id="input-labor-plan"',
-            'id="input-credibility"',
+            'id="qualification-tbody"',
+            'id="reputation-section"',
+            'id="input-management-grade"',
             'id="input-disqualification"',
+            'id="input-max-price-score"',
+            'id="input-multiplier"',
+            'id="input-pass-threshold"',
         ]
 
         for tid in template_input_ids:

@@ -50,30 +50,53 @@ class EvidenceMetadata(BaseModel):
 class QualificationInput(BaseModel):
     """사용자 적격심사 정량평가 자격 입력값.
 
-    수행능력 점수(실적 + 경영상태), 근로조건 이행계획 점수, 신인도 가감점 등을 수집합니다.
-    근로조건 이행계획 점수는 단순노무용역 필수 항목이며 미충족/0점 시 사실상 통과가 불가합니다.
+    입력 항목 구성과 배점한도는 적용 별표의 규칙 선언(quant_score_table)이 정본입니다.
+    경영상태는 자유 입력 대신 별표 10 신용평가등급 선택(management_grade)으로 받고,
+    신인도는 단일 가감점 입력 대신 별표 11 가점·감점 항목 합계(reputation_items)로 받습니다.
+    배점표에 없는 항목에 값을 넣거나 배점한도를 넘기면 서버가 계산을 막고 사유를 알립니다.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
+    quant_items: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "적용 별표 배점표의 심사항목별 입력값. 키는 quant_score_table 의 item_key"
+            "(performance/technical_capacity/labor_plan/insurance_payment_ability 등), 값은 점수입니다. "
+            "배점표에 없는 항목 키나 배점한도 초과 값은 서버가 계산을 막습니다."
+        ),
+    )
+    management_grade: str | None = Field(
+        default=None,
+        description=(
+            "경영상태 신용평가등급 표기(별표 10). 예: 'BBB+', 'AAA'. 배점한도 20점 기준과 "
+            "10점 기준을 서버가 구분해 점수로 환산합니다. 별표 9 는 상대 감점 방식으로 환산합니다."
+        ),
+    )
+    reputation_items: dict[str, float] | None = Field(
+        default=None,
+        description=(
+            "신인도 가점·감점 항목별 선택값(별표 11). 키는 항목 코드, 값은 평점입니다. "
+            "서버가 합계를 내고 가점 상한 4.25(산업재해 감점 시 3.0)·감점 상한 -5.0 을 적용합니다."
+        ),
+    )
+    # 구형 경로 호환 필드입니다. quant_items·management_grade·reputation_items 가 없을 때만
+    # 쓰이며, 값은 여전히 적용 별표 배점한도로 검증되어 초과하면 계산이 막힙니다.
     performance_score: float = Field(
         default=0.0,
         ge=0.0,
-        description="수행능력 실적 평가 점수",
+        description="(구형) 이행실적 점수. quant_items 가 있으면 쓰지 않습니다.",
     )
     management_score: float = Field(
         default=0.0,
         ge=0.0,
-        description="경영상태 평가 점수 (신용평가등급 등)",
+        description="(구형) 경영상태 점수. management_grade 가 있으면 쓰지 않습니다.",
     )
     labor_plan_score: float = Field(
-        default=0.0,
-        ge=0.0,
-        description="근로조건 이행계획 적정성 점수 (단순노무용역 필수 항목, 0점 시 통과 불가 가능)",
+        default=0.0, ge=0.0, description="(구형) 근로조건 이행계획 점수. 별표 2 에만 허용됩니다."
     )
     credibility_score: float = Field(
-        default=0.0,
-        description="신인도 가감점 (양수 가점, 음수 감점)",
+        default=0.0, description="(구형) 신인도 가감점. reputation_items 가 있으면 쓰지 않습니다."
     )
     disqualification: bool = Field(
         default=False,
@@ -324,6 +347,90 @@ class RuleScoreTable(BaseModel):
     )
 
 
+class QuantScoreItemPayload(BaseModel):
+    """별표 심사항목 한 줄. (심사분야 번호, 항목명, 배점한도)를 그대로 전달합니다."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    section_no: str = Field(..., description="심사분야 번호 (로마 숫자 I, II, III)")
+    section_name: str = Field(..., description="심사분야 명칭")
+    item_key: str = Field(..., description="입력 항목 식별자")
+    item_name: str = Field(..., description="원문 항목명")
+    limit: str | None = Field(None, description="배점한도 (미표기면 null)")
+    limit_min: str | None = Field(None, description="범위 하한 (신인도 감점 상한, 별표 9 하한)")
+    limit_kind: str = Field(
+        ...,
+        description="입력 방식 (score/absent/range/credit_grade/reputation/price/disqualification)",
+    )
+    source: str = Field(..., description="배점 값 근거 문서 경로")
+    note: str | None = Field(None, description="미표기·범위 사유")
+
+
+class QuantScoreBandPayload(BaseModel):
+    """추정가격 구간 하나의 심사항목 배점한도."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    band_key: str = Field(..., description="구간 키 (over_500m/under_500m/single)")
+    band_label: str = Field(..., description="구간 표기")
+    total_limit: str = Field(..., description="합계 배점한도")
+    items: list[QuantScoreItemPayload] = Field(default_factory=list, description="심사항목 목록")
+
+
+class CreditGradePayload(BaseModel):
+    """별표 10 신용평가등급 점수 한 줄."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    grade_group: str = Field(..., description="등급군 표기")
+    grade_codes: list[str] = Field(default_factory=list, description="포함 등급 코드")
+    score_at_20: str = Field(..., description="배점한도 20점 기준 점수")
+    score_at_10: str = Field(..., description="배점한도 10점 기준 점수")
+    source: str = Field(..., description="근거 문서 경로")
+
+
+class ReputationItemPayload(BaseModel):
+    """별표 11 신인도 가점·감점 항목 한 줄."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    item_code: str = Field(..., description="항목 코드")
+    item_name: str = Field(..., description="항목명")
+    option_kind: str = Field(..., description="선택 방식 (choice/range)")
+    options: list[str] = Field(
+        default_factory=list, description="선택 가능한 평점 또는 (하한,상한)"
+    )
+    source: str = Field(..., description="근거 문서 경로")
+    note: str | None = Field(None, description="비고")
+
+
+class QuantScoreTablePayload(BaseModel):
+    """적용 별표의 정량평가 심사항목 배점한도와 입력 구성.
+
+    화면은 이 선언을 그대로 그려 입력란을 만들고, 서버는 같은 선언으로 초과·미표기 항목을
+    검증합니다. active_band_key 는 공고 추정가격으로 고른 구간이며, 확정하지 못하면 null 과
+    band_note 사유가 함께 나옵니다.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    attachment: str = Field(..., description="별표 번호 (예: 별표 2)")
+    table_name: str = Field(..., description="별표 명칭")
+    source: str = Field(..., description="배점한도 근거 문서 경로")
+    note: str | None = Field(None, description="별표 구조 비고")
+    bands: list[QuantScoreBandPayload] = Field(default_factory=list, description="구간별 배점한도")
+    active_band_key: str | None = Field(None, description="공고 추정가격으로 고른 구간 키")
+    band_note: str | None = Field(None, description="구간 확정 실패 사유")
+    credit_grades: list[CreditGradePayload] = Field(
+        default_factory=list, description="별표 10 신용평가등급 점수표"
+    )
+    reputation_items: list[ReputationItemPayload] = Field(
+        default_factory=list, description="별표 11 신인도 가점·감점 항목표"
+    )
+    reputation_max_bonus: str = Field(..., description="신인도 가점 상한")
+    reputation_max_penalty: str = Field(..., description="신인도 감점 상한")
+
+
 class EvaluationResponse(BaseModel):
     """적격심사 정량평가 및 투찰 분석 응답.
 
@@ -426,6 +533,10 @@ class EvaluationResponse(BaseModel):
     score_table: RuleScoreTable | None = Field(
         default=None,
         description="규칙이 선언한 배점표(B·k·T)·출처·미확정/덮어쓰기 표시",
+    )
+    quant_score_table: QuantScoreTablePayload | None = Field(
+        default=None,
+        description="적용 별표의 정량평가 심사항목 배점한도와 입력 구성(별표 1~9·10·11)",
     )
     warnings: list[str] = Field(
         default_factory=list,

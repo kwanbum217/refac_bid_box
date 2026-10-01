@@ -1509,3 +1509,953 @@ def resolve_evaluation_rule_from_raw_data(
         sucsfbid_mthd_cd=raw_data.get("sucsfbidMthdCd"),
         bid_ntce_dt=raw_data.get("bidNtceDt"),
     )
+
+
+# =============================================================================
+# 정량평가 심사항목 배점한도 (조달청 일반용역 적격심사 별표 1~9 원문 구조)
+# =============================================================================
+#
+# 근거 문서: docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md
+#   - 별표 1~9 심사항목 배점한도: 48-136행
+#   - 별표 10 경영상태(신용평가등급) 점수표: 187-198행
+#   - 별표 11 신인도 가점·감점 항목표: 204-231행
+#
+# 각 항목은 (심사분야 번호, 항목명, 배점한도)를 함께 가지며, 추정가격 5억원 이상/미만
+# 구간이 다르면 구간(band)별로 값을 갖습니다. 결격사유(-20)는 감점 항목이라 합계 100
+# 정합성에서 제외하고 limit_kind="disqualification" 으로 구분합니다. 신인도는 가점 상한
+# 4.25 와 감점 상한 -5.0 을 함께 갖습니다. 추측 금지 원칙에 따라 원문 표에 없는 값은
+# limit=None(limit_kind="absent")으로 두고, 그 사실을 항목명과 사유에 남깁니다.
+
+# 배점표에 없는 항목("-")은 배점한도 None 과 kind="absent" 로 표현합니다.
+QUANT_LIMIT_KIND_SCORE = "score"
+QUANT_LIMIT_KIND_ABSENT = "absent"
+QUANT_LIMIT_KIND_RANGE = "range"
+QUANT_LIMIT_KIND_CREDIT_GRADE = "credit_grade"
+QUANT_LIMIT_KIND_REPUTATION = "reputation"
+QUANT_LIMIT_KIND_PRICE = "price"
+QUANT_LIMIT_KIND_DISQUALIFICATION = "disqualification"
+
+# 입력 항목 식별자. 화면 입력란과 서버 검증이 공유하는 안정 키입니다.
+QUANT_ITEM_PERFORMANCE = "performance"
+QUANT_ITEM_MANAGEMENT = "management"
+QUANT_ITEM_TECHNICAL = "technical_capacity"
+QUANT_ITEM_TECHNICAL_INPUT = "technical_input"
+QUANT_ITEM_TECHNICAL_CREDIT = "technical_credit"
+QUANT_ITEM_LABOR_PLAN = "labor_plan"
+QUANT_ITEM_REPUTATION = "reputation"
+QUANT_ITEM_INSURANCE_ABILITY = "insurance_payment_ability"
+QUANT_ITEM_AFTER_SERVICE = "after_service"
+QUANT_ITEM_OTHER_PERFORMANCE = "other_performance"
+QUANT_ITEM_PRICE = "price"
+QUANT_ITEM_DISQUALIFICATION = "disqualification"
+
+QUANT_BAND_OVER_500M = "over_500m"
+QUANT_BAND_UNDER_500M = "under_500m"
+QUANT_BAND_SINGLE = "single"
+
+QUANT_BAND_LABELS: dict[str, str] = {
+    QUANT_BAND_OVER_500M: "추정가격 5억원 이상",
+    QUANT_BAND_UNDER_500M: "추정가격 5억원 미만",
+    QUANT_BAND_SINGLE: "단일 구간",
+}
+
+QUANT_ESTIMATED_PRICE_THRESHOLD = Decimal("500000000")
+
+_QUANT_SRC_ATTACH = "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:48-136"
+_QUANT_SRC_CREDIT = "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:187-198"
+_QUANT_SRC_REPUTATION = "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:204-231"
+_QUANT_SRC_BKT = "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:152-179"
+
+_QUANT_NOTE_ABSENT = "원문 배점표에 '-' 로 표기되어 입력할 수 없는 항목입니다."
+_QUANT_NOTE_RANGE = "원문이 범위(예: 10점 이상 30점 이하)로 표기한 항목입니다."
+
+# 심사분야 번호는 원문 표기를 그대로 씁니다(로마 숫자 I, II, III, IV). 표기 문자를
+# 유니코드 이스케이프로 선언해 소스에는 ASCII 로 남깁니다.
+QUANT_SECTION_1 = "\u2160"
+QUANT_SECTION_2 = "\u2161"
+QUANT_SECTION_3 = "\u2162"
+QUANT_SECTION_4 = "\u2163"
+
+
+@dataclass(frozen=True)
+class QuantScoreItem:
+    """별표 심사항목 한 줄. (심사분야 번호, 항목명, 배점한도)를 함께 갖습니다.
+
+    limit_kind 는 입력 방식과 합계 포함 여부를 정합니다. limit 이 None 이면(absent)
+    원문 배점표에 없는 항목이라 입력을 막습니다. limit_min 은 범위 하한(신인도 감점
+    상한, 별표 9 범위 하한)입니다.
+    """
+
+    section_no: str
+    section_name: str
+    item_key: str
+    item_name: str
+    limit: Decimal | None
+    limit_kind: str
+    source: str
+    limit_min: Decimal | None = None
+    note: str | None = None
+
+
+@dataclass(frozen=True)
+class QuantScoreBand:
+    """추정가격 구간 하나의 심사항목 배점한도 묶음."""
+
+    band_key: str
+    band_label: str
+    items: tuple[QuantScoreItem, ...]
+    total_limit: Decimal
+
+
+@dataclass(frozen=True)
+class QuantScoreTable:
+    """한 별표의 심사항목 배점한도. 구간(5억원 이상/미만)별 값을 함께 갖습니다."""
+
+    attachment: str
+    table_name: str
+    source: str
+    bands: tuple[QuantScoreBand, ...]
+    note: str | None = None
+
+
+def _qi(
+    section_no: str,
+    section_name: str,
+    item_key: str,
+    item_name: str,
+    limit: Decimal | None,
+    *,
+    kind: str = QUANT_LIMIT_KIND_SCORE,
+    section_name_override: str | None = None,
+    limit_min: Decimal | None = None,
+    note: str | None = None,
+    source: str = _QUANT_SRC_ATTACH,
+) -> QuantScoreItem:
+    """심사항목 한 줄을 만듭니다. 항목명과 배점한도, 근거 경로를 함께 남깁니다."""
+    return QuantScoreItem(
+        section_no=section_no,
+        section_name=section_name_override or section_name,
+        item_key=item_key,
+        item_name=item_name,
+        limit=limit,
+        limit_kind=kind,
+        source=source,
+        limit_min=limit_min,
+        note=note,
+    )
+
+
+def _reputation_item(section_no: str, section_name: str) -> QuantScoreItem:
+    """신인도 항목. 가점 상한 4.25 와 감점 상한 -5.0 을 함께 갖습니다."""
+    return _qi(
+        section_no,
+        section_name,
+        QUANT_ITEM_REPUTATION,
+        "신인도",
+        Decimal("4.25"),
+        kind=QUANT_LIMIT_KIND_REPUTATION,
+        limit_min=Decimal("-5"),
+        source=_QUANT_SRC_REPUTATION,
+    )
+
+
+def _price_item(
+    section_no: str, limit: Decimal, *, kind: str = QUANT_LIMIT_KIND_PRICE
+) -> QuantScoreItem:
+    return _qi(
+        section_no,
+        "입찰가격",
+        QUANT_ITEM_PRICE,
+        "입찰가격",
+        limit,
+        kind=kind,
+        source=_QUANT_SRC_BKT,
+    )
+
+
+def _disqualification_item(section_no: str) -> QuantScoreItem:
+    """결격사유 -20. 감점 항목이라 합계 100 정합성에서 제외합니다."""
+    return _qi(
+        section_no,
+        "결격사유",
+        QUANT_ITEM_DISQUALIFICATION,
+        "결격사유",
+        Decimal("-20"),
+        kind=QUANT_LIMIT_KIND_DISQUALIFICATION,
+    )
+
+
+def _performance_section(
+    section_no: str,
+    *,
+    performance: Decimal | None,
+    management: Decimal,
+    technical: tuple[tuple[str, str, Decimal | None], ...] = (),
+    management_kind: str = QUANT_LIMIT_KIND_CREDIT_GRADE,
+) -> tuple[QuantScoreItem, ...]:
+    """별표 1~5의2, 7 의 심사분야 I. 해당용역 수행능력 항목 묶음을 만듭니다."""
+    items: list[QuantScoreItem] = [
+        _qi(
+            section_no,
+            "해당용역 수행능력",
+            QUANT_ITEM_PERFORMANCE,
+            "이행실적",
+            performance,
+            kind=QUANT_LIMIT_KIND_SCORE if performance is not None else QUANT_LIMIT_KIND_ABSENT,
+            note=None if performance is not None else _QUANT_NOTE_ABSENT,
+        ),
+        _qi(
+            section_no,
+            "해당용역 수행능력",
+            QUANT_ITEM_MANAGEMENT,
+            "경영상태(신용평가등급)",
+            management,
+            kind=management_kind,
+        ),
+    ]
+    for key, name, limit in technical:
+        items.append(
+            _qi(
+                section_no,
+                "해당용역 수행능력",
+                key,
+                name,
+                limit,
+                kind=QUANT_LIMIT_KIND_SCORE if limit is not None else QUANT_LIMIT_KIND_ABSENT,
+                note=None if limit is not None else _QUANT_NOTE_ABSENT,
+            )
+        )
+    items.append(_reputation_item(section_no, "해당용역 수행능력"))
+    return tuple(items)
+
+
+def _band(
+    band_key: str,
+    *groups: tuple[QuantScoreItem, ...],
+    total_limit: Decimal = Decimal("100"),
+) -> QuantScoreBand:
+    """구간 하나를 만듭니다. 심사분야별 항목 묶음을 순서대로 이어 붙입니다."""
+    items = tuple(item for group in groups for item in group)
+    return QuantScoreBand(
+        band_key=band_key,
+        band_label=QUANT_BAND_LABELS[band_key],
+        items=items,
+        total_limit=total_limit,
+    )
+
+
+def _labor_item(section_no: str) -> QuantScoreItem:
+    return _qi(
+        section_no,
+        "근로조건 이행계획의 적정성",
+        QUANT_ITEM_LABOR_PLAN,
+        "근로조건 이행계획의 적정성",
+        Decimal("10"),
+    )
+
+
+def _attachment_1_table() -> QuantScoreTable:
+    """별표 1 학술연구. 5억원 이상 40 + 입찰가격 60, 미만 30 + 70."""
+    over = _band(
+        QUANT_BAND_OVER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("20"),
+            management=Decimal("10"),
+            technical=((QUANT_ITEM_TECHNICAL, "기술능력(기술인력 보유)", Decimal("10")),),
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("60")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    under = _band(
+        QUANT_BAND_UNDER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("10"),
+            management=Decimal("20"),
+            technical=((QUANT_ITEM_TECHNICAL, "기술능력(기술인력 보유)", None),),
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("70")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    return QuantScoreTable(
+        attachment="별표 1",
+        table_name="학술연구용역 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(over, under),
+    )
+
+
+def _attachment_2_table() -> QuantScoreTable:
+    """별표 2 시설분야. 근로조건 이행계획이 별도 심사번호인 유일한 별표."""
+    over = _band(
+        QUANT_BAND_OVER_500M,
+        _performance_section(QUANT_SECTION_1, performance=Decimal("20"), management=Decimal("10")),
+        (
+            _labor_item(QUANT_SECTION_2),
+            _price_item(QUANT_SECTION_3, Decimal("60")),
+            _disqualification_item(QUANT_SECTION_4),
+        ),
+    )
+    under = _band(
+        QUANT_BAND_UNDER_500M,
+        _performance_section(QUANT_SECTION_1, performance=None, management=Decimal("20")),
+        (
+            _labor_item(QUANT_SECTION_2),
+            _price_item(QUANT_SECTION_3, Decimal("70")),
+            _disqualification_item(QUANT_SECTION_4),
+        ),
+    )
+    return QuantScoreTable(
+        attachment="별표 2",
+        table_name="시설분야용역 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(over, under),
+    )
+
+
+def _attachment_3_table() -> QuantScoreTable:
+    """별표 3 SW(비대상). 5억원 미만은 이행실적이 '-' 이고 기술능력 10 은 유지됩니다."""
+    over = _band(
+        QUANT_BAND_OVER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("20"),
+            management=Decimal("10"),
+            technical=((QUANT_ITEM_TECHNICAL, "기술능력(기술인력 보유 상황)", Decimal("10")),),
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("60")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    under = _band(
+        QUANT_BAND_UNDER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=None,
+            management=Decimal("20"),
+            technical=((QUANT_ITEM_TECHNICAL, "기술능력(기술인력 보유 상황)", Decimal("10")),),
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("70")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    return QuantScoreTable(
+        attachment="별표 3",
+        table_name="소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(over, under),
+    )
+
+
+def _attachment_3_2_table() -> QuantScoreTable:
+    """별표 3의2 SW(대상). 배점 구성은 별표 3 과 같습니다."""
+    table = _attachment_3_table()
+    return QuantScoreTable(
+        attachment="별표 3의2",
+        table_name="소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사",
+        source=table.source,
+        bands=table.bands,
+    )
+
+
+def _attachment_4_table() -> QuantScoreTable:
+    """별표 4 폐기물처리. 기술능력이 가. 기술인력 보유상황 9 + 나. 기술 보유상황 1 입니다."""
+    technical = (
+        (QUANT_ITEM_TECHNICAL, "기술능력 가. 기술인력 보유상황", Decimal("9")),
+        (QUANT_ITEM_TECHNICAL_INPUT, "기술능력 나. 기술 보유상황", Decimal("1")),
+    )
+    over = _band(
+        QUANT_BAND_OVER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("20"),
+            management=Decimal("10"),
+            technical=technical,
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("60")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    under = _band(
+        QUANT_BAND_UNDER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("10"),
+            management=Decimal("10"),
+            technical=technical,
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("70")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    return QuantScoreTable(
+        attachment="별표 4",
+        table_name="폐기물처리용역 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(over, under),
+    )
+
+
+def _attachment_5_table() -> QuantScoreTable:
+    """별표 5 여객 육상운송. 기술능력은 안전성 정도 10."""
+    over = _band(
+        QUANT_BAND_OVER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("20"),
+            management=Decimal("10"),
+            technical=((QUANT_ITEM_TECHNICAL, "기술능력(안전성 정도)", Decimal("10")),),
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("60")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    under = _band(
+        QUANT_BAND_UNDER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("10"),
+            management=Decimal("10"),
+            technical=((QUANT_ITEM_TECHNICAL, "기술능력(안전성 정도)", Decimal("10")),),
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("70")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    return QuantScoreTable(
+        attachment="별표 5",
+        table_name="여객 육상운송용역 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(over, under),
+    )
+
+
+def _attachment_5_2_table() -> QuantScoreTable:
+    """별표 5의2 화물 육상운송. 경영상태가 20점이고 기술능력 항목이 없습니다."""
+    over = _band(
+        QUANT_BAND_OVER_500M,
+        _performance_section(QUANT_SECTION_1, performance=Decimal("20"), management=Decimal("20")),
+        (_price_item(QUANT_SECTION_2, Decimal("60")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    under = _band(
+        QUANT_BAND_UNDER_500M,
+        _performance_section(QUANT_SECTION_1, performance=Decimal("10"), management=Decimal("20")),
+        (_price_item(QUANT_SECTION_2, Decimal("70")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    return QuantScoreTable(
+        attachment="별표 5의2",
+        table_name="화물 육상운송용역 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(over, under),
+    )
+
+
+def _attachment_6_table() -> QuantScoreTable:
+    """별표 6 보험. 보험금 지급능력이 심사분야 I 항목 전체입니다."""
+    over = _band(
+        QUANT_BAND_OVER_500M,
+        (
+            _qi(
+                QUANT_SECTION_1,
+                "해당용역 수행능력",
+                QUANT_ITEM_INSURANCE_ABILITY,
+                "보험금 지급능력(지급여력비율)",
+                Decimal("40"),
+            ),
+            _reputation_item(QUANT_SECTION_1, "해당용역 수행능력"),
+            _price_item(QUANT_SECTION_2, Decimal("60")),
+            _disqualification_item(QUANT_SECTION_3),
+        ),
+    )
+    under = _band(
+        QUANT_BAND_UNDER_500M,
+        (
+            _qi(
+                QUANT_SECTION_1,
+                "해당용역 수행능력",
+                QUANT_ITEM_INSURANCE_ABILITY,
+                "보험금 지급능력(지급여력비율)",
+                Decimal("30"),
+            ),
+            _reputation_item(QUANT_SECTION_1, "해당용역 수행능력"),
+            _price_item(QUANT_SECTION_2, Decimal("70")),
+            _disqualification_item(QUANT_SECTION_3),
+        ),
+    )
+    return QuantScoreTable(
+        attachment="별표 6",
+        table_name="보험용역 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(over, under),
+    )
+
+
+def _attachment_7_table() -> QuantScoreTable:
+    """별표 7 수리·점검. 기술능력은 기술신용평가등급이며 미만 구간은 0점입니다."""
+    over = _band(
+        QUANT_BAND_OVER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("20"),
+            management=Decimal("10"),
+            technical=((QUANT_ITEM_TECHNICAL_CREDIT, "기술능력(기술신용평가등급)", Decimal("10")),),
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("60")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    under = _band(
+        QUANT_BAND_UNDER_500M,
+        _performance_section(
+            QUANT_SECTION_1,
+            performance=Decimal("10"),
+            management=Decimal("20"),
+            technical=((QUANT_ITEM_TECHNICAL_CREDIT, "기술능력(기술신용평가등급)", Decimal("0")),),
+        ),
+        (_price_item(QUANT_SECTION_2, Decimal("70")), _disqualification_item(QUANT_SECTION_3)),
+    )
+    return QuantScoreTable(
+        attachment="별표 7",
+        table_name="수리ㆍ점검용역 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(over, under),
+    )
+
+
+def _attachment_8_table() -> QuantScoreTable:
+    """별표 8 임대차. 이행실적·기술능력 없이 경영상태와 사후관리만 봅니다."""
+    return QuantScoreTable(
+        attachment="별표 8",
+        table_name="임대차 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        bands=(
+            _band(
+                QUANT_BAND_SINGLE,
+                (
+                    _qi(
+                        QUANT_SECTION_1,
+                        "해당용역 수행능력",
+                        QUANT_ITEM_MANAGEMENT,
+                        "경영상태(신용평가등급)",
+                        Decimal("20"),
+                        kind=QUANT_LIMIT_KIND_CREDIT_GRADE,
+                    ),
+                    _qi(
+                        QUANT_SECTION_1,
+                        "해당용역 수행능력",
+                        QUANT_ITEM_AFTER_SERVICE,
+                        "사후관리(A/S)",
+                        Decimal("10"),
+                    ),
+                    _reputation_item(QUANT_SECTION_1, "해당용역 수행능력"),
+                    _price_item(QUANT_SECTION_2, Decimal("70")),
+                    _disqualification_item(QUANT_SECTION_3),
+                ),
+            ),
+        ),
+    )
+
+
+def _attachment_9_table() -> QuantScoreTable:
+    """별표 9 수요기관 지정형. 기본평가·선택평가와 입찰가격 60~70 범위 구조입니다.
+
+    원문이 범위로 표기하므로 limit 은 상한, limit_min 은 하한입니다. 합계 100 은
+    범위 안에서 수요기관이 정하므로 별표 1~5의2 처럼 고정 합계로 검증하지 않습니다.
+    """
+    return QuantScoreTable(
+        attachment="별표 9",
+        table_name="수요기관 지정형 적격심사",
+        source=_QUANT_SRC_ATTACH,
+        note=_QUANT_NOTE_RANGE,
+        bands=(
+            _band(
+                QUANT_BAND_SINGLE,
+                (
+                    _qi(
+                        QUANT_SECTION_1,
+                        "해당용역 수행능력 기본평가항목",
+                        QUANT_ITEM_MANAGEMENT,
+                        "경영상태(신용평가등급)",
+                        Decimal("30"),
+                        kind=QUANT_LIMIT_KIND_CREDIT_GRADE,
+                        limit_min=Decimal("10"),
+                        note=_QUANT_NOTE_RANGE,
+                    ),
+                    _reputation_item(QUANT_SECTION_1, "해당용역 수행능력 기본평가항목"),
+                    _qi(
+                        "선택평가항목",
+                        "선택평가항목",
+                        QUANT_ITEM_PERFORMANCE,
+                        "이행실적",
+                        Decimal("30"),
+                        kind=QUANT_LIMIT_KIND_RANGE,
+                        note=_QUANT_NOTE_RANGE,
+                    ),
+                    _qi(
+                        "선택평가항목",
+                        "선택평가항목",
+                        QUANT_ITEM_TECHNICAL,
+                        "기술능력 가. 기술인력 보유상황",
+                        Decimal("10"),
+                        kind=QUANT_LIMIT_KIND_RANGE,
+                        note=_QUANT_NOTE_RANGE,
+                    ),
+                    _qi(
+                        "선택평가항목",
+                        "선택평가항목",
+                        QUANT_ITEM_TECHNICAL_CREDIT,
+                        "기술능력 나. 기술신용평가등급",
+                        Decimal("10"),
+                        kind=QUANT_LIMIT_KIND_RANGE,
+                        note=_QUANT_NOTE_RANGE,
+                    ),
+                    _qi(
+                        "선택평가항목",
+                        "선택평가항목",
+                        QUANT_ITEM_AFTER_SERVICE,
+                        "사후관리(A/S)",
+                        Decimal("10"),
+                        kind=QUANT_LIMIT_KIND_RANGE,
+                        note=_QUANT_NOTE_RANGE,
+                    ),
+                    _qi(
+                        "선택평가항목",
+                        "선택평가항목",
+                        QUANT_ITEM_OTHER_PERFORMANCE,
+                        "기타 수행능력",
+                        Decimal("5"),
+                        kind=QUANT_LIMIT_KIND_RANGE,
+                        note=_QUANT_NOTE_RANGE,
+                    ),
+                    _price_item(QUANT_SECTION_2, Decimal("70"), kind=QUANT_LIMIT_KIND_RANGE),
+                    _disqualification_item(QUANT_SECTION_3),
+                ),
+            ),
+        ),
+    )
+
+
+def _under_only(
+    table: QuantScoreTable, *, attachment: str, table_name: str, note: str
+) -> QuantScoreTable:
+    """고시금액 미만 구간에만 존재하는 규칙의 배점표. 5억원 미만 구간 하나만 남깁니다.
+
+    고시금액(용역 2.3억원)이 5억원 미만이므로 고시금액 미만 규칙은 항상 미만 구간입니다.
+    """
+    bands = tuple(band for band in table.bands if band.band_key == QUANT_BAND_UNDER_500M)
+    return QuantScoreTable(
+        attachment=attachment,
+        table_name=table_name,
+        source=table.source,
+        bands=bands,
+        note=note,
+    )
+
+
+_QUANT_NOTE_UNDER_ONLY = "고시금액(용역 2.3억원) 미만 구간 전용이라 5억원 미만 배점만 적용합니다."
+
+# 규칙 ID 접미사(ATTACH_NN)로 별표 배점표를 찾습니다. 일반 띠(ATTACH_12~14)는 원문
+# 별표 1~9 에 같은 이름이 없어 별표 귀속이 미확인이라 표를 선언하지 않습니다.
+QUANT_SCORE_TABLES: dict[str, QuantScoreTable] = {
+    "ATTACH_01": _attachment_2_table(),
+    "ATTACH_02": _attachment_6_table(),
+    "ATTACH_03": _attachment_5_table(),
+    "ATTACH_04": _attachment_3_2_table(),
+    "ATTACH_05": _attachment_3_table(),
+    "ATTACH_06": _under_only(
+        _attachment_1_table(),
+        attachment="별표 1",
+        table_name="학술연구용역 적격심사 (고시금액 미만)",
+        note=_QUANT_NOTE_UNDER_ONLY,
+    ),
+    "ATTACH_07": _attachment_1_table(),
+    "ATTACH_08": _under_only(
+        _attachment_4_table(),
+        attachment="별표 4",
+        table_name="폐기물처리용역 적격심사 (고시금액 미만)",
+        note=_QUANT_NOTE_UNDER_ONLY,
+    ),
+    "ATTACH_09": _attachment_4_table(),
+    "ATTACH_10": _under_only(
+        _attachment_5_2_table(),
+        attachment="별표 5의2",
+        table_name="화물 육상운송용역 적격심사 (고시금액 미만)",
+        note=_QUANT_NOTE_UNDER_ONLY,
+    ),
+    "ATTACH_11": _attachment_5_2_table(),
+    "ATTACH_15": _attachment_7_table(),
+    "ATTACH_16": _attachment_8_table(),
+    "ATTACH_17": _attachment_9_table(),
+}
+
+
+def quant_score_table_for_rule(rule: EvaluationRule) -> QuantScoreTable | None:
+    """규칙이 어느 별표인지에 따라 정량평가 배점표를 돌려줍니다.
+
+    별표 귀속이 미확인인 규칙(일반 띠)은 표를 만들지 않고 None 을 돌려줍니다.
+    """
+    suffix = "_".join(rule.rule_id.rsplit("_", 2)[-2:])
+    return QUANT_SCORE_TABLES.get(suffix)
+
+
+def select_quant_band(
+    table: QuantScoreTable,
+    estimated_price: Decimal | int | float | str | None,
+) -> tuple[QuantScoreBand | None, str | None]:
+    """추정가격으로 5억원 이상/미만 구간을 고릅니다.
+
+    구간이 하나면 추정가격과 무관하게 그 구간을 쓰고, 구간이 둘인데 추정가격을 읽을
+    수 없으면 임의로 고르지 않고 사유와 함께 None 을 돌려줍니다.
+    """
+    if len(table.bands) == 1:
+        return table.bands[0], None
+    if estimated_price is None:
+        return None, "추정가격이 없어 5억원 이상/미만 구간을 확정할 수 없습니다."
+    try:
+        price = Decimal(str(estimated_price))
+    except (ArithmeticError, TypeError, ValueError):
+        return None, "추정가격을 숫자로 읽을 수 없어 5억원 이상/미만 구간을 확정할 수 없습니다."
+    band_key = (
+        QUANT_BAND_OVER_500M if price >= QUANT_ESTIMATED_PRICE_THRESHOLD else QUANT_BAND_UNDER_500M
+    )
+    for band in table.bands:
+        if band.band_key == band_key:
+            return band, None
+    return None, "추정가격 구간에 대응하는 배점표 구간이 없습니다."
+
+
+# -----------------------------------------------------------------------------
+# 별표 10 경영상태(신용평가등급) 점수표
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CreditGradeScore:
+    """별표 10 신용평가등급 한 줄. 배점한도 20점 기준과 10점 기준을 함께 갖습니다."""
+
+    grade_group: str
+    grade_codes: tuple[str, ...]
+    score_at_20: Decimal
+    score_at_10: Decimal
+    source: str = _QUANT_SRC_CREDIT
+
+
+CREDIT_GRADE_SCORES: tuple[CreditGradeScore, ...] = (
+    CreditGradeScore(
+        "AAA ~ A-",
+        ("AAA", "AA+", "AA0", "AA-", "A+", "A0", "A-"),
+        Decimal("20"),
+        Decimal("10"),
+    ),
+    CreditGradeScore("BBB+", ("BBB+",), Decimal("19.8"), Decimal("9.8")),
+    CreditGradeScore("BBB0", ("BBB0", "BBB"), Decimal("19.6"), Decimal("9.6")),
+    CreditGradeScore("BBB-", ("BBB-",), Decimal("19.4"), Decimal("9.4")),
+    CreditGradeScore("BB+ ~ BB0", ("BB+", "BB0", "BB"), Decimal("19.2"), Decimal("9.2")),
+    CreditGradeScore("BB-", ("BB-",), Decimal("19.0"), Decimal("9.0")),
+    CreditGradeScore("B+ ~ B-", ("B+", "B0", "B-"), Decimal("18.8"), Decimal("8.8")),
+    CreditGradeScore("CCC+ 이하", ("CCC+", "CCC", "CC", "C", "D"), Decimal("16.0"), Decimal("7.0")),
+)
+
+
+def _normalize_grade(text: str) -> str:
+    """신용평가등급 비교용 정규화. 공백·물결·하이픈을 제거하고 대문자로 맞춥니다."""
+    return re.sub(r"[\s~\-]", "", text).upper()
+
+
+def find_credit_grade(text: str | None) -> CreditGradeScore | None:
+    """입력한 신용평가등급 표기를 별표 10 등급군으로 정규화합니다. 없으면 None."""
+    if not text:
+        return None
+    target = _normalize_grade(text)
+    for grade in CREDIT_GRADE_SCORES:
+        if target == _normalize_grade(grade.grade_group):
+            return grade
+        if any(target == _normalize_grade(code) for code in grade.grade_codes):
+            return grade
+    return None
+
+
+def credit_score_for_grade(text: str | None, limit: Decimal) -> Decimal | None:
+    """신용평가등급과 배점한도 기준으로 별표 10 점수를 돌려줍니다.
+
+    배점한도 20점 기준과 10점 기준을 구분합니다. 등급을 해석하지 못하면 None 입니다.
+    """
+    grade = find_credit_grade(text)
+    if grade is None:
+        return None
+    return grade.score_at_20 if limit >= Decimal("20") else grade.score_at_10
+
+
+# -----------------------------------------------------------------------------
+# 별표 9 수요기관 지정형 경영상태 상대 감점
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DemandAgencyCreditDeduction:
+    """별표 9 전용 경영상태. 배점한도(만점) 기준 상대 감점입니다."""
+
+    grade_group: str
+    deduction: Decimal
+    source: str = _QUANT_SRC_CREDIT
+
+
+DEMAND_AGENCY_CREDIT_DEDUCTIONS: tuple[DemandAgencyCreditDeduction, ...] = (
+    DemandAgencyCreditDeduction("AAA ~ A-", Decimal("0")),
+    DemandAgencyCreditDeduction("BBB+", Decimal("0.2")),
+    DemandAgencyCreditDeduction("BBB0", Decimal("0.4")),
+    DemandAgencyCreditDeduction("BBB-", Decimal("0.6")),
+    DemandAgencyCreditDeduction("BB+ ~ BB0", Decimal("0.8")),
+    DemandAgencyCreditDeduction("BB-", Decimal("1.0")),
+    DemandAgencyCreditDeduction("B+ ~ B-", Decimal("1.2")),
+    DemandAgencyCreditDeduction("CCC+ 이하", Decimal("5.0")),
+)
+
+
+def demand_agency_credit_deduction(text: str | None) -> Decimal | None:
+    """별표 9 경영상태 상대 감점. 등급을 해석하지 못하면 None."""
+    grade = find_credit_grade(text)
+    if grade is None:
+        return None
+    for row in DEMAND_AGENCY_CREDIT_DEDUCTIONS:
+        if row.grade_group == grade.grade_group:
+            return row.deduction
+    return None
+
+
+# -----------------------------------------------------------------------------
+# 별표 11 신인도 가점·감점 항목
+# -----------------------------------------------------------------------------
+
+REPUTATION_OPTION_CHOICE = "choice"
+REPUTATION_OPTION_RANGE = "range"
+
+REPUTATION_MAX_BONUS = Decimal("4.25")
+REPUTATION_MAX_PENALTY = Decimal("-5.0")
+REPUTATION_INDUSTRIAL_ACCIDENT_MAX_BONUS = Decimal("3.0")
+REPUTATION_ITEM_INDUSTRIAL_ACCIDENT = "industrial_accident"
+
+
+@dataclass(frozen=True)
+class ReputationItem:
+    """별표 11 신인도 항목 한 줄.
+
+    option_kind="choice" 면 options 가 선택 가능한 평점 목록이고, "range" 면
+    options 가 (하한, 상한) 입니다. 감점 항목은 음수입니다.
+    """
+
+    item_code: str
+    item_name: str
+    option_kind: str
+    options: tuple[Decimal, ...]
+    source: str = _QUANT_SRC_REPUTATION
+    note: str | None = None
+
+
+REPUTATION_ITEMS: tuple[ReputationItem, ...] = (
+    ReputationItem(
+        "sme_support",
+        "가. 중소기업 ① 중소기업 지원",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("1.5"), Decimal("1.0")),
+    ),
+    ReputationItem(
+        "sme_consortium",
+        "가. 중소기업 ② 공동수급체 구성 지원",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("1.0"), Decimal("0.5"), Decimal("1.5"), Decimal("0.75")),
+    ),
+    ReputationItem(
+        "woman_company",
+        "나. 약자기업 ① 여성기업 지원",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("0.75"), Decimal("0.5"), Decimal("0.25")),
+    ),
+    ReputationItem(
+        "disabled_company",
+        "나. 약자기업 ② 장애인기업 지원",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("1.5"),),
+    ),
+    ReputationItem(
+        "job_creation",
+        "다. 고용창출 ① 일자리창출 우수기업",
+        REPUTATION_OPTION_RANGE,
+        (Decimal("1.0"), Decimal("3.0")),
+    ),
+    ReputationItem(
+        "youth_employment",
+        "다. 고용창출 ② 청년고용 우수기업",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("1.75"), Decimal("1.5"), Decimal("1.0")),
+    ),
+    ReputationItem(
+        "woman_employment",
+        "다. 고용창출 ③ 여성고용 우수기업",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("1.75"), Decimal("1.5"), Decimal("1.0"), Decimal("2.0")),
+    ),
+    ReputationItem(
+        "disabled_employment",
+        "다. 고용창출 ④ 장애인고용 우수기업",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("2.0"), Decimal("1.5")),
+    ),
+    ReputationItem(
+        "employment_type_a",
+        "다. 고용창출 ⑤ 고용형태 등에 따른 지원 A",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("2.0"), Decimal("1.5"), Decimal("1.0"), Decimal("0.5"), Decimal("0")),
+    ),
+    ReputationItem(
+        "employment_type_b",
+        "다. 고용창출 ⑤ 고용형태 등에 따른 지원 B(정규직 전환)",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("1.5"),),
+    ),
+    ReputationItem(
+        "employment_stability",
+        "다. 고용창출 ⑥ 고용안정 우수기업",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("1.5"), Decimal("1.25"), Decimal("1.0")),
+    ),
+    ReputationItem("low_birth", "라. 저출생 대응", REPUTATION_OPTION_CHOICE, (Decimal("2.0"),)),
+    ReputationItem(
+        "policy_support", "마. 정책지원", REPUTATION_OPTION_RANGE, (Decimal("0"), Decimal("2.0"))
+    ),
+    ReputationItem(
+        "delayed_delivery",
+        "바. 불공정 계약행위 ① 납품지연",
+        REPUTATION_OPTION_RANGE,
+        (Decimal("-2.0"), Decimal("-0.25")),
+    ),
+    ReputationItem(
+        "unfair_subcontract",
+        "바. 불공정 계약행위 ② 불공정 하도급거래",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("-1.0"), Decimal("-2.0")),
+    ),
+    ReputationItem(
+        "waste_mishandling",
+        "바. 불공정 계약행위 ③ 폐기물부적정 처리",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("-1.0"), Decimal("-2.0"), Decimal("-3.0")),
+    ),
+    ReputationItem(
+        "wage_arrears",
+        "고용 관련 법령 위반 ① 체불사업주",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("-2.0"),),
+    ),
+    ReputationItem(
+        "employment_improvement",
+        "고용 관련 법령 위반 ② 고용개선조치 미이행",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("-2.0"),),
+    ),
+    ReputationItem(
+        REPUTATION_ITEM_INDUSTRIAL_ACCIDENT,
+        "산업안전 ① 산업재해발생",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("-3.0"),),
+    ),
+    ReputationItem(
+        "safety_health",
+        "산업안전 ② 안전보건(KOSHA-MS 인증)",
+        REPUTATION_OPTION_CHOICE,
+        (Decimal("1.0"),),
+    ),
+)
+
+REPUTATION_ITEMS_BY_CODE: dict[str, ReputationItem] = {
+    item.item_code: item for item in REPUTATION_ITEMS
+}
+
+
+def find_reputation_item(item_code: str) -> ReputationItem | None:
+    return REPUTATION_ITEMS_BY_CODE.get(item_code)

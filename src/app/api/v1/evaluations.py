@@ -53,6 +53,7 @@ from src.app.models.evaluations import (
     BidEvaluationSnapshot,
 )
 from src.app.schemas.evaluations import (
+    CreditGradePayload,
     EvaluationProfileCreate,
     EvaluationProfileResponse,
     EvaluationProfileUpdate,
@@ -66,17 +67,43 @@ from src.app.schemas.evaluations import (
     PriceCompensationScenario,
     PriceScenarioConfig,
     QualificationInput,
+    QuantScoreBandPayload,
+    QuantScoreItemPayload,
+    QuantScoreTablePayload,
+    ReputationItemPayload,
     RuleScoreTable,
     ScenarioEvaluationResult,
 )
 from src.app.schemas.predictions import PredictPriceRequest
 from src.app.services.evaluation_rules import (
+    CREDIT_GRADE_SCORES,
     METHOD_FAMILY_BY_CODE,
     METHOD_SOURCE_CODE,
     POST_20260727_RULES,
+    QUANT_ITEM_LABOR_PLAN,
+    QUANT_ITEM_MANAGEMENT,
+    QUANT_ITEM_PERFORMANCE,
+    QUANT_ITEM_REPUTATION,
+    QUANT_LIMIT_KIND_ABSENT,
+    QUANT_LIMIT_KIND_RANGE,
+    QUANT_LIMIT_KIND_SCORE,
+    REPUTATION_INDUSTRIAL_ACCIDENT_MAX_BONUS,
+    REPUTATION_ITEM_INDUSTRIAL_ACCIDENT,
+    REPUTATION_ITEMS,
+    REPUTATION_MAX_BONUS,
+    REPUTATION_MAX_PENALTY,
+    REPUTATION_OPTION_CHOICE,
     EvaluationRule,
+    QuantScoreBand,
+    QuantScoreItem,
+    QuantScoreTable,
     RuleResolutionResult,
+    credit_score_for_grade,
+    demand_agency_credit_deduction,
+    find_reputation_item,
+    quant_score_table_for_rule,
     resolve_evaluation_rule_from_raw_data,
+    select_quant_band,
 )
 from src.app.services.evaluation_scoring import (
     PriceCompensationResult,
@@ -113,6 +140,11 @@ SCORE_TABLE_LABELS: dict[str, str] = {
 # 규칙 판별(도메인)이 아니라 입력·데이터 부족으로 계산을 멈추는 코드입니다.
 BLOCK_CODE_MISSING_SCORE_TABLE = "MISSING_SCORE_TABLE"
 BLOCK_CODE_PRED_PRICE_UNAVAILABLE = "PRED_PRICE_UNAVAILABLE"
+# 적용 별표 배점표에 없는 항목 입력 또는 배점한도 초과를 막는 코드입니다(조용히 자르지 않습니다).
+BLOCK_CODE_QUANT_LIMIT_EXCEEDED = "QUANT_LIMIT_EXCEEDED"
+BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE = "QUANT_ITEM_NOT_IN_TABLE"
+BLOCK_CODE_QUANT_GRADE_UNKNOWN = "QUANT_GRADE_UNKNOWN"
+BLOCK_CODE_QUANT_BAND_UNRESOLVED = "QUANT_BAND_UNRESOLVED"
 
 
 @dataclass(frozen=True)
@@ -239,6 +271,352 @@ def _rule_score_table_payload(
     )
 
 
+# =============================================================================
+# 정량평가 배점표(별표 1~9) 해석·검증
+# =============================================================================
+
+# 별표 배점표에서 사용자가 점수로 입력하는 항목 종류입니다. 경영상태(등급 선택), 신인도
+# (항목 합계), 입찰가격, 결격사유는 별도 경로로 처리합니다.
+_QUANT_INPUT_KINDS = frozenset(
+    {QUANT_LIMIT_KIND_SCORE, QUANT_LIMIT_KIND_ABSENT, QUANT_LIMIT_KIND_RANGE}
+)
+
+
+@dataclass(frozen=True)
+class QuantInputScores:
+    """별표 배점표 검증을 통과한 정량평가 입력 점수(수행능력 계/근로조건/신인도)."""
+
+    performance: Decimal
+    labor_plan: Decimal
+    reputation: Decimal
+    has_labor_item: bool
+
+
+def _bid_estimated_price(bid: BidAnnouncement) -> Decimal | None:
+    """5억원 구간 판정용 추정가격. presmpt_prce 를 우선하고 없으면 기초금액을 씁니다."""
+    for attr in ("presmpt_prce", "base_amount"):
+        raw = getattr(bid, attr, None)
+        if raw is None:
+            continue
+        try:
+            value = Decimal(str(raw))
+        except (ArithmeticError, TypeError, ValueError):
+            continue
+        if value > Decimal("0"):
+            return value
+    return None
+
+
+def _quant_item_payload(item: QuantScoreItem) -> QuantScoreItemPayload:
+    """심사항목 한 줄을 응답 스키마로 옮깁니다. 값은 지수 표기 없는 문자열입니다."""
+    return QuantScoreItemPayload(
+        section_no=item.section_no,
+        section_name=item.section_name,
+        item_key=item.item_key,
+        item_name=item.item_name,
+        limit=(format_decimal_plain(item.limit) if item.limit is not None else None),
+        limit_min=(format_decimal_plain(item.limit_min) if item.limit_min is not None else None),
+        limit_kind=item.limit_kind,
+        source=item.source,
+        note=item.note,
+    )
+
+
+def _quant_table_payload(
+    table: QuantScoreTable,
+    band: QuantScoreBand | None,
+    band_note: str | None,
+) -> QuantScoreTablePayload:
+    """규칙이 선언한 별표 배점표와 별표 10·11 표를 응답으로 옮깁니다.
+
+    화면은 이 선언으로 입력란을 그리고, 서버는 같은 선언으로 입력을 검증합니다.
+    """
+    return QuantScoreTablePayload(
+        attachment=table.attachment,
+        table_name=table.table_name,
+        source=table.source,
+        note=table.note,
+        bands=[
+            QuantScoreBandPayload(
+                band_key=table_band.band_key,
+                band_label=table_band.band_label,
+                total_limit=format_decimal_plain(table_band.total_limit),
+                items=[_quant_item_payload(item) for item in table_band.items],
+            )
+            for table_band in table.bands
+        ],
+        active_band_key=band.band_key if band is not None else None,
+        band_note=band_note,
+        credit_grades=[
+            CreditGradePayload(
+                grade_group=grade.grade_group,
+                grade_codes=list(grade.grade_codes),
+                score_at_20=format_decimal_plain(grade.score_at_20),
+                score_at_10=format_decimal_plain(grade.score_at_10),
+                source=grade.source,
+            )
+            for grade in CREDIT_GRADE_SCORES
+        ],
+        reputation_items=[
+            ReputationItemPayload(
+                item_code=item.item_code,
+                item_name=item.item_name,
+                option_kind=item.option_kind,
+                options=[format_decimal_plain(value) for value in item.options],
+                source=item.source,
+                note=item.note,
+            )
+            for item in REPUTATION_ITEMS
+        ],
+        reputation_max_bonus=format_decimal_plain(REPUTATION_MAX_BONUS),
+        reputation_max_penalty=format_decimal_plain(REPUTATION_MAX_PENALTY),
+    )
+
+
+def _quant_value(raw: float | None) -> Decimal:
+    return Decimal(str(raw)) if raw is not None else Decimal("0")
+
+
+def _append_quant_violation(violations: list[tuple[str, str]], code: str, message: str) -> None:
+    violations.append((code, message))
+
+
+def _check_quant_item(
+    limits: dict[str, QuantScoreItem],
+    item_key: str,
+    value: Decimal,
+    fallback_name: str,
+    band_label: str,
+    violations: list[tuple[str, str]],
+) -> None:
+    """항목값이 배점표에 있는지, 배점한도를 넘는지 검사합니다. 조용히 자르지 않습니다."""
+    item = limits.get(item_key)
+    if item is None or item.limit_kind not in _QUANT_INPUT_KINDS:
+        if value != Decimal("0"):
+            name = item.item_name if item is not None else fallback_name
+            _append_quant_violation(
+                violations,
+                BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                f"{name}: {band_label} 배점표에 없는 항목이라 입력할 수 없습니다.",
+            )
+        return
+    if item.limit is not None and value > item.limit:
+        _append_quant_violation(
+            violations,
+            BLOCK_CODE_QUANT_LIMIT_EXCEEDED,
+            f"{item.item_name}: 입력값 {format_decimal_plain(value)} 가 배점한도 "
+            f"{format_decimal_plain(item.limit)} 를 초과합니다.",
+        )
+    if item.limit_min is not None and value < item.limit_min:
+        _append_quant_violation(
+            violations,
+            BLOCK_CODE_QUANT_LIMIT_EXCEEDED,
+            f"{item.item_name}: 입력값 {format_decimal_plain(value)} 가 하한 "
+            f"{format_decimal_plain(item.limit_min)} 미만입니다.",
+        )
+
+
+def _management_quant_score(
+    qualification: QualificationInput,
+    limits: dict[str, QuantScoreItem],
+    table: QuantScoreTable,
+    band_label: str,
+    violations: list[tuple[str, str]],
+) -> Decimal:
+    """경영상태 점수. 신용평가등급 선택이 정본이고 배점한도 기준을 서버가 구분합니다.
+
+    구형 경로의 management_score 직접 입력은 배점한도 안에서만 허용합니다.
+    """
+    item = limits.get(QUANT_ITEM_MANAGEMENT)
+    if qualification.management_grade:
+        if item is None:
+            _append_quant_violation(
+                violations,
+                BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                f"경영상태: {band_label} 배점표에 없는 항목이라 신용평가등급을 적용할 수 없습니다.",
+            )
+            return Decimal("0")
+        if table.attachment == "별표 9":
+            deduction = demand_agency_credit_deduction(qualification.management_grade)
+            if deduction is None or item.limit is None:
+                _append_quant_violation(
+                    violations,
+                    BLOCK_CODE_QUANT_GRADE_UNKNOWN,
+                    f"신용평가등급 '{qualification.management_grade}' 를 별표 9 기준에서 해석하지 못했습니다.",
+                )
+                return Decimal("0")
+            return item.limit - deduction
+        if item.limit is None:
+            _append_quant_violation(
+                violations,
+                BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                f"경영상태: {band_label} 배점표에 경영상태 배점한도가 없습니다.",
+            )
+            return Decimal("0")
+        score = credit_score_for_grade(qualification.management_grade, item.limit)
+        if score is None:
+            _append_quant_violation(
+                violations,
+                BLOCK_CODE_QUANT_GRADE_UNKNOWN,
+                f"신용평가등급 '{qualification.management_grade}' 를 별표 10 에서 해석하지 못했습니다.",
+            )
+            return Decimal("0")
+        return score
+    manual = _quant_value(qualification.management_score)
+    if manual == Decimal("0"):
+        return Decimal("0")
+    if item is None or item.limit is None:
+        _append_quant_violation(
+            violations,
+            BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+            f"경영상태: {band_label} 배점표에 없는 항목이라 입력할 수 없습니다.",
+        )
+        return Decimal("0")
+    if manual > item.limit:
+        _append_quant_violation(
+            violations,
+            BLOCK_CODE_QUANT_LIMIT_EXCEEDED,
+            f"{item.item_name}: 입력값 {format_decimal_plain(manual)} 가 배점한도 "
+            f"{format_decimal_plain(item.limit)} 를 초과합니다.",
+        )
+    return manual
+
+
+def _reputation_quant_score(
+    qualification: QualificationInput,
+    band_label: str,
+    violations: list[tuple[str, str]],
+) -> Decimal:
+    """신인도 점수. 별표 11 항목 합계를 내고 가점·감점 상한을 적용합니다(가감 상계)."""
+    reputation_items = qualification.reputation_items
+    if not reputation_items:
+        # 구형 경로 단일 가감점 입력도 가점·감점 상한 안에서만 허용합니다.
+        legacy = _quant_value(qualification.credibility_score)
+        if legacy == Decimal("0"):
+            return Decimal("0")
+        if legacy > REPUTATION_MAX_BONUS:
+            _append_quant_violation(
+                violations,
+                BLOCK_CODE_QUANT_LIMIT_EXCEEDED,
+                f"신인도: 입력값 {format_decimal_plain(legacy)} 가 가점 상한 "
+                f"{format_decimal_plain(REPUTATION_MAX_BONUS)} 를 초과합니다.",
+            )
+        elif legacy < REPUTATION_MAX_PENALTY:
+            _append_quant_violation(
+                violations,
+                BLOCK_CODE_QUANT_LIMIT_EXCEEDED,
+                f"신인도: 입력값 {format_decimal_plain(legacy)} 가 감점 상한 "
+                f"{format_decimal_plain(REPUTATION_MAX_PENALTY)} 미만입니다.",
+            )
+        return legacy
+    total = Decimal("0")
+    has_accident_penalty = False
+    for code, raw_value in reputation_items.items():
+        item = find_reputation_item(code)
+        if item is None:
+            _append_quant_violation(
+                violations,
+                BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                f"신인도 항목 '{code}' 는 별표 11 항목표에 없습니다.",
+            )
+            continue
+        value = _quant_value(raw_value)
+        if item.option_kind == REPUTATION_OPTION_CHOICE:
+            if value not in item.options:
+                _append_quant_violation(
+                    violations,
+                    BLOCK_CODE_QUANT_LIMIT_EXCEEDED,
+                    f"{item.item_name}: {format_decimal_plain(value)} 는 선택 가능한 평점이 아닙니다.",
+                )
+                continue
+        else:
+            low, high = item.options[0], item.options[-1]
+            if value < low or value > high:
+                _append_quant_violation(
+                    violations,
+                    BLOCK_CODE_QUANT_LIMIT_EXCEEDED,
+                    f"{item.item_name}: {format_decimal_plain(value)} 가 범위 "
+                    f"{format_decimal_plain(low)}~{format_decimal_plain(high)} 밖입니다.",
+                )
+                continue
+        if code == REPUTATION_ITEM_INDUSTRIAL_ACCIDENT and value < Decimal("0"):
+            has_accident_penalty = True
+        total += value
+    bonus_cap = (
+        REPUTATION_INDUSTRIAL_ACCIDENT_MAX_BONUS if has_accident_penalty else REPUTATION_MAX_BONUS
+    )
+    return min(max(total, REPUTATION_MAX_PENALTY), bonus_cap)
+
+
+def _resolve_quant_inputs(
+    qualification: QualificationInput,
+    table: QuantScoreTable,
+    band: QuantScoreBand,
+) -> tuple[QuantInputScores | None, list[tuple[str, str]]]:
+    """정량평가 입력을 적용 별표 배점표로 검증하고 점수로 환산합니다.
+
+    배점표에 없는 항목 키나 배점한도 초과·하한 미만이면 자르지 않고 위반 목록을 돌려줍니다.
+    위반이 하나라도 있으면 점수를 확정하지 않고 (None, 위반) 을 반환합니다.
+    """
+    limits = {item.item_key: item for item in band.items}
+    violations: list[tuple[str, str]] = []
+
+    # 구형 경로 필드는 quant_items 가 그 항목을 담고 있지 않을 때만 대체 입력으로 씁니다.
+    items: dict[str, float] = dict(qualification.quant_items)
+    if QUANT_ITEM_PERFORMANCE not in items and qualification.performance_score:
+        items[QUANT_ITEM_PERFORMANCE] = qualification.performance_score
+    if QUANT_ITEM_LABOR_PLAN not in items and qualification.labor_plan_score:
+        items[QUANT_ITEM_LABOR_PLAN] = qualification.labor_plan_score
+
+    performance = Decimal("0")
+    labor_plan = Decimal("0")
+    for item_key, raw_value in items.items():
+        value = _quant_value(raw_value)
+        if item_key == QUANT_ITEM_MANAGEMENT:
+            # 경영상태는 신용평가등급 선택이 정본이라 점수 직접 입력을 받지 않습니다.
+            if value != Decimal("0"):
+                _append_quant_violation(
+                    violations,
+                    BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                    "경영상태: 신용평가등급 선택으로 입력해야 하며 점수를 직접 넣을 수 없습니다.",
+                )
+            continue
+        if item_key == QUANT_ITEM_REPUTATION:
+            if value != Decimal("0"):
+                _append_quant_violation(
+                    violations,
+                    BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                    "신인도: 항목별 선택값(reputation_items)으로 입력해야 하며 합계를 직접 넣을 수 없습니다.",
+                )
+            continue
+        _check_quant_item(limits, item_key, value, item_key, band.band_label, violations)
+        if item_key == QUANT_ITEM_LABOR_PLAN:
+            labor_plan += value
+        else:
+            performance += value
+
+    management = _management_quant_score(qualification, limits, table, band.band_label, violations)
+    reputation = _reputation_quant_score(qualification, band.band_label, violations)
+    performance += management
+
+    has_labor_item = any(
+        item.item_key == QUANT_ITEM_LABOR_PLAN and item.limit_kind in _QUANT_INPUT_KINDS
+        for item in band.items
+    )
+
+    if violations:
+        return None, violations
+    return (
+        QuantInputScores(
+            performance=performance,
+            labor_plan=labor_plan,
+            reputation=reputation,
+            has_labor_item=has_labor_item,
+        ),
+        [],
+    )
+
+
 def _announcement_pred_price(bid: BidAnnouncement) -> Decimal | None:
     """공고의 예정가격 기준액. BidAnnouncement.prediction_reference_amount 접근자를 정본으로 씁니다."""
     reference = bid.prediction_reference_amount
@@ -309,16 +687,13 @@ def _scenario_prices(
     ]
 
 
-def _qualification_scores(
-    qualification: QualificationInput,
-) -> tuple[Decimal, Decimal, Decimal]:
-    """설계서 4.5 정의대로 사용자 입력을 수행능력(실적+경영상태), 근로조건, 신인도로 나눕니다."""
-    performance = Decimal(str(qualification.performance_score)) + Decimal(
-        str(qualification.management_score)
-    )
-    labor = Decimal(str(qualification.labor_plan_score))
-    credibility = Decimal(str(qualification.credibility_score))
-    return performance, labor, credibility
+def _qualification_scores(scores: QuantInputScores) -> tuple[Decimal, Decimal, Decimal]:
+    """검증된 입력 점수를 수행능력(실적+기술능력+경영상태), 근로조건, 신인도로 나눕니다.
+
+    구분은 적용 별표 배점표의 심사분야가 정본이며(별표 2 만 근로조건이 별도 심사번호),
+    평가_qualification 도메인 함수의 성능/근로조건/신인도 인자에 그대로 대응합니다.
+    """
+    return scores.performance, scores.labor_plan, scores.reputation
 
 
 def _as_percent(value: Decimal) -> float:
@@ -332,8 +707,12 @@ def _evaluate_scenario(
     scores: tuple[Decimal, Decimal, Decimal],
     qualification: QualificationInput,
     table: ScoreTable,
+    has_labor_item: bool,
 ) -> ScenarioEvaluationResult:
-    """단일 시나리오의 가격점수와 적격 판정을 evaluation_scoring 에 위임합니다."""
+    """단일 시나리오의 가격점수와 적격 판정을 evaluation_scoring 에 위임합니다.
+
+    근로조건 이행계획이 없는 별표에서는 도메인의 '근로조건 0점' 경고를 내보내지 않습니다.
+    """
     performance_score, labor_score, credibility_score = scores
     price = calculate_price_score(
         bid_price=candidate_bid_amount,
@@ -352,6 +731,11 @@ def _evaluate_scenario(
         reputation_score=credibility_score,
         has_disqualification=qualification.disqualification,
     )
+    warnings = [
+        warning
+        for warning in judgement.warnings
+        if has_labor_item or "근로조건 이행계획" not in warning
+    ]
     return ScenarioEvaluationResult(
         scenario_name=scenario.scenario_name,
         scenario_type=scenario.scenario_type,
@@ -362,7 +746,7 @@ def _evaluate_scenario(
         total_score=float(judgement.total_score),
         pass_threshold=float(judgement.pass_threshold),
         is_qualified=judgement.is_qualified,
-        warnings=list(judgement.warnings),
+        warnings=warnings,
     )
 
 
@@ -471,6 +855,9 @@ def _score_table_missing_response(
     scenarios: list[ScenarioPrice],
     missing_fields: list[str],
     override_fields: list[str],
+    quant_table: QuantScoreTable | None,
+    band: QuantScoreBand | None,
+    band_note: str | None,
 ) -> EvaluationResponse:
     """배점표 입력이 없어 점수는 계산하지 않습니다. 하한율과 시나리오 구간은 그대로 전달합니다."""
     assert rule_result.rule is not None
@@ -517,6 +904,100 @@ def _score_table_missing_response(
         min_bid_amount_with_a=None,
         scenario_results=_unscored_scenario_results(scenarios, candidate_bid_amount),
         score_table=_rule_score_table_payload(rule, missing_fields, override_fields),
+        quant_score_table=(
+            _quant_table_payload(quant_table, band, band_note) if quant_table is not None else None
+        ),
+        warnings=warnings,
+    )
+
+
+def _quant_violation_response(
+    bid: BidAnnouncement,
+    payload: EvaluationRequest,
+    rule_result: RuleResolutionResult,
+    pred_price: Decimal,
+    scenarios: list[ScenarioPrice],
+    quant_table: QuantScoreTable,
+    band: QuantScoreBand,
+    band_note: str | None,
+    violations: list[tuple[str, str]],
+) -> EvaluationResponse:
+    """정량평가 입력이 배점표를 벗어나면 자르지 않고 사유와 함께 계산을 막습니다."""
+    assert rule_result.rule is not None
+    assert rule_result.effective_lwlt_rate is not None
+    rule = rule_result.rule
+    effective_lwlt = rule_result.effective_lwlt_rate
+    candidate_bid_amount = Decimal(str(payload.candidate_bid_amount))
+    min_bid_result = calculate_min_bid_amount(pred_price=pred_price, lwlt_rate=effective_lwlt)
+    headline_code = violations[0][0]
+    detail = " ".join(message for _, message in violations)
+    warnings = [
+        *rule_result.warnings,
+        f"낙찰하한율 {min_bid_result.lwlt_rate_pct}% 적용 최저 투찰금액: "
+        f"{int(min_bid_result.min_bid_amount):,}원",
+        "정량평가 입력을 적용 별표 배점표와 대조해 계산을 막았습니다. 입력값을 고쳐 다시 실행하십시오.",
+    ]
+    return EvaluationResponse(
+        status="blocked",
+        rule_id=rule.rule_id,
+        rule_name=rule.description,
+        rule_basis=_rule_basis(bid, rule_result),
+        blocked=True,
+        blocked_reason=f"{headline_code}: {detail}",
+        requested_model=payload.selected_model,
+        actual_model=None,
+        fallback_used=False,
+        fallback_reason="정량평가 입력 검증에서 막혀 예측 모델을 호출하지 않았습니다.",
+        lower_bound_rate=float(effective_lwlt),
+        a_value_amount=None,
+        min_bid_amount_with_a=None,
+        scenario_results=_unscored_scenario_results(scenarios, candidate_bid_amount),
+        score_table=_rule_score_table_payload(rule, [], []),
+        quant_score_table=_quant_table_payload(quant_table, band, band_note),
+        warnings=warnings,
+    )
+
+
+def _quant_band_unresolved_response(
+    bid: BidAnnouncement,
+    payload: EvaluationRequest,
+    rule_result: RuleResolutionResult,
+    pred_price: Decimal,
+    scenarios: list[ScenarioPrice],
+    quant_table: QuantScoreTable,
+    band_note: str | None,
+) -> EvaluationResponse:
+    """추정가격 구간을 확정하지 못하면 임의 구간으로 계산하지 않고 막습니다."""
+    assert rule_result.rule is not None
+    assert rule_result.effective_lwlt_rate is not None
+    rule = rule_result.rule
+    effective_lwlt = rule_result.effective_lwlt_rate
+    candidate_bid_amount = Decimal(str(payload.candidate_bid_amount))
+    min_bid_result = calculate_min_bid_amount(pred_price=pred_price, lwlt_rate=effective_lwlt)
+    reason = band_note or "추정가격 구간을 확정할 수 없습니다."
+    warnings = [
+        *rule_result.warnings,
+        f"낙찰하한율 {min_bid_result.lwlt_rate_pct}% 적용 최저 투찰금액: "
+        f"{int(min_bid_result.min_bid_amount):,}원",
+        reason,
+    ]
+    return EvaluationResponse(
+        status="blocked",
+        rule_id=rule.rule_id,
+        rule_name=rule.description,
+        rule_basis=_rule_basis(bid, rule_result),
+        blocked=True,
+        blocked_reason=f"{BLOCK_CODE_QUANT_BAND_UNRESOLVED}: {reason}",
+        requested_model=payload.selected_model,
+        actual_model=None,
+        fallback_used=False,
+        fallback_reason="배점표 구간을 확정하지 못해 예측 모델을 호출하지 않았습니다.",
+        lower_bound_rate=float(effective_lwlt),
+        a_value_amount=None,
+        min_bid_amount_with_a=None,
+        scenario_results=_unscored_scenario_results(scenarios, candidate_bid_amount),
+        score_table=_rule_score_table_payload(rule, [], []),
+        quant_score_table=_quant_table_payload(quant_table, None, band_note),
         warnings=warnings,
     )
 
@@ -618,6 +1099,10 @@ def _success_response(
     scenarios: list[ScenarioPrice],
     provenance: ModelProvenance,
     override_fields: list[str],
+    quant_scores: QuantInputScores,
+    quant_table: QuantScoreTable | None,
+    band: QuantScoreBand | None,
+    band_note: str | None,
 ) -> EvaluationResponse:
     """규칙 판별 결과와 evaluation_scoring 계산 결과를 응답 스키마로 담습니다."""
     assert rule_result.rule is not None
@@ -626,7 +1111,7 @@ def _success_response(
     effective_lwlt = rule_result.effective_lwlt_rate
     candidate_bid_amount = Decimal(str(payload.candidate_bid_amount))
     qualification = payload.qualification_input
-    scores = _qualification_scores(qualification)
+    scores = _qualification_scores(quant_scores)
     non_price_score = scores[0] + scores[1] + scores[2]
 
     warnings = list(rule_result.warnings)
@@ -691,11 +1176,15 @@ def _success_response(
                 scores=scores,
                 qualification=qualification,
                 table=table,
+                has_labor_item=quant_scores.has_labor_item,
             )
             for scenario in scenarios
         ],
         price_compensation=_price_compensation_payload(compensation_result),
         score_table=_rule_score_table_payload(rule, [], override_fields),
+        quant_score_table=(
+            _quant_table_payload(quant_table, band, band_note) if quant_table is not None else None
+        ),
         warnings=warnings,
     )
 
@@ -795,6 +1284,51 @@ def _analyze_bid(
 
     scenarios = _scenario_prices(bid, payload.price_scenarios)
 
+    # 정량평가 입력은 적용 별표의 선언 배점표로 검증합니다. 배점표가 없는 규칙(별표 귀속
+    # 미확인 일반 띠)은 항목을 검증할 수 없어 값을 받지 않습니다.
+    quant_table = quant_score_table_for_rule(rule)
+    band: QuantScoreBand | None = None
+    band_note: str | None = None
+    if quant_table is None:
+        if any(
+            _quant_value(value) != Decimal("0")
+            for value in payload.qualification_input.quant_items.values()
+        ):
+            return _blocked_response(
+                bid,
+                rule_result,
+                BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                "적용 별표의 귀속이 미확인이라 정량평가 입력 항목을 검증할 수 없습니다.",
+            )
+    else:
+        band, band_note = select_quant_band(quant_table, _bid_estimated_price(bid))
+        if band is None:
+            return _quant_band_unresolved_response(
+                bid, payload, rule_result, pred_price, scenarios, quant_table, band_note
+            )
+
+    quant_scores = QuantInputScores(
+        performance=Decimal("0"),
+        labor_plan=Decimal("0"),
+        reputation=Decimal("0"),
+        has_labor_item=False,
+    )
+    if quant_table is not None and band is not None:
+        resolved, violations = _resolve_quant_inputs(payload.qualification_input, quant_table, band)
+        if resolved is None:
+            return _quant_violation_response(
+                bid,
+                payload,
+                rule_result,
+                pred_price,
+                scenarios,
+                quant_table,
+                band,
+                band_note,
+                violations,
+            )
+        quant_scores = resolved
+
     table, missing_fields, override_fields = _score_table(payload.qualification_input, rule)
     if table is None:
         return _score_table_missing_response(
@@ -805,6 +1339,9 @@ def _analyze_bid(
             scenarios=scenarios,
             missing_fields=missing_fields,
             override_fields=override_fields,
+            quant_table=quant_table,
+            band=band,
+            band_note=band_note,
         )
 
     return _success_response(
@@ -816,6 +1353,10 @@ def _analyze_bid(
         scenarios=scenarios,
         provenance=_model_provenance(payload, request, db),
         override_fields=override_fields,
+        quant_scores=quant_scores,
+        quant_table=quant_table,
+        band=band,
+        band_note=band_note,
     )
 
 

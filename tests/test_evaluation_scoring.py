@@ -6,6 +6,7 @@ DB 세션, HTTP 요청, 파일 I/O, 시스템 시각 대역 없이 순수 함수
 """
 
 from decimal import Decimal
+from typing import ClassVar
 
 import pytest
 
@@ -14,9 +15,21 @@ from src.app.services.evaluation_rules import (
     BLOCK_CODE_NON_PRED_PRICE,
     BLOCK_CODE_NOT_SERVC,
     BLOCK_CODE_RULE_NOT_FOUND,
+    CREDIT_GRADE_SCORES,
     POST_20260526_RULES,
+    QUANT_ITEM_LABOR_PLAN,
+    QUANT_ITEM_TECHNICAL,
+    QUANT_LIMIT_KIND_DISQUALIFICATION,
+    QUANT_LIMIT_KIND_REPUTATION,
+    QUANT_SCORE_TABLES,
+    REPUTATION_ITEMS,
+    REPUTATION_MAX_BONUS,
+    REPUTATION_MAX_PENALTY,
+    credit_score_for_grade,
+    demand_agency_credit_deduction,
     get_rule_by_id,
     list_all_rules,
+    quant_score_table_for_rule,
     resolve_evaluation_rule,
     resolve_evaluation_rule_from_raw_data,
 )
@@ -694,3 +707,127 @@ class TestPriceCompensation:
         assert format_decimal_plain(Decimal("89.9950")) == "89.995"
         assert format_decimal_plain(Decimal("1.50")) == "1.5"
         assert format_decimal_plain(Decimal("0")) == "0"
+
+
+class TestQuantScoreTableDeclaration:
+    """별표 1~9 심사항목 배점한도 규칙 선언 검증.
+
+    각 항목은 (심사분야 번호, 항목명, 배점한도)를 함께 갖고, 추정가격 5억원 이상/미만
+    구간이 다르면 구간별로 값을 가진다. 합계 100 정합성은 결격사유(-20)를 제외한
+    수행능력 계 + 입찰가격으로 검증한다.
+    """
+
+    # 합계 100 검증 대상 별표. 별표 9 는 입찰가격이 60~70 범위이고 선택평가항목을 수요기관이
+    # 정하므로 고정 합계로 검증하지 않는다.
+    REQUIRED_ATTACHMENTS: ClassVar[dict[str, set[str]]] = {
+        "별표 1": {"over_500m", "under_500m"},
+        "별표 2": {"over_500m", "under_500m"},
+        "별표 3": {"over_500m", "under_500m"},
+        "별표 3의2": {"over_500m", "under_500m"},
+        "별표 4": {"over_500m", "under_500m"},
+        "별표 5": {"over_500m", "under_500m"},
+        "별표 5의2": {"over_500m", "under_500m"},
+    }
+
+    def _bands_by_attachment(self):
+        bands = {}
+        for table in QUANT_SCORE_TABLES.values():
+            for band in table.bands:
+                bands.setdefault(table.attachment, {})[band.band_key] = band
+        return bands
+
+    def test_required_attachments_have_expected_bands(self) -> None:
+        bands = self._bands_by_attachment()
+        for attachment, expected_keys in self.REQUIRED_ATTACHMENTS.items():
+            assert attachment in bands, attachment
+            assert set(bands[attachment]) == expected_keys, attachment
+
+    def test_every_band_sums_to_100(self) -> None:
+        bands = self._bands_by_attachment()
+        excluded = {QUANT_LIMIT_KIND_REPUTATION, QUANT_LIMIT_KIND_DISQUALIFICATION}
+        for attachment, expected_keys in self.REQUIRED_ATTACHMENTS.items():
+            for band_key in expected_keys:
+                band = bands[attachment][band_key]
+                total = sum(
+                    (
+                        item.limit
+                        for item in band.items
+                        if item.limit is not None and item.limit_kind not in excluded
+                    ),
+                    Decimal("0"),
+                )
+                assert total == Decimal("100"), f"{attachment} {band_key} 합계 {total}"
+
+    def test_items_carry_section_name_and_source(self) -> None:
+        for table in QUANT_SCORE_TABLES.values():
+            for band in table.bands:
+                for item in band.items:
+                    assert item.section_no, item.item_name
+                    assert item.section_name, item.item_name
+                    assert item.item_name
+                    assert "docs/analysis/" in item.source, item.item_name
+
+    def test_labor_plan_only_on_facility(self) -> None:
+        """근로조건 이행계획은 별표 2 시설분야에만 존재한다."""
+        for table in QUANT_SCORE_TABLES.values():
+            for band in table.bands:
+                keys = {item.item_key for item in band.items}
+                if table.attachment == "별표 2":
+                    assert QUANT_ITEM_LABOR_PLAN in keys
+                else:
+                    assert QUANT_ITEM_LABOR_PLAN not in keys, table.attachment
+
+    def test_technical_capacity_varies_per_attachment(self) -> None:
+        """기술능력 구성이 별표마다 다르다(단일 10 / 폐기물 9+1 / 시설 없음)."""
+        bands = self._bands_by_attachment()
+
+        facility_keys = {item.item_key for item in bands["별표 2"]["over_500m"].items}
+        assert QUANT_ITEM_TECHNICAL not in facility_keys
+
+        academic_over = {item.item_key: item for item in bands["별표 1"]["over_500m"].items}
+        assert academic_over[QUANT_ITEM_TECHNICAL].limit == Decimal("10")
+        academic_under = {item.item_key: item for item in bands["별표 1"]["under_500m"].items}
+        assert academic_under[QUANT_ITEM_TECHNICAL].limit is None
+
+        waste_over = {item.item_key: item.limit for item in bands["별표 4"]["over_500m"].items}
+        assert waste_over["technical_capacity"] == Decimal("9")
+        assert waste_over["technical_input"] == Decimal("1")
+
+    def test_reputation_caps_are_declared(self) -> None:
+        assert Decimal("4.25") == REPUTATION_MAX_BONUS
+        assert Decimal("-5.0") == REPUTATION_MAX_PENALTY
+        for table in QUANT_SCORE_TABLES.values():
+            for band in table.bands:
+                reputation = [i for i in band.items if i.limit_kind == QUANT_LIMIT_KIND_REPUTATION]
+                assert len(reputation) == 1, table.attachment
+                assert reputation[0].limit == REPUTATION_MAX_BONUS
+                assert reputation[0].limit_min == REPUTATION_MAX_PENALTY
+
+    def test_credit_grade_scores_follow_annex_10(self) -> None:
+        by_group = {grade.grade_group: grade for grade in CREDIT_GRADE_SCORES}
+        assert by_group["AAA ~ A-"].score_at_20 == Decimal("20")
+        assert by_group["AAA ~ A-"].score_at_10 == Decimal("10")
+        assert by_group["BBB+"].score_at_20 == Decimal("19.8")
+        assert by_group["BBB+"].score_at_10 == Decimal("9.8")
+        assert by_group["CCC+ 이하"].score_at_20 == Decimal("16.0")
+        assert by_group["CCC+ 이하"].score_at_10 == Decimal("7.0")
+        assert credit_score_for_grade("BBB+", Decimal("20")) == Decimal("19.8")
+        assert credit_score_for_grade("BBB+", Decimal("10")) == Decimal("9.8")
+        assert credit_score_for_grade("알 수 없는 등급", Decimal("20")) is None
+
+    def test_demand_agency_credit_uses_relative_deduction(self) -> None:
+        assert demand_agency_credit_deduction("AAA ~ A-") == Decimal("0")
+        assert demand_agency_credit_deduction("BBB+") == Decimal("0.2")
+        assert demand_agency_credit_deduction("CCC+ 이하") == Decimal("5.0")
+
+    def test_reputation_items_are_declared(self) -> None:
+        codes = {item.item_code for item in REPUTATION_ITEMS}
+        assert "sme_support" in codes
+        assert "delayed_delivery" in codes
+        assert "industrial_accident" in codes
+
+    def test_unmapped_bands_have_no_table(self) -> None:
+        """별표 귀속이 미확인인 일반 띠는 배점표를 선언하지 않는다."""
+        for rule in POST_20260526_RULES:
+            if rule.service_type == "GENERAL":
+                assert quant_score_table_for_rule(rule) is None, rule.rule_id
