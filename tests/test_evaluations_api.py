@@ -559,6 +559,27 @@ def test_unconfirmed_score_table_still_blocks_with_reason(client, isolated_db, a
     assert any("집중 미확인" in w for w in payload["warnings"])
 
 
+def test_pre_20230501_threshold_is_reported_while_missing_bk_blocks(client, isolated_db, as_user):
+    """제2023-53호 판은 확인된 T를 제공하고 미확정 B·k 때문에 분석 점수를 차단한다."""
+    as_user(10)
+    bid = _create_bid(isolated_db, raw_overrides={"bidNtceDt": "20230601"})
+    isolated_db.commit()
+
+    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
+    assert payload["rule_id"] == "SERVC_QUAL_PRE_20230501_ATTACH_01"
+    assert payload["score_table"]["max_price_score"] is None
+    assert payload["score_table"]["multiplier"] is None
+    assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
+    assert payload["score_table"]["missing_fields"] == ["max_price_score", "multiplier"]
+    assert "미확인" in payload["score_table"]["source"]
+    assert any("집중 미확인" in warning for warning in payload["warnings"])
+
+
 def test_partially_confirmed_score_table_requires_only_missing_field(client, isolated_db, as_user):
     """일부만 확정된 규칙은 확정된 값을 자동 적용하고 미확정 필드만 입력을 요구한다."""
     as_user(10)
