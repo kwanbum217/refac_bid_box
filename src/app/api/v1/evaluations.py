@@ -100,6 +100,7 @@ from src.app.services.evaluation_rules import (
     RuleResolutionResult,
     credit_score_for_grade,
     demand_agency_credit_deduction,
+    extract_contract_regime,
     find_reputation_item,
     quant_score_table_for_rule,
     resolve_evaluation_rule_from_raw_data,
@@ -638,8 +639,7 @@ def _raw_int(raw_data: dict[str, Any], key: str) -> int | None:
 def _is_local_contract(bid: BidAnnouncement) -> bool:
     """계약 방법 명칭에서 지방계약 여부를 판단합니다 (복수예가 변동 범위 선택용)."""
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-    methods = f"{raw_data.get('cntrctCnclsMthdNm') or ''} {bid.cntrct_mthd_nm or ''}"
-    return "지방" in methods
+    return extract_contract_regime(raw_data, bid.cntrct_mthd_nm) == "LOCAL"
 
 
 def _scenario_prices(
@@ -1199,6 +1199,11 @@ def _save_snapshot_async(
     input_json: dict[str, Any],
     result_json: dict[str, Any],
     evidence_items: list[EvidenceMetadata],
+    contract_regime: str | None = None,
+    institution_code: str | None = None,
+    institution_name: str | None = None,
+    region_code: str | None = None,
+    region_name: str | None = None,
 ) -> BidEvaluationSnapshot | None:
     """분석 스냅샷 저장. 실패해도 분석 응답을 막지 않고 로그만 남김."""
     try:
@@ -1206,6 +1211,11 @@ def _save_snapshot_async(
             bid_id=bid_id,
             user_id=user_id,
             rule_id=rule_id,
+            contract_regime=contract_regime,
+            institution_code=institution_code,
+            institution_name=institution_name,
+            region_code=region_code,
+            region_name=region_name,
             model_id=model_id,
             model_version=model_version,
             input_json=input_json,
@@ -1256,6 +1266,8 @@ def _analyze_bid(
     rule_result = resolve_evaluation_rule_from_raw_data(
         category=bid.category,
         raw_data=raw_data,
+        institution_name_fallback=bid.dminstt_nm,
+        cntrct_mthd_nm=bid.cntrct_mthd_nm,
     )
     if rule_result.is_blocked:
         response = _blocked_response(
@@ -1384,6 +1396,13 @@ def analyze_evaluation(
 
     # 차단된 경우도 스냅샷으로 남깁니다. 저장 실패가 응답을 막지는 못합니다.
     if response.status in ("success", "blocked"):
+        raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+        rule_context = resolve_evaluation_rule_from_raw_data(
+            category=bid.category,
+            raw_data=raw_data,
+            institution_name_fallback=bid.dminstt_nm,
+            cntrct_mthd_nm=bid.cntrct_mthd_nm,
+        )
         input_json = {
             "bid_id": payload.bid_id,
             "selected_model": payload.selected_model,
@@ -1405,6 +1424,11 @@ def analyze_evaluation(
             input_json=input_json,
             result_json=response.model_dump(mode="json"),
             evidence_items=[],  # 증빙은 별도 API로 관리
+            contract_regime=rule_context.contract_regime,
+            institution_code=rule_context.institution_code,
+            institution_name=rule_context.institution_name,
+            region_code=rule_context.region_code,
+            region_name=rule_context.region_name,
         )
 
     return response
@@ -1471,6 +1495,8 @@ def list_evaluation_rules_meta(
         resolution = resolve_evaluation_rule_from_raw_data(
             category=bid.category,
             raw_data=raw_data,
+            institution_name_fallback=bid.dminstt_nm,
+            cntrct_mthd_nm=bid.cntrct_mthd_nm,
         )
         matched = resolution.rule
         if matched is not None:

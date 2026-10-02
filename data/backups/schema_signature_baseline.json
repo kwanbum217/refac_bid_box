@@ -1691,6 +1691,13 @@
           "default": null
         },
         {
+          "name": "contract_regime",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
           "name": "created_at",
           "type": "DATETIME",
           "nullable": false,
@@ -1712,6 +1719,20 @@
           "default": null
         },
         {
+          "name": "institution_code",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "institution_name",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
           "name": "model_id",
           "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": false,
@@ -1722,6 +1743,20 @@
           "name": "model_version",
           "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "region_code",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "region_name",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
           "primary_key": false,
           "default": null
         },
@@ -1810,7 +1845,7 @@
           "unique": false
         }
       ],
-      "hash": "761fed06d9e29c01cf1a9149efa3cd831a91c6266573fb814359a008038ed17a"
+      "hash": "d3545ead57491842655c4a62129b36e428bcdcd9cd85ecad9aff13d8141e409a"
     },
     "bid_ranking_snapshots": {
       "name": "bid_ranking_snapshots",
@@ -3552,7 +3587,7 @@
     "bid_dataset_summaries": "db63132629b7fd7a107d4ef8dd88e3b75db7645da6e724d0df92115af9288501",
     "bid_evaluation_evidence": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a",
     "bid_evaluation_profiles": "fee7f458d7d9966e3c10ce2637420330c5174629f667ac5c826c56bbe28bab8e",
-    "bid_evaluation_snapshots": "761fed06d9e29c01cf1a9149efa3cd831a91c6266573fb814359a008038ed17a",
+    "bid_evaluation_snapshots": "d3545ead57491842655c4a62129b36e428bcdcd9cd85ecad9aff13d8141e409a",
     "bid_ranking_snapshots": "dd386a5dee7f4abf08926b8978dbad4244f5d69cfbf0d062bdf7b827c1ec5dca",
     "bid_results": "6802c1cceecaef0222f9760ad45dc059a2d84da459bb4ae0b17e71237bb95ade",
     "chat_session_states": "77a97c60bb532b4a5c02ff6b6a50ca7f032e67d42487ee9bb475a653a49cb326",
@@ -3572,7 +3607,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "6eb318e7b625b161693ca5312aedbb7c9076034afa2d4b76a66ad0d91fb76b00",
+  "overall_hash": "4e51c46347b32ebe14a3cd1db2c2d70f44e78314dc679412a0107ebfa16c4164",
   "orm_tables": [
     "accounts_customuser",
     "automation_requests",
@@ -3634,10 +3669,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-09-22T07:55:07.582667+00:00",
+    "generated_at": "2026-10-02T13:14:57.087603+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "44dd7546d19d402ecac89404fdcb1b61ca95aa52"
+    "git_head": "1ae1e2c9fb0112e4a306383365472e51e3881bfe"
   }
 }

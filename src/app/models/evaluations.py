@@ -94,6 +94,11 @@ class BidEvaluationSnapshot(Base):
         nullable=False,
     )
     rule_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    contract_regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    institution_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    institution_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    region_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    region_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     model_id: Mapped[str] = mapped_column(String(100), nullable=False)
     model_version: Mapped[str] = mapped_column(String(50), nullable=False)
     input_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
