@@ -57,6 +57,7 @@ services:
       - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}
+      - G2B_USRINFO_SERVICE_KEY=${G2B_USRINFO_SERVICE_KEY:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
@@ -133,6 +134,7 @@ services:
       - ANONYMIZED_TELEMETRY=False
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}
+      - G2B_USRINFO_SERVICE_KEY=${G2B_USRINFO_SERVICE_KEY:-}
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}

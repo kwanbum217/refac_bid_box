@@ -67,6 +67,7 @@ services:
       # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}
+      - G2B_USRINFO_SERVICE_KEY=${G2B_USRINFO_SERVICE_KEY:-}
       - LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
@@ -126,6 +127,7 @@ services:
       # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
       - G2B_SERVICE_KEY=${G2B_SERVICE_KEY:-}
       - serviceKey=${serviceKey:-}
+      - G2B_USRINFO_SERVICE_KEY=${G2B_USRINFO_SERVICE_KEY:-}
       - LLM_PROVIDER=ollama
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e2b}
