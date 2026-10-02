@@ -30,6 +30,8 @@ from src.app.models.bids import (
     BidResult,
     preload_matching_announcements,
 )
+from src.app.models.demand_institutions import G2BDemandInstitution
+from src.app.services.demand_institutions import describe_contract_regime
 from src.app.services.evaluation_rules import resolve_evaluation_rule_from_raw_data
 from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 
@@ -730,6 +732,9 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
         return None
 
     bid = latest_announcement_for_instance(db, instance)
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    institution_code = str(raw_data.get("dminsttCd") or "").strip()
+    institution = db.get(G2BDemandInstitution, institution_code) if institution_code else None
 
     similar_stmt = similar_announcement_latest_filter(
         select(BidAnnouncement).where(
@@ -749,6 +754,7 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
 
     return {
         "bid": bid,
+        "contract_regime": describe_contract_regime(raw_data, bid.cntrct_mthd_nm, institution),
         "similar_bids": list(similar_bids),
         "past_results": past_results,
         "restrictions": get_announcement_restrictions(db, bid),

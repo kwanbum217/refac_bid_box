@@ -62,6 +62,9 @@
                     <div class="flex items-center text-sm text-slate-600">
                         <i class="far fa-building mr-2 text-slate-400"></i>
                         {{ bid.dminstt_nm }}
+                        {% if contract_regime %}
+                        <span class="badge badge-blue ml-2" title="{{ contract_regime.basis_text or '판별 근거 없음' }}">{{ contract_regime.label }} · {{ contract_regime.range_rate_label }}</span>
+                        {% endif %}
                     </div>
                     <div class="flex items-center text-sm text-slate-600">
                         <i class="far fa-calendar-alt mr-2 text-slate-400"></i>
@@ -505,6 +508,7 @@
                     <!-- 3. 예정가격 시나리오 결과표 -->
                     <div id="scenario-results" class="hidden space-y-3 border-t border-slate-200 pt-4">
                         <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">예정가격 시나리오별 평가 결과</h3>
+                        <p id="contract-regime-range" class="hidden text-sm text-slate-600"></p>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm" id="scenario-table">
                                 <thead>
@@ -1573,6 +1577,13 @@ $(document).ready(function() {
 
                     // 시나리오 결과표
                     if (data.scenario_results && data.scenario_results.length > 0) {
+                        if (data.contract_regime) {
+                            const regime = data.contract_regime;
+                            const jurisdiction = regime.jurisdiction ? ' · ' + regime.jurisdiction : '';
+                            $('#contract-regime-range')
+                                .text('예정가격 변동 범위: 기초금액 ' + regime.range_rate_label + ' (' + regime.label + jurisdiction + ')')
+                                .removeClass('hidden');
+                        }
                         $('#scenario-results').removeClass('hidden');
                         const tbody = $('#scenario-tbody');
                         tbody.empty();

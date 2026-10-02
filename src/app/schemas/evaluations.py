@@ -431,6 +431,15 @@ class QuantScoreTablePayload(BaseModel):
     reputation_max_penalty: str = Field(..., description="신인도 감점 상한")
 
 
+class ContractRegimeDescription(BaseModel):
+    regime: str | None = None
+    label: str
+    basis: str | None = None
+    basis_text: str | None = None
+    jurisdiction: str | None = None
+    range_rate_label: str
+
+
 class EvaluationResponse(BaseModel):
     """적격심사 정량평가 및 투찰 분석 응답.
 
@@ -440,6 +449,10 @@ class EvaluationResponse(BaseModel):
     """
 
     model_config = ConfigDict(from_attributes=True)
+
+    contract_regime: ContractRegimeDescription | None = Field(
+        default=None, description="계약 법령 판정·근거 및 복수예가 범위"
+    )
 
     status: str = Field(
         default="success",

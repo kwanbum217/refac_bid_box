@@ -691,6 +691,8 @@ def test_analyze_returns_blocked_result_with_reason_code(
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["status"] == "blocked"
+    assert payload["contract_regime"]["label"] == "계약 법령 미상"
+    assert payload["contract_regime"]["range_rate_label"] == "±2% (기본값, 법령 미상)"
     assert payload["blocked"] is True
     assert f"{block_code}:" in payload["blocked_reason"]
     assert payload["scenario_results"] == []

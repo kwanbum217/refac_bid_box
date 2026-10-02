@@ -54,6 +54,7 @@ from src.app.models.evaluations import (
     BidEvaluationSnapshot,
 )
 from src.app.schemas.evaluations import (
+    ContractRegimeDescription,
     CreditGradePayload,
     EvaluationProfileCreate,
     EvaluationProfileResponse,
@@ -76,7 +77,11 @@ from src.app.schemas.evaluations import (
     ScenarioEvaluationResult,
 )
 from src.app.schemas.predictions import PredictPriceRequest
-from src.app.services.demand_institutions import classify_contract_regime, institution_region
+from src.app.services.demand_institutions import (
+    classify_contract_regime,
+    describe_contract_regime,
+    institution_region,
+)
 from src.app.services.evaluation_rules import (
     CREDIT_GRADE_SCORES,
     METHOD_FAMILY_BY_CODE,
@@ -352,7 +357,7 @@ class QuantInputScores:
 
 
 def _bid_estimated_price(bid: BidAnnouncement) -> Decimal | None:
-    """5억원 구간 판정용 추정가격. presmpt_prce 를 우선하고 없으면 기초금액을 씁니다."""
+    """정량평가 배점표 구간만 판정합니다. B·k 선택에는 presmpt_prce 만 씁니다."""
     for attr in ("presmpt_prce", "base_amount"):
         raw = getattr(bid, attr, None)
         if raw is None:
@@ -1336,6 +1341,12 @@ def _analyze_bid(
     if not institution_loaded:
         institution = _demand_institution_for_bid(db, bid)
     institution_regime = classify_contract_regime(institution)
+    contract_regime = describe_contract_regime(raw_data, bid.cntrct_mthd_nm, institution)
+
+    def with_contract_regime(response: EvaluationResponse) -> EvaluationResponse:
+        response.contract_regime = ContractRegimeDescription(**contract_regime)
+        return response
+
     region_code, region_name = institution_region(institution)
     rule_result = resolve_evaluation_rule_from_raw_data(
         category=bid.category,
@@ -1357,18 +1368,20 @@ def _analyze_bid(
             response.negotiation_rate_distribution = NegotiationRateDistribution(
                 **get_negotiation_stats(db, rule_result.negotiation_variant)
             )
-        return response
+        return with_contract_regime(response)
 
     assert rule_result.rule is not None
     rule = rule_result.rule
 
     pred_price = _announcement_pred_price(bid)
     if pred_price is None:
-        return _blocked_response(
-            bid,
-            rule_result,
-            BLOCK_CODE_PRED_PRICE_UNAVAILABLE,
-            "공고에 예정가격(기초금액)이 공개되지 않아 최저 투찰금액과 시나리오를 계산할 분모가 없습니다.",
+        return with_contract_regime(
+            _blocked_response(
+                bid,
+                rule_result,
+                BLOCK_CODE_PRED_PRICE_UNAVAILABLE,
+                "공고에 예정가격(기초금액)이 공개되지 않아 최저 투찰금액과 시나리오를 계산할 분모가 없습니다.",
+            )
         )
 
     scenarios = _scenario_prices(bid, payload.price_scenarios, institution_regime)
@@ -1383,17 +1396,21 @@ def _analyze_bid(
             _quant_value(value) != Decimal("0")
             for value in payload.qualification_input.quant_items.values()
         ):
-            return _blocked_response(
-                bid,
-                rule_result,
-                BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
-                "적용 별표의 귀속이 미확인이라 정량평가 입력 항목을 검증할 수 없습니다.",
+            return with_contract_regime(
+                _blocked_response(
+                    bid,
+                    rule_result,
+                    BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                    "적용 별표의 귀속이 미확인이라 정량평가 입력 항목을 검증할 수 없습니다.",
+                )
             )
     else:
         band, band_note = select_quant_band(quant_table, _bid_estimated_price(bid))
         if band is None:
-            return _quant_band_unresolved_response(
-                bid, payload, rule_result, pred_price, scenarios, quant_table, band_note
+            return with_contract_regime(
+                _quant_band_unresolved_response(
+                    bid, payload, rule_result, pred_price, scenarios, quant_table, band_note
+                )
             )
 
     quant_scores = QuantInputScores(
@@ -1405,16 +1422,18 @@ def _analyze_bid(
     if quant_table is not None and band is not None:
         resolved, violations = _resolve_quant_inputs(payload.qualification_input, quant_table, band)
         if resolved is None:
-            return _quant_violation_response(
-                bid,
-                payload,
-                rule_result,
-                pred_price,
-                scenarios,
-                quant_table,
-                band,
-                band_note,
-                violations,
+            return with_contract_regime(
+                _quant_violation_response(
+                    bid,
+                    payload,
+                    rule_result,
+                    pred_price,
+                    scenarios,
+                    quant_table,
+                    band,
+                    band_note,
+                    violations,
+                )
             )
         quant_scores = resolved
 
@@ -1422,34 +1441,38 @@ def _analyze_bid(
         payload.qualification_input, rule, bid
     )
     if table is None:
-        return _score_table_missing_response(
+        return with_contract_regime(
+            _score_table_missing_response(
+                bid=bid,
+                payload=payload,
+                rule_result=rule_result,
+                pred_price=pred_price,
+                scenarios=scenarios,
+                missing_fields=missing_fields,
+                override_fields=override_fields,
+                quant_table=quant_table,
+                band=band,
+                band_note=band_note,
+                resolution=resolution,
+            )
+        )
+
+    return with_contract_regime(
+        _success_response(
             bid=bid,
             payload=payload,
             rule_result=rule_result,
+            table=table,
             pred_price=pred_price,
             scenarios=scenarios,
-            missing_fields=missing_fields,
+            provenance=_model_provenance(payload, request, db),
             override_fields=override_fields,
+            quant_scores=quant_scores,
             quant_table=quant_table,
             band=band,
             band_note=band_note,
             resolution=resolution,
         )
-
-    return _success_response(
-        bid=bid,
-        payload=payload,
-        rule_result=rule_result,
-        table=table,
-        pred_price=pred_price,
-        scenarios=scenarios,
-        provenance=_model_provenance(payload, request, db),
-        override_fields=override_fields,
-        quant_scores=quant_scores,
-        quant_table=quant_table,
-        band=band,
-        band_note=band_note,
-        resolution=resolution,
     )
 
 

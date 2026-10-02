@@ -127,6 +127,7 @@ def test_detail_renders_groups_regions_and_multi_group_notice(auth_client, isola
     assert "충청남도 공주시" in body
     assert "2개 그룹 중 하나를 충족하면 참가할 수 있고" in body
     assert "최종 자격은 공고문에서 확인하십시오" in body
+    assert "계약 법령 미상 · ±2% (기본값, 법령 미상)" in body
     assert 'id="restriction-groups-more"' not in body
     assert "restrictions-not-collected" not in body
 
