@@ -1134,11 +1134,12 @@ class RuleResolutionResult:
 def extract_contract_regime(
     raw_data: dict[str, Any] | None,
     cntrct_mthd_nm: str | None = None,
+    institution_regime: str | None = None,
 ) -> str | None:
-    """계약방법 원문에 '지방'이 있으면 지방계약으로 판정하고, 그 외는 미상으로 둡니다."""
+    """계약방법의 명시적 지방 표기를 우선하고 기관 기준정보 판정을 보조값으로 씁니다."""
     data = raw_data if isinstance(raw_data, dict) else {}
     methods = f"{data.get('cntrctCnclsMthdNm') or ''} {cntrct_mthd_nm or ''}"
-    return "LOCAL" if "지방" in methods else None
+    return "LOCAL" if "지방" in methods else institution_regime
 
 
 def _clean_axis_value(value: Any) -> str | None:
@@ -1704,6 +1705,9 @@ def resolve_evaluation_rule_from_raw_data(
     rules: Sequence[EvaluationRule] | None = None,
     institution_name_fallback: str | None = None,
     cntrct_mthd_nm: str | None = None,
+    institution_regime: str | None = None,
+    region_code: str | None = None,
+    region_name: str | None = None,
 ) -> RuleResolutionResult:
     """raw_data 딕셔너리에서 기관 필드를 추출하여 적격심사 규칙을 판별합니다.
 
@@ -1730,14 +1734,14 @@ def resolve_evaluation_rule_from_raw_data(
         srvce_div_nm=srvce_div_nm,
         sucsfbid_mthd_cd=raw_data.get("sucsfbidMthdCd"),
         bid_ntce_dt=raw_data.get("bidNtceDt"),
-        contract_regime=extract_contract_regime(raw_data, cntrct_mthd_nm),
+        contract_regime=extract_contract_regime(raw_data, cntrct_mthd_nm, institution_regime),
         institution_code=_clean_axis_value(raw_data.get("dminsttCd")),
         institution_name=(
             _clean_axis_value(raw_data.get("dminsttNm"))
             or _clean_axis_value(institution_name_fallback)
         ),
-        region_code=None,
-        region_name=None,
+        region_code=_clean_axis_value(region_code),
+        region_name=_clean_axis_value(region_name),
     )
 
 

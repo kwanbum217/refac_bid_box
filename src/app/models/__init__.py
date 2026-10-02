@@ -17,6 +17,7 @@ from src.app.models.chatbot import (
     KnowledgeBaseStatus,
     PipelineExecution,
 )
+from src.app.models.demand_institutions import G2BDemandInstitution
 from src.app.models.evaluations import (
     BidEvaluationEvidence,
     BidEvaluationProfile,
@@ -38,6 +39,7 @@ __all__ = [
     "BidResult",
     "ChatSessionState",
     "CustomUser",
+    "G2BDemandInstitution",
     "InstitutionWinRateStat",
     "KnowledgeBaseStatus",
     "PipelineExecution",

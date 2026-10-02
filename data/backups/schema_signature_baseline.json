@@ -2540,6 +2540,122 @@
       ],
       "hash": "6f27de8711c6dd55bebfc8dab3d9b72e3813e0ab97f54247b9d286915abe2042"
     },
+    "g2b_demand_institutions": {
+      "name": "g2b_demand_institutions",
+      "columns": [
+        {
+          "name": "chg_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dlt_yn",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dminstt_cd",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "dminstt_nm",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "fetched_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "instt_ty_lrgclsfc_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "instt_ty_midclsfc_nm",
+          "type": "VARCHAR(300) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "instt_ty_smlclsfc_nm",
+          "type": "VARCHAR(300) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "jrsdctn_div_nm",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "raw_json",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rgn_cd",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rgn_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rgst_dt",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "toplvl_instt_cd",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "toplvl_instt_nm",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "dminstt_cd"
+      ],
+      "foreign_keys": [],
+      "indexes": [],
+      "hash": "1523d89b43b583007c3443a927c956f4b300b23a4bec5eb4f0ff369b2ba97225"
+    },
     "institution_win_rate_stats": {
       "name": "institution_win_rate_stats",
       "columns": [
@@ -3596,6 +3712,7 @@
     "django_migrations": "dced355995343ee3845de4a8b5f4b23e182c9207483551462f5fc458fb00ce00",
     "django_session": "b3baa1d9244069838f05dcf65b70d64bc57174860afd9b8425832bb0fb7ddce3",
     "django_site": "6f27de8711c6dd55bebfc8dab3d9b72e3813e0ab97f54247b9d286915abe2042",
+    "g2b_demand_institutions": "1523d89b43b583007c3443a927c956f4b300b23a4bec5eb4f0ff369b2ba97225",
     "institution_win_rate_stats": "949ece41bfc66fc2100cefb6574cf873ac4d2f57c9dc770f8daaa065fd74340b",
     "knowledge_base_status": "40a791e9b54e5942499187c00fcd8ff411e517b51a54c36636ba7d847b50ea61",
     "pipeline_executions": "ef98bd6ef8d384fbdd1c9010d8a374379f17bf5599a33d15af254cc95bebaed2",
@@ -3607,7 +3724,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "4e51c46347b32ebe14a3cd1db2c2d70f44e78314dc679412a0107ebfa16c4164",
+  "overall_hash": "1cab023019072bfadd4c41dd6a56faaae01dfd89b4c769ee99f04bdb763ad853",
   "orm_tables": [
     "accounts_customuser",
     "automation_requests",
@@ -3623,6 +3740,7 @@
     "bid_ranking_snapshots",
     "bid_results",
     "chat_session_states",
+    "g2b_demand_institutions",
     "institution_win_rate_stats",
     "knowledge_base_status",
     "pipeline_executions",
@@ -3657,6 +3775,7 @@
     "django_migrations",
     "django_session",
     "django_site",
+    "g2b_demand_institutions",
     "institution_win_rate_stats",
     "knowledge_base_status",
     "pipeline_executions",
@@ -3669,10 +3788,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-10-02T13:14:57.087603+00:00",
+    "generated_at": "2026-10-02T14:46:58.829165+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "1ae1e2c9fb0112e4a306383365472e51e3881bfe"
+    "git_head": "b52abf8dad1c8892123afe450801b1b96b5e8ba1"
   }
 }
