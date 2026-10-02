@@ -467,7 +467,7 @@ class TestScoreTableDeclaration:
             assert rule.score_table_source.strip() != ""
 
     def test_pre_20230501_declares_only_confirmed_thresholds(self) -> None:
-        """제2023-53호 판은 대비표로 확인된 T만 선언하고 B·k는 미확정으로 둔다."""
+        """제2023-53호 판은 대비표로 확인된 T 와 별표1 고시금액 미만 B 만 선언하고 나머지는 미확정으로 둔다."""
         expected_thresholds = {
             f"SERVC_QUAL_PRE_20230501_ATTACH_{index:02d}": Decimal("88")
             if index in (3, 4)
@@ -475,14 +475,28 @@ class TestScoreTableDeclaration:
             for index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17)
         }
         for rule in PRE_20230501_RULES:
-            assert rule.max_price_score is None, rule.rule_id
+            expected_b = (
+                Decimal("70") if rule.rule_id == "SERVC_QUAL_PRE_20230501_ATTACH_06" else None
+            )
+            assert rule.max_price_score == expected_b, rule.rule_id
             assert rule.multiplier is None, rule.rule_id
             assert rule.pass_threshold == expected_thresholds[rule.rule_id], rule.rule_id
             assert ":63" in rule.score_table_source
-            assert ":105" in rule.score_table_source
+            assert "105" in rule.score_table_source
             assert ("조사 범위 " + "밖") not in rule.score_table_source
             assert "계산식이 없어" in rule.score_table_source
             assert "동일 추정" in rule.score_table_source
+
+    def test_pre_20230501_academic_under_notice_declares_confirmed_b(self) -> None:
+        """별표1 학술연구 고시금액 미만 전용은 대비표 직접 확인값 B=70 을 선언하고 k 는 비운다."""
+        by_id = {rule.rule_id: rule for rule in PRE_20230501_RULES}
+        academic_under = by_id["SERVC_QUAL_PRE_20230501_ATTACH_06"]
+        assert academic_under.max_price_score == Decimal("70")
+        assert academic_under.multiplier is None
+        assert academic_under.pass_threshold == Decimal("85")
+        assert ":63,105,106,136" in (academic_under.score_table_source or "")
+        academic_over = by_id["SERVC_QUAL_PRE_20230501_ATTACH_07"]
+        assert academic_over.max_price_score is None
 
     def test_pre_20250901_confirmed_values(self) -> None:
         """제2025-257호·제2026-15호 판의 확정 배점표."""

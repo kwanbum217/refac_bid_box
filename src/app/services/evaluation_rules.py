@@ -206,8 +206,18 @@ _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
             f"(제10조 제3항 및 통과 종합평점 행에서 T={88 if index in (3, 4) else 85} 직접 확인); "
             f"{_SCORE_REASON_PRE_20230501}",
         )
-        for index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17)
+        for index in (1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 15, 16, 17)
     },
+    # 별표1 학술연구 고시금액 미만 전용은 고시금액 2.3억 < 5억이라 B=70 이 대비표로 확정됩니다.
+    "SERVC_QUAL_PRE_20230501_ATTACH_06": (
+        Decimal("70"),
+        None,
+        Decimal("85"),
+        "docs/analysis/servc_pre_rules_2023_53_reconstruction_20260929.md:63,105,106,136 "
+        "(별표1 학술연구 고시금액 미만: B=70·T=85 대비표 직접 확인, 고시금액 2.3억<5억); "
+        "미확인: k는 대비표에 계산식이 없어 제2025-257호 값을 동일 추정한 B 등급이라 선언하지 않음 "
+        "(docs/analysis/servc_2023_53_score_params_reconstruction.md:55-62)",
+    ),
     # 2026-05-26 시행 판 (제2026-260호)
     "SERVC_QUAL_POST_20260526_ATTACH_01": (
         None,
