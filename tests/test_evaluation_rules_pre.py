@@ -466,37 +466,44 @@ class TestScoreTableDeclaration:
             assert rule.score_table_source, rule.rule_id
             assert rule.score_table_source.strip() != ""
 
-    def test_pre_20230501_declares_only_confirmed_thresholds(self) -> None:
-        """제2023-53호 판은 대비표로 확인된 T 와 별표1 고시금액 미만 B 만 선언하고 나머지는 미확정으로 둔다."""
-        expected_thresholds = {
-            f"SERVC_QUAL_PRE_20230501_ATTACH_{index:02d}": Decimal("88")
-            if index in (3, 4)
-            else Decimal("85")
-            for index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17)
-        }
+    def test_pre_20230501_matches_original_attachments(self) -> None:
+        """제2023-53호 판은 원문 별표에서 확인한 값이 같은 구조의 2025-09-01 판 선언과 같다."""
+        pre_2025 = {rule.rule_id.split("_ATTACH_")[1]: rule for rule in PRE_20250901_RULES}
         for rule in PRE_20230501_RULES:
-            expected_b = (
-                Decimal("70") if rule.rule_id == "SERVC_QUAL_PRE_20230501_ATTACH_06" else None
-            )
-            assert rule.max_price_score == expected_b, rule.rule_id
-            assert rule.multiplier is None, rule.rule_id
-            assert rule.pass_threshold == expected_thresholds[rule.rule_id], rule.rule_id
-            assert ":63" in rule.score_table_source
-            assert "105" in rule.score_table_source
-            assert ("조사 범위 " + "밖") not in rule.score_table_source
-            assert "계산식이 없어" in rule.score_table_source
-            assert "동일 추정" in rule.score_table_source
+            counterpart = pre_2025[rule.rule_id.split("_ATTACH_")[1]]
+            assert rule.max_price_score == counterpart.max_price_score, rule.rule_id
+            assert rule.multiplier == counterpart.multiplier, rule.rule_id
+            assert rule.pass_threshold == counterpart.pass_threshold, rule.rule_id
+            assert rule.base_rate == counterpart.base_rate, rule.rule_id
+            source = rule.score_table_source or ""
+            assert "servc_2023_53_original_attachments_20261003.md:17," in source
+            assert "제2023-53호 원문" in source
+            assert ("조사 범위 " + "밖") not in source
+            assert "동일 추정" not in source
 
-    def test_pre_20230501_academic_under_notice_declares_confirmed_b(self) -> None:
-        """별표1 학술연구 고시금액 미만 전용은 대비표 직접 확인값 B=70 을 선언하고 k 는 비운다."""
-        by_id = {rule.rule_id: rule for rule in PRE_20230501_RULES}
-        academic_under = by_id["SERVC_QUAL_PRE_20230501_ATTACH_06"]
-        assert academic_under.max_price_score == Decimal("70")
-        assert academic_under.multiplier is None
-        assert academic_under.pass_threshold == Decimal("85")
-        assert ":63,105,106,136" in (academic_under.score_table_source or "")
-        academic_over = by_id["SERVC_QUAL_PRE_20230501_ATTACH_07"]
-        assert academic_over.max_price_score is None
+    def test_pre_20230501_original_values(self) -> None:
+        """원문 별표 수식의 k 와 배점한도 단일값을 규칙별로 고정한다."""
+        by_id = {rule.rule_id.split("_ATTACH_")[1]: rule for rule in PRE_20230501_RULES}
+        expected = {
+            "01": (None, Decimal("5"), Decimal("85")),
+            "02": (None, Decimal("0.375"), Decimal("85")),
+            "03": (None, Decimal("4"), Decimal("88")),
+            "04": (None, Decimal("4"), Decimal("88")),
+            "05": (None, None, Decimal("85")),
+            "06": (Decimal("70"), Decimal("4"), Decimal("85")),
+            "07": (None, Decimal("2"), Decimal("85")),
+            "08": (Decimal("70"), Decimal("4"), Decimal("85")),
+            "09": (None, Decimal("2"), Decimal("85")),
+            "10": (Decimal("70"), Decimal("4"), Decimal("85")),
+            "11": (None, Decimal("2"), Decimal("85")),
+            "15": (None, None, Decimal("85")),
+            "16": (Decimal("70"), None, Decimal("85")),
+            "17": (None, None, Decimal("85")),
+        }
+        assert set(by_id) == set(expected)
+        for suffix, values in expected.items():
+            rule = by_id[suffix]
+            assert (rule.max_price_score, rule.multiplier, rule.pass_threshold) == values, suffix
 
     def test_pre_20250901_confirmed_values(self) -> None:
         """제2025-257호·제2026-15호 판의 확정 배점표."""

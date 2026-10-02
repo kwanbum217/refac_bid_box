@@ -79,11 +79,7 @@ _SCORE_SRC_PRE = (
     f"{_SCORE_DOC_PRE} (제2025-257호·제2026-15호 별표별 입찰가격 계산식·배점한도·통과점수)"
 )
 _SCORE_SRC_POST = f"{_SCORE_DOC_POST} (제2026-260호 별표별 입찰가격 계산식) 및 {_SCORE_DOC_MEASURED} (통과점수·별표9 실측)"
-_SCORE_REASON_PRE_20230501 = (
-    "미확인: k는 대비표에 계산식이 없어 제2025-257호 값을 동일 추정한 B 등급이라 선언하지 않음; "
-    "B는 5억원 축 조건부이거나 동일 추정이라 단일값 미확정 "
-    "(docs/analysis/servc_2023_53_score_params_reconstruction.md:55-62)"
-)
+_SCORE_DOC_PRE_20230501 = "docs/analysis/servc_2023_53_original_attachments_20261003.md"
 _SCORE_REASON_UNMAPPED_BAND = (
     "미확인: 일반 띠는 별표 1~9 에 같은 이름이 없어 별표 귀속이 미확인입니다 "
     "(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:299-312)"
@@ -195,29 +191,167 @@ _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
         Decimal("85"),
         f"{_SCORE_SRC_PRE} (별표9 수요기관 지정형: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
     ),
-    # 2023-05-01 시행 판 (제2023-53호). 대비표로 확인된 T만 선언합니다.
+    # 2023-05-01 시행 판 (제2023-53호). 국가법령정보센터 원문 별표에서 직접 확인한 값입니다.
     **{
         f"SERVC_QUAL_PRE_20230501_ATTACH_{index:02d}": (
-            None,
-            None,
-            Decimal("88") if index in (3, 4) else Decimal("85"),
-            f"docs/analysis/servc_pre_rules_2023_53_reconstruction_20260929.md:63 "
-            f"및 docs/analysis/servc_pre_rules_2023_53_reconstruction_20260929.md:105 "
-            f"(제10조 제3항 및 통과 종합평점 행에서 T={88 if index in (3, 4) else 85} 직접 확인); "
-            f"{_SCORE_REASON_PRE_20230501}",
+            max_price_score,
+            multiplier,
+            pass_threshold,
+            f"{_SCORE_DOC_PRE_20230501}:17,{attachment_row},{rule_row} "
+            f"(제2023-53호 원문 {label}){note}",
         )
-        for index in (1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 15, 16, 17)
+        for (
+            index,
+            max_price_score,
+            multiplier,
+            pass_threshold,
+            attachment_row,
+            rule_row,
+            label,
+            note,
+        ) in (
+            (
+                1,
+                None,
+                Decimal("5"),
+                Decimal("85"),
+                26,
+                46,
+                "별표2 시설: k=5·T=85",
+                f"; {_SCORE_NOTE_B_SPLIT}",
+            ),
+            (
+                2,
+                None,
+                Decimal("0.375"),
+                Decimal("85"),
+                32,
+                47,
+                "별표6 보험: k=0.375·T=85",
+                f"; {_SCORE_NOTE_B_SPLIT}",
+            ),
+            (
+                3,
+                None,
+                Decimal("4"),
+                Decimal("88"),
+                30,
+                48,
+                "별표5 여객: k=4·T=88",
+                f"; {_SCORE_NOTE_B_SPLIT}",
+            ),
+            (
+                4,
+                None,
+                Decimal("4"),
+                Decimal("88"),
+                28,
+                49,
+                "별표3의2 SW 대상: k=4·T=88",
+                f"; {_SCORE_NOTE_B_SPLIT}",
+            ),
+            (
+                5,
+                None,
+                None,
+                Decimal("85"),
+                27,
+                50,
+                "별표3 SW 비대상: T=85",
+                f"; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT}",
+            ),
+            (
+                6,
+                Decimal("70"),
+                Decimal("4"),
+                Decimal("85"),
+                25,
+                51,
+                "별표1 학술연구 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억",
+                "",
+            ),
+            (
+                7,
+                None,
+                Decimal("2"),
+                Decimal("85"),
+                25,
+                52,
+                "별표1 학술연구 고시금액 이상: k=2·T=85",
+                f"; {_SCORE_NOTE_B_SPLIT}",
+            ),
+            (
+                8,
+                Decimal("70"),
+                Decimal("4"),
+                Decimal("85"),
+                29,
+                53,
+                "별표4 폐기물 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억",
+                "",
+            ),
+            (
+                9,
+                None,
+                Decimal("2"),
+                Decimal("85"),
+                29,
+                54,
+                "별표4 폐기물 고시금액 이상: k=2·T=85",
+                f"; {_SCORE_NOTE_B_SPLIT}",
+            ),
+            (
+                10,
+                Decimal("70"),
+                Decimal("4"),
+                Decimal("85"),
+                31,
+                55,
+                "별표5의2 화물 고시금액 미만: B=70·k=4·T=85; 고시금액 2.3억<5억",
+                "",
+            ),
+            (
+                11,
+                None,
+                Decimal("2"),
+                Decimal("85"),
+                31,
+                56,
+                "별표5의2 화물 고시금액 이상: k=2·T=85",
+                f"; {_SCORE_NOTE_B_SPLIT}",
+            ),
+            (
+                15,
+                None,
+                None,
+                Decimal("85"),
+                33,
+                57,
+                "별표7 수리·점검: T=85",
+                f"; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT}",
+            ),
+            (
+                16,
+                Decimal("70"),
+                None,
+                Decimal("85"),
+                34,
+                58,
+                "별표8 임대차: B=70·T=85",
+                f"; {_SCORE_NOTE_K_SPLIT}",
+            ),
+            (
+                17,
+                None,
+                None,
+                Decimal("85"),
+                35,
+                59,
+                "별표9 수요기관 지정형: T=85",
+                f"; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT}",
+            ),
+        )
     },
-    # 별표1 학술연구 고시금액 미만 전용은 고시금액 2.3억 < 5억이라 B=70 이 대비표로 확정됩니다.
-    "SERVC_QUAL_PRE_20230501_ATTACH_06": (
-        Decimal("70"),
-        None,
-        Decimal("85"),
-        "docs/analysis/servc_pre_rules_2023_53_reconstruction_20260929.md:63,105,106,136 "
-        "(별표1 학술연구 고시금액 미만: B=70·T=85 대비표 직접 확인, 고시금액 2.3억<5억); "
-        "미확인: k는 대비표에 계산식이 없어 제2025-257호 값을 동일 추정한 B 등급이라 선언하지 않음 "
-        "(docs/analysis/servc_2023_53_score_params_reconstruction.md:55-62)",
-    ),
     # 2026-05-26 시행 판 (제2026-260호)
     "SERVC_QUAL_POST_20260526_ATTACH_01": (
         None,
