@@ -147,12 +147,28 @@ def test_confirmed_score_table_is_string_and_unconfirmed_is_null(client):
     assert isinstance(academic["score_table_source"], str)
     assert academic["score_table_source"].strip() != ""
 
-    # 시설분야는 문서 간 불일치(91 대 93)로 확정하지 않아 셋 다 null 이고 사유가 남는다.
+    # 시설분야는 개정 세대별 k·T가 확정되고 B만 가격 구간 때문에 단일값이 아니다.
     facility = rules["SERVC_QUAL_POST_20260526_ATTACH_01"]
     assert facility["max_price_score"] is None
-    assert facility["multiplier"] is None
-    assert facility["pass_threshold"] is None
+    assert facility["multiplier"] == "5"
+    assert facility["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
     assert "미확인" in facility["score_table_source"]
+
+    passenger = rules["SERVC_QUAL_POST_20260727_ATTACH_03"]
+    assert passenger["max_price_score"] is None
+    assert passenger["multiplier"] == "4"
+    assert passenger["pass_threshold"] == "88"  # noqa: S105 - 배점표 통과점수 T
+
+    sw_target = rules["SERVC_QUAL_POST_20260727_ATTACH_04"]
+    assert sw_target["max_price_score"] is None
+    assert sw_target["multiplier"] == "4"
+    assert sw_target["pass_threshold"] == "88"  # noqa: S105 - 배점표 통과점수 T
+
+    sw_non_target = rules["SERVC_QUAL_POST_20260526_ATTACH_05"]
+    assert sw_non_target["max_price_score"] is None
+    assert sw_non_target["multiplier"] is None
+    assert sw_non_target["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
+    assert "고시금액" in sw_non_target["score_table_source"]
 
     # 일반 띠는 별표 귀속 자체가 미확인이라 null 이고 사유가 남는다.
     general = rules["SERVC_QUAL_POST_20260526_ATTACH_12"]

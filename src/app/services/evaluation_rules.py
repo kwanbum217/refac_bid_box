@@ -60,10 +60,6 @@ _SCORE_REASON_PRE_20230501 = (
     "미확인: 제2023-53호 판의 별표 배점표(B·k·T)는 조사 범위 밖입니다 "
     "(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:655-661)"
 )
-_SCORE_REASON_DOC_CONFLICT = (
-    "미확인: 문서 간 기준비율·계수 불일치(시설분야 91 대 93, 여객·SW(대상) 계수 4)로 "
-    "확정하지 않습니다 (docs/analysis/servc_post_rules_audit_20260929.md:168-169)"
-)
 _SCORE_REASON_UNMAPPED_BAND = (
     "미확인: 일반 띠는 별표 1~9 에 같은 이름이 없어 별표 귀속이 미확인입니다 "
     "(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:299-312)"
@@ -71,25 +67,55 @@ _SCORE_REASON_UNMAPPED_BAND = (
 _SCORE_REASON_UNKNOWN_RULE = "미확인: 배점표 판정표에 없는 규칙이라 값을 만들지 않습니다."
 _SCORE_NOTE_B_SPLIT = "B는 추정가격 5억원 미만 70/이상 60 으로 갈려 미확인"
 _SCORE_NOTE_K_SPLIT = "k는 고시금액 미만 4/이상 2 로 갈려 미확인"
+_SCORE_THRESHOLD_88_ATTACHMENTS = {"ATTACH_03", "ATTACH_04"}
+
+
+def _score_source(regime: str, table_row: int, *, pre_rows: str = "") -> str:
+    if regime == "PRE":
+        return (
+            f"docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:"
+            f"{table_row},174,176 {pre_rows}"
+        ).strip()
+    return (
+        f"docs/analysis/servc_post_rules_audit_20260929.md:{table_row},131 "
+        "및 docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:174"
+    )
+
 
 ScoreTableEntry = tuple[Decimal | None, Decimal | None, Decimal | None, str]
 
 _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
     # 2025-09-01 시행 판 (제2025-257호·제2026-15호)
-    "SERVC_QUAL_PRE_20250901_ATTACH_01": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_PRE_20250901_ATTACH_01": (
+        None,
+        Decimal("5"),
+        Decimal("85"),
+        f"{_score_source('PRE', 163)} (별표2 시설: k=5·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
     "SERVC_QUAL_PRE_20250901_ATTACH_02": (
         None,
         Decimal("0.375"),
         Decimal("85"),
         f"{_SCORE_SRC_PRE} (별표6 보험: k=0.375 단일·T=85; {_SCORE_NOTE_B_SPLIT})",
     ),
-    "SERVC_QUAL_PRE_20250901_ATTACH_03": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
-    "SERVC_QUAL_PRE_20250901_ATTACH_04": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_PRE_20250901_ATTACH_03": (
+        None,
+        Decimal("4"),
+        Decimal("88"),
+        f"{_score_source('PRE', 167)} (별표5 여객: k=4·T=88; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_PRE_20250901_ATTACH_04": (
+        None,
+        Decimal("4"),
+        Decimal("88"),
+        f"{_score_source('PRE', 165)} (별표3의2 SW 대상: k=4·T=88; {_SCORE_NOTE_B_SPLIT})",
+    ),
     "SERVC_QUAL_PRE_20250901_ATTACH_05": (
         None,
         None,
         Decimal("85"),
-        f"{_SCORE_SRC_PRE} (별표3 SW 비대상: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+        f"{_score_source('PRE', 166)} (별표3 SW 비대상: T=85; "
+        f"{_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
     ),
     "SERVC_QUAL_PRE_20250901_ATTACH_06": (
         Decimal("70"),
@@ -156,20 +182,36 @@ _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
         for index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17)
     },
     # 2026-05-26 시행 판 (제2026-260호)
-    "SERVC_QUAL_POST_20260526_ATTACH_01": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_POST_20260526_ATTACH_01": (
+        None,
+        Decimal("5"),
+        Decimal("85"),
+        f"{_score_source('POST', 103)} (별표2 시설: k=5·T=85; {_SCORE_NOTE_B_SPLIT})",
+    ),
     "SERVC_QUAL_POST_20260526_ATTACH_02": (
         None,
         Decimal("0.375"),
         Decimal("85"),
         f"{_SCORE_SRC_POST} (별표6 보험: k=0.375 단일·T=85; {_SCORE_NOTE_B_SPLIT})",
     ),
-    "SERVC_QUAL_POST_20260526_ATTACH_03": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
-    "SERVC_QUAL_POST_20260526_ATTACH_04": (None, None, None, _SCORE_REASON_DOC_CONFLICT),
+    "SERVC_QUAL_POST_20260526_ATTACH_03": (
+        None,
+        Decimal("4"),
+        Decimal("88"),
+        f"{_score_source('POST', 107)} (별표5 여객: k=4·T=88; {_SCORE_NOTE_B_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_04": (
+        None,
+        Decimal("4"),
+        Decimal("88"),
+        f"{_score_source('POST', 105)} (별표3의2 SW 대상: k=4·T=88; {_SCORE_NOTE_B_SPLIT})",
+    ),
     "SERVC_QUAL_POST_20260526_ATTACH_05": (
         None,
         None,
         Decimal("85"),
-        f"{_SCORE_SRC_POST} (별표3 SW 비대상: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+        f"{_score_source('POST', 104)} (별표3 SW 비대상: T=85; "
+        f"{_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
     ),
     "SERVC_QUAL_POST_20260526_ATTACH_06": (
         Decimal("70"),
@@ -224,6 +266,13 @@ def _with_score_table(rules: tuple[EvaluationRule, ...]) -> tuple[EvaluationRule
             rule.rule_id,
             (None, None, None, _SCORE_REASON_UNKNOWN_RULE),
         )
+        if pass_threshold is not None:
+            attachment = "_".join(rule.rule_id.rsplit("_", 2)[-2:])
+            expected_threshold = (
+                Decimal("88") if attachment in _SCORE_THRESHOLD_88_ATTACHMENTS else Decimal("85")
+            )
+            if pass_threshold != expected_threshold:
+                raise ValueError(f"배점표 통과점수가 별표 예외 규칙과 다릅니다: {rule.rule_id}")
         enriched.append(
             replace(
                 rule,

@@ -4,8 +4,8 @@
  - 판별은 src/app/services/evaluation_rules.py, 계산은 src/app/services/evaluation_scoring.py,
    모델 출처는 src/app/api/v1/predictions.py 의 predict_price_api. 본 테스트는 그것을 호출만 한다.
  - 기대값은 도메인 함수의 실제 동작으로 확정한 수치이며, 테스트 안에서 산식을 재계산하지 않는다.
- - 가격배점한도(B)·평점계수(k)·통과점수(T) 는 규칙 레지스트리가 실측 확정하지 않은 값이라
-   QualificationInput 의 사용자 입력이 정본이다. 입력이 없으면 점수 계산만 차단된다.
+ - 가격배점한도(B)·평점계수(k)·통과점수(T) 는 규칙 레지스트리에 확정값만 선언한다.
+   선언되지 않은 값은 QualificationInput 으로 보완하며, 미확정 필드가 남으면 점수 계산만 차단된다.
 
 실물 서비스(Redis·Chroma·Ollama·MySQL) 와 실제 모델 추론은 호출하지 않는다.
 conftest 의 isolated_db (SQLite 인메모리) 와 dependency_overrides 를 쓰고,
@@ -362,26 +362,23 @@ def test_price_compensation_reports_impossible_without_duplicating_warning(
     assert payload["warnings"].count(capacity_warning) == 1
 
 
-@pytest.mark.parametrize(
-    "missing_field",
-    ["max_price_score", "multiplier", "pass_threshold"],
-)
-def test_any_missing_score_table_field_blocks_scoring(client, isolated_db, as_user, missing_field):
-    """셋 중 하나라도 없으면 남은 둘이 있어도 점수를 계산하지 않는다."""
+def test_registry_confirmed_k_and_t_fill_missing_user_fields(client, isolated_db, as_user):
+    """사용자가 B만 입력해도 선언된 k=5·T=85를 사용해 점수를 계산한다."""
     as_user(10)
     bid = _create_bid(isolated_db)
-    table = {key: value for key, value in SCORE_TABLE.items() if key != missing_field}
 
-    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id, score_table=table))
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(bid.id, score_table={"max_price_score": 60}),
+    )
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["blocked"] is True
-    assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
-    assert missing_field not in payload["blocked_reason"]  # 메시지는 한국어 표기로 나온다
-    assert payload["scenario_results"][0]["price_score"] is None
-    # 점수 계산을 차단했으므로 가격 보완 판정도 내지 않는다
-    assert payload["price_compensation"] is None
+    assert payload["blocked"] is False
+    assert payload["score_table"]["max_price_score"] is None
+    assert payload["score_table"]["multiplier"] == "5"
+    assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
+    assert payload["score_table"]["missing_fields"] == []
 
 
 def test_non_positive_score_table_value_is_rejected(client, isolated_db, as_user):
@@ -544,9 +541,9 @@ def test_user_input_equal_to_declared_value_is_not_an_override(client, isolated_
 
 
 def test_unconfirmed_score_table_still_blocks_with_reason(client, isolated_db, as_user):
-    """규칙이 확정하지 못한 배점표는 입력이 없으면 MISSING_SCORE_TABLE 로 차단한다."""
+    """시설 규칙은 B만 미확정이므로 k=5·T=85를 표시하고 MISSING_SCORE_TABLE 로 차단한다."""
     as_user(10)
-    bid = _create_bid(isolated_db)  # 시설분야 ATTACH_01: 문서 간 불일치로 B·k·T 미확정
+    bid = _create_bid(isolated_db)  # 시설 ATTACH_01: 5억원 가격 구간에 따라 B가 달라짐
 
     response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
 
@@ -555,13 +552,9 @@ def test_unconfirmed_score_table_still_blocks_with_reason(client, isolated_db, a
     assert payload["blocked"] is True
     assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
     assert payload["score_table"]["max_price_score"] is None
-    assert payload["score_table"]["multiplier"] is None
-    assert payload["score_table"]["pass_threshold"] is None
-    assert payload["score_table"]["missing_fields"] == [
-        "max_price_score",
-        "multiplier",
-        "pass_threshold",
-    ]
+    assert payload["score_table"]["multiplier"] == "5"
+    assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
+    assert payload["score_table"]["missing_fields"] == ["max_price_score"]
     assert "미확인" in payload["score_table"]["source"]
     assert any("집중 미확인" in w for w in payload["warnings"])
 
