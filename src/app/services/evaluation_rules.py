@@ -16,6 +16,11 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+RULE_SCOPE_ALL = "ALL"
+RULE_SCOPE_INSTITUTION = "INSTITUTION"
+RULE_SCOPE_REGION = "REGION"
+RULE_SCOPE_VALUES = frozenset({RULE_SCOPE_ALL, RULE_SCOPE_INSTITUTION, RULE_SCOPE_REGION})
+
 
 @dataclass(frozen=True)
 class EvaluationRule:
@@ -41,6 +46,24 @@ class EvaluationRule:
     multiplier: Decimal | None = None
     pass_threshold: Decimal | None = None
     score_table_source: str | None = None
+    contract_regime: str | None = None
+    institution_scope: str = RULE_SCOPE_ALL
+    institution_code: str | None = None
+    institution_name: str | None = None
+    region_code: str | None = None
+    region_name: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.institution_scope not in RULE_SCOPE_VALUES:
+            raise ValueError(f"지원하지 않는 기관 범위입니다: {self.institution_scope}")
+        if self.institution_scope == RULE_SCOPE_INSTITUTION and not (
+            self.institution_code or self.institution_name
+        ):
+            raise ValueError("INSTITUTION 규칙은 기관 코드 또는 기관명이 필요합니다.")
+        if self.institution_scope == RULE_SCOPE_REGION and not (
+            self.region_code or self.region_name
+        ):
+            raise ValueError("REGION 규칙은 지역 코드 또는 지역명이 필요합니다.")
 
 
 # 배점표(B·k·T) 판정표는 원문 별표 문서에서 확정된 값만 담습니다.
@@ -1045,6 +1068,7 @@ BLOCK_CODE_NEGOTIATION_CONTRACT = "NEGOTIATION_CONTRACT"
 BLOCK_CODE_TECH_SERVICE_MISSING_LWLT = "TECH_SERVICE_MISSING_LWLT"
 BLOCK_CODE_NOT_QUALIFICATION_METHOD = "NOT_QUALIFICATION_METHOD"
 BLOCK_CODE_RULE_REGIME_MISMATCH = "RULE_REGIME_MISMATCH"
+BLOCK_CODE_RULE_SCOPE_AMBIGUOUS = "RULE_SCOPE_AMBIGUOUS"
 
 METHOD_NAME_PLACEHOLDER = "공고서참조"
 METHOD_SOURCE_ANNOUNCEMENT = "ANNOUNCEMENT"
@@ -1099,6 +1123,57 @@ class RuleResolutionResult:
     negotiation_price_eval_rate: Decimal | None = None
     negotiation_variant: str | None = None
     method_source: str | None = None  # "ANNOUNCEMENT" 또는 "CODE"
+    contract_regime: str | None = None
+    institution_code: str | None = None
+    institution_name: str | None = None
+    region_code: str | None = None
+    region_name: str | None = None
+    scope_stage: str | None = None
+
+
+def extract_contract_regime(
+    raw_data: dict[str, Any] | None,
+    cntrct_mthd_nm: str | None = None,
+) -> str | None:
+    """계약방법 원문에 '지방'이 있으면 지방계약으로 판정하고, 그 외는 미상으로 둡니다."""
+    data = raw_data if isinstance(raw_data, dict) else {}
+    methods = f"{data.get('cntrctCnclsMthdNm') or ''} {cntrct_mthd_nm or ''}"
+    return "LOCAL" if "지방" in methods else None
+
+
+def _clean_axis_value(value: Any) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _axis_matches(
+    rule: EvaluationRule,
+    *,
+    institution_code: str | None,
+    institution_name: str | None,
+    region_code: str | None,
+    region_name: str | None,
+    contract_regime: str | None,
+) -> bool:
+    if rule.contract_regime is not None and rule.contract_regime != contract_regime:
+        return False
+    if rule.institution_scope == RULE_SCOPE_INSTITUTION:
+        if rule.institution_code:
+            return bool(institution_code and rule.institution_code == institution_code)
+        return bool(
+            institution_name
+            and rule.institution_name
+            and re.sub(r"\s+", "", institution_name) == re.sub(r"\s+", "", rule.institution_name)
+        )
+    if rule.institution_scope == RULE_SCOPE_REGION:
+        if rule.region_code:
+            return bool(region_code and rule.region_code == region_code)
+        return bool(
+            region_name
+            and rule.region_name
+            and re.sub(r"\s+", "", region_name) == re.sub(r"\s+", "", rule.region_name)
+        )
+    return True
 
 
 def normalize_pattern_string(text: str) -> str:
@@ -1239,6 +1314,11 @@ def resolve_evaluation_rule(
     srvce_div_nm: str | None = None,
     sucsfbid_mthd_cd: str | None = None,
     bid_ntce_dt: date | str | None = None,
+    contract_regime: str | None = None,
+    institution_code: str | None = None,
+    institution_name: str | None = None,
+    region_code: str | None = None,
+    region_name: str | None = None,
 ) -> RuleResolutionResult:
     """낙찰방법 출처를 정하고 별표를 판별한 뒤 공고일과 별표 시행일을 대조합니다.
 
@@ -1269,10 +1349,101 @@ def resolve_evaluation_rule(
         rules=allocated_rules,
         srvce_div_nm=srvce_div_nm,
     )
+    scope_stage: str | None = None
+    if result.rule is not None and result.rule.rule_id != "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT":
+        matching_rules = [
+            candidate
+            for candidate in allocated_rules
+            if candidate.service_type == result.rule.service_type
+            and match_rule_by_mthd_nm(method_name or "", rules=(candidate,)) is not None
+        ]
+        base_specificity = max(
+            (
+                len(normalize_pattern_string(pattern))
+                for pattern in result.rule.patterns
+                if pattern in (method_name or "")
+                or normalize_pattern_string(pattern) in normalize_pattern_string(method_name or "")
+            ),
+            default=0,
+        )
+        matching_rules = [
+            candidate
+            for candidate in matching_rules
+            if any(
+                len(normalize_pattern_string(pattern)) == base_specificity
+                and (
+                    pattern in (method_name or "")
+                    or normalize_pattern_string(pattern)
+                    in normalize_pattern_string(method_name or "")
+                )
+                for pattern in candidate.patterns
+            )
+            and _axis_matches(
+                candidate,
+                institution_code=institution_code,
+                institution_name=institution_name,
+                region_code=region_code,
+                region_name=region_name,
+                contract_regime=contract_regime,
+            )
+        ]
+        for stage in (RULE_SCOPE_INSTITUTION, RULE_SCOPE_REGION, RULE_SCOPE_ALL):
+            stage_rules = [rule for rule in matching_rules if rule.institution_scope == stage]
+            if len(stage_rules) > 1:
+                result = replace(
+                    result,
+                    is_blocked=True,
+                    block_reason_code=BLOCK_CODE_RULE_SCOPE_AMBIGUOUS,
+                    block_reason_message=f"{stage} 범위에 일치하는 적격심사 규칙이 여러 개입니다.",
+                    rule=None,
+                    effective_lwlt_rate=None,
+                    rate_source=None,
+                )
+                scope_stage = stage
+                break
+            if stage_rules:
+                selected = stage_rules[0]
+                if result.rate_source == "RULE_DEFAULT":
+                    warnings = [
+                        warning
+                        for warning in result.warnings
+                        if not warning.startswith("공고에 낙찰하한율이 명시되지 않아 별표 기본값(")
+                    ]
+                    warnings.append(
+                        f"공고에 낙찰하한율이 명시되지 않아 별표 기본값({selected.lwlt_rate}%)을 적용합니다."
+                    )
+                    result = replace(
+                        result,
+                        rule=selected,
+                        effective_lwlt_rate=selected.lwlt_rate,
+                        warnings=warnings,
+                    )
+                else:
+                    result = replace(result, rule=selected)
+                scope_stage = stage
+                break
+        if scope_stage is None:
+            result = replace(
+                result,
+                is_blocked=True,
+                block_reason_code=BLOCK_CODE_RULE_NOT_FOUND,
+                block_reason_message="공고의 판정 문맥에 일치하는 적격심사 규칙이 없습니다.",
+                rule=None,
+                effective_lwlt_rate=None,
+                rate_source=None,
+            )
+    elif result.rule is not None:
+        scope_stage = RULE_SCOPE_ALL
     result = replace(
         result,
         method_source=method_source,
         warnings=method_warnings + result.warnings,
+        contract_regime=contract_regime,
+        institution_code=institution_code,
+        institution_name=institution_name,
+        region_code=region_code,
+        region_name=region_name,
+        scope_stage=scope_stage,
     )
 
     if (
@@ -1531,6 +1702,8 @@ def resolve_evaluation_rule_from_raw_data(
     category: str | None,
     raw_data: dict[str, Any] | None,
     rules: Sequence[EvaluationRule] | None = None,
+    institution_name_fallback: str | None = None,
+    cntrct_mthd_nm: str | None = None,
 ) -> RuleResolutionResult:
     """raw_data 딕셔너리에서 기관 필드를 추출하여 적격심사 규칙을 판별합니다.
 
@@ -1557,6 +1730,14 @@ def resolve_evaluation_rule_from_raw_data(
         srvce_div_nm=srvce_div_nm,
         sucsfbid_mthd_cd=raw_data.get("sucsfbidMthdCd"),
         bid_ntce_dt=raw_data.get("bidNtceDt"),
+        contract_regime=extract_contract_regime(raw_data, cntrct_mthd_nm),
+        institution_code=_clean_axis_value(raw_data.get("dminsttCd")),
+        institution_name=(
+            _clean_axis_value(raw_data.get("dminsttNm"))
+            or _clean_axis_value(institution_name_fallback)
+        ),
+        region_code=None,
+        region_name=None,
     )
 
 
