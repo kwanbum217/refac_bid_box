@@ -490,14 +490,60 @@ class TestScoreTableDeclaration:
         assert lease.max_price_score == Decimal("70")
         assert lease.multiplier is None
 
-    def test_facility_passenger_and_sw_sme_stay_unconfirmed(self) -> None:
-        """문서 간 불일치가 있는 시설분야·여객·SW(대상)은 세대를 가리지 않고 미확정이다."""
-        for rules in (PRE_20230501_RULES, PRE_20250901_RULES, POST_20260526_RULES):
+    def test_four_rules_are_declared_by_revision_generation(self) -> None:
+        """시설·여객·SW 대상·비대상은 개정 세대별로 k·T를 확정한다."""
+        expected = {
+            "ATTACH_01": ("5", "85", {"PRE": "163", "POST": "103"}),
+            "ATTACH_03": ("4", "88", {"PRE": "167", "POST": "107"}),
+            "ATTACH_04": ("4", "88", {"PRE": "165", "POST": "105"}),
+            "ATTACH_05": (None, "85", {"PRE": "164", "POST": "104"}),
+        }
+        for rules, regime, source_path in (
+            (
+                PRE_20250901_RULES,
+                "PRE",
+                "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md",
+            ),
+            (
+                POST_20260526_RULES,
+                "POST",
+                "docs/analysis/servc_post_rules_audit_20260929.md",
+            ),
+        ):
+            by_suffix = {"_".join(rule.rule_id.rsplit("_", 2)[-2:]): rule for rule in rules}
+            for suffix, (multiplier, threshold, source_rows) in expected.items():
+                rule = by_suffix[suffix]
+                assert rule.max_price_score is None
+                assert rule.multiplier == (Decimal(multiplier) if multiplier is not None else None)
+                assert rule.pass_threshold == Decimal(threshold)
+                assert f"{source_path}:{source_rows[regime]}" in (rule.score_table_source or "")
+                assert "174" in (rule.score_table_source or "")
+                assert ("문서 간 " + "불일치") not in (rule.score_table_source or "")
+
+    def test_unconfirmed_fields_explain_price_and_notice_amount_bands(self) -> None:
+        """미확정 필드는 개정 세대 차이가 아니라 단일값으로 합칠 수 없는 조건 축을 설명한다."""
+        for rules in (PRE_20250901_RULES, POST_20260526_RULES):
+            by_id = {rule.rule_id.rsplit("_", 1)[-1]: rule for rule in rules}
+            for suffix in ("01", "03", "04", "05"):
+                source = by_id[suffix].score_table_source or ""
+                assert ("문서 간 " + "불일치") not in source
+                assert "B는 추정가격 5억원" in source
+            non_target = by_id["05"]
+            assert non_target.multiplier is None
+            assert "k는 고시금액 미만 4/이상 2" in (non_target.score_table_source or "")
+
+    def test_score_table_threshold_exception_matches_multiplier_rules(self) -> None:
+        """여객·SW 대상만 T=88이며 나머지 규칙은 T=85이다."""
+        for rules in (PRE_20250901_RULES, POST_20260526_RULES):
             for rule in rules:
-                if rule.service_type in HIGH_BASE_RATE_SERVICE_TYPES:
-                    assert rule.max_price_score is None, rule.rule_id
-                    assert rule.multiplier is None, rule.rule_id
-                    assert rule.pass_threshold is None, rule.rule_id
+                if rule.pass_threshold is None:
+                    continue
+                expected = (
+                    Decimal("88")
+                    if rule.rule_id.endswith(("ATTACH_03", "ATTACH_04"))
+                    else Decimal("85")
+                )
+                assert rule.pass_threshold == expected, rule.rule_id
 
     def test_post_confirmed_values_and_unmapped_bands(self) -> None:
         """제2026-260호 판의 확정값과 일반 띠 미확인."""
@@ -507,7 +553,10 @@ class TestScoreTableDeclaration:
         assert academic_under.multiplier == Decimal("4")
         assert academic_under.pass_threshold == Decimal("85")
 
-        assert by_id["SERVC_QUAL_POST_20260526_ATTACH_01"].multiplier is None
+        facility = by_id["SERVC_QUAL_POST_20260526_ATTACH_01"]
+        assert facility.max_price_score is None
+        assert facility.multiplier == Decimal("5")
+        assert facility.pass_threshold == Decimal("85")
         for index in (12, 13, 14):
             rule = by_id[f"SERVC_QUAL_POST_20260526_ATTACH_{index:02d}"]
             assert rule.max_price_score is None
