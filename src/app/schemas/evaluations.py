@@ -333,10 +333,10 @@ class RuleScoreTable(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    max_price_score: str | None = Field(
-        None, description="규칙 선언 가격배점한도 B (미확정이면 null)"
-    )
-    multiplier: str | None = Field(None, description="규칙 선언 평점계수 k (미확정이면 null)")
+    max_price_score: str | None = Field(None, description="선택된 가격배점한도 B (미선택이면 null)")
+    max_price_score_basis: str | None = Field(None, description="B 선택 근거")
+    multiplier: str | None = Field(None, description="선택된 평점계수 k (미선택이면 null)")
+    multiplier_basis: str | None = Field(None, description="k 선택 근거")
     pass_threshold: str | None = Field(None, description="규칙 선언 통과점수 T (미확정이면 null)")
     source: str | None = Field(None, description="선언값 또는 미확정 사유의 근거 (문서 경로)")
     missing_fields: list[str] = Field(

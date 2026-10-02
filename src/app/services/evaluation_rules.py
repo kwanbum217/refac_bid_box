@@ -16,6 +16,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from src.ml.notice_amount import notice_amount_for_year
+
 RULE_SCOPE_ALL = "ALL"
 RULE_SCOPE_INSTITUTION = "INSTITUTION"
 RULE_SCOPE_REGION = "REGION"
@@ -44,6 +46,8 @@ class EvaluationRule:
     # 덮어쓰는 용도로만 남습니다. 출처(또는 미확인 사유)는 score_table_source 에 남깁니다.
     max_price_score: Decimal | None = None
     multiplier: Decimal | None = None
+    max_price_score_by_500m: tuple[Decimal, Decimal] | None = None
+    multiplier_by_notice: tuple[Decimal, Decimal] | None = None
     pass_threshold: Decimal | None = None
     score_table_source: str | None = None
     contract_regime: str | None = None
@@ -54,6 +58,10 @@ class EvaluationRule:
     region_name: str | None = None
 
     def __post_init__(self) -> None:
+        if self.max_price_score is not None and self.max_price_score_by_500m is not None:
+            raise ValueError("B 단일값과 추정가격 조건부 값은 동시에 선언할 수 없습니다.")
+        if self.multiplier is not None and self.multiplier_by_notice is not None:
+            raise ValueError("k 단일값과 고시금액 조건부 값은 동시에 선언할 수 없습니다.")
         if self.institution_scope not in RULE_SCOPE_VALUES:
             raise ValueError(f"지원하지 않는 기관 범위입니다: {self.institution_scope}")
         if self.institution_scope == RULE_SCOPE_INSTITUTION and not (
@@ -85,8 +93,9 @@ _SCORE_REASON_UNMAPPED_BAND = (
     "(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:299-312)"
 )
 _SCORE_REASON_UNKNOWN_RULE = "미확인: 배점표 판정표에 없는 규칙이라 값을 만들지 않습니다."
-_SCORE_NOTE_B_SPLIT = "미확인: B는 추정가격 5억원 미만 70/이상 60 조건부 적용이며 단일값은 미확정"
-_SCORE_NOTE_K_SPLIT = "미확인: k는 고시금액 미만 4/이상 2 조건부 적용이며 단일값은 미확정"
+_SCORE_NOTE_B_SPLIT = "조건부: B는 추정가격 5억원 미만 70/이상 60으로 선택"
+_SCORE_NOTE_B_MANUAL = "수요기관 지정: B는 60~70 범위에서 공고문 값 입력"
+_SCORE_NOTE_K_SPLIT = "조건부: k는 고시금액 미만 4/이상 2로 선택"
 _SCORE_THRESHOLD_88_ATTACHMENTS = {"ATTACH_03", "ATTACH_04"}
 
 
@@ -189,7 +198,7 @@ _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
         None,
         None,
         Decimal("85"),
-        f"{_SCORE_SRC_PRE} (별표9 수요기관 지정형: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+        f"{_SCORE_SRC_PRE} (별표9 수요기관 지정형: T=85; {_SCORE_NOTE_B_MANUAL}, {_SCORE_NOTE_K_SPLIT})",
     ),
     # 2023-05-01 시행 판 (제2023-53호). 국가법령정보센터 원문 별표에서 직접 확인한 값입니다.
     **{
@@ -348,7 +357,7 @@ _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
                 35,
                 59,
                 "별표9 수요기관 지정형: T=85",
-                f"; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT}",
+                f"; {_SCORE_NOTE_B_MANUAL}, {_SCORE_NOTE_K_SPLIT}",
             ),
         )
     },
@@ -450,10 +459,112 @@ def _with_score_table(rules: tuple[EvaluationRule, ...]) -> tuple[EvaluationRule
                 max_price_score=max_price_score,
                 multiplier=multiplier,
                 pass_threshold=pass_threshold,
+                max_price_score_by_500m=(
+                    (Decimal("70"), Decimal("60"))
+                    if max_price_score is None and _has_conditional_axis(rule.rule_id, "B")
+                    else None
+                ),
+                multiplier_by_notice=(
+                    (Decimal("4"), Decimal("2"))
+                    if multiplier is None and _has_conditional_axis(rule.rule_id, "k")
+                    else None
+                ),
                 score_table_source=source,
             )
         )
     return tuple(enriched)
+
+
+def _has_conditional_axis(rule_id: str, axis: str) -> bool:
+    match = re.search(r"(PRE|POST)_\d{8}_ATTACH_(\d{2})$", rule_id)
+    if not match:
+        return False
+    generation, attachment = match.groups()
+    attachment_number = int(attachment)
+    if generation == "PRE":
+        conditional = {
+            "B": {1, 2, 3, 4, 5, 7, 9, 11, 15},
+            "k": {5, 15, 16, 17},
+        }
+    else:
+        conditional = {"B": {1, 2, 3, 4, 5, 7, 9, 11}, "k": {5}}
+    return attachment_number in conditional[axis]
+
+
+@dataclass(frozen=True)
+class ScoreParamResolution:
+    max_price_score: Decimal | None
+    multiplier: Decimal | None
+    pass_threshold: Decimal | None
+    max_price_score_basis: str | None
+    multiplier_basis: str | None
+    pass_threshold_basis: str | None
+    estimated_price: Decimal | None
+    max_price_score_boundary: Decimal | None
+    multiplier_boundary: Decimal | None
+    warnings: tuple[str, ...] = ()
+
+
+def resolve_score_params(
+    rule: EvaluationRule,
+    estimated_price: Decimal | int | float | str | None,
+    announced_date: date | datetime | str | None,
+    method_name: str | None,
+) -> ScoreParamResolution:
+    """규칙의 고정값과 공고 구간 표기·추정가격으로 B·k·T를 결정합니다."""
+    try:
+        price = Decimal(str(estimated_price)) if estimated_price not in (None, "") else None
+        if price is not None and price <= 0:
+            price = None
+    except Exception:
+        price = None
+    year = None
+    try:
+        if isinstance(announced_date, (date, datetime)):
+            year = announced_date.year
+        elif announced_date:
+            year = date.fromisoformat(str(announced_date)[:10]).year
+    except ValueError:
+        pass
+    name = method_name or ""
+    method_5 = re.search(r"5\s*억\s*원?\s*(미만|이상)", name)
+    method_notice = re.search(r"고시금액\s*(미만|이상)", name)
+    method_b = (method_5.group(1) == "이상") if method_5 else None
+    method_k = (method_notice.group(1) == "이상") if method_notice else None
+    boundary_b = Decimal("500000000")
+    boundary_k = Decimal(notice_amount_for_year(year)) if year is not None else None
+    warnings: list[str] = []
+
+    def choose(fixed, conditional, method_side, boundary, axis):
+        if conditional is None:
+            return fixed, ("FIXED" if fixed is not None else None)
+        price_side = None if price is None or boundary is None else price >= boundary
+        if method_side is not None:
+            if price_side is not None and method_side != price_side:
+                warnings.append(
+                    f"낙찰방법명 구간과 추정가격의 {axis} 판정이 달라 낙찰방법명을 적용했습니다."
+                )
+            return conditional[1 if method_side else 0], "METHOD_NAME"
+        if price_side is not None:
+            return conditional[1 if price_side else 0], "ESTIMATED_PRICE"
+        return None, None
+
+    b_value, b_basis = choose(
+        rule.max_price_score, rule.max_price_score_by_500m, method_b, boundary_b, "B"
+    )
+    k_value, k_basis = choose(rule.multiplier, rule.multiplier_by_notice, method_k, boundary_k, "k")
+    return ScoreParamResolution(
+        max_price_score=b_value,
+        multiplier=k_value,
+        pass_threshold=rule.pass_threshold,
+        max_price_score_basis=b_basis,
+        multiplier_basis=k_basis,
+        pass_threshold_basis="FIXED" if rule.pass_threshold is not None else None,
+        estimated_price=price,
+        max_price_score_boundary=boundary_b if rule.max_price_score_by_500m else None,
+        multiplier_boundary=boundary_k if rule.multiplier_by_notice else None,
+        warnings=tuple(warnings),
+    )
 
 
 # 2026-05-26 개정 후 일반용역 적격심사 실측 정본 별표 14종

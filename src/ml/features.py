@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src.ml.institution_history import lookup_institution_stats
+from src.ml.notice_amount import DEFAULT_NOTICE_AMOUNT, NOTICE_AMOUNT_BY_YEAR
 from src.ml.repeat_history import (
     DEFAULT_REPEAT_RATE,
     NO_HISTORY_DAYS,
@@ -30,11 +31,6 @@ DEFAULT_EXCHANGE_RATE = 1300.0
 # 낙찰하한율 2%p 일괄 인상 시행일. 이 날 이후 최초 공고분부터 신 기준이 적용됩니다.
 # 근거: 조달청공고 제2026-260호
 REGIME_SHIFT_DATE = pd.Timestamp("2026-05-26")
-
-# WTO 정부조달협정 기준 고시금액(중앙행정기관 물품·용역). 적격심사 배점표의
-# 구간을 가르는 임계값이라 연도별 실제 값을 써야 합니다.
-NOTICE_AMOUNT_BY_YEAR = {2025: 230_000_000, 2026: 230_000_000}
-DEFAULT_NOTICE_AMOUNT = 220_000_000
 
 MISSING_CATEGORY = "미상"
 
