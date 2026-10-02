@@ -45,11 +45,18 @@ WORKDIR /app
 # gzip, libsqlite3-0 은 Debian 보안 수정(CVE-2026-41992, CVE-2026-11822, CVE-2026-11824)이
 # 베이스 이미지보다 먼저 나와 공급망 검사가 막혔습니다(2026-09-13). 버전을 박으면 다음 보안
 # 갱신 때 이전 버전이 저장소에서 빠져 빌드가 깨지므로 대상 패키지만 지정해 올립니다.
+# openssl 계열(CVE-2026-75804, CVE-2026-84782), libpcre2-8-0, perl-base 도 같은 이유로
+# 2026-10-02 에 추가했습니다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && apt-get install -y --no-install-recommends --only-upgrade \
     gzip \
     libsqlite3-0 \
+    libpcre2-8-0 \
+    libssl3t64 \
+    openssl \
+    openssl-provider-legacy \
+    perl-base \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
