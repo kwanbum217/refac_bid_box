@@ -65,8 +65,8 @@ _SCORE_REASON_UNMAPPED_BAND = (
     "(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:299-312)"
 )
 _SCORE_REASON_UNKNOWN_RULE = "미확인: 배점표 판정표에 없는 규칙이라 값을 만들지 않습니다."
-_SCORE_NOTE_B_SPLIT = "B는 추정가격 5억원 미만 70/이상 60 으로 갈려 미확인"
-_SCORE_NOTE_K_SPLIT = "k는 고시금액 미만 4/이상 2 로 갈려 미확인"
+_SCORE_NOTE_B_SPLIT = "미확인: B는 추정가격 5억원 미만 70/이상 60 조건부 적용이며 단일값은 미확정"
+_SCORE_NOTE_K_SPLIT = "미확인: k는 고시금액 미만 4/이상 2 조건부 적용이며 단일값은 미확정"
 _SCORE_THRESHOLD_88_ATTACHMENTS = {"ATTACH_03", "ATTACH_04"}
 
 
@@ -114,7 +114,7 @@ _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
         None,
         None,
         Decimal("85"),
-        f"{_score_source('PRE', 166)} (별표3 SW 비대상: T=85; "
+        f"{_score_source('PRE', 164)} (별표3 SW 비대상: T=85; "
         f"{_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
     ),
     "SERVC_QUAL_PRE_20250901_ATTACH_06": (

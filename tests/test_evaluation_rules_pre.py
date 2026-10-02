@@ -496,7 +496,7 @@ class TestScoreTableDeclaration:
             "ATTACH_01": ("5", "85", {"PRE": "163", "POST": "103"}),
             "ATTACH_03": ("4", "88", {"PRE": "167", "POST": "107"}),
             "ATTACH_04": ("4", "88", {"PRE": "165", "POST": "105"}),
-            "ATTACH_05": (None, "85", {"PRE": "166", "POST": "104"}),
+            "ATTACH_05": (None, "85", {"PRE": "164", "POST": "104"}),
         }
         for rules, regime, source_path in (
             (
@@ -518,6 +518,19 @@ class TestScoreTableDeclaration:
                 assert rule.pass_threshold == Decimal(threshold)
                 assert f"{source_path}:{source_rows[regime]}" in (rule.score_table_source or "")
                 assert "174" in (rule.score_table_source or "")
+                assert ("문서 간 " + "불일치") not in (rule.score_table_source or "")
+
+    def test_unconfirmed_fields_explain_price_and_notice_amount_bands(self) -> None:
+        """미확정 필드는 개정 세대 차이가 아니라 단일값으로 합칠 수 없는 조건 축을 설명한다."""
+        for rules in (PRE_20250901_RULES, POST_20260526_RULES):
+            by_id = {rule.rule_id.rsplit("_", 1)[-1]: rule for rule in rules}
+            for suffix in ("01", "03", "04", "05"):
+                source = by_id[suffix].score_table_source or ""
+                assert ("문서 간 " + "불일치") not in source
+                assert "B는 추정가격 5억원" in source
+            non_target = by_id["05"]
+            assert non_target.multiplier is None
+            assert "k는 고시금액 미만 4/이상 2" in (non_target.score_table_source or "")
 
     def test_score_table_threshold_exception_matches_multiplier_rules(self) -> None:
         """여객·SW 대상만 T=88이며 나머지 규칙은 T=85이다."""

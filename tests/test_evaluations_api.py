@@ -541,7 +541,7 @@ def test_user_input_equal_to_declared_value_is_not_an_override(client, isolated_
 
 
 def test_unconfirmed_score_table_still_blocks_with_reason(client, isolated_db, as_user):
-    """시설 규칙은 B만 미확정이므로 k=5·T=85를 표시하고 MISSING_SCORE_TABLE 로 차단한다."""
+    """시설 규칙은 5억원 구간별 B를 단일값으로 정할 수 없어 k=5·T=85와 함께 차단한다."""
     as_user(10)
     bid = _create_bid(isolated_db)  # 시설 ATTACH_01: 5억원 가격 구간에 따라 B가 달라짐
 
