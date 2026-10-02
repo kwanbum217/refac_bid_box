@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.app.core.timeutil import utcnow
 from src.app.models.demand_institutions import G2BDemandInstitution
+from src.app.services.evaluation_rules import extract_contract_regime
 
 logger = logging.getLogger(__name__)
 API_URL = "https://apis.data.go.kr/1230000/ao/UsrInfoService02/getDminsttInfo02"
@@ -239,6 +240,49 @@ def institution_region(
         _institution_value(institution, "rgn_cd", "rgnCd"),
         _institution_value(institution, "rgn_nm", "rgnNm"),
     )
+
+
+def describe_contract_regime(
+    raw_data: dict[str, Any] | None,
+    cntrct_mthd_nm: str | None,
+    institution: G2BDemandInstitution | dict[str, Any] | None,
+) -> dict[str, str | None]:
+    """공고 판정과 그 근거, 복수예가 범위를 화면/API 공용 설명으로 만듭니다."""
+    data = raw_data if isinstance(raw_data, dict) else {}
+    institution_regime = classify_contract_regime(institution)
+    regime = extract_contract_regime(data, cntrct_mthd_nm, institution_regime)
+    methods = f"{data.get('cntrctCnclsMthdNm') or ''} {cntrct_mthd_nm or ''}"
+    jurisdiction = (
+        _institution_value(institution, "jrsdctn_div_nm", "jrsdctnDivNm")
+        if institution is not None
+        else None
+    )
+    if regime == "LOCAL" and "지방" in methods:
+        basis = "METHOD_NAME"
+        basis_text = "계약방법명에 지방 표기"
+    elif regime is not None and institution_regime == regime:
+        basis = "INSTITUTION"
+        basis_text = f"수요기관 소관구분: {jurisdiction}" if jurisdiction else "수요기관 기준정보"
+    else:
+        basis = None
+        basis_text = None
+    if regime == "LOCAL":
+        label = "지방계약"
+    elif regime == "NATIONAL":
+        label = "국가계약"
+    else:
+        label = "계약 법령 미상"
+    range_rate_label = (
+        "±3%" if regime == "LOCAL" else "±2%" if regime == "NATIONAL" else "±2% (기본값, 법령 미상)"
+    )
+    return {
+        "regime": regime,
+        "label": label,
+        "basis": basis,
+        "basis_text": basis_text,
+        "jurisdiction": jurisdiction,
+        "range_rate_label": range_rate_label,
+    }
 
 
 def _institution_value(

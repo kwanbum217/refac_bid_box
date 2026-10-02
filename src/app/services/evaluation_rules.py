@@ -79,7 +79,7 @@ class EvaluationRule:
 # - docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md (개정 전 제2025-257호·제2026-15호)
 # - docs/analysis/servc_post_rules_audit_20260929.md (개정 후 제2026-260호)
 # - docs/analysis/20260930_score_params_acquisition.md (별표9 실측·통과점수)
-# 고시금액(용역 2.3억) 출처: src/ml/features.py:34-37 NOTICE_AMOUNT_BY_YEAR
+# 고시금액(용역 2.3억) 출처: src/ml/notice_amount.py NOTICE_AMOUNT_BY_YEAR
 _SCORE_DOC_PRE = "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:152-179"
 _SCORE_DOC_POST = "docs/analysis/servc_post_rules_audit_20260929.md:96-131"
 _SCORE_DOC_MEASURED = "docs/analysis/20260930_score_params_acquisition.md:135-148"
