@@ -559,8 +559,10 @@ def test_unconfirmed_score_table_still_blocks_with_reason(client, isolated_db, a
     assert any("집중 미확인" in w for w in payload["warnings"])
 
 
-def test_pre_20230501_threshold_is_reported_while_missing_bk_blocks(client, isolated_db, as_user):
-    """제2023-53호 판은 확인된 T를 제공하고 미확정 B·k 때문에 분석 점수를 차단한다."""
+def test_pre_20230501_facility_reports_original_k_and_blocks_on_conditional_b(
+    client, isolated_db, as_user
+):
+    """제2023-53호 시설분야는 원문 k·T 를 제공하고 5억원 축 조건부 B 때문에 점수를 차단한다."""
     as_user(10)
     bid = _create_bid(isolated_db, raw_overrides={"bidNtceDt": "20230601"})
     isolated_db.commit()
@@ -573,9 +575,9 @@ def test_pre_20230501_threshold_is_reported_while_missing_bk_blocks(client, isol
     assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
     assert payload["rule_id"] == "SERVC_QUAL_PRE_20230501_ATTACH_01"
     assert payload["score_table"]["max_price_score"] is None
-    assert payload["score_table"]["multiplier"] is None
+    assert payload["score_table"]["multiplier"] == "5"
     assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
-    assert payload["score_table"]["missing_fields"] == ["max_price_score", "multiplier"]
+    assert payload["score_table"]["missing_fields"] == ["max_price_score"]
     assert "미확인" in payload["score_table"]["source"]
     assert any("집중 미확인" in warning for warning in payload["warnings"])
 
