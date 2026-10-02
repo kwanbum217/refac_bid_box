@@ -375,7 +375,7 @@ def test_registry_confirmed_k_and_t_fill_missing_user_fields(client, isolated_db
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["blocked"] is False
-    assert payload["score_table"]["max_price_score"] is None
+    assert payload["score_table"]["max_price_score"] == "70"
     assert payload["score_table"]["multiplier"] == "5"
     assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
     assert payload["score_table"]["missing_fields"] == []
@@ -398,10 +398,10 @@ def test_non_positive_score_table_value_is_rejected(client, isolated_db, as_user
 # --------------------------------------------------------------------------- #
 
 
-def test_missing_score_table_keeps_scenarios_and_floor_amounts(
+def test_resolved_score_table_keeps_scenarios_and_floor_amounts(
     client, isolated_db, as_user, spy_scenario_builder
 ):
-    """배점표가 없으면 점수 계열은 None 이고, 시나리오와 하한율 계산은 그대로 전달된다."""
+    """조건부 배점표가 해소되면 시나리오 점수와 하한율을 함께 전달한다."""
     as_user(10)
     bid = _create_bid(isolated_db)
 
@@ -409,14 +409,13 @@ def test_missing_score_table_keeps_scenarios_and_floor_amounts(
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["blocked"] is True
-    assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
-    assert "배점표" in payload["blocked_reason"]
+    assert payload["blocked"] is False
+    assert payload["score_table"]["max_price_score"] == "70"
     # 규칙 판별 자체는 성공했으므로 별표와 하한율은 전달된다
     assert payload["rule_id"] == ATTACH_01_RULE_ID
     assert payload["lower_bound_rate"] == pytest.approx(ATTACH_01_LWLT_RATE)
 
-    # 시나리오는 warnings 문자열이 아니라 정식 필드다. 점수 계열만 계산하지 않았다.
+    # 시나리오는 warnings 문자열이 아니라 정식 필드다.
     scenarios = payload["scenario_results"]
     assert [s["scenario_name"] for s in scenarios] == ["하단", "기준", "상단"]
     assert [s["estimated_price"] for s in scenarios] == [490_000_000, 500_000_000, 510_000_000]
@@ -424,16 +423,14 @@ def test_missing_score_table_keeps_scenarios_and_floor_amounts(
         [0.8315, 0.8149, 0.7989]
     )
     for scenario in scenarios:
-        assert scenario["price_score"] is None
-        assert scenario["qualification_score"] is None
-        assert scenario["total_score"] is None
-        assert scenario["pass_threshold"] is None
-        assert scenario["is_qualified"] is None
-    # 역산과 기준비율은 통과점수 T 가 있어야 나오므로 여전히 비어 있다
-    assert payload["min_possible_bid_rate"] is None
-    assert payload["base_rate"] is None
-    # 배점표가 없으면 가격 보완 판정도 내지 않는다
-    assert payload["price_compensation"] is None
+        assert scenario["price_score"] is not None
+        assert scenario["qualification_score"] is not None
+        assert scenario["total_score"] is not None
+        assert scenario["pass_threshold"] == 85
+        assert scenario["is_qualified"] is not None
+    assert payload["min_possible_bid_rate"] is not None
+    assert payload["base_rate"] is not None
+    assert payload["price_compensation"] is not None
     # 낙찰하한율 기준 최저 투찰금액은 차단되지 않는다. 용역은 A값을 적용하지 않는다.
     assert payload["a_value_amount"] is None
     assert payload["min_bid_amount_with_a"] is None
@@ -442,8 +439,7 @@ def test_missing_score_table_keeps_scenarios_and_floor_amounts(
     assert "449,975,000" in warnings_text
     assert "459,980,000" not in warnings_text
     assert "A값 반영" not in warnings_text
-    # 예측 API 를 호출하지 않았으므로 모델 출처를 지어내지 않는다
-    assert payload["actual_model"] is None
+    assert payload["actual_model"] is not None
     assert payload["fallback_used"] is False
     # 복수예가 매개변수는 공고 필드에서 온다 (15/4 하드코딩이 아님)
     assert spy_scenario_builder[0][2]["tot_prdprc_num"] == 12
@@ -540,8 +536,8 @@ def test_user_input_equal_to_declared_value_is_not_an_override(client, isolated_
     assert payload["score_table"]["override_fields"] == []
 
 
-def test_unconfirmed_score_table_still_blocks_with_reason(client, isolated_db, as_user):
-    """시설 규칙은 5억원 구간별 B를 단일값으로 정할 수 없어 k=5·T=85와 함께 차단한다."""
+def test_method_name_resolves_conditional_b_without_user_input(client, isolated_db, as_user):
+    """시설 규칙의 조건부 B는 공고 낙찰방법명 구간으로 선택한다."""
     as_user(10)
     bid = _create_bid(isolated_db)  # 시설 ATTACH_01: 5억원 가격 구간에 따라 B가 달라짐
 
@@ -549,20 +545,16 @@ def test_unconfirmed_score_table_still_blocks_with_reason(client, isolated_db, a
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["blocked"] is True
-    assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
-    assert payload["score_table"]["max_price_score"] is None
+    assert payload["blocked"] is False
+    assert payload["score_table"]["max_price_score"] == "70"
     assert payload["score_table"]["multiplier"] == "5"
     assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
-    assert payload["score_table"]["missing_fields"] == ["max_price_score"]
-    assert "미확인" in payload["score_table"]["source"]
-    assert any("집중 미확인" in w for w in payload["warnings"])
+    assert payload["score_table"]["missing_fields"] == []
+    assert payload["score_table"]["max_price_score_basis"].startswith("낙찰방법명")
 
 
-def test_pre_20230501_facility_reports_original_k_and_blocks_on_conditional_b(
-    client, isolated_db, as_user
-):
-    """제2023-53호 시설분야는 원문 k·T 를 제공하고 5억원 축 조건부 B 때문에 점수를 차단한다."""
+def test_pre_20230501_facility_uses_method_name_for_conditional_b(client, isolated_db, as_user):
+    """제2023-53호 시설분야도 원문 k·T 와 공고명 구간 B 를 사용한다."""
     as_user(10)
     bid = _create_bid(isolated_db, raw_overrides={"bidNtceDt": "20230601"})
     isolated_db.commit()
@@ -571,21 +563,19 @@ def test_pre_20230501_facility_reports_original_k_and_blocks_on_conditional_b(
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["blocked"] is True
-    assert "MISSING_SCORE_TABLE" in payload["blocked_reason"]
+    assert payload["blocked"] is False
     assert payload["rule_id"] == "SERVC_QUAL_PRE_20230501_ATTACH_01"
-    assert payload["score_table"]["max_price_score"] is None
+    assert payload["score_table"]["max_price_score"] == "70"
     assert payload["score_table"]["multiplier"] == "5"
     assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 통과점수 T
-    assert payload["score_table"]["missing_fields"] == ["max_price_score"]
-    assert "미확인" in payload["score_table"]["source"]
-    assert any("집중 미확인" in warning for warning in payload["warnings"])
+    assert payload["score_table"]["missing_fields"] == []
+    assert payload["score_table"]["max_price_score_basis"].startswith("낙찰방법명")
 
 
-def test_partially_confirmed_score_table_requires_only_missing_field(client, isolated_db, as_user):
-    """일부만 확정된 규칙은 확정된 값을 자동 적용하고 미확정 필드만 입력을 요구한다."""
+def test_method_name_resolves_conditional_b_and_fixed_k(client, isolated_db, as_user):
+    """낙찰방법명 5억원 미만 표기와 단일 k·T 를 선택값으로 사용한다."""
     as_user(10)
-    # 별표1 학술연구 고시금액 이상: k=2·T=85 는 확정, B 는 추정가격 구간에서 갈려 미확인.
+    # 별표1 학술연구 고시금액 이상: k=2·T=85 는 단일값이고 B 는 공고명으로 선택합니다.
     bid = _create_bid(
         isolated_db,
         raw_overrides={
@@ -601,13 +591,12 @@ def test_partially_confirmed_score_table_requires_only_missing_field(client, iso
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["blocked"] is True
-    assert payload["score_table"]["max_price_score"] is None
+    assert payload["blocked"] is False
+    assert payload["score_table"]["max_price_score"] == "70"
     assert payload["score_table"]["multiplier"] == "2"
     assert payload["score_table"]["pass_threshold"] == "85"  # noqa: S105 - 배점표 T
-    assert payload["score_table"]["missing_fields"] == ["max_price_score"]
-    # 확정된 평점계수·통과점수만 미확인 목록에 오르지 않는다.
-    assert "평점계수" not in payload["blocked_reason"]
+    assert payload["score_table"]["missing_fields"] == []
+    assert payload["score_table"]["max_price_score_basis"].startswith("낙찰방법명")
 
 
 def test_floor_amount_without_a_value_is_still_reported(client, isolated_db, as_user):
@@ -650,6 +639,8 @@ def test_prediction_price_api_is_not_called_without_score_table(
     monkeypatch.setattr(evaluations, "predict_price_api", _forbidden)
     as_user(10)
     bid = _create_bid(isolated_db)
+    bid.presmpt_prce = None
+    isolated_db.commit()
 
     response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
 
@@ -733,6 +724,8 @@ def test_snapshot_save_failure_does_not_block_response(client, isolated_db, as_u
     """저장 실패가 분석 응답을 막지 않는다."""
     as_user(10)
     bid = _create_bid(isolated_db)
+    bid.presmpt_prce = None
+    isolated_db.commit()
 
     def _boom(*args, **kwargs):
         raise RuntimeError("스냅샷 저장 불가")

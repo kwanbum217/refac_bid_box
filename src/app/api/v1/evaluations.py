@@ -100,12 +100,14 @@ from src.app.services.evaluation_rules import (
     QuantScoreItem,
     QuantScoreTable,
     RuleResolutionResult,
+    ScoreParamResolution,
     credit_score_for_grade,
     demand_agency_credit_deduction,
     extract_contract_regime,
     find_reputation_item,
     quant_score_table_for_rule,
     resolve_evaluation_rule_from_raw_data,
+    resolve_score_params,
     select_quant_band,
 )
 from src.app.services.evaluation_scoring import (
@@ -206,7 +208,8 @@ def _get_snapshot_or_404(db: Session, snapshot_id: int, user_id: int) -> BidEval
 def _score_table(
     qualification: QualificationInput,
     rule: EvaluationRule,
-) -> tuple[ScoreTable | None, list[str], list[str]]:
+    bid: BidAnnouncement,
+) -> tuple[ScoreTable | None, list[str], list[str], ScoreParamResolution]:
     """가격점수에 필요한 배점표 파라미터를 규칙 선언값과 사용자 입력으로 정합니다.
 
     규칙 레지스트리가 원문으로 확정한 선언값이 기본이고, 사용자 직접 입력은 그 선언값을
@@ -214,10 +217,20 @@ def _score_table(
     선언값과 다르게 입력한 필드명을 함께 돌려 점수 계산을 차단합니다. 기준비율은 규칙
     객체의 선언값을 씁니다.
     """
+    raw_price = getattr(bid, "presmpt_prce", None)
+    raw_data = getattr(bid, "raw_data", None) or {}
+    resolution = resolve_score_params(
+        rule,
+        raw_price,
+        getattr(bid, "bid_ntce_dt", None),
+        getattr(bid, "sucsfbid_mthd_nm", None)
+        or raw_data.get("sucsfbidMthdNm")
+        or raw_data.get("sucsfbid_mthd_nm"),
+    )
     declared: dict[str, Decimal | None] = {
-        "max_price_score": rule.max_price_score,
-        "multiplier": rule.multiplier,
-        "pass_threshold": rule.pass_threshold,
+        "max_price_score": resolution.max_price_score,
+        "multiplier": resolution.multiplier,
+        "pass_threshold": resolution.pass_threshold,
     }
     supplied: dict[str, float | None] = {
         "max_price_score": qualification.max_price_score,
@@ -240,7 +253,7 @@ def _score_table(
         if declared_value is not None and user_decimal != declared_value:
             overridden.append(field_name)
     if missing:
-        return None, missing, overridden
+        return None, missing, overridden, resolution
 
     return (
         ScoreTable(
@@ -251,6 +264,7 @@ def _score_table(
         ),
         [],
         overridden,
+        resolution,
     )
 
 
@@ -258,13 +272,26 @@ def _rule_score_table_payload(
     rule: EvaluationRule,
     missing_fields: list[str],
     override_fields: list[str],
+    resolution: ScoreParamResolution | None = None,
 ) -> RuleScoreTable:
     """규칙 선언 배점표와 미확정·덮어쓰기 표시를 응답 스키마로 옮깁니다."""
     return RuleScoreTable(
         max_price_score=(
-            format_decimal_plain(rule.max_price_score) if rule.max_price_score is not None else None
+            format_decimal_plain(resolution.max_price_score)
+            if resolution and resolution.max_price_score is not None
+            else (
+                format_decimal_plain(rule.max_price_score)
+                if rule.max_price_score is not None
+                else None
+            )
         ),
-        multiplier=(format_decimal_plain(rule.multiplier) if rule.multiplier is not None else None),
+        max_price_score_basis=_score_param_basis(resolution, "B"),
+        multiplier=(
+            format_decimal_plain(resolution.multiplier)
+            if resolution and resolution.multiplier is not None
+            else (format_decimal_plain(rule.multiplier) if rule.multiplier is not None else None)
+        ),
+        multiplier_basis=_score_param_basis(resolution, "k"),
         pass_threshold=(
             format_decimal_plain(rule.pass_threshold) if rule.pass_threshold is not None else None
         ),
@@ -272,6 +299,35 @@ def _rule_score_table_payload(
         missing_fields=list(missing_fields),
         override_fields=list(override_fields),
     )
+
+
+def _score_param_basis(resolution: ScoreParamResolution | None, axis: str) -> str | None:
+    if resolution is None:
+        return None
+    if axis == "B":
+        value, basis, boundary = (
+            resolution.max_price_score,
+            resolution.max_price_score_basis,
+            resolution.max_price_score_boundary,
+        )
+    else:
+        value, basis, boundary = (
+            resolution.multiplier,
+            resolution.multiplier_basis,
+            resolution.multiplier_boundary,
+        )
+    if value is None or basis is None:
+        return None
+    if basis == "FIXED":
+        return "규칙 고정값"
+    if basis == "METHOD_NAME":
+        return f"낙찰방법명 구간 표기 → {value}"
+    if resolution.estimated_price is None or boundary is None:
+        return None
+    comparison = "≥" if resolution.estimated_price >= boundary else "<"
+    price_label = f"{resolution.estimated_price:,.0f}"
+    boundary_label = f"{boundary:,.0f}"
+    return f"추정가격 {price_label} {comparison} {boundary_label} → {value}"
 
 
 # =============================================================================
@@ -867,6 +923,7 @@ def _score_table_missing_response(
     quant_table: QuantScoreTable | None,
     band: QuantScoreBand | None,
     band_note: str | None,
+    resolution: ScoreParamResolution,
 ) -> EvaluationResponse:
     """배점표 입력이 없어 점수는 계산하지 않습니다. 하한율과 시나리오 구간은 그대로 전달합니다."""
     assert rule_result.rule is not None
@@ -887,6 +944,7 @@ def _score_table_missing_response(
     labels = ", ".join(SCORE_TABLE_LABELS.get(name, name) for name in missing_fields)
     warnings = [
         *rule_result.warnings,
+        *resolution.warnings,
         floor_note,
         "가격점수·종합점수·적격 판정·최저 투찰률 역산은 배점표를 입력한 뒤에 계산됩니다.",
         f"집중 미확인: 규칙이 확정하지 못한 배점표 항목({labels})은 공고문 적격심사 "
@@ -912,7 +970,7 @@ def _score_table_missing_response(
         a_value_amount=None,
         min_bid_amount_with_a=None,
         scenario_results=_unscored_scenario_results(scenarios, candidate_bid_amount),
-        score_table=_rule_score_table_payload(rule, missing_fields, override_fields),
+        score_table=_rule_score_table_payload(rule, missing_fields, override_fields, resolution),
         quant_score_table=(
             _quant_table_payload(quant_table, band, band_note) if quant_table is not None else None
         ),
@@ -1112,6 +1170,7 @@ def _success_response(
     quant_table: QuantScoreTable | None,
     band: QuantScoreBand | None,
     band_note: str | None,
+    resolution: ScoreParamResolution,
 ) -> EvaluationResponse:
     """규칙 판별 결과와 evaluation_scoring 계산 결과를 응답 스키마로 담습니다."""
     assert rule_result.rule is not None
@@ -1123,7 +1182,7 @@ def _success_response(
     scores = _qualification_scores(quant_scores)
     non_price_score = scores[0] + scores[1] + scores[2]
 
-    warnings = list(rule_result.warnings)
+    warnings = [*rule_result.warnings, *resolution.warnings]
     if provenance.actual_model is None:
         warnings.append(f"모델 출처를 확정할 수 없습니다. {provenance.fallback_reason}")
     if override_fields:
@@ -1190,7 +1249,7 @@ def _success_response(
             for scenario in scenarios
         ],
         price_compensation=_price_compensation_payload(compensation_result),
-        score_table=_rule_score_table_payload(rule, [], override_fields),
+        score_table=_rule_score_table_payload(rule, [], override_fields, resolution),
         quant_score_table=(
             _quant_table_payload(quant_table, band, band_note) if quant_table is not None else None
         ),
@@ -1359,7 +1418,9 @@ def _analyze_bid(
             )
         quant_scores = resolved
 
-    table, missing_fields, override_fields = _score_table(payload.qualification_input, rule)
+    table, missing_fields, override_fields, resolution = _score_table(
+        payload.qualification_input, rule, bid
+    )
     if table is None:
         return _score_table_missing_response(
             bid=bid,
@@ -1372,6 +1433,7 @@ def _analyze_bid(
             quant_table=quant_table,
             band=band,
             band_note=band_note,
+            resolution=resolution,
         )
 
     return _success_response(
@@ -1387,6 +1449,7 @@ def _analyze_bid(
         quant_table=quant_table,
         band=band,
         band_note=band_note,
+        resolution=resolution,
     )
 
 
