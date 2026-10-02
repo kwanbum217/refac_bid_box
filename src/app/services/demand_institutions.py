@@ -16,6 +16,9 @@ from src.app.models.demand_institutions import G2BDemandInstitution
 
 logger = logging.getLogger(__name__)
 API_URL = "https://apis.data.go.kr/1230000/ao/UsrInfoService02/getDminsttInfo02"
+REQUEST_INTERVAL_SECONDS = 0.2
+MAX_RETRY_ATTEMPTS = 5
+MAX_BACKOFF_SECONDS = 16
 
 
 class DemandInstitutionCollectionError(RuntimeError):
@@ -53,15 +56,35 @@ def parse_changed_at(value: Any) -> datetime | None:
 def parse_response(payload: Any) -> tuple[list[dict[str, Any]], int]:
     if not isinstance(payload, dict):
         raise DemandInstitutionCollectionError("응답 JSON 구조가 올바르지 않습니다.")
+    if "OpenAPI_ServiceResponse" in payload:
+        detail = payload["OpenAPI_ServiceResponse"]
+        header = detail.get("cmmMsgHeader", {}) if isinstance(detail, dict) else {}
+        raise DemandInstitutionCollectionError(
+            "나라장터 오류 응답: "
+            f"resultCode={header.get('returnAuthMsg', '')}, "
+            f"returnReasonCode={header.get('returnReasonCode', '')}, "
+            f"errMsg={header.get('errMsg', '')}"
+        )
     if "nkoneps.com.response.ResponseError" in payload:
         detail = payload["nkoneps.com.response.ResponseError"]
-        raise DemandInstitutionCollectionError(f"나라장터 오류 응답: {detail}")
+        header = detail.get("header", {}) if isinstance(detail, dict) else {}
+        raise DemandInstitutionCollectionError(
+            "나라장터 오류 응답: "
+            f"resultCode={header.get('resultCode', '')}, "
+            f"returnReasonCode={header.get('returnReasonCode', '')}, "
+            f"errMsg={header.get('errMsg', '')}"
+        )
     response = payload.get("response")
     if not isinstance(response, dict):
         raise DemandInstitutionCollectionError("나라장터 response 가 없습니다.")
     header = response.get("header") or {}
     if str(header.get("resultCode", "")) != "00":
-        raise DemandInstitutionCollectionError(f"나라장터 응답 오류: {header.get('resultMsg', '')}")
+        raise DemandInstitutionCollectionError(
+            "나라장터 응답 오류: "
+            f"resultCode={header.get('resultCode', '')}, "
+            f"returnReasonCode={header.get('returnReasonCode', '')}, "
+            f"errMsg={header.get('errMsg', header.get('resultMsg', ''))}"
+        )
     body = response.get("body") or {}
     items = body.get("items") or []
     if isinstance(items, dict):
@@ -73,16 +96,49 @@ def parse_response(payload: Any) -> tuple[list[dict[str, Any]], int]:
     return [item for item in items if isinstance(item, dict)], int(body.get("totalCount") or 0)
 
 
-async def _get_with_retry(client: httpx.AsyncClient, params: dict[str, Any], attempts: int = 5):
+def _throttle_reason(response: httpx.Response) -> str | None:
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    detail = payload.get("OpenAPI_ServiceResponse")
+    if isinstance(detail, dict):
+        header = detail.get("cmmMsgHeader", {})
+        if isinstance(header, dict):
+            reason = str(header.get("returnReasonCode", ""))
+            if reason == "23":
+                return reason
+    error = payload.get("nkoneps.com.response.ResponseError")
+    if isinstance(error, dict):
+        header = error.get("header", {})
+        if isinstance(header, dict) and str(header.get("returnReasonCode", "")) == "23":
+            return "23"
+    return None
+
+
+async def _get_with_retry(
+    client: httpx.AsyncClient,
+    params: dict[str, Any],
+    attempts: int = MAX_RETRY_ATTEMPTS,
+):
     for attempt in range(attempts):
+        await asyncio.sleep(REQUEST_INTERVAL_SECONDS)
         try:
             response = await client.get(API_URL, params=params, timeout=120)
+            reason = _throttle_reason(response)
+            if response.status_code == 429 or reason == "23":
+                if attempt + 1 == attempts:
+                    return response
+                await asyncio.sleep(min(2**attempt, MAX_BACKOFF_SECONDS))
+                continue
             response.raise_for_status()
             return response
         except (httpx.HTTPError, TimeoutError):
             if attempt + 1 == attempts:
                 raise
-            await asyncio.sleep(min(2**attempt, 16))
+            await asyncio.sleep(min(2**attempt, MAX_BACKOFF_SECONDS))
     raise AssertionError("unreachable")
 
 
@@ -109,11 +165,33 @@ async def collect_demand_institutions(
             }
             try:
                 response = await _get_with_retry(client, params)
+                response.raise_for_status()
                 items, total_count = parse_response(response.json())
-            except Exception:
+            except DemandInstitutionCollectionError:
+                raise
+            except httpx.HTTPStatusError as exc:
+                reason = _throttle_reason(exc.response) or ""
+                error_message = ""
+                try:
+                    payload = exc.response.json()
+                except (ValueError, TypeError):
+                    payload = {}
+                if isinstance(payload, dict):
+                    detail = payload.get("OpenAPI_ServiceResponse", {})
+                    header = detail.get("cmmMsgHeader", {}) if isinstance(detail, dict) else {}
+                    error_message = (
+                        str(header.get("errMsg", "")) if isinstance(header, dict) else ""
+                    )
                 raise DemandInstitutionCollectionError(
-                    "수요기관 API 조회에 실패했습니다."
-                ) from None
+                    "수요기관 API 조회 실패: "
+                    f"HTTP {exc.response.status_code}, returnReasonCode={reason}, "
+                    f"errMsg={error_message}"
+                ) from exc
+            except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+                detail = str(exc).replace(str(params["serviceKey"]), "[redacted]")
+                raise DemandInstitutionCollectionError(
+                    f"수요기관 API 조회 실패: {type(exc).__name__}: {detail}"
+                ) from exc
             rows.extend(items)
             page += 1
     return rows
@@ -215,7 +293,7 @@ def upsert_demand_institutions(db: Session, items: list[dict[str, Any]]) -> int:
     return upserted
 
 
-def incremental_start(db: Session, today: date | None = None) -> date:
+def incremental_start(db: Session) -> date:
     max_change = db.scalar(select(func.max(G2BDemandInstitution.chg_dt)))
     return max_change.date() - timedelta(days=1) if max_change else date(1950, 1, 1)
 
