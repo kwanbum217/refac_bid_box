@@ -11,9 +11,11 @@ import asyncio
 import logging
 from typing import Any
 
+from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.observability import traced_worker_task
 from src.app.services.dashboard import rebuild_bid_dataset_summary
+from src.app.services.demand_institutions import collect_and_upsert
 from src.rag.structured_data import refresh_institution_name_catalogs
 
 logger = logging.getLogger(__name__)
@@ -55,4 +57,27 @@ async def refresh_institution_catalog_task(ctx: dict[str, Any]) -> dict[str, int
     return counts
 
 
-__all__ = ["rebuild_dataset_summary_task", "refresh_institution_catalog_task"]
+def _collect_demand_institutions() -> dict[str, Any]:
+    if not settings.G2B_USRINFO_SERVICE_KEY:
+        return {"status": "skipped", "reason": "G2B_USRINFO_SERVICE_KEY 미설정"}
+
+    async def run() -> dict[str, Any]:
+        with SessionLocal() as db:
+            return await collect_and_upsert(db, settings.G2B_USRINFO_SERVICE_KEY, "incremental")
+
+    return asyncio.run(run())
+
+
+@traced_worker_task
+async def collect_demand_institutions_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """수요기관 소관구분·유형·지역 정보를 매일 증분 갱신합니다."""
+    result = await asyncio.to_thread(_collect_demand_institutions)
+    logger.info("수요기관 정보 증분 수집 결과: %s", result)
+    return result
+
+
+__all__ = [
+    "collect_demand_institutions_task",
+    "rebuild_dataset_summary_task",
+    "refresh_institution_catalog_task",
+]

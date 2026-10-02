@@ -64,6 +64,7 @@ from src.tasks.scheduled_tasks import (
     weekly_retrain_task,
 )
 from src.tasks.summary_tasks import (
+    collect_demand_institutions_task,
     rebuild_dataset_summary_task,
     refresh_institution_catalog_task,
 )
@@ -418,6 +419,7 @@ class WorkerSettings:
         run_result_coverage_catchup_task,
         rebuild_dataset_summary_task,
         refresh_institution_catalog_task,
+        collect_demand_institutions_task,
         result_coverage_monitor_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
@@ -465,6 +467,13 @@ class WorkerSettings:
             minute=5,
             run_at_startup=False,
             timeout=3600,
+        ),
+        cron(
+            cast(Any, collect_demand_institutions_task),
+            hour=1,
+            minute=30,
+            run_at_startup=False,
+            timeout=10800,
         ),
     ]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)

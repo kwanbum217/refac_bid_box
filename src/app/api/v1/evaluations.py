@@ -47,6 +47,7 @@ from src.app.api.v1.predictions import predict_price_api
 from src.app.core.db import get_db
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement
+from src.app.models.demand_institutions import G2BDemandInstitution
 from src.app.models.evaluations import (
     BidEvaluationEvidence,
     BidEvaluationProfile,
@@ -75,6 +76,7 @@ from src.app.schemas.evaluations import (
     ScenarioEvaluationResult,
 )
 from src.app.schemas.predictions import PredictPriceRequest
+from src.app.services.demand_institutions import classify_contract_regime, institution_region
 from src.app.services.evaluation_rules import (
     CREDIT_GRADE_SCORES,
     METHOD_FAMILY_BY_CODE,
@@ -636,15 +638,22 @@ def _raw_int(raw_data: dict[str, Any], key: str) -> int | None:
     return value if value > 0 else None
 
 
-def _is_local_contract(bid: BidAnnouncement) -> bool:
-    """계약 방법 명칭에서 지방계약 여부를 판단합니다 (복수예가 변동 범위 선택용)."""
+def _is_local_contract(bid: BidAnnouncement, institution_regime: str | None = None) -> bool:
+    """계약 방법 명칭 또는 수요기관 기준정보에서 지방계약 여부를 판단합니다."""
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-    return extract_contract_regime(raw_data, bid.cntrct_mthd_nm) == "LOCAL"
+    return extract_contract_regime(raw_data, bid.cntrct_mthd_nm, institution_regime) == "LOCAL"
+
+
+def _demand_institution_for_bid(db: Session, bid: BidAnnouncement) -> G2BDemandInstitution | None:
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    code = str(raw_data.get("dminsttCd") or "").strip()
+    return db.get(G2BDemandInstitution, code) if code else None
 
 
 def _scenario_prices(
     bid: BidAnnouncement,
     request_scenarios: list[PriceScenarioConfig] | None,
+    institution_regime: str | None = None,
 ) -> list[ScenarioPrice]:
     """복수예가 3 시나리오 예정가격을 구성합니다.
 
@@ -666,7 +675,7 @@ def _scenario_prices(
         return []
 
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-    is_local = _is_local_contract(bid)
+    is_local = _is_local_contract(bid, institution_regime)
     tot_prdprc_num = _raw_int(raw_data, "totPrdprcNum")
     drwt_prdprc_num = _raw_int(raw_data, "drwtPrdprcNum")
     if tot_prdprc_num is not None and drwt_prdprc_num is not None:
@@ -1256,6 +1265,8 @@ def _analyze_bid(
     payload: EvaluationRequest,
     request: Request,
     db: Session,
+    institution: G2BDemandInstitution | None = None,
+    institution_loaded: bool = False,
 ) -> EvaluationResponse:
     """규칙 판별과 점수 계산을 도메인 모듈에 위임한 채 분석 응답을 조립합니다.
 
@@ -1263,11 +1274,18 @@ def _analyze_bid(
     그들이 값을 주지 못하는 구간은 추측하지 않고 차단합니다.
     """
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    if not institution_loaded:
+        institution = _demand_institution_for_bid(db, bid)
+    institution_regime = classify_contract_regime(institution)
+    region_code, region_name = institution_region(institution)
     rule_result = resolve_evaluation_rule_from_raw_data(
         category=bid.category,
         raw_data=raw_data,
         institution_name_fallback=bid.dminstt_nm,
         cntrct_mthd_nm=bid.cntrct_mthd_nm,
+        institution_regime=institution_regime,
+        region_code=region_code,
+        region_name=region_name,
     )
     if rule_result.is_blocked:
         response = _blocked_response(
@@ -1294,7 +1312,7 @@ def _analyze_bid(
             "공고에 예정가격(기초금액)이 공개되지 않아 최저 투찰금액과 시나리오를 계산할 분모가 없습니다.",
         )
 
-    scenarios = _scenario_prices(bid, payload.price_scenarios)
+    scenarios = _scenario_prices(bid, payload.price_scenarios, institution_regime)
 
     # 정량평가 입력은 적용 별표의 선언 배점표로 검증합니다. 배점표가 없는 규칙(별표 귀속
     # 미확인 일반 띠)은 항목을 검증할 수 없어 값을 받지 않습니다.
@@ -1392,16 +1410,22 @@ def analyze_evaluation(
     소유권: 요청 사용자 본인만 접근 가능 (인증된 사용자에서 user_id 추출).
     """
     bid = _get_bid_or_404(db, payload.bid_id)
-    response = _analyze_bid(bid, payload, request, db)
+    institution = _demand_institution_for_bid(db, bid)
+    response = _analyze_bid(bid, payload, request, db, institution, institution_loaded=True)
 
     # 차단된 경우도 스냅샷으로 남깁니다. 저장 실패가 응답을 막지는 못합니다.
     if response.status in ("success", "blocked"):
         raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+        institution_regime = classify_contract_regime(institution)
+        region_code, region_name = institution_region(institution)
         rule_context = resolve_evaluation_rule_from_raw_data(
             category=bid.category,
             raw_data=raw_data,
             institution_name_fallback=bid.dminstt_nm,
             cntrct_mthd_nm=bid.cntrct_mthd_nm,
+            institution_regime=institution_regime,
+            region_code=region_code,
+            region_name=region_name,
         )
         input_json = {
             "bid_id": payload.bid_id,
@@ -1492,11 +1516,17 @@ def list_evaluation_rules_meta(
     if bid_id is not None:
         bid = _get_bid_or_404(db, bid_id)
         raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+        institution = _demand_institution_for_bid(db, bid)
+        institution_regime = classify_contract_regime(institution)
+        region_code, region_name = institution_region(institution)
         resolution = resolve_evaluation_rule_from_raw_data(
             category=bid.category,
             raw_data=raw_data,
             institution_name_fallback=bid.dminstt_nm,
             cntrct_mthd_nm=bid.cntrct_mthd_nm,
+            institution_regime=institution_regime,
+            region_code=region_code,
+            region_name=region_name,
         )
         matched = resolution.rule
         if matched is not None:

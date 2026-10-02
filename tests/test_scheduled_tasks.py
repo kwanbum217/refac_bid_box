@@ -90,6 +90,12 @@ def test_development_refresh_cron_runs_daily_at_two():
     assert scheduled_tasks.development_data_refresh_task in WorkerSettings.functions
 
 
+def test_demand_institution_incremental_cron_runs_daily_at_0130():
+    job = _cron_by_name("collect_demand_institutions_task")
+    assert (job.hour, job.minute, job.weekday) == (1, 30, None)
+    assert job.run_at_startup is False
+
+
 def test_weekly_retrain_cron_runs_monday_at_three():
     """원본 Airflow schedule_interval "0 3 * * 1" 과 같은 시각이어야 합니다.
 

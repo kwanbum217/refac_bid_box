@@ -154,6 +154,8 @@ class Settings(BaseSettings):
 
     # DB 설정
     DATABASE_URL: str = "mysql+pymysql://root:rootpassword@localhost:3306/procurement"
+    # 수요기관 기준정보 수집 API 전용 키입니다. 일반 G2B_SERVICE_KEY 와 별도입니다.
+    G2B_USRINFO_SERVICE_KEY: str = ""
     DB_HOST: str = "localhost"
     DB_PORT: int = 3306
     DB_USER: str = "root"
