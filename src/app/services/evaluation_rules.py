@@ -80,8 +80,9 @@ _SCORE_SRC_PRE = (
 )
 _SCORE_SRC_POST = f"{_SCORE_DOC_POST} (제2026-260호 별표별 입찰가격 계산식) 및 {_SCORE_DOC_MEASURED} (통과점수·별표9 실측)"
 _SCORE_REASON_PRE_20230501 = (
-    "미확인: 제2023-53호 판의 별표 배점표(B·k·T)는 조사 범위 밖입니다 "
-    "(docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md:655-661)"
+    "미확인: k는 대비표에 계산식이 없어 제2025-257호 값을 동일 추정한 B 등급이라 선언하지 않음; "
+    "B는 5억원 축 조건부이거나 동일 추정이라 단일값 미확정 "
+    "(docs/analysis/servc_2023_53_score_params_reconstruction.md:55-62)"
 )
 _SCORE_REASON_UNMAPPED_BAND = (
     "미확인: 일반 띠는 별표 1~9 에 같은 이름이 없어 별표 귀속이 미확인입니다 "
@@ -194,13 +195,16 @@ _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
         Decimal("85"),
         f"{_SCORE_SRC_PRE} (별표9 수요기관 지정형: T=85; {_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
     ),
-    # 2023-05-01 시행 판 (제2023-53호). 배점표는 원문 범위 밖이라 전량 미확인입니다.
+    # 2023-05-01 시행 판 (제2023-53호). 대비표로 확인된 T만 선언합니다.
     **{
         f"SERVC_QUAL_PRE_20230501_ATTACH_{index:02d}": (
             None,
             None,
-            None,
-            _SCORE_REASON_PRE_20230501,
+            Decimal("88") if index in (3, 4) else Decimal("85"),
+            f"docs/analysis/servc_pre_rules_2023_53_reconstruction_20260929.md:63 "
+            f"및 docs/analysis/servc_pre_rules_2023_53_reconstruction_20260929.md:105 "
+            f"(제10조 제3항 및 통과 종합평점 행에서 T={88 if index in (3, 4) else 85} 직접 확인); "
+            f"{_SCORE_REASON_PRE_20230501}",
         )
         for index in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 15, 16, 17)
     },
