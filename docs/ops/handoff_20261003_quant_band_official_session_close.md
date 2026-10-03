@@ -102,3 +102,17 @@ codex 월간 한도가 이 세션 끝에 13% 남았습니다. 빌더 배정 시 
 - main CI: `66e30dfa` 전 job 성공(공급망 job 복구). `cb0c20e7` 은 lint-and-validate 의 "CURRENT_STATE 필수 필드" 하나로 실패했다. 현황판 `source_commit` 이 `071e2d89` 로 뒤처진 탓이며 로컬 규칙 검증은 통과해 병합 전에 잡히지 않았다. 이 문서 병합이 `source_commit` 을 `d731fc4c` 로 갱신해 해소한다. 다음 세션은 이 문서 병합 커밋의 CI 를 먼저 확인하십시오.
 - Orca 완료 세션 잔류 0, Run `run_b1f0cf9f171a` 의 Task 6건(빌더 3, 리뷰 3) 전부 completed. 상시 감시기와 배경 대기 작업은 모두 회수했다.
 - Docker compose 전체 기동 상태(worker 포함) 유지.
+
+---
+
+## 7. 추가 작업 (13:30 이후, 인수인계 병합 뒤)
+
+| 병합 | 내용 | 검증 |
+| --- | --- | --- |
+| `7369839f` | tailwindcss 4 이전 영향 조사 `docs/analysis/tailwind4_migration_impact_20261003.md` | 리뷰 pass(수치 재현), strict, 전량 시험 |
+| 이 절을 담은 병합 | 지방계약 미상 축소 단서 조사 `docs/analysis/demand_institution_unknown_signals_20261003.md` | 리뷰 pass(수치 재현), strict, 전량 시험 |
+
+- tailwind 4 이전: 이름 변경 유틸리티는 `shadow-sm` 45, `rounded` 38, `outline-none` 26, `flex-shrink-*` 5, `backdrop-blur-sm` 4곳이라 기계 치환 가능하다. 시각 확인이 필요한 쪽은 색 미지정 `border` 144곳, `space-x/y` 103곳, `hover:` 111곳이다. 4절 2번 착수 시 이 문서부터 읽는다.
+- 지방계약 미상: 미상 111,559건 중 상위기관이 LOCAL 인 공고 26,038건, NATIONAL 13,728건이다. 상위기관 판정 승계는 법적 근거가 없어(국립대학의 상위기관이 교육부 등) 지금 안전하게 줄일 수 있는 건수는 0건이다. 다음 단계는 외부 공시 대조와 개별 법률 적용 범위 확인이다.
+- codex 월간 한도가 이 시점 **6%** 다. 2026-10-03 사용자 지시: codex 빌더가 소진되면 같은 워크트리 산출물을 보존한 채 cmd `deepseek/deepseek-v4.1-flash`(`scripts/orca_cmd_launch.py --auto --role builder`)로 교체해 같은 Task 를 이어서 진행하고, 리뷰 Intent 의 `builder_provider` 는 `cmd` 로 적는다.
+- 조율 함정 추가: Capsule 을 `yaml.safe_dump` 기본 형식(목록 들여쓰기 없음)으로 쓰면 `summarize_worker_done.py` 가 허용 목록을 못 읽어 정상 산출물을 범위 위반으로 판정한다. Intent 키에 따옴표를 붙이면 `taskctl create` 가 역할을 못 읽어 리뷰 Capsule 이 빌더 기본값(`worker_done.json`, `ORCA_WORKER_DONE_V2`)으로 생성된다. Intent 는 키 무따옴표·값 따옴표로 손으로 쓰고, 생성 직후 `role`·`report_path`·`return_contract` 를 확인한다.
