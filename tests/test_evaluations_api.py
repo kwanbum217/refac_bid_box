@@ -662,6 +662,32 @@ def test_prediction_price_api_is_not_called_without_score_table(
     assert response.status_code == 200, response.text
 
 
+def test_quant_band_unresolved_without_estimated_price_or_method_band(client, isolated_db, as_user):
+    """추정가격과 방법명 5억 표기가 모두 없으면 기초금액이 있어도 구간을 고르지 않는다.
+
+    소프트웨어용역 고시금액 미만 규칙은 방법명에 5억 표기가 없지만 배점표 구간이 둘이다.
+    """
+    as_user(10)
+    bid = _create_bid(
+        isolated_db,
+        base_amount=600_000_000,
+        raw_overrides={
+            "sucsfbidMthdNm": "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 고시금액 미만",
+            "asignBdgtAmt": "600000000",
+        },
+    )
+    bid.presmpt_prce = None
+    isolated_db.commit()
+
+    response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id, score_table=SCORE_TABLE))
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "QUANT_BAND_UNRESOLVED" in payload["blocked_reason"]
+    assert "추정가격" in payload["blocked_reason"]
+
+
 def test_bid_without_pred_price_is_blocked(client, isolated_db, as_user):
     """기초금액과 예정가격이 모두 없는 공고는 분모가 없어 계산하지 않는다."""
     as_user(10)
