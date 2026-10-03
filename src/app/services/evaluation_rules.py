@@ -505,6 +505,12 @@ class ScoreParamResolution:
     warnings: tuple[str, ...] = ()
 
 
+def method_name_500m_side(method_name: str | None) -> bool | None:
+    """낙찰방법명에 적힌 추정가격 5억원 이상 여부를 반환합니다."""
+    match = re.search(r"5\s*억\s*원?\s*(미만|이상)", method_name or "")
+    return None if match is None else match.group(1) == "이상"
+
+
 def resolve_score_params(
     rule: EvaluationRule,
     estimated_price: Decimal | int | float | str | None,
@@ -527,9 +533,8 @@ def resolve_score_params(
     except ValueError:
         pass
     name = method_name or ""
-    method_5 = re.search(r"5\s*억\s*원?\s*(미만|이상)", name)
     method_notice = re.search(r"고시금액\s*(미만|이상)", name)
-    method_b = (method_5.group(1) == "이상") if method_5 else None
+    method_b = method_name_500m_side(name)
     method_k = (method_notice.group(1) == "이상") if method_notice else None
     boundary_b = Decimal("500000000")
     boundary_k = Decimal(notice_amount_for_year(year)) if year is not None else None
@@ -2759,23 +2764,40 @@ def quant_score_tables_total_audit() -> tuple[QuantTotalAuditRow, ...]:
 def select_quant_band(
     table: QuantScoreTable,
     estimated_price: Decimal | int | float | str | None,
+    method_name: str | None = None,
 ) -> tuple[QuantScoreBand | None, str | None]:
-    """추정가격으로 5억원 이상/미만 구간을 고릅니다.
+    """공식 기준인 추정가격 또는 낙찰방법명 표기로 5억원 구간을 고릅니다.
 
     구간이 하나면 추정가격과 무관하게 그 구간을 쓰고, 구간이 둘인데 추정가격을 읽을
     수 없으면 임의로 고르지 않고 사유와 함께 None 을 돌려줍니다.
     """
     if len(table.bands) == 1:
         return table.bands[0], None
-    if estimated_price is None:
-        return None, "추정가격이 없어 5억원 이상/미만 구간을 확정할 수 없습니다."
+    method_side = method_name_500m_side(method_name)
+    price = None
     try:
-        price = Decimal(str(estimated_price))
+        price = Decimal(str(estimated_price)) if estimated_price not in (None, "") else None
+        if price is not None and price <= 0:
+            price = None
     except (ArithmeticError, TypeError, ValueError):
-        return None, "추정가격을 숫자로 읽을 수 없어 5억원 이상/미만 구간을 확정할 수 없습니다."
-    band_key = (
-        QUANT_BAND_OVER_500M if price >= QUANT_ESTIMATED_PRICE_THRESHOLD else QUANT_BAND_UNDER_500M
-    )
+        price = None
+    price_side = None if price is None else price >= QUANT_ESTIMATED_PRICE_THRESHOLD
+    if method_side is not None:
+        note = None
+        if price_side is not None and method_side != price_side:
+            note = "낙찰방법명 구간과 추정가격의 정량평가 판정이 달라 낙찰방법명을 적용했습니다."
+        band_key = QUANT_BAND_OVER_500M if method_side else QUANT_BAND_UNDER_500M
+        return (
+            next((band, note) for band in table.bands if band.band_key == band_key)
+            if any(band.band_key == band_key for band in table.bands)
+            else (None, "낙찰방법명 구간에 대응하는 배점표 구간이 없습니다.")
+        )
+    if price_side is None:
+        return (
+            None,
+            "공고 추정가격이 없어 배점표 구간(추정가격 5억원 이상/미만)을 정할 수 없습니다. 공고서의 추정가격을 확인하십시오.",
+        )
+    band_key = QUANT_BAND_OVER_500M if price_side else QUANT_BAND_UNDER_500M
     for band in table.bands:
         if band.band_key == band_key:
             return band, None

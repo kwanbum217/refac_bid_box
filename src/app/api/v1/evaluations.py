@@ -357,18 +357,15 @@ class QuantInputScores:
 
 
 def _bid_estimated_price(bid: BidAnnouncement) -> Decimal | None:
-    """정량평가 배점표 구간만 판정합니다. B·k 선택에는 presmpt_prce 만 씁니다."""
-    for attr in ("presmpt_prce", "base_amount"):
-        raw = getattr(bid, attr, None)
-        if raw is None:
-            continue
-        try:
-            value = Decimal(str(raw))
-        except (ArithmeticError, TypeError, ValueError):
-            continue
-        if value > Decimal("0"):
-            return value
-    return None
+    """제2026-390호 별표 배점한도 열은 추정가격 기준이며 제2조 제12호가 이를 정의합니다."""
+    raw = getattr(bid, "presmpt_prce", None)
+    if raw is None:
+        return None
+    try:
+        value = Decimal(str(raw))
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return value if value > Decimal("0") else None
 
 
 def _quant_item_payload(item: QuantScoreItem) -> QuantScoreItemPayload:
@@ -1405,7 +1402,13 @@ def _analyze_bid(
                 )
             )
     else:
-        band, band_note = select_quant_band(quant_table, _bid_estimated_price(bid))
+        raw_data = getattr(bid, "raw_data", None) or {}
+        method_name = (
+            getattr(bid, "sucsfbid_mthd_nm", None)
+            or raw_data.get("sucsfbidMthdNm")
+            or raw_data.get("sucsfbid_mthd_nm")
+        )
+        band, band_note = select_quant_band(quant_table, _bid_estimated_price(bid), method_name)
         if band is None:
             return with_contract_regime(
                 _quant_band_unresolved_response(

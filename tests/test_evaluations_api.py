@@ -130,7 +130,7 @@ def _create_bid(
 ) -> BidAnnouncement:
     data = {
         "prearngPrceDcsnMthdNm": "복수예가",
-        "sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만",
+        "sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 이상",
         "sucsfbidLwltRate": "89.995",
         "srvceDivNm": "일반용역",
         "a_value": "100000000",
@@ -365,7 +365,10 @@ def test_price_compensation_reports_impossible_without_duplicating_warning(
 def test_registry_confirmed_k_and_t_fill_missing_user_fields(client, isolated_db, as_user):
     """사용자가 B만 입력해도 선언된 k=5·T=85를 사용해 점수를 계산한다."""
     as_user(10)
-    bid = _create_bid(isolated_db)
+    bid = _create_bid(
+        isolated_db,
+        raw_overrides={"sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만"},
+    )
 
     response = client.post(
         ANALYZE_URL,
@@ -403,7 +406,10 @@ def test_resolved_score_table_keeps_scenarios_and_floor_amounts(
 ):
     """조건부 배점표가 해소되면 시나리오 점수와 하한율을 함께 전달한다."""
     as_user(10)
-    bid = _create_bid(isolated_db)
+    bid = _create_bid(
+        isolated_db,
+        raw_overrides={"sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만"},
+    )
 
     response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
 
@@ -539,7 +545,10 @@ def test_user_input_equal_to_declared_value_is_not_an_override(client, isolated_
 def test_method_name_resolves_conditional_b_without_user_input(client, isolated_db, as_user):
     """시설 규칙의 조건부 B는 공고 낙찰방법명 구간으로 선택한다."""
     as_user(10)
-    bid = _create_bid(isolated_db)  # 시설 ATTACH_01: 5억원 가격 구간에 따라 B가 달라짐
+    bid = _create_bid(
+        isolated_db,
+        raw_overrides={"sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만"},
+    )  # 시설 ATTACH_01: 5억원 가격 구간에 따라 B가 달라짐
 
     response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
 
@@ -556,7 +565,13 @@ def test_method_name_resolves_conditional_b_without_user_input(client, isolated_
 def test_pre_20230501_facility_uses_method_name_for_conditional_b(client, isolated_db, as_user):
     """제2023-53호 시설분야도 원문 k·T 와 공고명 구간 B 를 사용한다."""
     as_user(10)
-    bid = _create_bid(isolated_db, raw_overrides={"bidNtceDt": "20230601"})
+    bid = _create_bid(
+        isolated_db,
+        raw_overrides={
+            "bidNtceDt": "20230601",
+            "sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만",
+        },
+    )
     isolated_db.commit()
 
     response = client.post(ANALYZE_URL, json=_analysis_payload(bid.id))
@@ -586,7 +601,7 @@ def test_method_name_resolves_conditional_b_and_fixed_k(client, isolated_db, as_
 
     response = client.post(
         ANALYZE_URL,
-        json=_analysis_payload(bid.id, qualification={"quant_items": {"performance": 20}}),
+        json=_analysis_payload(bid.id, qualification={"quant_items": {"performance": 10}}),
     )
 
     assert response.status_code == 200, response.text
