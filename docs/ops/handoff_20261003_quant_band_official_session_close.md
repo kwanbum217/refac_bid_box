@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-10-03
 > **작성**: Claude 코디네이터 (run_b1f0cf9f171a)
-> **기준 커밋**: `cb0c20e7` (main, origin 동기화. 이 문서는 그 다음 병합으로 들어감)
+> **기준 커밋**: `d731fc4c` (main, origin 동기화. 이 문서는 그 다음 병합으로 들어감)
 > **직전 인수인계**: [handoff_20261003_regime_and_score_params_session_close.md](handoff_20261003_regime_and_score_params_session_close.md)
 
 ---
@@ -33,8 +33,9 @@ gh run list --branch main --limit 3
 | `2db39b21` | 지방계약 판별 미상 범주 조사 문서(코드 변경 없음) | 리뷰 pass, strict, 전량 시험 |
 | `66e30dfa` | `braces` 상류 미수정 취약점 npm 예외 등록(만료 2026-12-31) | 로컬 공급망 세 층(pip-audit, npm audit 루트·frontend, Trivy) 통과, strict, 전량 시험 |
 | `cb0c20e7` | 정량평가 배점표 구간을 공식 기준(추정가격)으로 선택, 기초금액 대체 제거 | 리뷰 pass, strict, 전량 시험 |
+| `d731fc4c` | 구간 미정 API 차단 시험 1건(리뷰어 비차단 의견 반영, 코디네이터 직접) | 기초금액 대체 반례 주입 시 실패 확인, strict, 전량 시험 6,023 passed |
 
-워커 구성: 빌더 codex `gpt-6-luna`(effort high/medium), 리뷰어 opencode `muse-spark-1.3-contributor-free`. 빌더 3대, 리뷰어 3대, 코디네이터 직접 2건(01:30 수집 확인, braces 예외).
+워커 구성: 빌더 codex `gpt-6-luna`(effort high/medium), 리뷰어 opencode `muse-spark-1.3-contributor-free`. 빌더 3대, 리뷰어 3대, 코디네이터 직접 3건(01:30 수집 확인, braces 예외, API 시험).
 
 ---
 
@@ -73,12 +74,11 @@ gh run list --branch main --limit 3
 
 | 우선 | 항목 | 비고 |
 | --- | --- | --- |
-| 1 | 구간 미정 API 수준 시험 1건 | 리뷰어 비차단 의견. 추정가격·방법명 표기가 모두 없을 때 `/api/v1/evaluations` 가 blocked(`QUANT_BAND_UNRESOLVED`)로 응답하는지 확인 |
-| 2 | 추정가격 직접 입력 필드 | 구간 미정 공고에서 사용자가 추정가격을 넣는 기능. 요청·응답 스키마 변경이라 사용자 결정 필요 |
-| 3 | `tailwindcss` 4 이전 | braces 예외 만료 2026-12-31 전에 완료. 브라우저 지원 범위(4 는 Safari 16.4+, Chrome 111+) 결정 뒤 이전, 주요 화면 시각 회귀 확인 |
-| 4 | 지방계약 미상 축소 | 기관별 설립 근거·지분 정보 수집이 선행돼야 함 |
-| 5 | 2027년 고시금액 | 2026-12 기획재정부 고시 후 `src/ml/notice_amount.py` 갱신 |
-| 6 | Windows 실기 검증 | 장비 부재로 보류 |
+| 1 | 추정가격 직접 입력 필드 | 구간 미정 공고에서 사용자가 추정가격을 넣는 기능. 요청·응답 스키마 변경이라 사용자 결정 필요 |
+| 2 | `tailwindcss` 4 이전 | braces 예외 만료 2026-12-31 전에 완료. 브라우저 지원 범위(4 는 Safari 16.4+, Chrome 111+) 결정 뒤 이전, 주요 화면 시각 회귀 확인 |
+| 3 | 지방계약 미상 축소 | 기관별 설립 근거·지분 정보 수집이 선행돼야 함 |
+| 4 | 2027년 고시금액 | 2026-12 기획재정부 고시 후 `src/ml/notice_amount.py` 갱신 |
+| 5 | Windows 실기 검증 | 장비 부재로 보류 |
 
 codex 월간 한도가 이 세션 끝에 13% 남았습니다. 빌더 배정 시 고려하십시오.
 
@@ -90,6 +90,7 @@ codex 월간 한도가 이 세션 끝에 13% 남았습니다. 빌더 배정 시 
 - `release-worker` 가 성공을 반환해도 codex 빌더 터미널이 남는 경우가 있다. `orca_settled_session_audit.py` 가 다음 Dispatch 를 막으므로 `worker_done` 수신을 확인한 뒤 `orca terminal close --terminal <handle>` 로 닫는다.
 - 상시 감시기가 codex 화면의 preamble 문구("reportPath 누락")를 "실패 정체" 로 오탐했다. 터미널 끝을 직접 읽어 판단한다.
 - `taskctl create` 는 Intent 의 `--task-id` 별칭 디렉터리와 실제 Task ID 디렉터리에 Capsule 을 둘 다 만든다. 손으로 쓴 Capsule 은 두 곳 모두에 복사해야 워커가 어느 경로를 읽어도 같다(읽기 범위 초과 1건은 이 별칭 경로라 무해).
+- 로컬 `validate_agent_rules.py` 가 통과해도 CI 의 "CURRENT_STATE 필수 필드" 가 `source_commit` 뒤처짐으로 실패할 수 있다. 병합이 여러 번인 세션은 마지막 병합 커밋 안에서 `source_commit` 을 갱신한다.
 - 자동 생성 리뷰 Capsule 은 읽기 범위가 문서 하나뿐이고 쓰기 범위가 비어 있었다. 매번 코드·실행기 읽기 범위, report_path 쓰기 범위, DB 조회 형태, 커밋 금지를 보완했다.
 
 ---
@@ -97,7 +98,7 @@ codex 월간 한도가 이 세션 끝에 13% 남았습니다. 빌더 배정 시 
 ## 6. 종료 시점 상태
 
 - main 은 이 문서 병합 커밋이며 origin 과 동기화, 작업 브랜치 0, 워크트리는 주 저장소 하나.
-- `cb0c20e7` 병합 전 전량 시험 6,013 passed / 40 skipped / 3 deselected, 실패 0, 규칙 검증 21/21.
-- main CI: `66e30dfa` 전 job 성공(공급망 job 복구), `cb0c20e7` 세션 종료 시점 확인 결과는 아래.
-- Orca 완료 세션 잔류 0, Run `run_b1f0cf9f171a` 의 Task 6건(빌더 3, 리뷰 3) 전부 completed.
+- `d731fc4c` 병합 전 전량 시험 6,023 passed / 31 skipped / 3 deselected, 실패 0. 규칙 검증 21/21.
+- main CI: `66e30dfa` 전 job 성공(공급망 job 복구). `cb0c20e7` 은 lint-and-validate 의 "CURRENT_STATE 필수 필드" 하나로 실패했다. 현황판 `source_commit` 이 `071e2d89` 로 뒤처진 탓이며 로컬 규칙 검증은 통과해 병합 전에 잡히지 않았다. 이 문서 병합이 `source_commit` 을 `d731fc4c` 로 갱신해 해소한다. 다음 세션은 이 문서 병합 커밋의 CI 를 먼저 확인하십시오.
+- Orca 완료 세션 잔류 0, Run `run_b1f0cf9f171a` 의 Task 6건(빌더 3, 리뷰 3) 전부 completed. 상시 감시기와 배경 대기 작업은 모두 회수했다.
 - Docker compose 전체 기동 상태(worker 포함) 유지.
