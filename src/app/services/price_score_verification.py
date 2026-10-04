@@ -79,6 +79,8 @@ def verify_price_score(
     base_rate: Decimal | None = None,
     max_price_score: Decimal | None = None,
     multiplier: Decimal | None = None,
+    flat_ratio: Decimal | None = None,
+    flat_score: Decimal | None = None,
 ) -> PriceScoreVerificationResult:
     """가이드 원본 규칙대로 calculate_price_score 결과를 검증합니다.
 
@@ -88,6 +90,7 @@ def verify_price_score(
 
     평점 산식을 재구현하지 않고 evaluation_scoring.calculate_price_score 를 호출합니다.
     입력이 없거나 형식이 잘못되면 계산하지 않고 status=unverifiable 과 사유를 반환합니다.
+    flat_ratio·flat_score 가 주어지면 산식 함수로 그대로 전달하며, None 이면 불변입니다.
     """
     missing: list[str] = []
     if bid_price is None:
@@ -137,7 +140,15 @@ def verify_price_score(
     assert max_price_score is not None
     assert multiplier is not None
 
-    result = calculate_price_score(bid_price, pred_price, base_rate, max_price_score, multiplier)
+    result = calculate_price_score(
+        bid_price,
+        pred_price,
+        base_rate,
+        max_price_score,
+        multiplier,
+        flat_ratio=flat_ratio,
+        flat_score=flat_score,
+    )
     deviation = abs(result.base_rate - result.price_ratio) * HUNDRED
     return PriceScoreVerificationResult(
         is_verifiable=True,
@@ -201,6 +212,8 @@ def invert_pass_bid_range(
     multiplier: Decimal | None = None,
     pred_price: Decimal | None = None,
     announcement_lwlt_rate: Decimal | None = None,
+    flat_ratio: Decimal | None = None,
+    flat_score: Decimal | None = None,
 ) -> PassBidRangeResult:
     """P >= T - Q 를 만족하는 통과 가능 낙찰가 구간을 비율과 절대금액으로 역산합니다.
 
@@ -213,6 +226,11 @@ def invert_pass_bid_range(
     B - N < 0 이면 만점으로도 통과할 수 없어 impossible 을 반환합니다.
     k = 0 이면 나눗셈이 불가능하므로 별도로 처리하며, P 는 배점한도 B 로 고정됩니다.
     낙찰하한율이 주어지면 미달 구간을 제외한 유효 구간과 독립된 하한율 판정을 함께 담습니다.
+
+    [평탄]
+    x >= flat_ratio 에서 평점이 flat_score 로 고정되므로, flat_score >= N 이면 기준비율 위쪽
+    평탄 구간 전체가 통과합니다. 이때 통과 상한은 예정가격(비율 1)까지 넓어집니다.
+    flat_ratio·flat_score 가 None 이면 기존 동작과 완전히 같습니다.
     """
     missing: list[str] = []
     if pass_threshold is None:
@@ -344,7 +362,12 @@ def invert_pass_bid_range(
             )
         tolerance = (max_price_score - required) / (HUNDRED * multiplier)
         ratio_low = max(ZERO, base_ratio - tolerance)
-        ratio_high = min(ONE, base_ratio + tolerance)
+        if flat_ratio is not None and flat_score is not None and flat_score >= required:
+            # 평탄 구간이 필요점수를 충족하면 x >= flat_ratio 전 구간이 통과하므로
+            # 통과 상한이 예정가격(비율 1)까지 넓어집니다.
+            ratio_high = ONE
+        else:
+            ratio_high = min(ONE, base_ratio + tolerance)
         grid_low = ratio_low.quantize(FOUR_DECIMALS, rounding=ROUND_CEILING)
         grid_high = ratio_high.quantize(FOUR_DECIMALS, rounding=ROUND_FLOOR)
         extra_reasons = []

@@ -82,6 +82,7 @@ from src.app.services.demand_institutions import (
     describe_contract_regime,
     institution_sido,
 )
+from src.app.services.evaluation_flat_zones import FlatZone, flat_zone_for
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
     CREDIT_GRADE_SCORES,
@@ -175,12 +176,18 @@ LOCAL_USER_INPUT_SOURCE = "사용자 입력(지자체 기준 미확보)"
 
 @dataclass(frozen=True)
 class ScoreTable:
-    """가격점수 계산 파라미터. B·k·T 는 사용자 입력, 기준비율은 규칙 레지스트리 선언값입니다."""
+    """가격점수 계산 파라미터. B·k·T 는 사용자 입력, 기준비율은 규칙 레지스트리 선언값입니다.
+
+    flat_ratio·flat_score 는 선택된 규칙·구간의 원문 평탄 규정입니다. 평탄 데이터가 없는
+    규칙·구간이면 None 이며, 이때 점수·구간 계산은 기존과 완전히 같습니다.
+    """
 
     max_price_score: Decimal
     multiplier: Decimal
     pass_threshold: Decimal
     base_rate: Decimal
+    flat_ratio: Decimal | None = None
+    flat_score: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -224,6 +231,20 @@ def _get_snapshot_or_404(db: Session, snapshot_id: int, user_id: int) -> BidEval
     if snapshot is None or snapshot.user_id != user_id:
         raise HTTPException(status_code=404, detail="스냅샷을 찾을 수 없습니다.")
     return snapshot
+
+
+def _selected_flat_zone(rule: EvaluationRule, resolution: ScoreParamResolution) -> FlatZone | None:
+    """선택된 규칙·가격 구간의 원문 평탄 규정을 찾습니다.
+
+    규칙이 price_bands 를 쓰고 구간이 선택됐을 때만 조회하며, 평탄 데이터가 없으면 None 입니다.
+    """
+    if rule.price_bands is None or resolution.price_band_index is None:
+        return None
+    try:
+        band = rule.price_bands[resolution.price_band_index]
+    except IndexError:
+        return None
+    return flat_zone_for(rule.rule_id, band.upper_bound)
 
 
 def _score_table(
@@ -281,12 +302,16 @@ def _score_table(
     if missing:
         return None, missing, overridden, resolution
 
+    flat_zone = _selected_flat_zone(rule, resolution)
+
     return (
         ScoreTable(
             max_price_score=resolved["max_price_score"],
             multiplier=resolved["multiplier"],
             pass_threshold=resolved["pass_threshold"],
             base_rate=resolution.base_rate or rule.base_rate,
+            flat_ratio=flat_zone.flat_ratio if flat_zone is not None else None,
+            flat_score=flat_zone.flat_score if flat_zone is not None else None,
         ),
         [],
         overridden,
@@ -302,6 +327,7 @@ def _rule_score_table_payload(
     estimated_price_source: str = "announcement",
 ) -> RuleScoreTable:
     """규칙 선언 배점표와 미확정·덮어쓰기 표시를 응답 스키마로 옮깁니다."""
+    flat_zone = _selected_flat_zone(rule, resolution) if resolution is not None else None
     return RuleScoreTable(
         max_price_score=(
             format_decimal_plain(resolution.max_price_score)
@@ -330,6 +356,8 @@ def _rule_score_table_payload(
         ),
         price_band_label=resolution.price_band_label if resolution else None,
         threshold_band_label=resolution.threshold_band_label if resolution else None,
+        flat_ratio=(format_decimal_plain(flat_zone.flat_ratio) if flat_zone is not None else None),
+        flat_score=(format_decimal_plain(flat_zone.flat_score) if flat_zone is not None else None),
         source=rule.score_table_source,
         missing_fields=list(missing_fields),
         override_fields=list(override_fields),
@@ -883,6 +911,8 @@ def _evaluate_scenario(
         base_rate=table.base_rate,
         max_price_score=table.max_price_score,
         multiplier=table.multiplier,
+        flat_ratio=table.flat_ratio,
+        flat_score=table.flat_score,
     )
     judgement = evaluate_qualification(
         bid_price=candidate_bid_amount,
@@ -1321,6 +1351,8 @@ def _success_response(
         announcement_lwlt_rate=effective_lwlt,
         reference_pred_price=pred_price,
         scenarios=[(s.scenario_name, s.scenario_type, s.pred_price) for s in scenarios],
+        flat_ratio=table.flat_ratio,
+        flat_score=table.flat_score,
     )
     for warning in compensation_result.warnings:
         if warning not in warnings:
