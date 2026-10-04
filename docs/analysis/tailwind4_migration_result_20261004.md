@@ -4,7 +4,7 @@
 > Task: task_87ccc8ccefdf (builder rework)
 > 브랜치: kwanbum217/tailwind4-migration
 > 범위: 루트 정적 CSS 빌드( `src/app/templates/**/*.html`, `src/app/static/js/**/*.js` ). `frontend/` 는 제외.
-> 상태: 완료. 빌드 경로를 `@tailwindcss/postcss` + `postcss-cli` 로 바꿔 braces 를 의존 트리에서 제거했고, allowlist 의 braces 예외를 삭제했으며, v3 전용 Tailwind 시험 2건을 v4 표기로 갱신했습니다.
+> 상태: 완료. 빌드 경로를 `@tailwindcss/postcss` + `postcss-cli` 로 바꿔 braces 를 의존 트리에서 제거했고, allowlist 의 braces 예외를 삭제했으며, v3 전용 Tailwind 시험 2건을 v4 표기로 갱신했습니다. 검증 전 main(추정가격 입력 Task)을 병합해 새 입력란에도 이름 변경을 적용했습니다.
 
 ---
 
@@ -213,7 +213,16 @@ found 0 vulnerabilities
 | `env -u NODE_ENV npm audit --audit-level=high` | found 0 vulnerabilities |
 | `uv run python scripts/check_vulnerability_allowlist.py` | 통과(3건, 전부 사유·유효 만료일 보유) |
 | `uv run pytest tests/test_tailwind_build.py -q` | 6 passed |
-| `uv run pytest tests/ -q -m 'not data_assets'` | 1 failed, 6013 passed, 40 skipped, 3 deselected. 실패 1건은 아래 참조 |
+| `uv run pytest tests/ -q -m 'not data_assets'` | 6018 passed, 40 skipped, 3 deselected(main 병합 후). 이전에 실패하던 `tests/test_result_coverage.py::test_task_notifies_only_when_alert` 는 main 병합으로 해소됨 |
 | `python3 scripts/validate_agent_rules.py --quiet` | 검증 통과 21/21 |
+| `python3 scripts/validate_doc_links.py --quiet` | 문서 링크 검증 통과 |
 
-미해결 실패 1건은 `tests/test_result_coverage.py::test_task_notifies_only_when_alert`(assert 0 == 1)입니다. 이 시험과 그 실행 경로(`tests/test_result_coverage.py`, `src/tasks/coverage_tasks.py`, `src/tasks/scheduled_tasks.py`, `src/app/core/cache.py`)는 `git diff main...HEAD` 에서 변경이 없어 main 과 동일한 코드이며, Tailwind 이전과 무관한 기존 환경 실패입니다. 범위 밖이라 고치지 않았습니다.
+---
+
+## 10. main 병합(추정가격 입력) 대응
+
+코디네이터 후속 지시에 따라 검증 전 `git merge main --no-edit` 로 main(추정가격 입력 Task, f925d3cb 포함)을 병합했습니다. 충돌은 없었고(`ort` 전략 자동 병합), `src/app/templates/bids/detail.html` 에 새로 들어온 추정가격 입력란에 이름 변경을 적용했습니다.
+
+- 새 입력란 `id="input-estimated-price"` 의 class 에서 `rounded` -> `rounded-sm`, `outline-none` -> `outline-hidden` 로 치환했습니다. 그 `tr`/`td` 의 나머지 클래스(`bg-blue-50`, `py-2 pr-4 font-medium text-slate-700`, `text-right`, `text-slate-400`, `text-slate-500`)는 이름 변경 대상이 아니어서 그대로 두었습니다. Django/Jinja 태그, `id`, `data-` 속성, 스크립트는 건드리지 않았습니다.
+- 새 입력란이 쓰는 `rounded-sm`, `outline-hidden` 은 이미 다른 화면에서 생성되고 있어 `tailwind.css` 재생성 결과는 바이트 동일했습니다(sha256 `a5d254d4...`).
+- 병합 후 `env -u NODE_ENV npm ci`, 재빌드 재현성, 선택자 비교(v3=627 v4=627, 설명되지 않는 누락 0), `npm ls braces`(빈 결과), `npm audit`(0건), allowlist 검사, 전량 pytest(6018 passed), 규칙·문서 링크 검증을 처음부터 다시 돌려 모두 통과했습니다.
