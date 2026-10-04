@@ -308,7 +308,10 @@ def parse_capsule_list(capsule_text: str, field: str) -> list[str]:
         unquoted = re.sub(r"\s+#.*$", "", value).strip()
         if unquoted.endswith(":") or re.match(r"^[a-z_]+:\s", unquoted):
             continue
-        items.append(unquoted.strip("\"'"))
+        if value[:1] in ('"', "'"):
+            items.append(unquoted.strip("\"'"))
+        else:
+            items.append(unquoted)
 
     return items
 

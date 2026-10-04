@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import shlex
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from scripts.orca_contract import (
     DEFAULT_VERIFY_PYTEST_TIMEOUT,
@@ -216,6 +218,74 @@ def test_parse_capsule_scalar_folded_scalar():
     """결함 6: YAML folded scalar (>)를 실제 문장으로 파싱합니다."""
     capsule = "objective: >\n  abc def\n"
     assert parse_capsule_scalar(capsule, "objective") == "abc def"
+
+
+def _yaml_list(capsule: str, field: str) -> list[str]:
+    return yaml.safe_load(capsule)[field]
+
+
+def test_parse_capsule_list_preserves_plain_scalar_trailing_single_quote():
+    """결함: 따옴표로 시작하지 않는 평문 값의 끝 따옴표를 지우지 않습니다.
+
+    `- uv run pytest tests/ -q -m 'not data_assets'` 를 `... -m 'not data_assets`
+    로 읽으면 shlex 가 'No closing quotation' 으로 실패합니다.
+    """
+    capsule = "verification_commands:\n  - uv run pytest tests/ -q -m 'not data_assets'\n"
+    expected = ["uv run pytest tests/ -q -m 'not data_assets'"]
+    assert parse_capsule_list(capsule, "verification_commands") == expected
+    assert parse_capsule_list(capsule, "verification_commands") == _yaml_list(
+        capsule, "verification_commands"
+    )
+
+
+def test_parse_capsule_list_preserves_plain_scalar_trailing_double_quote():
+    """(b) 끝이 큰따옴표인 평문 값(`echo \"a b\"`)을 그대로 보존합니다."""
+    capsule = 'commands:\n  - echo "a b"\n'
+    assert parse_capsule_list(capsule, "commands") == ['echo "a b"']
+    assert parse_capsule_list(capsule, "commands") == _yaml_list(capsule, "commands")
+
+
+def test_parse_capsule_list_unquotes_wrapped_values():
+    """(c) `\"...\"` 및 `'...'` 로 감싼 값은 종전대로 따옴표를 제거합니다."""
+    capsule = """commands:
+  - "a b"
+  - 'c d'
+"""
+    assert parse_capsule_list(capsule, "commands") == ["a b", "c d"]
+    assert parse_capsule_list(capsule, "commands") == _yaml_list(capsule, "commands")
+
+
+def test_parse_capsule_list_keeps_comment_after_wrapped_value():
+    """(d) 감싼 값 뒤 주석은 제거하고 따옴표 처리도 유지합니다."""
+    capsule = """commands:
+  - "a b"  # 메모
+  - 'c d'  # 메모
+"""
+    assert parse_capsule_list(capsule, "commands") == ["a b", "c d"]
+    assert parse_capsule_list(capsule, "commands") == _yaml_list(capsule, "commands")
+
+
+def test_parse_capsule_list_strips_comment_after_plain_value():
+    """(e) 평문 값의 공백 뒤 # 주석은 제거합니다."""
+    capsule = "commands:\n  - a b  # 메모\n"
+    assert parse_capsule_list(capsule, "commands") == ["a b"]
+    assert parse_capsule_list(capsule, "commands") == _yaml_list(capsule, "commands")
+
+
+def test_parse_capsule_list_command_is_shlex_parsable():
+    """orca_level1_gate 가 읽은 검증 명령이 shlex 로 정상 파싱됩니다."""
+    capsule = "verification_commands:\n  - uv run pytest tests/ -q -m 'not data_assets'\n"
+    commands = parse_capsule_list(capsule, "verification_commands")
+    assert len(commands) == 1
+    assert shlex.split(commands[0]) == [
+        "uv",
+        "run",
+        "pytest",
+        "tests/",
+        "-q",
+        "-m",
+        "not data_assets",
+    ]
 
 
 # ---------------------------------------------------------------------------
