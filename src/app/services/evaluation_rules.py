@@ -2753,7 +2753,14 @@ def resolve_evaluation_rule(
                 warnings=[*result.warnings, *local_warnings],
             )
         else:
-            result = _apply_rule_lwlt(result, selected, sucsfbid_lwlt_rate)
+            # 시·도 규칙을 확정했으므로 조달청 매칭 단계에서 세워진 RULE_NOT_FOUND 차단을
+            # 해제합니다. 이 플래그를 남기면 아래 조기 반환이 유효한 규칙을 차단합니다.
+            result = replace(
+                _apply_rule_lwlt(result, selected, sucsfbid_lwlt_rate),
+                is_blocked=False,
+                block_reason_code=None,
+                block_reason_message=None,
+            )
             if local_warnings:
                 result = replace(result, warnings=[*result.warnings, *local_warnings])
             scope_stage = RULE_SCOPE_REGION

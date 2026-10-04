@@ -28,6 +28,7 @@ from src.app.services.evaluation_rules import (
     RULE_SCOPE_REGION,
     EvaluationRule,
     PriceBand,
+    RuleResolutionResult,
     ThresholdBand,
     quant_score_table_for_rule,
     resolve_evaluation_rule,
@@ -702,3 +703,80 @@ def test_daegu_simple_labor_threshold_stays_85() -> None:
     assert resolve_score_params(result.rule, Decimal("300000000"), None, None).pass_threshold == (
         Decimal("85")
     )
+
+
+# --------------------------------------------------------------------------- #
+# 6. R1: LOCAL 규칙 확정 시 조달청 단계 차단 표시 누수
+# --------------------------------------------------------------------------- #
+
+# 규칙의 service_type 을 자동 확정하는 대표 낙찰방법명. LOCAL 규칙은 patterns 가 비어 있어
+# 낙찰방법명·조달분류 표시로 세부유형을 정한다(4.1절).
+_LOCAL_REPRESENTATIVE_METHOD: dict[str, str] = {
+    "FACILITY": "시설분야용역 적격심사 추정가격 5억원 이상",
+    "INSURANCE": "보험용역 적격심사 추정가격 5억원 미만",
+    "SW": "소프트웨어용역 적격심사 추정가격 5억원 미만",
+    "SW_SME": "소프트웨어용역 적격심사 추정가격 5억원 미만",
+    "WASTE": "폐기물 처리용역 적격심사 추정가격 5억원 미만",
+    "WASTE_HOUSEHOLD": "생활폐기물 처리용역 적격심사 추정가격 5억원 미만",
+    "LAND_TRANSPORT": "화물 육상운송용역 적격심사 추정가격 5억원 미만",
+    "LAND_TRANSPORT_SME": "화물 육상운송용역 적격심사 추정가격 5억원 미만",
+    "GENERAL": METHOD_GENERIC,
+    "SIMPLE_LABOR": "단순노무용역 적격심사 추정가격 5억원 미만",
+    "FISHERY_CLEANUP": "적격심사제-어장정화·정비용역",
+}
+
+# 대표 낙찰방법명만으로는 확정되지 않아 사용자 선택이 필요한 규칙. 일반 띠에서 단순노무
+# 여부가 갈리는 지역(D5)과 세종 중소기업자간 경쟁제품 대상/비대상 분기(B4)가 해당한다.
+_LOCAL_SELECTION_REQUIRED: frozenset[str] = frozenset(
+    {
+        "SERVC_LOCAL_INCHEON_20251224_ATTACH_01",
+        "SERVC_LOCAL_JEJU_20240101_ATTACH_01",
+        "SERVC_LOCAL_GANGWON_20230611_ATTACH_01",
+        "SERVC_LOCAL_GB_20260108_ATTACH_04",
+        "SERVC_LOCAL_ULSAN_20220810_ATTACH_01",
+        "SERVC_LOCAL_CB_20231020_ATTACH_01",
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_03",
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME",
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_05",
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME",
+    }
+)
+
+
+def _resolve_for_rule(rule: EvaluationRule, method: str) -> RuleResolutionResult:
+    """모든 시·도 규칙 시행일 이후 공고일로 시·도 규칙 판별을 실행한다."""
+    return resolve_evaluation_rule(
+        category="Servc",
+        prearng_prce_dcsn_mthd_nm="복수예가",
+        sucsfbid_mthd_nm=method,
+        sucsfbid_lwlt_rate="87.995",
+        contract_regime="LOCAL",
+        region_code=rule.region_code,
+        region_name=rule.region_name,
+        bid_ntce_dt="2026-08-01",
+        raw_data={"sucsfbidMthdNm": method},
+    )
+
+
+@pytest.mark.parametrize("rule", LOCAL_RULES, ids=lambda rule: rule.rule_id)
+def test_local_rule_resolution_never_keeps_stale_block(rule: EvaluationRule) -> None:
+    """R1: 시·도 규칙이 확정되면 조달청 단계의 RULE_NOT_FOUND 차단 표시가 남지 않는다.
+
+    이전에는 _apply_rule_lwlt 가 rule 만 교체하고 is_blocked=True 를 그대로 두어,
+    조달청 단계에서 미매칭된 공고가 36개 규칙 중 33개에서 '차단+규칙 동시 보유' 상태가 됐다.
+    36개 전부를 대표 낙찰방법명으로 판별해 확정 규칙은 is_blocked=False 를, 사용자 선택이
+    필요한 규칙은 LOCAL_SERVICE_TYPE_UNRESOLVED 를 확인한다.
+    """
+    method = _LOCAL_REPRESENTATIVE_METHOD[rule.service_type]
+    result = _resolve_for_rule(rule, method)
+
+    if rule.rule_id in _LOCAL_SELECTION_REQUIRED:
+        assert result.rule is None, rule.rule_id
+        assert result.is_blocked is True, rule.rule_id
+        assert result.block_reason_code == BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED, rule.rule_id
+        return
+
+    assert result.rule is not None, rule.rule_id
+    assert result.rule.rule_id == rule.rule_id
+    assert result.is_blocked is False, rule.rule_id
+    assert result.block_reason_code is None, rule.rule_id
