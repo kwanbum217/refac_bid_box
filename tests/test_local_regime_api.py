@@ -25,6 +25,9 @@ from src.app.schemas.predictions import PredictPriceResponse
 ANALYZE_URL = "/api/v1/evaluations/analyze"
 INCHEON_RULE_ID = "SERVC_LOCAL_INCHEON_20251224_ATTACH_01"
 INCHEON_SIMPLE_RULE_ID = "SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR"
+SEJONG_SW_NON_TARGET_ID = "SERVC_LOCAL_SEJONG_20251201_ATTACH_03"
+SEJONG_SW_TARGET_ID = "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME"
+JNGJ_FISHERY_CLEANUP_ID = "SERVC_LOCAL_JNGJ_20260716_ATTACH_06"
 
 
 @pytest.fixture
@@ -251,3 +254,93 @@ def test_local_service_type_unresolved_then_user_selection(client, isolated_db, 
     ).json()
     assert selected["status"] == "success"
     assert selected["rule_id"] == INCHEON_SIMPLE_RULE_ID
+
+
+def test_local_incheon_simple_labor_selection_returns_price_score(client, isolated_db, as_user):
+    """R2: 조달청 단계에서 미매칭된 인천 공고도 사용자 선택으로 계산된다.
+
+    낙찰방법명이 조달청 별표와 매칭되지 않아 조달청 단계에서 RULE_NOT_FOUND 가 세워진 뒤
+    시·도 일반 띠가 LOCAL_SERVICE_TYPE_UNRESOLVED 로 막히는 경로다. 사용자가 안내된
+    SIMPLE_LABOR 를 고르면 이전 차단 표시가 남지 않고 가격점수 응답이 나와야 한다.
+    """
+    as_user(10)
+    _create_institution(isolated_db, code="1234", toplvl_nm="인천광역시")
+    bid = _create_local_bid(
+        isolated_db, method="용역 적격심사 추정가격 2억원 미만", presmpt_prce=150_000_000
+    )
+    bid_id = bid.id
+
+    unresolved = _client_post(client, bid_id, {"manual_non_price_score": 40.0}).json()
+    assert unresolved["status"] == "blocked"
+    assert "LOCAL_SERVICE_TYPE_UNRESOLVED" in unresolved["blocked_reason"]
+
+    response = _client_post(
+        client,
+        bid_id,
+        {"manual_non_price_score": 40.0, "local_service_type": "SIMPLE_LABOR"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["blocked"] is False
+    assert payload["rule_id"] == INCHEON_SIMPLE_RULE_ID
+    assert payload["score_table"] is not None
+
+
+def test_local_sejong_sw_selection_returns_price_score(client, isolated_db, as_user):
+    """R2: 세종 SW 공고가 막혀도 대상/비대상 선택으로 각각 계산된다.
+
+    낙찰방법명에 중소기업자간 경쟁제품 표기가 없으면 두 후보를 안내하며 차단하고,
+    사용자가 고른 service_type 규칙으로 확정돼야 한다. 어느 쪽도 이전 RULE_NOT_FOUND
+    차단 표시가 남으면 안 된다.
+    """
+    as_user(10)
+    _create_institution(isolated_db, code="1234", toplvl_nm="세종특별자치시")
+    bid = _create_local_bid(isolated_db, method="소프트웨어용역 적격심사 추정가격 5억원 미만")
+    bid_id = bid.id
+
+    unresolved = _client_post(client, bid_id, {"manual_non_price_score": 40.0}).json()
+    assert unresolved["status"] == "blocked"
+    assert "LOCAL_SERVICE_TYPE_UNRESOLVED" in unresolved["blocked_reason"]
+
+    for service_type, expected_rule_id in (
+        ("SW", SEJONG_SW_NON_TARGET_ID),
+        ("SW_SME", SEJONG_SW_TARGET_ID),
+    ):
+        response = _client_post(
+            client,
+            bid_id,
+            {"manual_non_price_score": 40.0, "local_service_type": service_type},
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["status"] == "success", service_type
+        assert payload["blocked"] is False, service_type
+        assert payload["rule_id"] == expected_rule_id, service_type
+
+
+def test_local_jngj_fishery_cleanup_selection_returns_price_score(client, isolated_db, as_user):
+    """R2: 전남광주는 일반용역 별표가 없어 막히지만 어장정화 선택 시 계산된다.
+
+    시·도 규칙이 없는 전남광주 일반 띠는 LOCAL_RULE_NOT_FOUND 로 막힌다. 사용자가
+    FISHERY_CLEANUP 을 고르면 별표 6 이 확정돼 가격점수 응답이 나와야 한다.
+    """
+    as_user(10)
+    _create_institution(isolated_db, code="1234", toplvl_nm="전남광주통합특별시")
+    bid = _create_local_bid(isolated_db, method="일반용역 적격심사 추정가격 5억원 미만")
+    bid_id = bid.id
+
+    unresolved = _client_post(client, bid_id, {"manual_non_price_score": 40.0}).json()
+    assert unresolved["status"] == "blocked"
+    assert "LOCAL_RULE_NOT_FOUND" in unresolved["blocked_reason"]
+
+    response = _client_post(
+        client,
+        bid_id,
+        {"manual_non_price_score": 40.0, "local_service_type": "FISHERY_CLEANUP"},
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["blocked"] is False
+    assert payload["rule_id"] == JNGJ_FISHERY_CLEANUP_ID

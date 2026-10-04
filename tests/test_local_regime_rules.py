@@ -28,6 +28,7 @@ from src.app.services.evaluation_rules import (
     RULE_SCOPE_REGION,
     EvaluationRule,
     PriceBand,
+    RuleResolutionResult,
     ThresholdBand,
     quant_score_table_for_rule,
     resolve_evaluation_rule,
@@ -53,6 +54,19 @@ def _resolve(**kwargs: object):
         prearng_prce_dcsn_mthd_nm="복수예가",
         contract_regime="LOCAL",
         bid_ntce_dt="2026-06-01",
+        **kwargs,
+    )
+
+
+def _resolve_jngj(**kwargs: object):
+    """전남광주 별표는 시행일(2026-07-16) 이후 공고일로 판별한다."""
+    return resolve_evaluation_rule(
+        category="Servc",
+        prearng_prce_dcsn_mthd_nm="복수예가",
+        contract_regime="LOCAL",
+        bid_ntce_dt="2026-07-16",
+        region_code="12",
+        region_name="전남광주통합특별시",
         **kwargs,
     )
 
@@ -441,3 +455,328 @@ def test_local_rule_representative_values(
     assert result.max_price_score == Decimal(expected_b)
     assert result.multiplier == Decimal(expected_k)
     assert result.pass_threshold == Decimal(expected_t)
+
+
+# --------------------------------------------------------------------------- #
+# 5. 전남광주 별표 6 분리와 세종·대구 통과점수 조건
+# --------------------------------------------------------------------------- #
+
+
+def test_jngj_fishery_cleanup_rule_is_not_general() -> None:
+    """전남광주 별표 6 은 어장정화·정비 전용이라 GENERAL 로 등록되지 않는다."""
+    fishery = _rule("SERVC_LOCAL_JNGJ_20260716_ATTACH_06")
+    assert fishery.service_type == "FISHERY_CLEANUP"
+    assert not any(
+        rule.region_code == "12" and rule.service_type == "GENERAL" for rule in LOCAL_RULES
+    )
+
+
+def test_jngj_general_service_has_no_sido_rule() -> None:
+    """전남광주 일반용역(어장정화·정비 아님)은 시·도 규칙 없음 경로로 차단된다."""
+    result = _resolve_jngj(sucsfbid_mthd_nm=METHOD_GENERIC)
+    assert result.rule is None
+    assert result.is_blocked is True
+    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+
+
+def test_jngj_fishery_method_name_confirms_attach_06() -> None:
+    """낙찰방법명에 '어장' 이 있으면 별표 6 을 확정한다."""
+    method = "적격심사제-어장정화·정비용역"
+    assert resolve_local_service_type(None, method)[0] == "FISHERY_CLEANUP"
+    result = _resolve_jngj(sucsfbid_mthd_nm=method)
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_LOCAL_JNGJ_20260716_ATTACH_06"
+
+
+def test_jngj_fishery_announcement_name_only_recommends() -> None:
+    """공고명의 어장 신호만으로는 확정하지 않고 추천 경고만 남긴다."""
+    result = _resolve_jngj(
+        sucsfbid_mthd_nm=METHOD_GENERIC,
+        raw_data={"bidNtceNm": "어장정화·정비 용역"},
+    )
+    assert result.rule is None
+    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+    assert any("FISHERY_CLEANUP 추천" in warning for warning in result.warnings)
+
+
+SEJONG_SW_NON_TARGET_ID = "SERVC_LOCAL_SEJONG_20251201_ATTACH_03"
+SEJONG_SW_TARGET_ID = "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME"
+SEJONG_LT_NON_TARGET_ID = "SERVC_LOCAL_SEJONG_20251201_ATTACH_05"
+SEJONG_LT_TARGET_ID = "SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME"
+
+
+def test_jngj_land_transport_accepts_passenger_and_freight() -> None:
+    """전남광주 별표 5 육상운송은 여객·화물 구분이 없어 두 표기 모두 같은 별표로 간다(B2)."""
+    for marker in ("여객", "화물", "육상운송"):
+        result = _resolve_jngj(
+            sucsfbid_mthd_nm=f"{marker} 육상운송용역 적격심사 추정가격 5억원 미만"
+        )
+        assert result.rule is not None, marker
+        assert result.rule.rule_id == "SERVC_LOCAL_JNGJ_20260716_ATTACH_05", marker
+        assert result.rule.service_type == "LAND_TRANSPORT", marker
+
+
+def test_gg_land_transport_accepts_passenger_and_freight() -> None:
+    """경기 별표 1-4 육상운송이 여객·화물 모두 이 별표로 가고 일반 별표로 넘어가지 않는다(B2)."""
+    for marker in ("여객", "화물"):
+        result = _resolve(
+            sucsfbid_mthd_nm=f"{marker} 육상운송용역 적격심사 추정가격 5억원 미만",
+            region_code="41",
+            region_name="경기도",
+        )
+        assert result.rule is not None, marker
+        assert result.rule.rule_id == "SERVC_LOCAL_GG_20250808_ATTACH_1_4", marker
+        assert all("일반 별표를 적용했습니다" not in warning for warning in result.warnings), marker
+
+
+def test_sejong_land_transport_accepts_passenger_and_freight() -> None:
+    """세종 별표 5 육상운송이 여객·화물 모두 대상/비대상 별표로 도달한다(B3)."""
+    cases = (
+        (
+            "여객 육상운송용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만",
+            SEJONG_LT_NON_TARGET_ID,
+        ),
+        (
+            "화물 육상운송용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만",
+            SEJONG_LT_NON_TARGET_ID,
+        ),
+        (
+            "여객 육상운송용역(중소기업자간 경쟁제품) 적격심사 추정가격 5억원 미만",
+            SEJONG_LT_TARGET_ID,
+        ),
+        (
+            "화물 육상운송용역(중소기업자간 경쟁제품) 적격심사 추정가격 5억원 미만",
+            SEJONG_LT_TARGET_ID,
+        ),
+    )
+    for method, rule_id in cases:
+        result = _resolve(sucsfbid_mthd_nm=method, region_code="36", region_name="세종특별자치시")
+        assert result.rule is not None, method
+        assert result.rule.rule_id == rule_id, method
+
+
+def test_sejong_sme_pair_registry_values_match_source() -> None:
+    """세종 SW·육상운송 비대상/대상 두 규칙의 B·k·하한율·T 가 원문 행과 일치한다(B4)."""
+    expected = {
+        SEJONG_SW_NON_TARGET_ID: ("80.495", "85", "2"),
+        SEJONG_SW_TARGET_ID: ("84.995", "88", "4"),
+        SEJONG_LT_NON_TARGET_ID: ("80.495", "85", "2"),
+        SEJONG_LT_TARGET_ID: ("84.995", "88", "4"),
+    }
+    for rule_id, (lwlt, threshold, k) in expected.items():
+        rule = _rule(rule_id)
+        assert rule.lwlt_rate == Decimal(lwlt), rule_id
+        below = resolve_score_params(rule, Decimal("400000000"), None, None)
+        above = resolve_score_params(rule, Decimal("600000000"), None, None)
+        assert below.max_price_score == Decimal("70"), rule_id
+        assert above.max_price_score == Decimal("60"), rule_id
+        assert below.multiplier == Decimal(k), rule_id
+        assert above.multiplier == Decimal(k), rule_id
+        assert below.pass_threshold == Decimal(threshold), rule_id
+        assert "byp3_sw_2025" in rule.source or "byp5_2025" in rule.source, rule_id
+        assert "sejong_body_2025.txt:108" in rule.source, rule_id
+
+
+def test_sejong_sme_non_target_marker_keeps_non_target_rule() -> None:
+    """B1: '중소기업자간 경쟁제품 비대상' 표기에 대상 규칙(k 4·T 88)이 붙지 않는다."""
+    cases = (
+        (
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만",
+            SEJONG_SW_NON_TARGET_ID,
+        ),
+        (
+            "화물 육상운송용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만",
+            SEJONG_LT_NON_TARGET_ID,
+        ),
+    )
+    for method, rule_id in cases:
+        result = _resolve(sucsfbid_mthd_nm=method, region_code="36", region_name="세종특별자치시")
+        assert result.rule is not None, method
+        assert result.rule.rule_id == rule_id, method
+        resolution = resolve_score_params(result.rule, Decimal("400000000"), None, None)
+        assert resolution.multiplier == Decimal("2"), method
+        assert resolution.pass_threshold == Decimal("85"), method
+        assert resolution.pass_threshold != Decimal("88"), method
+
+
+def test_sejong_sme_target_marker_selects_target_rule() -> None:
+    """'중소기업자간' 대상 표기는 대상 규칙(k 4·T 88)을 고른다(B4)."""
+    cases = (
+        (
+            "소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만",
+            SEJONG_SW_TARGET_ID,
+        ),
+        (
+            "여객 육상운송용역(중소기업자간 경쟁제품) 적격심사 추정가격 5억원 미만",
+            SEJONG_LT_TARGET_ID,
+        ),
+    )
+    for method, rule_id in cases:
+        result = _resolve(sucsfbid_mthd_nm=method, region_code="36", region_name="세종특별자치시")
+        assert result.rule is not None, method
+        assert result.rule.rule_id == rule_id, method
+        resolution = resolve_score_params(result.rule, Decimal("400000000"), None, None)
+        assert resolution.multiplier == Decimal("4"), method
+        assert resolution.pass_threshold == Decimal("88"), method
+
+
+def test_sejong_sme_unmarked_blocks_with_both_candidates() -> None:
+    """표기가 없으면 자동 확정하지 않고 두 후보를 안내하며 사용자 선택을 요구한다(B4)."""
+    cases = (
+        (
+            "소프트웨어용역 적격심사 추정가격 5억원 미만",
+            SEJONG_SW_NON_TARGET_ID,
+            SEJONG_SW_TARGET_ID,
+        ),
+        (
+            "화물 육상운송용역 적격심사 추정가격 5억원 미만",
+            SEJONG_LT_NON_TARGET_ID,
+            SEJONG_LT_TARGET_ID,
+        ),
+    )
+    for method, non_target_id, target_id in cases:
+        result = _resolve(sucsfbid_mthd_nm=method, region_code="36", region_name="세종특별자치시")
+        assert result.rule is None, method
+        assert result.is_blocked is True, method
+        assert result.block_reason_code == BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED, method
+        joined = " ".join(result.warnings)
+        assert non_target_id in joined, method
+        assert target_id in joined, method
+        assert "local_service_type" in (result.block_reason_message or ""), method
+
+
+def test_sejong_sme_marker_in_announcement_name_selects_target() -> None:
+    """낙찰방법명에 표기가 없어도 공고명의 '중소기업자간' 이 대상 규칙을 고른다(B4)."""
+    result = _resolve(
+        sucsfbid_mthd_nm="화물 육상운송용역 적격심사 추정가격 5억원 미만",
+        region_code="36",
+        region_name="세종특별자치시",
+        raw_data={"bidNtceNm": "2026년 중소기업자간 경쟁제품 육상운송 용역"},
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == SEJONG_LT_TARGET_ID
+
+
+def test_sejong_sme_non_target_in_announcement_name_beats_method_target() -> None:
+    """공고명의 '비대상' 이 낙찰방법명의 대상 표기보다 우선한다(B1)."""
+    result = _resolve(
+        sucsfbid_mthd_nm=(
+            "화물 육상운송용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만"
+        ),
+        region_code="36",
+        region_name="세종특별자치시",
+        raw_data={"bidNtceNm": "중소기업자간 경쟁제품 비대상 육상운송 용역"},
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == SEJONG_LT_NON_TARGET_ID
+
+
+def test_sejong_sme_user_selection_overrides_marker() -> None:
+    """사용자가 고른 세부유형은 표기와 무관하게 그 규칙을 쓴다(D5)."""
+    target = _resolve(
+        sucsfbid_mthd_nm="소프트웨어용역 적격심사 추정가격 5억원 미만",
+        region_code="36",
+        region_name="세종특별자치시",
+        local_service_type="SW_SME",
+    )
+    assert target.rule is not None
+    assert target.rule.rule_id == SEJONG_SW_TARGET_ID
+    non_target = _resolve(
+        sucsfbid_mthd_nm="소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만",
+        region_code="36",
+        region_name="세종특별자치시",
+        local_service_type="SW",
+    )
+    assert non_target.rule is not None
+    assert non_target.rule.rule_id == SEJONG_SW_NON_TARGET_ID
+
+
+def test_daegu_simple_labor_threshold_stays_85() -> None:
+    """대구 단순노무 별표 통과점수는 조건 없이 85 그대로다."""
+    result = _resolve(
+        sucsfbid_mthd_nm="단순노무용역 적격심사 추정가격 5억원 이상",
+        region_code="27",
+        region_name="대구광역시",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_LOCAL_DAEGU_20260511_ATTACH_01"
+    assert resolve_score_params(result.rule, Decimal("300000000"), None, None).pass_threshold == (
+        Decimal("85")
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 6. R1: LOCAL 규칙 확정 시 조달청 단계 차단 표시 누수
+# --------------------------------------------------------------------------- #
+
+# 규칙의 service_type 을 자동 확정하는 대표 낙찰방법명. LOCAL 규칙은 patterns 가 비어 있어
+# 낙찰방법명·조달분류 표시로 세부유형을 정한다(4.1절).
+_LOCAL_REPRESENTATIVE_METHOD: dict[str, str] = {
+    "FACILITY": "시설분야용역 적격심사 추정가격 5억원 이상",
+    "INSURANCE": "보험용역 적격심사 추정가격 5억원 미만",
+    "SW": "소프트웨어용역 적격심사 추정가격 5억원 미만",
+    "SW_SME": "소프트웨어용역 적격심사 추정가격 5억원 미만",
+    "WASTE": "폐기물 처리용역 적격심사 추정가격 5억원 미만",
+    "WASTE_HOUSEHOLD": "생활폐기물 처리용역 적격심사 추정가격 5억원 미만",
+    "LAND_TRANSPORT": "화물 육상운송용역 적격심사 추정가격 5억원 미만",
+    "LAND_TRANSPORT_SME": "화물 육상운송용역 적격심사 추정가격 5억원 미만",
+    "GENERAL": METHOD_GENERIC,
+    "SIMPLE_LABOR": "단순노무용역 적격심사 추정가격 5억원 미만",
+    "FISHERY_CLEANUP": "적격심사제-어장정화·정비용역",
+}
+
+# 대표 낙찰방법명만으로는 확정되지 않아 사용자 선택이 필요한 규칙. 일반 띠에서 단순노무
+# 여부가 갈리는 지역(D5)과 세종 중소기업자간 경쟁제품 대상/비대상 분기(B4)가 해당한다.
+_LOCAL_SELECTION_REQUIRED: frozenset[str] = frozenset(
+    {
+        "SERVC_LOCAL_INCHEON_20251224_ATTACH_01",
+        "SERVC_LOCAL_JEJU_20240101_ATTACH_01",
+        "SERVC_LOCAL_GANGWON_20230611_ATTACH_01",
+        "SERVC_LOCAL_GB_20260108_ATTACH_04",
+        "SERVC_LOCAL_ULSAN_20220810_ATTACH_01",
+        "SERVC_LOCAL_CB_20231020_ATTACH_01",
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_03",
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME",
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_05",
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME",
+    }
+)
+
+
+def _resolve_for_rule(rule: EvaluationRule, method: str) -> RuleResolutionResult:
+    """모든 시·도 규칙 시행일 이후 공고일로 시·도 규칙 판별을 실행한다."""
+    return resolve_evaluation_rule(
+        category="Servc",
+        prearng_prce_dcsn_mthd_nm="복수예가",
+        sucsfbid_mthd_nm=method,
+        sucsfbid_lwlt_rate="87.995",
+        contract_regime="LOCAL",
+        region_code=rule.region_code,
+        region_name=rule.region_name,
+        bid_ntce_dt="2026-08-01",
+        raw_data={"sucsfbidMthdNm": method},
+    )
+
+
+@pytest.mark.parametrize("rule", LOCAL_RULES, ids=lambda rule: rule.rule_id)
+def test_local_rule_resolution_never_keeps_stale_block(rule: EvaluationRule) -> None:
+    """R1: 시·도 규칙이 확정되면 조달청 단계의 RULE_NOT_FOUND 차단 표시가 남지 않는다.
+
+    이전에는 _apply_rule_lwlt 가 rule 만 교체하고 is_blocked=True 를 그대로 두어,
+    조달청 단계에서 미매칭된 공고가 36개 규칙 중 33개에서 '차단+규칙 동시 보유' 상태가 됐다.
+    36개 전부를 대표 낙찰방법명으로 판별해 확정 규칙은 is_blocked=False 를, 사용자 선택이
+    필요한 규칙은 LOCAL_SERVICE_TYPE_UNRESOLVED 를 확인한다.
+    """
+    method = _LOCAL_REPRESENTATIVE_METHOD[rule.service_type]
+    result = _resolve_for_rule(rule, method)
+
+    if rule.rule_id in _LOCAL_SELECTION_REQUIRED:
+        assert result.rule is None, rule.rule_id
+        assert result.is_blocked is True, rule.rule_id
+        assert result.block_reason_code == BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED, rule.rule_id
+        return
+
+    assert result.rule is not None, rule.rule_id
+    assert result.rule.rule_id == rule.rule_id
+    assert result.is_blocked is False, rule.rule_id
+    assert result.block_reason_code is None, rule.rule_id

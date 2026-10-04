@@ -242,8 +242,9 @@ Finalize나 재수집도 한 번만 반영합니다.
 `stdin` 은 `subprocess.DEVNULL` 로 닫습니다. `codex` 는 stdin 이 열려 있으면 추가 입력을
 기다려 타임아웃을 소진할 수 있습니다.
 
-`cerebras` 프로바이더는 `opencode.json` 이 `{env:CEREBRAS_API_KEY}` 로 **프로세스
-환경변수**를 읽습니다. 저장소 `.env` 는 셸로 export 되지 않으므로 probe 가 `.env` 에서
+`cerebras` 프로바이더는 `opencode.json` 에 `apiKey` 필드가 없고(2026-10-05 에
+`{env:CEREBRAS_API_KEY}` 참조 제거) **프로세스 환경변수 `CEREBRAS_API_KEY`** 로
+인증합니다. 저장소 `.env` 는 셸로 export 되지 않으므로 probe 가 `.env` 에서
 키를 읽어 subprocess `env` 로만 전달합니다. **키 값은 로그·예외·경고·문서 어디에도
 출력하지 않으며**, 없을 때는 값 대신 `CEREBRAS_API_KEY 미설정` 사실만 알립니다.
 
