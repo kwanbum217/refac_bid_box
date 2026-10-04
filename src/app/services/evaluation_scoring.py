@@ -33,8 +33,10 @@ class PriceScoreResult:
     base_rate: Decimal  # 기준비율 (예: 0.90)
     max_price_score: Decimal  # B: 배점한도
     multiplier: Decimal  # k: 평점 산식 계수
-    score: Decimal  # P: 계산된 가격점수
-    raw_score: Decimal
+    score: Decimal  # P: 계산된 가격점수 (평탄 적용 후)
+    raw_score: Decimal  # P: 평탄 적용 전 산식값
+    flat_ratio: Decimal | None = None  # 적용된 평탄 시작 비율 (없으면 None)
+    flat_score: Decimal | None = None  # 적용된 평탄 고정 점수 (없으면 None)
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,8 @@ def calculate_price_score(
     base_rate: Decimal,
     max_price_score: Decimal,
     multiplier: Decimal,
+    flat_ratio: Decimal | None = None,
+    flat_score: Decimal | None = None,
 ) -> PriceScoreResult:
     """일반용역 적격심사 가격점수를 계산합니다.
 
@@ -128,13 +132,26 @@ def calculate_price_score(
     P = B - k * |(기준비율 - x) * 100|
 
     기준비율은 1을 초과하는 백분율(예: 90) 또는 비율(예: 0.90)을 모두 수용하여 비율로 정규화합니다.
+
+    [평탄 규정]
+    flat_ratio 와 flat_score 가 주어지고 x >= flat_ratio 이면 점수를 flat_score 로 고정합니다.
+    둘 중 하나라도 None 이면 평탄을 적용하지 않아 기존 동작과 완전히 같습니다.
+    raw_score 는 평탄 적용 전 산식값이며, 적용 시 score 는 flat_score 가 됩니다.
     """
     x = compute_price_ratio(bid_price, pred_price)
 
     normalized_base_rate = base_rate / Decimal("100") if base_rate > Decimal("1") else base_rate
 
     diff_percentage = abs(normalized_base_rate - x) * Decimal("100")
-    score = max_price_score - multiplier * diff_percentage
+    raw_score = max_price_score - multiplier * diff_percentage
+
+    score = raw_score
+    applied_flat_ratio: Decimal | None = None
+    applied_flat_score: Decimal | None = None
+    if flat_ratio is not None and flat_score is not None and x >= flat_ratio:
+        score = flat_score
+        applied_flat_ratio = flat_ratio
+        applied_flat_score = flat_score
 
     return PriceScoreResult(
         bid_price=bid_price,
@@ -144,7 +161,9 @@ def calculate_price_score(
         max_price_score=max_price_score,
         multiplier=multiplier,
         score=score,
-        raw_score=score,
+        raw_score=raw_score,
+        flat_ratio=applied_flat_ratio,
+        flat_score=applied_flat_score,
     )
 
 
@@ -496,19 +515,28 @@ def _resolve_compensation_row(
     p_req: Decimal,
     announcement_lwlt_rate: Decimal,
     announcement_ratio: Decimal,
+    flat_ratio: Decimal | None = None,
+    flat_score: Decimal | None = None,
 ) -> _RowOutcome:
     """예정가격 한 건에 대해 세 상태와 최저 보완 금액을 판정합니다.
 
     x 는 소수점 4자리 ROUND_HALF_UP 격자이므로 같은 격자 안의 금액은 점수가 같습니다.
     목표 격자의 반올림 하한 경계비율(x_target - unit/2)에 예정가격을 곱해 원 단위로
     올림(ROUND_CEILING)한 금액이 그 점수를 얻는 최저 금액입니다.
+    평탄(flat_ratio·flat_score)이 주어지면 최저 투찰금액의 점수 등 모든 채점에 반영됩니다.
     """
     unit = FOUR_DECIMALS
     half = unit / Decimal("2")
 
     floor_amount = calculate_min_bid_amount(pred_price, announcement_lwlt_rate).min_bid_amount
     floor_result = calculate_price_score(
-        floor_amount, pred_price, base_ratio, max_price_score, multiplier
+        floor_amount,
+        pred_price,
+        base_ratio,
+        max_price_score,
+        multiplier,
+        flat_ratio=flat_ratio,
+        flat_score=flat_score,
     )
     p_floor = floor_result.score
     x_floor = floor_result.price_ratio
@@ -589,14 +617,26 @@ def _resolve_compensation_row(
             continue
 
         result = calculate_price_score(
-            candidate, pred_price, base_ratio, max_price_score, multiplier
+            candidate,
+            pred_price,
+            base_ratio,
+            max_price_score,
+            multiplier,
+            flat_ratio=flat_ratio,
+            flat_score=flat_score,
         )
         if result.price_ratio > base_ratio:
             lower = candidate - WON_UNIT
             lower_result: PriceScoreResult | None = None
             while lower >= floor_amount:
                 probe = calculate_price_score(
-                    lower, pred_price, base_ratio, max_price_score, multiplier
+                    lower,
+                    pred_price,
+                    base_ratio,
+                    max_price_score,
+                    multiplier,
+                    flat_ratio=flat_ratio,
+                    flat_score=flat_score,
                 )
                 if probe.price_ratio <= base_ratio:
                     lower_result = probe
@@ -667,6 +707,8 @@ def resolve_price_compensation(
     announcement_lwlt_rate: Decimal,
     reference_pred_price: Decimal | None = None,
     scenarios: Sequence[tuple[str, str, Decimal]] = (),
+    flat_ratio: Decimal | None = None,
+    flat_score: Decimal | None = None,
 ) -> PriceCompensationResult:
     """정량점수 부족분을 입찰가격으로 보완할 수 있는지 판정합니다.
 
@@ -679,6 +721,7 @@ def resolve_price_compensation(
     reference_pred_price 가 있으면 그 예정가격의 판정이 전역 상태가 되고,
     없고 scenarios 가 있으면 행 상태 중 가장 나쁜 것이 전역 상태가 됩니다.
     둘 다 없으면 금액 검증 없이 역산 하한(algebraic)으로만 상태를 판정합니다.
+    평탄(flat_ratio·flat_score)은 하한 금액·보완 후보 채점에 반영하며, None 이면 불변입니다.
     """
     base_ratio = _normalize_rate_ratio(base_rate)
     announcement_ratio = _normalize_rate_ratio(announcement_lwlt_rate)
@@ -706,6 +749,8 @@ def resolve_price_compensation(
             p_req,
             announcement_lwlt_rate,
             announcement_ratio,
+            flat_ratio=flat_ratio,
+            flat_score=flat_score,
         )
         if outcome.overflow:
             warnings.append(
@@ -740,6 +785,8 @@ def resolve_price_compensation(
             p_req,
             announcement_lwlt_rate,
             announcement_ratio,
+            flat_ratio=flat_ratio,
+            flat_score=flat_score,
         )
         if global_outcome.overflow:
             warnings.append(
@@ -771,6 +818,8 @@ def resolve_price_compensation(
         floor_price_score = max_price_score - multiplier * abs(
             (base_ratio - announcement_ratio) * Decimal("100")
         )
+        if flat_ratio is not None and flat_score is not None and announcement_ratio >= flat_ratio:
+            floor_price_score = flat_score
         score_floor_amount = None
         if p_req > max_price_score:
             score_status = "impossible"

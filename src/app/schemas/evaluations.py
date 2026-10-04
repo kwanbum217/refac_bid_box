@@ -374,6 +374,12 @@ class RuleScoreTable(BaseModel):
     threshold_band_label: str | None = Field(
         None, description="선택된 통과점수 T 추정가격 구간 표기 (B·k 경계와 다를 수 있음)"
     )
+    flat_ratio: str | None = Field(
+        None, description="선택된 구간의 평탄 시작 비율 x (평탄 규정이 없으면 null)"
+    )
+    flat_score: str | None = Field(
+        None, description="평탄 시작 비율 이상에서 고정되는 평점 (평탄 규정이 없으면 null)"
+    )
     source: str | None = Field(None, description="선언값 또는 미확정 사유의 근거 (문서 경로)")
     missing_fields: list[str] = Field(
         default_factory=list, description="규칙이 확정하지 못해 사용자 입력이 필요한 필드"
