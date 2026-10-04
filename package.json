@@ -2,10 +2,12 @@
   "name": "refac-bid-box-static",
   "private": true,
   "scripts": {
-    "build:css": "tailwindcss -i src/app/static/css/tailwind.input.css -o src/app/static/css/tailwind.css --minify && printf '\\n' >> src/app/static/css/tailwind.css"
+    "build:css": "postcss src/app/static/css/tailwind.input.css -o src/app/static/css/tailwind.css --no-map"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "4.3.3",
+    "@tailwindcss/postcss": "4.3.3",
+    "postcss": "8.5.28",
+    "postcss-cli": "12.0.0",
     "tailwindcss": "4.3.3"
   }
 }

@@ -43,8 +43,8 @@ NON_TAILWIND_PREFIXES = (
     "quick-btn",
 )
 
-PRIMARY_COLORS = ("0 115 230", "0 91 179")
-HARNESS_COLORS = ("2 11 26", "230 233 239")
+PRIMARY_COLORS = ("--color-primary:#0073e6", "--color-primary-hover:#005bb3")
+HARNESS_COLORS = ("--color-harness-sidebar:#020b1a", "--color-harness-border:#e6e9ef")
 
 CLASS_SELECTOR_SUFFIX = frozenset("{:,)>+~. ")
 
@@ -146,7 +146,7 @@ def _tailwind_minified_selector(class_name: str) -> str:
             parts.append("\\]")
             continue
         if in_arbitrary and char == ",":
-            parts.append("\\2c ")
+            parts.append("\\,")
             continue
         if char == ".":
             parts.append("\\.")
@@ -188,9 +188,9 @@ def test_base_html_has_no_tailwind_jit_script():
 def test_custom_theme_tokens_in_build_css():
     css_content = TAILWIND_CSS.read_text(encoding="utf-8")
     for color in PRIMARY_COLORS:
-        assert color in css_content, f"primary color rgb({color}) missing from tailwind.css"
+        assert color in css_content, f"primary theme token {color} missing from tailwind.css"
     for color in HARNESS_COLORS:
-        assert color in css_content, f"harness color rgb({color}) missing from tailwind.css"
+        assert color in css_content, f"harness theme token {color} missing from tailwind.css"
 
 
 def test_template_tailwind_utilities_exist_in_build_css():
