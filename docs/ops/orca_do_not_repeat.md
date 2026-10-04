@@ -184,9 +184,9 @@ Antigravity CLI 는 워크스페이스 신뢰 확인 대화창을 먼저 띄웁�
 
 풀에 항목을 추가하거나 고칠 때는 그 자리에서 `probe` 를 돌려 응답 본문을 확인합니다. 목록은 `opencode models` 로 얻습니다. 근거 없는 ID 는 5.5 절과 같은 부류입니다.
 
-#### 4.2.2 `{env:...}` 가 저장소 `.env` 를 읽는다고 가정
+#### 4.2.2 프로젝트 `.env` 가 프로세스 환경변수로 주입된다고 가정
 
-`opencode.json` 의 `"apiKey": "{env:CEREBRAS_API_KEY}"` 는 **프로세스 환경 변수**를 읽습니다. 이 저장소의 `.env` 는 셸로 export 되지 않으므로 키가 도달하지 않고, 증상은 키 부재가 아니라 `Unauthorized: Wrong API Key` 입니다. 2026-08-16 에 이 메시지 때문에 Cerebras 세 모델을 전부 사용 불가로 오판했습니다.
+`opencode.json` 은 `apiKey` 필드를 두지 않습니다(2026-10-05 에 `{env:CEREBRAS_API_KEY}` 참조 제거). 인증은 **프로세스 환경변수 `CEREBRAS_API_KEY`** 만으로 이루어지므로, 이 저장소의 `.env` 는 셸로 export 되지 않으면 키가 도달하지 않고 증상은 `Unauthorized: Wrong API Key` 입니다. 2026-08-16 에 이 메시지 때문에 Cerebras 세 모델을 전부 사용 불가로 오판했습니다. 2026-10-05 재실측에서 환경변수 미설정 시 같은 오류, 설정 시 인증 통과를 확인했습니다.
 
 `scripts/orca_model_router.py` 는 `.env` 를 읽어 subprocess 의 `env` 딕셔너리에만 주입합니다. **키 값은 로그·예외·경고·문서 어디에도 출력하지 않고**, 부재 시 `CEREBRAS_API_KEY 미설정` 이라는 사실만 보고합니다.
 

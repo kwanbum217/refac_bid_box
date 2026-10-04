@@ -226,8 +226,9 @@ OpenRouter 를 거쳐 Kimi Code 로 쓸 수 있으며, 이 저장소에는 `or-f
 ### 1.4 Cerebras 는 별도 프로바이더입니다
 
 `opencode.json` 에 `cerebras` 프로바이더가 등록되어 있어 OpenCode 무료·유료 풀과
-**무관한 별도 한도**를 씁니다. 자격증명은 `.env` 의 `CEREBRAS_API_KEY` 이며
-설정 파일에는 `{env:CEREBRAS_API_KEY}` 참조만 들어 있습니다.
+**무관한 별도 한도**를 씁니다. 자격증명은 `.env` 의 `CEREBRAS_API_KEY` 이며,
+**설정 파일에는 `apiKey` 필드가 없습니다.** 인증은 프로세스 환경변수로 충족됩니다
+(2026-10-05 변경, 1.5절).
 
 | 모델 ID | 컨텍스트 / 출력 |
 | --- | --- |
@@ -244,9 +245,10 @@ OpenRouter 를 거쳐 Kimi Code 로 쓸 수 있으며, 이 저장소에는 `or-f
 Error: "undefined/chat/completions" cannot be parsed as a URL.
 ```
 
-**`.env` 는 읽히지 않습니다.** `{env:CEREBRAS_API_KEY}` 는 셸 환경변수를
-참조하며 프로젝트 `.env` 를 자동으로 불러오지 않습니다. 값이 `.env` 에만 있으면
-`Unauthorized: Wrong API Key` 가 납니다.
+**`.env` 는 읽히지 않습니다.** 프로젝트 `.env` 는 프로세스 환경변수로 자동 주입되지
+않습니다. 값이 `.env` 에만 있으면 `Unauthorized: Wrong API Key` 가 납니다.
+2026-10-05 재실측에서 환경변수를 export 하지 않으면 이 오류가 그대로 났고,
+export 하면 인증은 통과했습니다. `apiKey` 필드를 두든 두지 않든 이 경로는 같습니다.
 
 ```bash
 export CEREBRAS_API_KEY=$(awk -F= '/^CEREBRAS_API_KEY=/{print $2}' .env)
@@ -273,6 +275,24 @@ opencode -m cerebras/gemma-4-31b                            # 그 뒤에 기동
 
 세 오류 모두 `opencode models` 는 정상으로 보입니다. **목록에 보이는 것을 사용
 가능의 근거로 쓰지 마십시오.**
+
+### 1.5 `apiKey` 필드를 두지 않습니다 (2026-10-05)
+
+kilo 오류로 `opencode.json` 의 `options.apiKey` (`{env:CEREBRAS_API_KEY}`) 를
+제거했습니다. `options` 에 `baseURL` 만 남깁니다. 프로바이더 등록과 모델 목록은
+그대로 유지됩니다(`opencode models` 에 세 모델이 실립니다).
+
+| 항목 | 내용 |
+| --- | --- |
+| 인증 경로 | 프로세스 환경변수 `CEREBRAS_API_KEY`. 설정 파일에 인증 필드 없음 |
+| 키 공급 | `scripts/orca_model_router.py` 가 `.env` 를 읽어 subprocess `env` 로만 주입 |
+| 키 부재 증상 | `Unauthorized: Wrong API Key` |
+| 환경변수 지정 증상 | `Payment Required` (1.4절 표의 빌링 항목) |
+
+2026-10-05 실측 두 건입니다. 환경변수 미설정 시 `Unauthorized: Wrong API Key`,
+설정 시 인증을 통과하고 `Payment Required` 로 진행했습니다. **키 부재와 빌링 미활성은
+서로 다른 오류이므로 구분하십시오.** 키가 없을 때만 `CEREBRAS_API_KEY 미설정` 사실을
+라우터가 알립니다.
 
 ---
 

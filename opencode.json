@@ -31,8 +31,7 @@
         }
       },
       "options": {
-        "baseURL": "https://api.cerebras.ai/v1",
-        "apiKey": "{env:CEREBRAS_API_KEY}"
+        "baseURL": "https://api.cerebras.ai/v1"
       }
     }
   }
