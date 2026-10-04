@@ -24,10 +24,10 @@
                 <span class="text-slate-900">낙찰 결과 상세</span>
             </div>
             <div class="flex items-center space-x-3">
-                <button onclick="window.print()" class="px-5 py-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm">
+                <button onclick="window.print()" class="px-5 py-2.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-xs">
                     <i class="fas fa-print mr-2 text-slate-400"></i> PDF 출력
                 </button>
-                <button onclick="history.back()" class="px-5 py-2.5 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-all shadow-sm shadow-slate-900/10">
+                <button onclick="history.back()" class="px-5 py-2.5 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-all shadow-xs shadow-slate-900/10">
                     뒤로가기
                 </button>
             </div>
@@ -38,14 +38,14 @@
             <div class="lg:col-span-2 space-y-8">
                 <div class="h-card p-10 md:p-12 bg-white relative overflow-hidden">
                     <div class="absolute top-0 right-0 mt-8 mr-8">
-                        <span class="award-badge px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider text-white">
+                        <span class="award-badge px-4 py-1.5 rounded-sm text-[10px] font-bold uppercase tracking-wider text-white">
                             Awarded
                         </span>
                     </div>
 
                     <div class="max-w-2xl mb-12">
                         <div class="flex items-center space-x-2 mb-3">
-                            <span class="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider rounded">Bid Award Result</span>
+                            <span class="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider rounded-sm">Bid Award Result</span>
                             <span class="text-slate-400 text-[10px] font-bold uppercase tracking-wider">Historical Data</span>
                         </div>
                         <h1 class="text-3xl font-extrabold text-slate-900 leading-tight mb-4">{{ result.display_bid_ntce_nm }}</h1>

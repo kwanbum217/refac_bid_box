@@ -157,7 +157,7 @@
                         <div class="detail-label">참가가능지역</div>
                         <div class="mt-1 flex flex-wrap gap-2">
                             {% for region in restrictions.regions %}
-                            <span class="px-2 py-0.5 rounded bg-slate-100 text-xs font-semibold text-slate-700">{{ region }}</span>
+                            <span class="px-2 py-0.5 rounded-sm bg-slate-100 text-xs font-semibold text-slate-700">{{ region }}</span>
                             {% endfor %}
                         </div>
                     </div>
@@ -192,12 +192,12 @@
                             <div class="space-y-2">
                                 <label class="detail-label">분석 모델</label>
                                 <div class="relative">
-                                    <select id="selected-model" class="w-full bg-white border border-slate-200 rounded-md px-3 py-2 text-sm font-semibold outline-none focus:border-primary transition-all cursor-pointer appearance-none">
+                                    <select id="selected-model" class="w-full bg-white border border-slate-200 rounded-md px-3 py-2 text-sm font-semibold outline-hidden focus:border-primary transition-all cursor-pointer appearance-none">
                                         <option value="v25">V25 Ultimate Ensemble (Loading...)</option>
                                     </select>
                                     <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none"></i>
                                 </div>
-                                <div id="model-info-panel" class="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-sm">
+                                <div id="model-info-panel" class="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-xs">
                                     <p id="model-desc" class="text-sm font-semibold leading-6 text-slate-800">Initializing predictive algorithms...</p>
                                     <div id="model-tags" class="mt-3 flex flex-wrap gap-2"></div>
                                     <div id="model-metrics" class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"></div>
@@ -211,9 +211,9 @@
                                         <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-bold">₩</span>
                                         <input type="text" id="user-price" inputmode="numeric" autocomplete="off" placeholder="000,000"
                                                {% if not bid.prediction_reference_amount %}disabled{% endif %}
-                                               class="w-full bg-white border border-slate-200 rounded-md pl-7 pr-3 py-2 text-sm font-bold focus:border-primary outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed">
+                                               class="w-full bg-white border border-slate-200 rounded-md pl-7 pr-3 py-2 text-sm font-bold focus:border-primary outline-hidden transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed">
                                     </div>
-                                    <button id="btn-predict" class="h-btn h-btn-primary px-4 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                    <button id="btn-predict" class="h-btn h-btn-primary px-4 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                                             {% if not bid.prediction_reference_amount %}disabled{% endif %}>
                                         분석 실행
                                     </button>
@@ -229,7 +229,7 @@
 
                         <!-- Prediction Result -->
                         <div id="prediction-result" class="hidden">
-                            <div class="p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-sm relative overflow-hidden">
+                            <div class="p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-xs relative overflow-hidden">
                                 <div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
 
                                 <div class="flex items-center justify-between mb-8 relative z-10">
@@ -250,7 +250,7 @@
                                 </div>
 
                                 <!-- 예측 구간. 분위 아티팩트가 없는 구 모델은 응답이 null 이라 감춥니다. -->
-                                <div id="res-interval" class="hidden mb-8 relative z-10 p-4 bg-white/60 backdrop-blur-sm border border-slate-100 rounded-lg">
+                                <div id="res-interval" class="hidden mb-8 relative z-10 p-4 bg-white/60 backdrop-blur-xs border border-slate-100 rounded-lg">
                                     <div class="flex items-center justify-between mb-3">
                                         <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center">
                                             <i class="fas fa-arrows-left-right mr-1.5 text-slate-300"></i>
@@ -323,7 +323,7 @@
                                         </div>
                                     </div>
 
-                                    <div class="mt-6 flex items-start gap-3 p-4 bg-white/60 backdrop-blur-sm border border-slate-100 rounded-lg text-xs text-slate-600 leading-relaxed group hover:border-primary/20 transition-colors">
+                                    <div class="mt-6 flex items-start gap-3 p-4 bg-white/60 backdrop-blur-xs border border-slate-100 rounded-lg text-xs text-slate-600 leading-relaxed group hover:border-primary/20 transition-colors">
                                         <div class="shrink-0 mt-0.5">
                                             <i class="fas fa-robot text-primary opacity-40 group-hover:opacity-100 transition-opacity"></i>
                                         </div>
@@ -356,7 +356,7 @@
                         <div id="evaluation-rule" class="hidden p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
                             <div class="flex items-center gap-3">
                                 <span class="detail-label">규칙 ID</span>
-                                <code id="rule-id" class="text-sm font-mono text-slate-800 bg-white px-2 py-1 rounded border border-slate-200"></code>
+                                <code id="rule-id" class="text-sm font-mono text-slate-800 bg-white px-2 py-1 rounded-sm border border-slate-200"></code>
                             </div>
                             <div class="flex items-center gap-3">
                                 <span class="detail-label">규칙명</span>
@@ -457,7 +457,7 @@
                                         <td class="py-2 pr-4 font-medium text-slate-700" colspan="2">가격 배점한도 (B)</td>
                                         <td class="py-2 pr-4 text-right">
                                             <input type="number" id="input-max-price-score" step="0.01" min="0"
-                                                   class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                                   class="w-24 bg-white border border-blue-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">
                                         </td>
                                         <td class="py-2 pr-4 text-right text-slate-400">필수</td>
                                         <td class="py-2 text-slate-500">입찰가격 평점의 만점</td>
@@ -466,7 +466,7 @@
                                         <td class="py-2 pr-4 font-medium text-slate-700" colspan="2">평점 계수 (k)</td>
                                         <td class="py-2 pr-4 text-right">
                                             <input type="number" id="input-multiplier" step="0.01" min="0"
-                                                   class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                                   class="w-24 bg-white border border-blue-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">
                                         </td>
                                         <td class="py-2 pr-4 text-right text-slate-400">필수</td>
                                         <td class="py-2 text-slate-500">기준비율 편차에 곱하는 값</td>
@@ -475,7 +475,7 @@
                                         <td class="py-2 pr-4 font-medium text-slate-700" colspan="2">통과점수 (T)</td>
                                         <td class="py-2 pr-4 text-right">
                                             <input type="number" id="input-pass-threshold" step="0.01" min="0"
-                                                   class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                                   class="w-24 bg-white border border-blue-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">
                                         </td>
                                         <td class="py-2 pr-4 text-right text-slate-400">필수</td>
                                         <td class="py-2 text-slate-500">종합평점 적격 기준</td>
@@ -493,12 +493,12 @@
                         </div>
                         <div class="flex items-center gap-3 mt-3">
                             <label class="flex items-center gap-2 cursor-pointer">
-                                <input type="checkbox" id="input-disqualification" class="rounded border-slate-300 text-primary focus:ring-primary">
+                                <input type="checkbox" id="input-disqualification" class="rounded-sm border-slate-300 text-primary focus:ring-primary">
                                 <span class="text-sm font-medium text-slate-700">결격사유 해당 (부정당업자 제재, 영업정지 등)</span>
                             </label>
                         </div>
                         <div class="flex items-center gap-2 mt-3">
-                            <button id="btn-evaluate" class="h-btn h-btn-primary px-4 py-2 shadow-sm text-sm">
+                            <button id="btn-evaluate" class="h-btn h-btn-primary px-4 py-2 shadow-xs text-sm">
                                 <i class="fas fa-calculator mr-2"></i> 분석 실행
                             </button>
                             <span id="evaluation-hint" class="text-xs text-slate-400">투찰 금액과 정량평가 점수를 입력 후 실행</span>
@@ -641,7 +641,7 @@
                     </div>
                     <div class="p-2 space-y-1">
                         {% for result in past_results %}
-                        <a href="{{ url('bids:result_detail', result.id) }}" class="block p-3 rounded hover:bg-slate-50 transition-colors group">
+                        <a href="{{ url('bids:result_detail', result.id) }}" class="block p-3 rounded-sm hover:bg-slate-50 transition-colors group">
                             <div class="flex justify-between items-center mb-1">
                                 <span class="text-[9px] text-slate-400 font-bold uppercase">{{ result.rl_openg_dt|date("Y-m-d") }}</span>
                                 <span class="badge badge-green text-[9px] px-1.5 py-0">완료</span>
@@ -668,7 +668,7 @@
                     </div>
                     <div class="p-2 space-y-1">
                         {% for sim in similar_bids %}
-                        <a href="{{ url('bids:bid_detail', sim.id) }}" class="block p-3 rounded hover:bg-slate-50 transition-colors group">
+                        <a href="{{ url('bids:bid_detail', sim.id) }}" class="block p-3 rounded-sm hover:bg-slate-50 transition-colors group">
                             <span class="text-[9px] font-bold text-primary uppercase mb-1 block">{{ sim.category_label }}</span>
                             <p class="text-xs font-bold text-slate-800 group-hover:text-primary transition-colors line-clamp-2 leading-snug">{{ sim.bid_ntce_nm }}</p>
                             <div class="mt-2 flex justify-between items-center">
@@ -846,7 +846,7 @@ $(document).ready(function() {
             ];
 
         $('#model-metrics').html(metricItems.map(item => `
-            <div class="rounded-lg border border-white/80 bg-white px-3 py-2 shadow-sm">
+            <div class="rounded-lg border border-white/80 bg-white px-3 py-2 shadow-xs">
                 <div class="text-[10px] font-black uppercase tracking-wider text-slate-400">${item.label}</div>
                 <div class="mt-1 text-base font-black tracking-tight text-slate-900">${item.value}</div>
             </div>
@@ -1120,7 +1120,7 @@ $(document).ready(function() {
         const min = item.limit_min != null ? item.limit_min : 0;
         return '<input type="number" data-quant-item="' + escapeHtml(item.item_key) + '" step="0.01"'
             + ' min="' + escapeHtml(String(min)) + '" max="' + escapeHtml(String(item.limit)) + '"'
-            + ' class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">';
+            + ' class="w-24 bg-white border border-slate-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">';
     }
 
     function quantManagementCell(item, table) {
@@ -1132,7 +1132,7 @@ $(document).ready(function() {
             options += '<option value="' + escapeHtml(grade.grade_group) + '">'
                 + escapeHtml(grade.grade_group) + ' (' + escapeHtml(score) + '점)</option>';
         });
-        return '<select id="input-management-grade" class="w-40 bg-white border border-slate-200 rounded px-2 py-1 text-sm font-semibold focus:border-primary outline-none">'
+        return '<select id="input-management-grade" class="w-40 bg-white border border-slate-200 rounded-sm px-2 py-1 text-sm font-semibold focus:border-primary outline-hidden">'
             + options + '</select>';
     }
 
@@ -1159,14 +1159,14 @@ $(document).ready(function() {
         if (item.option_kind === 'range' && options.length === 2) {
             return '<input type="number" data-reputation-item="' + escapeHtml(item.item_code) + '" step="0.01"'
                 + ' min="' + escapeHtml(options[0]) + '" max="' + escapeHtml(options[1]) + '" value="0"'
-                + ' class="w-24 bg-white border border-slate-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">';
+                + ' class="w-24 bg-white border border-slate-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">';
         }
         let selectOptions = '<option value="0">미해당</option>';
         options.forEach(function(value) {
             selectOptions += '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '점</option>';
         });
         return '<select data-reputation-item="' + escapeHtml(item.item_code) + '"'
-            + ' class="w-32 bg-white border border-slate-200 rounded px-2 py-1 text-sm font-semibold focus:border-primary outline-none">'
+            + ' class="w-32 bg-white border border-slate-200 rounded-sm px-2 py-1 text-sm font-semibold focus:border-primary outline-hidden">'
             + selectOptions + '</select>';
     }
 
@@ -1629,7 +1629,7 @@ $(document).ready(function() {
                         $('#evaluation-warnings').removeClass('hidden');
                         const warningsHtml = data.warnings
                             .filter(w => !w.includes('기본값') && !w.includes('불일치') && !w.includes('다릅니다'))
-                            .map(w => '<div class="p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">' + escapeHtml(w) + '</div>')
+                            .map(w => '<div class="p-2 bg-amber-50 border border-amber-200 rounded-sm text-xs text-amber-700">' + escapeHtml(w) + '</div>')
                             .join('');
                         $('#warnings-list').html(warningsHtml);
                     }

@@ -6,7 +6,7 @@
 <div class="min-h-[calc(100vh-128px)] bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
     <div class="max-w-xl mx-auto">
         <!-- Signup Card -->
-        <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8 md:p-10">
+        <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-8 md:p-10">
             <div class="text-center mb-10">
                 <div class="inline-flex items-center justify-center w-16 h-16 bg-primary/5 rounded-2xl mb-6">
                     <i class="fas fa-user-plus text-primary text-2xl"></i>
@@ -45,7 +45,7 @@
                                    name="{{ field.name }}"
                                    id="{{ field.id_for_label }}"
                                    value="{{ field.value|default('', true) }}"
-                                   class="block w-full pl-10 pr-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
+                                   class="block w-full pl-10 pr-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
                         </div>
                         {% if field.errors %}
                         <p class="text-red-500 text-[10px] font-bold mt-1">{{ field.errors.0 }}</p>
@@ -69,7 +69,7 @@
                         {% endif %}
                     </div>
                     {% else %}
-                    <div class="space-y-1.5 {% if field.name == 'username' or field.name == 'email' %}md:col-span-2{% endif %}">
+                    <div class="space-y-1.5 {% if field.name =='username' or field.name == 'email' %}md:col-span-2{% endif %}">
                         <label for="{{ field.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">
                             {{ field.label }}
                         </label>
@@ -84,7 +84,7 @@
                                    name="{{ field.name }}"
                                    id="{{ field.id_for_label }}"
                                    value="{{ field.value|default('', true) }}"
-                                   class="block w-full pl-10 pr-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                                   class="block w-full pl-10 pr-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                                    placeholder="{{ field.label }} 입력">
                         </div>
                         {% if field.errors %}
@@ -101,7 +101,7 @@
                 <!-- Agreement Section -->
                 <div class="pt-6 mt-6 border-t border-slate-100 space-y-4">
                     <div class="flex items-center space-x-3 p-3.5 bg-slate-50 rounded-lg border border-slate-200 group cursor-pointer transition-colors hover:bg-slate-100">
-                        <input type="checkbox" id="check-all" class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
+                        <input type="checkbox" id="check-all" class="w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer">
                         <label for="check-all" class="text-sm font-bold text-slate-700 cursor-pointer select-none">모든 약관에 동의합니다</label>
                     </div>
 
@@ -109,7 +109,7 @@
                         <div class="flex items-center justify-between">
                             <div class="flex items-center space-x-3">
                                 <input type="checkbox" name="agree_terms" id="{{ form.agree_terms.id_for_label }}" required
-                                       class="agreement-checkbox w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
+                                       class="agreement-checkbox w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer">
                                 <label for="{{ form.agree_terms.id_for_label }}" class="text-sm text-slate-600 cursor-pointer select-none">
                                     이용약관 <span class="text-primary font-bold">(필수)</span>
                                 </label>
@@ -120,7 +120,7 @@
                         <div class="flex items-center justify-between">
                             <div class="flex items-center space-x-3">
                                 <input type="checkbox" name="agree_privacy" id="{{ form.agree_privacy.id_for_label }}" required
-                                       class="agreement-checkbox w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer">
+                                       class="agreement-checkbox w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer">
                                 <label for="{{ form.agree_privacy.id_for_label }}" class="text-sm text-slate-600 cursor-pointer select-none">
                                     개인정보처리방침 <span class="text-primary font-bold">(필수)</span>
                                 </label>
@@ -133,7 +133,7 @@
                     {% endif %}
                 </div>
 
-                <button type="submit" class="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all transform hover:-translate-y-0.5 active:translate-y-0 mt-4">
+                <button type="submit" class="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-lg shadow-xs text-sm font-bold text-white bg-primary hover:bg-primary/90 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all transform hover:-translate-y-0.5 active:translate-y-0 mt-4">
                     계정 생성
                 </button>
             </form>
@@ -152,21 +152,21 @@
                 <div class="mt-6 space-y-3">
                     {% if social_login_providers.kakao %}
                     <a href="{{ provider_login_url('kakao') }}"
-                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-[#FEE500] hover:bg-[#FDD835] transition-all shadow-sm text-slate-900 font-bold text-sm">
+                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-[#FEE500] hover:bg-[#FDD835] transition-all shadow-xs text-slate-900 font-bold text-sm">
                         <i class="fas fa-comment"></i>
                         <span>카카오로 시작하기</span>
                     </a>
                     {% endif %}
                     {% if social_login_providers.naver %}
                     <a href="{{ provider_login_url('naver') }}"
-                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-[#03C75A] hover:bg-[#02B350] transition-all shadow-sm text-white font-bold text-sm">
+                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-[#03C75A] hover:bg-[#02B350] transition-all shadow-xs text-white font-bold text-sm">
                         <span class="font-black">N</span>
                         <span>네이버로 시작하기</span>
                     </a>
                     {% endif %}
                     {% if social_login_providers.google %}
                     <a href="{{ provider_login_url('google') }}"
-                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-sm text-slate-700 font-bold text-sm">
+                       class="flex items-center justify-center space-x-3 py-3 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition-all shadow-xs text-slate-700 font-bold text-sm">
                         <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" class="h-4 w-4">
                         <span>Google로 시작하기</span>
                     </a>
@@ -186,7 +186,7 @@
 </div>
 
 <!-- Agreement Modals -->
-<div id="terms-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm">
+<div id="terms-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-xs">
     <div class="bg-white w-full max-w-2xl max-h-[80vh] flex flex-col rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
         <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
             <h3 id="modal-title" class="text-lg font-bold text-slate-900">약관 내용</h3>
