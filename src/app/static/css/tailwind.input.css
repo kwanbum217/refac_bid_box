@@ -1,4 +1,6 @@
-@import "tailwindcss" source(none);
+@import "tailwindcss/theme.css";
+@import "tailwindcss/preflight.css";
+@import "tailwindcss/utilities.css" source(none);
 
 @source "../../templates/**/*.html";
 @source "../../static/js/**/*.js";
@@ -19,24 +21,22 @@
   --shadow-h-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -1px rgb(0 0 0 / 0.06);
 }
 
-@layer base {
-  *,
-  ::before,
-  ::after {
-    border-color: var(--color-gray-200, currentColor);
-  }
+*,
+::before,
+::after {
+  border-color: var(--color-gray-200, currentColor);
+}
 
-  button,
-  [type='button'],
-  [type='reset'],
-  [type='submit'] {
-    cursor: pointer;
-  }
+button,
+[type='button'],
+[type='reset'],
+[type='submit'] {
+  cursor: pointer;
+}
 
-  input::placeholder,
-  textarea::placeholder {
-    color: var(--color-gray-400);
-  }
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-gray-400);
 }
 
 @utility border-white\/12 {
