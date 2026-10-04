@@ -753,13 +753,20 @@ async def test_coverage_task_notifies_active_and_summarizes_suppressed(monkeypat
 
 
 def test_collect_snapshot_reads_suppression_from_settings(monkeypatch):
-    """스냅샷 수집이 설정을 파싱해 판정에 넘기고 오늘을 기준일로 쓴다."""
+    """스냅샷 수집이 설정을 파싱해 판정에 넘기고 고정 기준일을 쓴다."""
     captured: dict[str, Any] = {}
+    reference = date(2026, 10, 4)
 
     class _DummyDb:
         def close(self) -> None:
             pass
 
+    class _FrozenDate(date):
+        @classmethod
+        def today(cls) -> date:
+            return reference
+
+    monkeypatch.setattr(coverage_tasks, "date", _FrozenDate)
     monkeypatch.setattr(coverage_tasks, "SessionLocal", lambda: _DummyDb())
     monkeypatch.setattr(coverage_tasks, "compute_result_match_rates", lambda db, *, as_of: [])
 
@@ -775,7 +782,7 @@ def test_collect_snapshot_reads_suppression_from_settings(monkeypatch):
 
     assert result["alerts"] == []
     assert captured["suppressions"] == {("Servc", "large"): date(2026, 11, 30)}
-    assert captured["today"] == date.today()
+    assert captured["today"] == reference
 
 
 @pytest.mark.asyncio

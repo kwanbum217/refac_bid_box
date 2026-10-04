@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from src.rag import query_planning
 from src.rag.query_planning import (
     ENTITY_ORG_SUFFIXES,
     _extract_institution_list,
@@ -24,6 +25,15 @@ from src.rag.query_planning import (
     is_result_list_query,
     is_result_query,
 )
+
+# "최근" 같은 표현의 계획 결과를 실행 날짜와 무관하게 검증하기 위한 고정 기준일.
+_FROZEN_TODAY = date(2026, 10, 4)
+
+
+class _FrozenDate(date):
+    @classmethod
+    def today(cls) -> date:
+        return _FROZEN_TODAY
 
 
 def _load_fixture_data() -> dict:
@@ -288,23 +298,23 @@ def test_non_entity_statistics_query_keeps_year_filter():
 
 
 def _expected_filters(snap: dict) -> dict:
-    """스냅샷 필터를 오늘 기준으로 해석합니다.
+    """스냅샷 필터를 고정 기준일로 해석합니다.
 
-    "최근" 같은 표현은 계획기가 오늘을 기준으로 창을 잡으므로 절대 날짜를 굳히면
-    기록 다음 날부터 매일 실패합니다. relative_to_today 가 있는 항목은 그 오프셋으로
-    날짜를 다시 계산해 창의 폭과 오늘로부터의 거리를 그대로 검사합니다.
+    "최근" 같은 표현은 계획기가 기준일을 잡아 창을 계산하므로 절대 날짜를 굳히면
+    실행 날짜에 따라 결과가 흔들립니다. relative_to_today 가 있는 항목은 그 오프셋과
+    _FROZEN_TODAY 로 날짜를 다시 계산해 창의 폭과 기준일로부터의 거리를 검사합니다.
     """
     filters = dict(snap["filters"])
     offsets = snap.get("relative_to_today")
     if offsets:
-        today = date.today()
         for key, offset in offsets.items():
-            filters[key] = (today + timedelta(days=offset)).isoformat()
+            filters[key] = (_FROZEN_TODAY + timedelta(days=offset)).isoformat()
     return filters
 
 
-def test_retrieval_plan_llm_quality_fixture_v2_snapshot_invariance():
+def test_retrieval_plan_llm_quality_fixture_v2_snapshot_invariance(monkeypatch):
     """llm_quality_fixture_v2 전 문항의 계획이 스냅샷과 완전히 일치해야 합니다 (q29의 category 키 제외만 허용)."""
+    monkeypatch.setattr(query_planning, "date", _FrozenDate)
     snapshot_path = Path("tests/fixtures/retrieval_plan_canonical_snapshot.json")
     assert snapshot_path.exists(), "정본 스냅샷 파일이 존재해야 합니다."
     with open(snapshot_path, encoding="utf-8") as f:
@@ -338,8 +348,9 @@ def test_retrieval_plan_llm_quality_fixture_v2_snapshot_invariance():
             )
 
 
-def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance():
+def test_retrieval_plan_adversarial_fixture_v1_snapshot_invariance(monkeypatch):
     """adversarial_fixture_v1 문항 중 명시 허용 목록(adv_inst_03, adv_inst_04) 외에는 스냅샷과 완전히 일치해야 합니다."""
+    monkeypatch.setattr(query_planning, "date", _FrozenDate)
     snapshot_path = Path("tests/fixtures/retrieval_plan_canonical_snapshot.json")
     with open(snapshot_path, encoding="utf-8") as f:
         snapshot = json.load(f)
@@ -491,8 +502,9 @@ def test_new_entity_org_suffixes_recognized(suffix: str, sample_query: str):
     assert is_entity_specific_query(sample_query) is True
 
 
-def test_quarter_and_half_year_parsing():
+def test_quarter_and_half_year_parsing(monkeypatch):
     """분기(1~4분기), 분기 범위, 상반기/하반기 기간 해석 동작을 검증합니다."""
+    monkeypatch.setattr(query_planning, "date", _FrozenDate)
     # 1. 단독 분기
     p1 = build_retrieval_plan("2026년 1분기 용역 낙찰 통계 알려줘")
     assert p1.filters.get("date_from") == "2026-01-01"
@@ -536,9 +548,7 @@ def test_quarter_and_half_year_parsing():
     assert ps2.filters.get("date_from") == "2026-07-01"
     assert ps2.filters.get("date_to") == "2026-12-31"
 
-    from datetime import date
-
-    today_year = date.today().year
+    today_year = _FROZEN_TODAY.year
     ps3 = build_retrieval_plan("하반기 낙찰률 통계")
     assert ps3.filters.get("date_from") == f"{today_year}-07-01"
     assert ps3.filters.get("date_to") == f"{today_year}-12-31"

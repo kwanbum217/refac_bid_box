@@ -11,22 +11,32 @@ tests/test_rag_multi_institution.py
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidResult
+from src.rag import query_planning
 from src.rag.answer_format import _compose_context_text
 from src.rag.query_planning import build_retrieval_plan
 from src.rag.schemas import RetrievalPlan
 from src.rag.snapshots import _extract_statistical_snapshot
 from src.rag.structured_data import retrieve_structured_data
 
+# "최근" 창을 실행 날짜와 무관하게 검증하기 위한 고정 기준 시각.
+_FROZEN_NOW = datetime(2026, 10, 4, 12, 0, 0)
+
+
+class _FrozenDate(date):
+    @classmethod
+    def today(cls) -> date:
+        return _FROZEN_NOW.date()
+
 
 def _seed_sample_bid_results(db: Session) -> None:
     """서울특별시교육청 3건, 서울대학교 2건의 낙찰 행을 시드합니다."""
-    now = datetime.now().replace(microsecond=0)
+    now = _FROZEN_NOW.replace(microsecond=0)
     items = [
         BidResult(
             id=101,
@@ -94,8 +104,9 @@ def _seed_sample_bid_results(db: Session) -> None:
     db.commit()
 
 
-def test_multi_institution_aggregation_and_source_snapshot(isolated_db: Session):
+def test_multi_institution_aggregation_and_source_snapshot(isolated_db: Session, monkeypatch):
     """두 기관의 낙찰 행이 Source [1] 에 기관별 구역으로 분리되어 실리는지 검증합니다."""
+    monkeypatch.setattr(query_planning, "date", _FrozenDate)
     _seed_sample_bid_results(isolated_db)
 
     query = "서울특별시교육청과 서울대학교의 최근 전산장비 구매 입찰 결과를 비교해줘."
