@@ -108,10 +108,6 @@ class EvaluationRule:
     institution_name: str | None = None
     region_code: str | None = None
     region_name: str | None = None
-    # 시·도 별표 중 '중소기업자간 경쟁제품' 여부로 통과점수가 갈리는 규칙(예: 세종 SW·육상운송
-    # 85점, 중소기업자간 경쟁제품 88점)은 기본 T 를 threshold_bands 에 두고, 중소기업자간일 때의
-    # T 를 이 필드에 둡니다. 확정은 낙찰방법명·공고명에 '중소기업자간' 표기가 있을 때만 합니다.
-    sme_competition_pass_threshold: Decimal | None = None
 
     def __post_init__(self) -> None:
         if self.max_price_score is not None and self.max_price_score_by_500m is not None:
@@ -142,12 +138,6 @@ class EvaluationRule:
             if not self.threshold_bands:
                 raise ValueError("threshold_bands 는 최소 한 구간이 필요합니다.")
             _validate_bands(self.threshold_bands, axis="ThresholdBand")
-        if self.sme_competition_pass_threshold is not None and (
-            self.threshold_bands is None or len(self.threshold_bands) != 1
-        ):
-            raise ValueError(
-                "중소기업자간 조건부 통과점수는 단일 threshold_bands 규칙에만 선언할 수 있습니다."
-            )
         if self.institution_scope not in RULE_SCOPE_VALUES:
             raise ValueError(f"지원하지 않는 기관 범위입니다: {self.institution_scope}")
         if self.institution_scope == RULE_SCOPE_INSTITUTION and not (
@@ -1537,6 +1527,35 @@ _SRC_GG = (
     "경기도 예규 제748호, 시행 2025-08-08, 별표 1-2~1-6)"
 )
 
+# 세종 별표 3(소프트웨어)·별표 5(육상운송)는 같은 별표 안에서 중소기업자간 경쟁제품
+# 대상/비대상 여부로 k·낙찰하한율·통과점수가 갈립니다(별표 분리가 아니라 조건 분기).
+# 출처는 코디네이터가 확인한 원문 추출 파일의 행 번호입니다.
+_SRC_SEJONG_EXT = ".orca/capsules/task_58ea8ddab6fb/external/sejong"
+_SRC_SEJONG_SW_NON_TARGET = (
+    f"{_SRC_SEJONG}; 원문 {_SRC_SEJONG_EXT}/byp3_sw_2025.txt:16-23 "
+    "(가. 중소기업간 경쟁제품 비대상 입찰가격 평점산식 80.495%), "
+    f"{_SRC_SEJONG_EXT}/byp3_sw_2025.tbl.txt:10 (B 5억원 이상 60·5억원 미만 70), "
+    f":14 (k 2), {_SRC_SEJONG_EXT}/sejong_body_2025.txt:108 (비대상 T 85)"
+)
+_SRC_SEJONG_SW_TARGET = (
+    f"{_SRC_SEJONG}; 원문 {_SRC_SEJONG_EXT}/byp3_sw_2025.txt:24-31 "
+    "(나. 중소기업간 경쟁제품 대상 입찰가격 평점산식 84.995%), "
+    f"{_SRC_SEJONG_EXT}/byp3_sw_2025.tbl.txt:10 (B 5억원 이상 60·5억원 미만 70), "
+    f":17 (k 4), {_SRC_SEJONG_EXT}/sejong_body_2025.txt:108 (대상 T 88)"
+)
+_SRC_SEJONG_LT_NON_TARGET = (
+    f"{_SRC_SEJONG}; 원문 {_SRC_SEJONG_EXT}/byp5_2025.txt:19-26 "
+    "(가. 중소기업간 경쟁제품 비대상 입찰가격 평점산식 80.495%), "
+    f"{_SRC_SEJONG_EXT}/byp5_2025.tbl.txt:10 (B 5억원 이상 60·5억원 미만 70), "
+    f":20 (k 2), {_SRC_SEJONG_EXT}/sejong_body_2025.txt:108 (비대상 T 85)"
+)
+_SRC_SEJONG_LT_TARGET = (
+    f"{_SRC_SEJONG}; 원문 {_SRC_SEJONG_EXT}/byp5_2025.txt:27-34 "
+    "(나. 중소기업간 경쟁제품 대상 입찰가격 평점산식 84.995%), "
+    f"{_SRC_SEJONG_EXT}/byp5_2025.tbl.txt:10 (B 5억원 이상 60·5억원 미만 70), "
+    f":23 (k 4), {_SRC_SEJONG_EXT}/sejong_body_2025.txt:108 (대상 T 88)"
+)
+
 _LOCAL_NOT_FOUND_MESSAGE = (
     "해당 지자체의 일반용역 적격심사 기준이 아직 확보되지 않았습니다. "
     "가격배점한도(B)·평점계수(k)·기준비율·통과점수를 직접 입력하면 가격점수를 계산합니다."
@@ -1547,9 +1566,10 @@ _LOCAL_NOT_FOUND_MESSAGE = (
 _LOCAL_LWLT_BY_SERVICE: dict[str, str] = {
     "FACILITY": "87.995",
     "INSURANCE": "47.995",
-    "PASSENGER_TRANSPORT": "87.995",
-    "FREIGHT": "84.245",
+    "LAND_TRANSPORT": "87.995",
+    "LAND_TRANSPORT_SME": "84.995",
     "SW": "87.995",
+    "SW_SME": "84.995",
     "WASTE": "84.245",
     "WASTE_HOUSEHOLD": "84.245",
     "REPAIR_INSPECTION": "84.245",
@@ -1617,7 +1637,7 @@ def _local_rule(
     price_bands: tuple[PriceBand, ...],
     threshold_bands: tuple[ThresholdBand, ...],
     description: str,
-    sme_competition_pass_threshold: Decimal | None = None,
+    lwlt_rate: str | None = None,
 ) -> EvaluationRule:
     return EvaluationRule(
         rule_id=rule_id,
@@ -1627,11 +1647,10 @@ def _local_rule(
         effective_date=effective_date,
         source=source,
         patterns=(),
-        lwlt_rate=Decimal(_LOCAL_LWLT_BY_SERVICE[service_type]),
+        lwlt_rate=Decimal(lwlt_rate or _LOCAL_LWLT_BY_SERVICE[service_type]),
         base_rate=Decimal("0.88"),
         price_bands=price_bands,
         threshold_bands=threshold_bands,
-        sme_competition_pass_threshold=sme_competition_pass_threshold,
         quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
         score_table_source=source,
         contract_regime="LOCAL",
@@ -1732,14 +1751,31 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         sido_name="세종특별자치시",
         service_type="SW",
         effective_date="2025-12-01",
-        source=_SRC_SEJONG,
-        description="세종특별자치시 소프트웨어용역 적격심사 (별표 3)",
+        source=_SRC_SEJONG_SW_NON_TARGET,
+        description="세종특별자치시 소프트웨어용역(중소기업간 경쟁제품 비대상) 적격심사 (별표 3)",
         price_bands=(
-            _local_price_band("500000000", "70", "4", "추정가격 5억원 미만", _SRC_SEJONG),
-            _local_price_band(None, "60", "2", "추정가격 5억원 이상", _SRC_SEJONG),
+            _local_price_band(
+                "500000000", "70", "2", "추정가격 5억원 미만", _SRC_SEJONG_SW_NON_TARGET
+            ),
+            _local_price_band(None, "60", "2", "추정가격 5억원 이상", _SRC_SEJONG_SW_NON_TARGET),
         ),
-        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_SEJONG),
-        sme_competition_pass_threshold=Decimal("88"),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_SEJONG_SW_NON_TARGET),
+        lwlt_rate="80.495",
+    ),
+    _local_rule(
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME",
+        sido_code="36",
+        sido_name="세종특별자치시",
+        service_type="SW_SME",
+        effective_date="2025-12-01",
+        source=_SRC_SEJONG_SW_TARGET,
+        description="세종특별자치시 소프트웨어용역(중소기업간 경쟁제품 대상) 적격심사 (별표 3)",
+        price_bands=(
+            _local_price_band("500000000", "70", "4", "추정가격 5억원 미만", _SRC_SEJONG_SW_TARGET),
+            _local_price_band(None, "60", "4", "추정가격 5억원 이상", _SRC_SEJONG_SW_TARGET),
+        ),
+        threshold_bands=_single_threshold("88", "전 구간 88", _SRC_SEJONG_SW_TARGET),
+        lwlt_rate="84.995",
     ),
     _local_rule(
         "SERVC_LOCAL_SEJONG_20251201_ATTACH_04",
@@ -1773,16 +1809,33 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         "SERVC_LOCAL_SEJONG_20251201_ATTACH_05",
         sido_code="36",
         sido_name="세종특별자치시",
-        service_type="FREIGHT",
+        service_type="LAND_TRANSPORT",
         effective_date="2025-12-01",
-        source=_SRC_SEJONG,
-        description="세종특별자치시 육상운송용역 적격심사 (별표 5)",
+        source=_SRC_SEJONG_LT_NON_TARGET,
+        description="세종특별자치시 육상운송용역(중소기업간 경쟁제품 비대상) 적격심사 (별표 5)",
         price_bands=(
-            _local_price_band("500000000", "70", "4", "추정가격 5억원 미만", _SRC_SEJONG),
-            _local_price_band(None, "60", "2", "추정가격 5억원 이상", _SRC_SEJONG),
+            _local_price_band(
+                "500000000", "70", "2", "추정가격 5억원 미만", _SRC_SEJONG_LT_NON_TARGET
+            ),
+            _local_price_band(None, "60", "2", "추정가격 5억원 이상", _SRC_SEJONG_LT_NON_TARGET),
         ),
-        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_SEJONG),
-        sme_competition_pass_threshold=Decimal("88"),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_SEJONG_LT_NON_TARGET),
+        lwlt_rate="80.495",
+    ),
+    _local_rule(
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME",
+        sido_code="36",
+        sido_name="세종특별자치시",
+        service_type="LAND_TRANSPORT_SME",
+        effective_date="2025-12-01",
+        source=_SRC_SEJONG_LT_TARGET,
+        description="세종특별자치시 육상운송용역(중소기업간 경쟁제품 대상) 적격심사 (별표 5)",
+        price_bands=(
+            _local_price_band("500000000", "70", "4", "추정가격 5억원 미만", _SRC_SEJONG_LT_TARGET),
+            _local_price_band(None, "60", "4", "추정가격 5억원 이상", _SRC_SEJONG_LT_TARGET),
+        ),
+        threshold_bands=_single_threshold("88", "전 구간 88", _SRC_SEJONG_LT_TARGET),
+        lwlt_rate="84.995",
     ),
     # 경상북도 (예규 제1571호, 시행 2026-01-08)
     _local_rule(
@@ -1978,10 +2031,11 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         "SERVC_LOCAL_JNGJ_20260716_ATTACH_05",
         sido_code="12",
         sido_name="전남광주통합특별시",
-        service_type="FREIGHT",
+        service_type="LAND_TRANSPORT",
         effective_date="2026-07-16",
         source=_SRC_JNGJ,
         description="전남광주통합특별시 육상운송용역 적격심사 (별표 5)",
+        lwlt_rate="84.245",
         price_bands=(
             _local_price_band("200000000", "80", "2", "추정가격 2억원 미만", _SRC_JNGJ),
             _local_price_band("500000000", "70", "2", "5억원 미만 2억원 이상", _SRC_JNGJ),
@@ -2070,10 +2124,11 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         "SERVC_LOCAL_GG_20250808_ATTACH_1_4",
         sido_code="41",
         sido_name="경기도",
-        service_type="PASSENGER_TRANSPORT",
+        service_type="LAND_TRANSPORT",
         effective_date="2025-08-08",
         source=_SRC_GG,
         description="경기도 육상운송용역 적격심사 (별표 1-4)",
+        lwlt_rate="87.995",
         price_bands=(
             _local_price_band("200000000", "90", "20", "추정가격 2억원 미만", _SRC_GG),
             _local_price_band("500000000", "70", "20", "5억원 미만 2억원 이상", _SRC_GG),
@@ -2122,8 +2177,9 @@ _METHOD_SERVICE_MARKERS: tuple[tuple[str, str], ...] = (
     ("폐기물", "WASTE"),
     ("시설분야", "FACILITY"),
     ("보험", "INSURANCE"),
-    ("여객", "PASSENGER_TRANSPORT"),
-    ("화물", "FREIGHT"),
+    ("육상운송", "LAND_TRANSPORT"),
+    ("여객", "LAND_TRANSPORT"),
+    ("화물", "LAND_TRANSPORT"),
     ("소프트웨어", "SW"),
     ("수리ㆍ점검", "REPAIR_INSPECTION"),
     ("수리", "REPAIR_INSPECTION"),
@@ -2189,34 +2245,28 @@ def _recommend_local_service_type(
     return None
 
 
-_SME_COMPETITION_MARKER = "중소기업자간"
+# 중소기업자간(또는 중소기업간) 경쟁제품 대상/비대상 표기. 세종 SW·육상운송은 같은 별표
+# 안에서 대상 여부로 k·낙찰하한율·통과점수가 갈리므로 비대상 규칙과 대상(_SME) 규칙을
+# 나눠 두고 이 표기로 하나를 고릅니다. 근거 표기가 없으면 자동 확정하지 않습니다.
+_SME_NON_TARGET_MARKER = "비대상"
+_SME_TARGET_MARKERS = ("중소기업자간", "중소기업간")
+_SME_SERVICE_TYPE_BY_BASE: dict[str, str] = {
+    "SW": "SW_SME",
+    "LAND_TRANSPORT": "LAND_TRANSPORT_SME",
+}
 
 
-def _apply_sme_competition_threshold(
-    rule: EvaluationRule,
-    *,
-    method_name: str | None,
-    raw_data: dict[str, Any] | None,
-) -> tuple[EvaluationRule, list[str]]:
-    """낙찰방법명·공고명에 '중소기업자간' 이 있을 때만 조건부 통과점수를 적용합니다.
+def _classify_sme_competition(text: str) -> str | None:
+    """중소기업자간 경쟁제품 대상 여부를 'TARGET'/'NON_TARGET'/None 으로 돌려줍니다.
 
-    세종 SW·육상운송처럼 원문이 '85점(중소기업자간 경쟁제품 88점)' 인 규칙은 기본 T 를
-    threshold_bands 에 두고 이 함수가 중소기업자간 표기를 확인해 T 를 올립니다.
+    '비대상' 이 있으면 대상 표기가 함께 있어도 비대상으로 봅니다. '중소기업자간 경쟁제품
+    비대상' 을 대상으로 오인하면 통과점수가 3점 높아져 낙찰 판정이 뒤집힙니다.
     """
-    if rule.sme_competition_pass_threshold is None:
-        return rule, []
-    data = raw_data if isinstance(raw_data, dict) else {}
-    text = f"{method_name or ''} {data.get('bidNtceNm') or ''}"
-    if _SME_COMPETITION_MARKER not in text:
-        return rule, []
-    sme = rule.sme_competition_pass_threshold
-    bands = tuple(
-        replace(band, pass_threshold=sme, label=f"중소기업자간 경쟁제품 {sme}")
-        for band in (rule.threshold_bands or ())
-    )
-    return replace(rule, threshold_bands=bands), [
-        f"낙찰방법명·공고명에 '중소기업자간' 표기가 있어 통과점수 {sme}점을 적용합니다."
-    ]
+    if _SME_NON_TARGET_MARKER in text:
+        return "NON_TARGET"
+    if any(marker in text for marker in _SME_TARGET_MARKERS):
+        return "TARGET"
+    return None
 
 
 def _select_local_rule(
@@ -2234,10 +2284,7 @@ def _select_local_rule(
     warnings: list[str] = []
 
     def _applied(rule: EvaluationRule) -> tuple[EvaluationRule, str | None, str, list[str]]:
-        selected, extra = _apply_sme_competition_threshold(
-            rule, method_name=method_name, raw_data=raw_data
-        )
-        return selected, None, "", [*warnings, *extra]
+        return rule, None, "", list(warnings)
 
     region_rules = [
         rule
@@ -2289,6 +2336,28 @@ def _select_local_rule(
         return None, BLOCK_CODE_LOCAL_RULE_NOT_FOUND, _LOCAL_NOT_FOUND_MESSAGE, warnings
 
     candidates = [rule for rule in region_rules if rule.service_type == service_type]
+    sme_type = _SME_SERVICE_TYPE_BY_BASE.get(service_type)
+    if basis != "USER_SELECTION" and sme_type and candidates:
+        sme_candidates = [rule for rule in region_rules if rule.service_type == sme_type]
+        if sme_candidates:
+            data = raw_data if isinstance(raw_data, dict) else {}
+            status = _classify_sme_competition(f"{method_name or ''} {data.get('bidNtceNm') or ''}")
+            if status == "TARGET":
+                candidates = sme_candidates
+            elif status != "NON_TARGET":
+                pool = [*candidates, *sme_candidates]
+                warnings.append(
+                    "후보 별표: "
+                    + ", ".join(f"{rule.rule_id} ({rule.table_name})" for rule in pool)
+                )
+                options = "/".join(sorted({rule.service_type for rule in pool}))
+                return (
+                    None,
+                    BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED,
+                    "중소기업자간 경쟁제품 대상/비대상 표기가 없어 적용 별표를 자동 확정하지 "
+                    f"못했습니다. 용역 세부유형(local_service_type, 예: {options})을 선택해 주십시오.",
+                    warnings,
+                )
     if not candidates and service_type != "GENERAL":
         fallback = [rule for rule in region_rules if rule.service_type == "GENERAL"]
         if fallback:
