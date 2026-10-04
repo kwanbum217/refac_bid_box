@@ -28,6 +28,10 @@ from src.app.services.kb_builder import (
     rebuild_knowledge_base,
 )
 
+# rebuild_knowledge_base 는 utcnow() 기준 최근 1년 창을 조회한다. 시드 데이터(2026-06-01)가
+# 실행 날짜가 지나며 창 밖으로 밀려나지 않도록 기준 시각을 고정한다.
+_KB_REFERENCE_NOW = datetime(2026, 6, 2, 12, 0, 0)
+
 
 def _create_sqlite_session() -> Session:
     """인메모리 SQLite DB 세션을 생성합니다."""
@@ -705,11 +709,12 @@ def test_resolve_delta_announcements_paged_sequence() -> None:
     assert seq_empty == []
 
 
-def test_memory_bound_announcements_query_streaming() -> None:
+def test_memory_bound_announcements_query_streaming(monkeypatch) -> None:
     """_resolve_announcements 조회를 측정 구간에 포함하여, 문서 수가 10배(200건 -> 2,000건)
     증가하더라도 PagedQuerySequence 의 keyset 지연 조회 및 expunge 로 인해
     Session identity map 에 객체가 누적되지 않고 피크 메모리가 비례 증가하지 않음을 단언하는 회귀 테스트.
     """
+    monkeypatch.setattr("src.app.services.kb_builder.utcnow", lambda: _KB_REFERENCE_NOW)
     chunk_size = 50
 
     # 사전 워밍업 (1건)
