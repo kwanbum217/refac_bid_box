@@ -242,6 +242,63 @@ def institution_region(
     )
 
 
+# 옛 도명·통합시 명칭을 현행 시·도 명칭으로 정규화합니다(설계 5.4절). 전남·광주 기관은
+# 전남광주통합특별시 규칙 하나로 매칭합니다.
+SIDO_ALIASES: dict[str, str] = {
+    "강원도": "강원특별자치도",
+    "전라북도": "전북특별자치도",
+    "제주도": "제주특별자치도",
+    "전라남도": "전남광주통합특별시",
+    "광주광역시": "전남광주통합특별시",
+}
+
+# 규칙 region_code 로 쓰는 2자리 시·도 코드(법정동코드 앞 2자리).
+SIDO_CODES: dict[str, str] = {
+    "서울특별시": "11",
+    "부산광역시": "26",
+    "대구광역시": "27",
+    "인천광역시": "28",
+    "대전광역시": "30",
+    "울산광역시": "31",
+    "세종특별자치시": "36",
+    "경기도": "41",
+    "강원특별자치도": "51",
+    "충청북도": "43",
+    "충청남도": "44",
+    "전북특별자치도": "52",
+    "전남광주통합특별시": "12",
+    "경상북도": "47",
+    "경상남도": "48",
+    "제주특별자치도": "50",
+}
+
+
+def institution_sido(
+    institution: G2BDemandInstitution | dict[str, Any] | None,
+) -> tuple[str | None, str | None]:
+    """수요기관의 시·도 (코드, 명) 를 돌려줍니다. 시·도로 볼 수 없으면 (None, None) 입니다.
+
+    기준은 수요기관의 `toplvl_instt_nm`(시·도 본청)이고, 없으면 `rgn_nm` 첫 토큰입니다.
+    `rgn_nm` 은 시·군·구 단위라 시·도 규칙 정확 일치에 쓸 수 없어 본청 필드를 씁니다.
+    교육청·공단처럼 본청이 아닌 값은 (None, None) 으로 두어 시·도 규칙에서 제외합니다.
+    """
+    if institution is None:
+        return None, None
+    top = _institution_value(institution, "toplvl_instt_nm", "toplvlInsttNm")
+    name = top
+    if not name:
+        region_name = _institution_value(institution, "rgn_nm", "rgnNm")
+        if region_name:
+            name = region_name.split()[0]
+    if not name:
+        return None, None
+    normalized = SIDO_ALIASES.get(name, name)
+    code = SIDO_CODES.get(normalized)
+    if code is None:
+        return None, None
+    return code, normalized
+
+
 def describe_contract_regime(
     raw_data: dict[str, Any] | None,
     cntrct_mthd_nm: str | None,

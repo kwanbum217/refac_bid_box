@@ -134,6 +134,31 @@ class QualificationInput(BaseModel):
         gt=0.0,
         description="적격 통과점수 T. 공고문 적격심사 배점표에서 입력",
     )
+    base_rate: float | None = Field(
+        default=None,
+        ge=0.80,
+        le=0.95,
+        description=(
+            "가격점수 산식 기준비율(소수, 예: 0.88). 지방계약에서 시·도 기준이 확보되지 않아 "
+            "사용자가 B·k·통과점수와 함께 직접 입력할 때만 씁니다."
+        ),
+    )
+    manual_non_price_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description=(
+            "정량평가 배점표가 기관 원문 미반영인 LOCAL 규칙에서 사용자가 직접 입력하는 "
+            "비가격 정량점수(Q)입니다. 서버가 검증하지 않습니다."
+        ),
+    )
+    local_service_type: str | None = Field(
+        default=None,
+        description=(
+            "LOCAL 시·도 별표의 용역 세부유형 선택값(예: GENERAL, SIMPLE_LABOR). "
+            "단순노무 여부처럼 적용 별표가 갈리는데 낙찰방법명으로 확정되지 않을 때 씁니다."
+        ),
+    )
 
 
 # ============================================================================
@@ -343,6 +368,12 @@ class RuleScoreTable(BaseModel):
     multiplier: str | None = Field(None, description="선택된 평점계수 k (미선택이면 null)")
     multiplier_basis: str | None = Field(None, description="k 선택 근거")
     pass_threshold: str | None = Field(None, description="규칙 선언 통과점수 T (미확정이면 null)")
+    price_band_label: str | None = Field(
+        None, description="선택된 B·k 추정가격 구간 표기 (구간 규칙에서만)"
+    )
+    threshold_band_label: str | None = Field(
+        None, description="선택된 통과점수 T 추정가격 구간 표기 (B·k 경계와 다를 수 있음)"
+    )
     source: str | None = Field(None, description="선언값 또는 미확정 사유의 근거 (문서 경로)")
     missing_fields: list[str] = Field(
         default_factory=list, description="규칙이 확정하지 못해 사용자 입력이 필요한 필드"
@@ -555,6 +586,13 @@ class EvaluationResponse(BaseModel):
     quant_score_table: QuantScoreTablePayload | None = Field(
         default=None,
         description="적용 별표의 정량평가 심사항목 배점한도와 입력 구성(별표 1~9·10·11)",
+    )
+    quant_source: Literal["REGISTRY_TABLE", "USER_INPUT_UNVERIFIED", "NONE"] | None = Field(
+        default=None,
+        description="정량점수 출처. LOCAL 시·도 규칙은 배점표 미반영이라 USER_INPUT_UNVERIFIED 입니다.",
+    )
+    quant_notice: str | None = Field(
+        default=None, description="정량점수 출처 안내(미검증 입력 고지 등)"
     )
     warnings: list[str] = Field(
         default_factory=list,
