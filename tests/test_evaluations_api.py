@@ -688,6 +688,110 @@ def test_quant_band_unresolved_without_estimated_price_or_method_band(client, is
     assert "추정가격" in payload["blocked_reason"]
 
 
+# 소프트웨어용역(중소기업자간 경쟁제품 비대상) 고시금액 미만(별표3). 낙찰방법명에 5억원
+# 구간 표기가 없어 배점표 구간이 둘이고, 추정가격만으로 구간을 고른다.
+SW_NON_SME_METHOD = "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 고시금액 미만"
+SW_NON_SME_LWLT_RATE = "86.245"
+
+
+def _sw_non_sme_bid(db, *, business_budget: str = "600000000"):
+    """추정가격이 없는 SW 비대상 공고. 예정가격 기준액은 사업예산으로만 채운다."""
+    return _create_bid(
+        db,
+        raw_overrides={
+            "sucsfbidMthdNm": SW_NON_SME_METHOD,
+            "sucsfbidLwltRate": SW_NON_SME_LWLT_RATE,
+            "asignBdgtAmt": business_budget,
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    ("estimated_price", "expected_band", "expected_b"),
+    [(600_000_000, "over_500m", "60"), (400_000_000, "under_500m", "70")],
+)
+def test_user_estimated_price_resolves_quant_band_and_score_params(
+    client, isolated_db, as_user, estimated_price, expected_band, expected_b
+):
+    """공고 추정가격이 없으면 사용자 입력이 정량평가 구간과 조건부 B에 함께 쓰인다."""
+    as_user(10)
+    bid = _sw_non_sme_bid(isolated_db)
+    bid.presmpt_prce = None
+    isolated_db.commit()
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            qualification={"estimated_price": estimated_price, "quant_items": {}},
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is False, payload.get("blocked_reason")
+    assert payload["quant_score_table"]["active_band_key"] == expected_band
+    assert "사용자 입력 추정가격" in payload["quant_score_table"]["band_note"]
+    assert payload["score_table"]["max_price_score"] == expected_b
+    assert payload["score_table"]["max_price_score_basis"].startswith("사용자 입력 추정가격")
+
+
+def test_announcement_estimated_price_wins_over_user_input(client, isolated_db, as_user):
+    """공고 추정가격이 있으면 반대 구간 사용자 입력은 무시하고 안내한다."""
+    as_user(10)
+    bid = _sw_non_sme_bid(isolated_db)
+    bid.presmpt_prce = 600_000_000
+    isolated_db.commit()
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            qualification={"estimated_price": 400_000_000, "quant_items": {}},
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is False, payload.get("blocked_reason")
+    assert payload["quant_score_table"]["active_band_key"] == "over_500m"
+    assert any(
+        "사용자 입력 추정가격은 구간 판정에 사용하지 않았습니다" in warning
+        for warning in payload["warnings"]
+    )
+    assert payload["score_table"]["max_price_score"] == "60"
+    assert not payload["score_table"]["max_price_score_basis"].startswith("사용자 입력 추정가격")
+
+
+def test_method_name_band_precedes_user_estimated_price(client, isolated_db, as_user):
+    """낙찰방법명에 5억원 미만이 있으면 사용자 입력보다 우선한다."""
+    as_user(10)
+    bid = _create_bid(
+        isolated_db,
+        raw_overrides={
+            "sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만",
+            "asignBdgtAmt": "600000000",
+        },
+    )
+    bid.presmpt_prce = None
+    isolated_db.commit()
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            qualification={"estimated_price": 600_000_000, "quant_items": {}},
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is False, payload.get("blocked_reason")
+    assert payload["quant_score_table"]["active_band_key"] == "under_500m"
+    assert payload["score_table"]["max_price_score"] == "70"
+    assert payload["score_table"]["max_price_score_basis"].startswith("낙찰방법명")
+
+
 def test_bid_without_pred_price_is_blocked(client, isolated_db, as_user):
     """기초금액과 예정가격이 모두 없는 공고는 분모가 없어 계산하지 않는다."""
     as_user(10)
