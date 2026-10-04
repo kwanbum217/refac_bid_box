@@ -14,10 +14,17 @@ tests/test_flat_zone_scoring.py
 from __future__ import annotations
 
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
-from src.app.api.v1.evaluations import _rule_score_table_payload
+from src.app.api.v1 import evaluations
+from src.app.api.v1.evaluations import _rule_score_table_payload, require_current_user
+from src.app.core.timeutil import utcnow
+from src.app.main import app
+from src.app.models.bids import BidAnnouncement
+from src.app.models.demand_institutions import G2BDemandInstitution
+from src.app.schemas.predictions import PredictPriceResponse
 from src.app.services.evaluation_flat_zones import FlatZone, flat_zone_entries, flat_zone_for
 from src.app.services.evaluation_rules import LOCAL_RULES, resolve_score_params
 from src.app.services.evaluation_scoring import (
@@ -27,6 +34,7 @@ from src.app.services.evaluation_scoring import (
 from src.app.services.price_score_verification import invert_pass_bid_range
 
 PRED = Decimal("10000")
+ANALYZE_URL = "/api/v1/evaluations/analyze"
 
 
 def _rule_by_id(rule_id: str):
@@ -319,3 +327,218 @@ class TestResolvePriceCompensationFlat:
         assert baseline.score_status == asserted.score_status
         assert baseline.score_gap == asserted.score_gap
         assert baseline.floor_price_score == asserted.floor_price_score
+
+
+@pytest.fixture
+def as_user():
+    def _set_user(user_id: int) -> None:
+        app.dependency_overrides[require_current_user] = lambda: SimpleNamespace(id=user_id)
+
+    yield _set_user
+    app.dependency_overrides.pop(require_current_user, None)
+
+
+@pytest.fixture(autouse=True)
+def auto_stub_prediction(monkeypatch):
+    """실물 예측 모델 대신 고정 응답을 씁니다. 규칙 판별·점수 계산은 실제 코드가 수행합니다."""
+
+    def _fake_predict(payload, request, db):
+        return PredictPriceResponse(
+            status="success",
+            optimal_price=440_000_000,
+            prediction_rate=88.0,
+            model_name="기본 대역 모델",
+            model_id=payload.selected_model or "default-model",
+            requested_model=payload.selected_model or "default-model",
+            fallback_used=False,
+            fallback_reason=None,
+            message="테스트용 예측 대역 응답",
+        )
+
+    monkeypatch.setattr(evaluations, "predict_price_api", _fake_predict)
+
+
+def _create_local_bid_for(
+    db, *, institution_name: str, method_name: str, presmpt_prce: int
+) -> BidAnnouncement:
+    """시·도 수요기관과 지방계약 공고를 만들어 LOCAL 규칙 판별 경로를 엽니다."""
+    db.add(
+        G2BDemandInstitution(
+            dminstt_cd="1234",
+            dminstt_nm=f"{institution_name} 본청",
+            jrsdctn_div_nm="지방자치단체",
+            rgn_cd="28000",
+            rgn_nm=f"{institution_name} 남구",
+            toplvl_instt_cd="6270000",
+            toplvl_instt_nm=institution_name,
+            raw_json={},
+        )
+    )
+    db.commit()
+    data = {
+        "prearngPrceDcsnMthdNm": "복수예가",
+        "sucsfbidMthdNm": method_name,
+        "sucsfbidLwltRate": "87.995",
+        "srvceDivNm": "일반용역",
+        "cntrctCnclsMthdNm": "지방자치단체 제한경쟁",
+        "dminsttCd": "1234",
+        "totPrdprcNum": "12",
+        "drwtPrdprcNum": "3",
+    }
+    bid = BidAnnouncement(
+        bid_ntce_nm="지방계약 평탄 끝단 테스트 공고",
+        bid_ntce_no="EVAL-FLAT-ZONE-001",
+        bid_ntce_ord="000",
+        ntce_instt_nm="테스트 공고기관",
+        dminstt_nm=f"{institution_name} 본청",
+        base_amount=presmpt_prce,
+        presmpt_prce=presmpt_prce,
+        bid_ntce_dt=utcnow(),
+        bid_clse_dt=utcnow(),
+        openg_dt=utcnow(),
+        category="Servc",
+        raw_data=data,
+    )
+    db.add(bid)
+    db.commit()
+    db.refresh(bid)
+    return bid
+
+
+# 시·도마다 평탄 데이터가 연결된 대표 규칙 하나. (시·도, 세부유형, 추정가격, rule_id, 평탄비율, 평탄점수)
+SIDO_FLAT_CASES = [
+    (
+        "인천광역시",
+        "GENERAL",
+        150_000_000,
+        "SERVC_LOCAL_INCHEON_20251224_ATTACH_01",
+        "0.8825",
+        "85",
+    ),
+    (
+        "제주특별자치도",
+        "GENERAL",
+        150_000_000,
+        "SERVC_LOCAL_JEJU_20240101_ATTACH_01",
+        "0.8825",
+        "85",
+    ),
+    (
+        "강원특별자치도",
+        "GENERAL",
+        150_000_000,
+        "SERVC_LOCAL_GANGWON_20230611_ATTACH_01",
+        "0.8825",
+        "85",
+    ),
+    (
+        "세종특별자치시",
+        "FACILITY",
+        300_000_000,
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_02",
+        "0.8825",
+        "55",
+    ),
+    ("경상북도", "SIMPLE_LABOR", 300_000_000, "SERVC_LOCAL_GB_20260108_ATTACH_01", "0.8825", "65"),
+    ("울산광역시", "GENERAL", 150_000_000, "SERVC_LOCAL_ULSAN_20220810_ATTACH_01", "0.8825", "85"),
+    ("충청북도", "GENERAL", 150_000_000, "SERVC_LOCAL_CB_20231020_ATTACH_01", "0.8825", "85"),
+    (
+        "전남광주통합특별시",
+        "FACILITY",
+        150_000_000,
+        "SERVC_LOCAL_JNGJ_20260716_ATTACH_01",
+        "0.8825",
+        "85",
+    ),
+    ("경상남도", "GENERAL", 150_000_000, "SERVC_LOCAL_GN_20230105_ATTACH_01", "0.8825", "85"),
+    (
+        "대구광역시",
+        "SIMPLE_LABOR",
+        300_000_000,
+        "SERVC_LOCAL_DAEGU_20260511_ATTACH_01",
+        "0.8825",
+        "45",
+    ),
+    ("경기도", "SW", 150_000_000, "SERVC_LOCAL_GG_20250808_ATTACH_1_2", "0.8825", "85"),
+]
+
+
+class TestFlatZoneLinkedRuleIds:
+    """평탄 데이터가 참조하는 rule_id 가 main LOCAL_RULES 와 그 구간에 실제로 존재하는지 고정."""
+
+    def test_every_flat_rule_id_exists_in_local_rules(self) -> None:
+        by_id = {rule.rule_id: rule for rule in LOCAL_RULES}
+        assert flat_zone_entries()
+        for rule_id, upper_bound, _zone in flat_zone_entries():
+            rule = by_id.get(rule_id)
+            assert rule is not None, f"LOCAL_RULES 에 없는 평탄 rule_id: {rule_id}"
+            assert rule.contract_regime == "LOCAL", rule_id
+            bounds = {band.upper_bound for band in (rule.price_bands or ())}
+            assert upper_bound in bounds, f"{rule_id} 의 가격 구간에 없는 평탄 키: {upper_bound}"
+
+
+class TestFlatZoneEndToEndApi:
+    """시·도별 끝단 API 시험. resolve 를 mock 하지 않고 평탄이 응답까지 이어지는지 본다."""
+
+    @pytest.mark.parametrize(
+        ("sido_name", "service_type", "presmpt_prce", "rule_id", "flat_ratio", "flat_score"),
+        SIDO_FLAT_CASES,
+    )
+    def test_sido_flat_zone_applied_in_response(
+        self,
+        client,
+        isolated_db,
+        as_user,
+        sido_name: str,
+        service_type: str,
+        presmpt_prce: int,
+        rule_id: str,
+        flat_ratio: str,
+        flat_score: str,
+    ) -> None:
+        as_user(10)
+        bid = _create_local_bid_for(
+            isolated_db,
+            institution_name=sido_name,
+            method_name="용역 적격심사",
+            presmpt_prce=presmpt_prce,
+        )
+        # 기준 시나리오(예정가격 = 추정가격)에서 x 가 평탄 시작 비율을 한참 넘도록 투찰한다.
+        # 이 지점에서 산식값은 평탄점수보다 확실히 낮으므로, 평탄이 실제로 반영됐는지 갈린다.
+        ratio = Decimal("0.95")
+        assert ratio > Decimal(flat_ratio)
+        candidate = int((Decimal(presmpt_prce) * ratio).quantize(Decimal("1")))
+        response = client.post(
+            ANALYZE_URL,
+            json={
+                "bid_id": bid.id,
+                "selected_model": "requested-evaluation-model",
+                "candidate_bid_amount": candidate,
+                "qualification_input": {
+                    "disqualification": False,
+                    "manual_non_price_score": 60.0,
+                    "local_service_type": service_type,
+                },
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["status"] == "success", body.get("blocked_reason")
+        assert body["blocked"] is False
+        assert body["rule_id"] == rule_id
+
+        table = body["score_table"]
+        assert table["flat_ratio"] == flat_ratio
+        assert table["flat_score"] == flat_score
+
+        base = next(row for row in body["scenario_results"] if row["scenario_name"] == "기준")
+        assert base["bid_to_estimated_ratio"] == pytest.approx(float(ratio))
+        # 평탄이 없으면 이 지점의 산식값은 음수까지 내려가므로, 산식값과 평탄점수가 확실히 갈린다.
+        b = Decimal(table["max_price_score"])
+        k = Decimal(table["multiplier"])
+        base_rate = Decimal(str(body["base_rate"])) / Decimal("100")
+        algebraic = b - k * abs(base_rate - ratio) * Decimal("100")
+        assert algebraic < Decimal(flat_score)
+        # 반환 점수는 산식값이 아니라 평탄 고정 점수여야 한다.
+        assert base["price_score"] == pytest.approx(float(Decimal(flat_score)))
