@@ -39,7 +39,7 @@
                         name="q"
                         value="{{ q }}"
                         placeholder="공고명 또는 번호 검색"
-                        class="search-input w-64 bg-white border border-slate-200 rounded-md pl-9 pr-3 py-2 text-sm outline-none transition-all"
+                        class="search-input w-64 bg-white border border-slate-200 rounded-md pl-9 pr-3 py-2 text-sm outline-hidden transition-all"
                     >
                 </div>
                 <div class="relative group">
@@ -50,7 +50,7 @@
                         list="industry-list"
                         value="{{ lic }}"
                         placeholder="업종 코드 (쉼표로 여러 개)"
-                        class="search-input w-36 bg-white border border-slate-200 rounded-md px-3 py-2 text-sm outline-none transition-all"
+                        class="search-input w-36 bg-white border border-slate-200 rounded-md px-3 py-2 text-sm outline-hidden transition-all"
                     >
                     <datalist id="industry-list">
                         {% for choice in industry_choices %}
@@ -63,25 +63,25 @@
                         type="checkbox"
                         name="qual"
                         value="1"
-                        class="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                        class="w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer"
                         {% if qual == '1' %}checked{% endif %}
                     >
                     <span class="text-sm font-medium text-slate-700">적격심사 분석 공고만</span>
                 </label>
-                <select name="cat" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-none cursor-pointer">
+                <select name="cat" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
                     <option value="">전체 분야</option>
                     <option value="Thng" {% if cat == 'Thng' %}selected{% endif %}>물품</option>
                     <option value="Cnstwk" {% if cat == 'Cnstwk' %}selected{% endif %}>건설</option>
                     <option value="Servc" {% if cat == 'Servc' %}selected{% endif %}>용역</option>
                     <option value="Frgcpt" {% if cat == 'Frgcpt' %}selected{% endif %}>외자</option>
                 </select>
-                <select name="sort" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-none cursor-pointer">
+                <select name="sort" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
                     <option value="notice" {% if sort == 'notice' %}selected{% endif %}>공고일</option>
                     <option value="deadline" {% if sort == 'deadline' %}selected{% endif %}>마감일</option>
                     <option value="amount" {% if sort == 'amount' %}selected{% endif %}>금액별</option>
                     <option value="region" {% if sort == 'region' %}selected{% endif %}>지역별</option>
                 </select>
-                <select name="region" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-none cursor-pointer">
+                <select name="region" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
                     <option value="">전체 지역</option>
                     {% for group in region_groups %}
                     <optgroup label="{{ group.label }}">
@@ -194,17 +194,17 @@
 
                 <div class="flex items-center space-x-2">
                     {% if page_obj.has_previous %}
-                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded-sm border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
                         이전
                     </a>
                     {% endif %}
 
-                    <span class="h-8 px-3 flex items-center justify-center rounded bg-primary text-white text-xs font-bold">
+                    <span class="h-8 px-3 flex items-center justify-center rounded-sm bg-primary text-white text-xs font-bold">
                         {{ page_obj.number }} 페이지
                     </span>
 
                     {% if page_obj.has_next %}
-                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}" class="pagination-btn h-8 px-3 flex items-center justify-center rounded-sm border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
                         다음
                     </a>
                     {% endif %}

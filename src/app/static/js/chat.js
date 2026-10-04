@@ -243,7 +243,7 @@ $(document).ready(function() {
         const actionHtml = options.confirmationToken ? `
             <div class="mt-4 flex flex-wrap items-center gap-2">
                 <button
-                    class="confirm-automation-btn inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-amber-600"
+                    class="confirm-automation-btn inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-white shadow-xs transition-colors hover:bg-amber-600"
                     data-job-id="${escapeHtml(job.job_id)}"
                     data-confirmation-token="${escapeHtml(options.confirmationToken)}">
                     승인 후 실행
@@ -334,9 +334,9 @@ $(document).ready(function() {
             formattedText = escapeHtml(formattedText).replace(/\n/g, '<br>');
         }
 
-        const botIcon = `<div class="w-9 h-9 rounded bg-primary flex items-center justify-center shadow-lg shadow-primary/20 flex-shrink-0"><i class="fas fa-robot text-white text-sm"></i></div>`;
+        const botIcon = `<div class="w-9 h-9 rounded-sm bg-primary flex items-center justify-center shadow-lg shadow-primary/20 shrink-0"><i class="fas fa-robot text-white text-sm"></i></div>`;
         const userInitial = interface.data('user-initial') || '';
-        const userIcon = `<div class="w-9 h-9 rounded bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 font-bold text-xs flex-shrink-0">${userInitial}</div>`;
+        const userIcon = `<div class="w-9 h-9 rounded-sm bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-300 font-bold text-xs shrink-0">${userInitial}</div>`;
 
         let sourceHtml = '';
         if (provenance && provenance.items && provenance.items.length > 0) {
@@ -366,7 +366,7 @@ $(document).ready(function() {
                 <div class="flex ${isBot ? 'flex-row' : 'flex-row-reverse'} items-start gap-4 max-w-[85%]">
                     ${isBot ? botIcon : userIcon}
                     <div class="flex flex-col ${isBot ? 'items-start' : 'items-end'}">
-                        <div class="px-5 py-4 ${bubbleClass} chat-bubble-custom shadow-sm">
+                        <div class="px-5 py-4 ${bubbleClass} chat-bubble-custom shadow-xs">
                             <div class="${contentClass}">${formattedText}</div>
                             ${extraHtml}
                             ${advisoryHtml}
@@ -958,10 +958,10 @@ $(document).ready(function() {
         chatContainer.append(`
             <div id="${loadingId}" class="flex justify-start animate-in fade-in duration-300">
                 <div class="flex items-start gap-4">
-                    <div class="w-9 h-9 rounded bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                    <div class="w-9 h-9 rounded-sm bg-primary/10 flex items-center justify-center text-primary shrink-0">
                         <span class="loading loading-spinner loading-xs"></span>
                     </div>
-                    <div class="px-5 py-4 bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 rounded-xl shadow-sm">
+                    <div class="px-5 py-4 bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 rounded-xl shadow-xs">
                         <div class="flex items-center gap-3">
                             <span class="text-xs font-bold text-slate-500 tracking-widest">AI가 요청을 분석 중입니다</span>
                             <div class="flex gap-1">
@@ -995,10 +995,10 @@ $(document).ready(function() {
             chatContainer.append(`
                 <div id="${streamId}" class="flex justify-start animate-in fade-in duration-300">
                     <div class="flex items-start gap-4">
-                        <div class="w-9 h-9 rounded bg-primary/10 flex items-center justify-center text-primary flex-shrink-0">
+                        <div class="w-9 h-9 rounded-sm bg-primary/10 flex items-center justify-center text-primary shrink-0">
                             <i data-lucide="bot" class="w-5 h-5"></i>
                         </div>
-                        <div class="px-5 py-4 bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 rounded-xl shadow-sm max-w-3xl">
+                        <div class="px-5 py-4 bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 rounded-xl shadow-xs max-w-3xl">
                             <div class="prose prose-sm max-w-none dark:prose-invert" data-stream-body></div>
                         </div>
                     </div>
@@ -1142,7 +1142,7 @@ $(document).ready(function() {
         toggleWelcome(false);
         chatContainer.append(`
             <div class="flex h-full min-h-[240px] items-center justify-center">
-                <div class="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-center shadow-sm">
+                <div class="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-center shadow-xs">
                     <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                         <span class="loading loading-spinner loading-sm"></span>
                     </div>

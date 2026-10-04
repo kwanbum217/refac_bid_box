@@ -38,7 +38,7 @@
     <aside id="sidebar" class="w-20 lg:w-64 bg-harness-sidebar text-white flex flex-col sticky top-0 h-screen z-50 overflow-hidden shrink-0">
         <div class="h-16 flex items-center px-6 border-b border-white/5 overflow-hidden">
             <a href="{{ url('index') }}" class="flex items-center space-x-3 min-w-max">
-                <div class="w-8 h-8 bg-primary rounded flex items-center justify-center shrink-0">
+                <div class="w-8 h-8 bg-primary rounded-sm flex items-center justify-center shrink-0">
                     <i class="fas fa-cube text-white text-lg"></i>
                 </div>
                 <span class="text-xl font-bold tracking-tight text-white hidden lg:block">
@@ -50,27 +50,27 @@
         <div class="flex-1 py-6 space-y-1 px-3">
             <p class="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] px-3 mb-4 hidden lg:block">메인 메뉴</p>
 
-            <a href="{{ url('index') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'index' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+            <a href="{{ url('index') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='index' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-home w-5 text-center text-lg"></i>
                 <span class="text-sm hidden lg:block">홈</span>
             </a>
 
-            <a href="{{ url('bids:bid_list') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'bids' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+            <a href="{{ url('bids:bid_list') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='bids' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-search w-5 text-center text-lg"></i>
                 <span class="text-sm hidden lg:block">공고 탐색</span>
             </a>
 
-            <a href="{{ url('bids:result_list') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'results' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+            <a href="{{ url('bids:result_list') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='results' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-trophy w-5 text-center text-lg"></i>
                 <span class="text-sm hidden lg:block">낙찰 결과</span>
             </a>
 
-            <a href="{{ url('bids:dashboard') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'dashboard' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+            <a href="{{ url('bids:dashboard') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='dashboard' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-chart-line w-5 text-center text-lg"></i>
                 <span class="text-sm hidden lg:block">입찰 인텔리전스</span>
             </a>
 
-            <a href="{{ url('chatbot:chat_page') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav == 'chatbot' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+            <a href="{{ url('chatbot:chat_page') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='chatbot' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-robot w-5 text-center text-lg"></i>
                 <span class="text-sm hidden lg:block">AI 어드바이저</span>
             </a>
@@ -133,7 +133,7 @@
                         name="q"
                         value="{{ request.query_params.get('q')|default('', true) }}"
                         placeholder="공고명 또는 번호 검색..."
-                        class="bg-slate-50 border border-slate-200 rounded pl-9 pr-4 py-1.5 text-xs focus:bg-white focus:ring-4 focus:ring-primary/5 outline-none transition-all w-64">
+                        class="bg-slate-50 border border-slate-200 rounded-sm pl-9 pr-4 py-1.5 text-xs focus:bg-white focus:ring-4 focus:ring-primary/5 outline-hidden transition-all w-64">
                 </form>
 
                 <button onclick="toggleTheme()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
@@ -233,7 +233,7 @@
                 </form>
             </div>
         </div>
-        <form method="dialog" class="modal-backdrop bg-slate-900/40 backdrop-blur-sm">
+        <form method="dialog" class="modal-backdrop bg-slate-900/40 backdrop-blur-xs">
             <button type="submit" aria-label="환경 설정 닫기">close</button>
         </form>
     </dialog>

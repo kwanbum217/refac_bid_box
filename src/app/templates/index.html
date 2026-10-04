@@ -5,7 +5,7 @@
 
 {% block breadcrumbs %}
 <div class="flex min-w-0 items-center gap-4">
-    <a href="{{ url('index') }}" class="inline-flex shrink-0 items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-2.5 text-slate-900 shadow-sm transition-colors hover:border-primary/30 dark:border-slate-200 dark:bg-white dark:text-slate-900">
+    <a href="{{ url('index') }}" class="inline-flex shrink-0 items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-2.5 text-slate-900 shadow-xs transition-colors hover:border-primary/30 dark:border-slate-200 dark:bg-white dark:text-slate-900">
         <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <i class="fas fa-cube text-base text-white"></i>
         </div>
@@ -462,7 +462,7 @@
                 {% for section in recent_bid_sections %}
                 <article class="home-swipe-slide home-category-slide" data-home-swipe-slide>
                     <div class="grid gap-6 px-6 py-6 xl:grid-cols-[300px_1fr] xl:px-8 xl:py-8">
-                        <div class="rounded-[26px] bg-slate-950 p-6 text-white shadow-sm">
+                        <div class="rounded-[26px] bg-slate-950 p-6 text-white shadow-xs">
                             {% if section.code == "Cnstwk" %}
                             <span class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400/15 text-amber-200">
                                 <i class="fas fa-helmet-safety text-lg"></i>
@@ -497,7 +497,7 @@
                             <a href="{{ url('bids:bid_detail', bid.id) }}" class="home-slide-card flex h-full min-w-0 flex-col overflow-hidden rounded-[24px] border border-slate-200 bg-slate-50/70 p-5">
                                 <div class="flex items-center justify-between gap-3">
                                     <span class="flex items-center gap-1">
-                                        <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold tracking-tight text-slate-900 shadow-sm">
+                                        <span class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-extrabold tracking-tight text-slate-900 shadow-xs">
                                             {{ bid.category_label }}
                                         </span>
                                         {% if qualification_ids and bid.id in qualification_ids %}
@@ -528,7 +528,7 @@
                                         <span class="min-w-0 truncate text-right font-semibold text-slate-700">{{ bid.collected_at|date("m.d H:i") }}</span>
                                     </div>
                                 </div>
-                                <div class="mt-5 flex w-full max-w-full items-center justify-between gap-3 self-center rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-2.5 shadow-sm">
+                                <div class="mt-5 flex w-full max-w-full items-center justify-between gap-3 self-center rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-2.5 shadow-xs">
                                     <span class="grid shrink-0 gap-0.5 text-center text-[11px] font-extrabold uppercase tracking-[0.08em] leading-4 text-slate-700">
                                         <span>공고</span>
                                         <span>일시</span>
@@ -556,7 +556,7 @@
 
                 <article class="home-swipe-slide home-result-slide" data-home-swipe-slide>
                     <div class="grid gap-6 px-6 py-6 xl:grid-cols-[300px_1fr] xl:px-8 xl:py-8">
-                        <div class="rounded-[26px] bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white shadow-sm">
+                        <div class="rounded-[26px] bg-gradient-to-br from-emerald-500 to-teal-600 p-6 text-white shadow-xs">
                             <span class="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white">
                                 <i class="fas fa-chart-column text-lg"></i>
                             </span>
@@ -632,7 +632,7 @@
         </section>
 
         <section class="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-            <article class="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+            <article class="rounded-[28px] border border-slate-200 bg-white p-6 shadow-xs">
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">빠른 작업</p>
                 <h2 class="mt-2 text-2xl font-black tracking-tight text-slate-900">다음 액션으로 바로 이어가기</h2>
                 <p class="mt-3 text-sm leading-6 text-slate-500">
@@ -651,7 +651,7 @@
                 </div>
             </article>
 
-            <article class="rounded-[28px] border border-slate-200 bg-slate-950 p-6 text-white shadow-sm">
+            <article class="rounded-[28px] border border-slate-200 bg-slate-950 p-6 text-white shadow-xs">
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-200/70">스와이프 팁</p>
                 <h2 class="mt-2 text-2xl font-black tracking-tight">모바일에서는 손가락으로, 데스크톱에서는 버튼으로 이동</h2>
                 <p class="mt-3 text-sm leading-6 text-slate-300">

@@ -1,13 +1,104 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/theme.css";
+@import "tailwindcss/preflight.css";
 
-@layer utilities {
-  .border-white\/12 {
-    border-color: rgb(255 255 255 / 0.12);
+@layer base {
+  *,
+  ::before,
+  ::after {
+    /* daisyui 4 는 v3 변형 변수로 transform 을 조립한다. v4 에는 --tw-rotate 등이
+       없어 값이 무효가 되므로 v3 기본값을 되돌린다. 이 블록은 postcss 단계에서
+       레이어가 풀려 유틸리티 앞 레이어 없는 규칙으로 남는다. */
+    --tw-translate-x: 0;
+    --tw-translate-y: 0;
+    --tw-rotate: 0;
+    --tw-skew-x: 0;
+    --tw-skew-y: 0;
+    --tw-scale-x: 1;
+    --tw-scale-y: 1;
+    border-color: var(--color-gray-200, currentColor);
   }
 
-  .text-blue-100\/72 {
-    color: rgb(219 234 254 / 0.72);
+  button,
+  [type='button'],
+  [type='reset'],
+  [type='submit'] {
+    cursor: pointer;
   }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+}
+
+@import "tailwindcss/utilities.css" source(none);
+
+@source "../../templates/**/*.html";
+@source "../../static/js/**/*.js";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-primary: #0073E6;
+  --color-primary-hover: #005BB3;
+  --color-primary-light: #E6F1FF;
+  --color-harness-bg: #F9FAFB;
+  --color-harness-sidebar: #020B1A;
+  --color-harness-border: #E6E9EF;
+  --color-harness-text: #1F2937;
+  --color-harness-muted: #6B7280;
+  --radius-enterprise: 0.75rem;
+  --shadow-h-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-h-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -1px rgb(0 0 0 / 0.06);
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+  --text-5xl--line-height: 1;
+  --text-6xl--line-height: 1;
+  --text-7xl--line-height: 1;
+  --text-8xl--line-height: 1;
+  --text-9xl--line-height: 1;
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    /* daisyui 4 는 v3 변형 변수로 transform 을 조립한다. v4 에는 --tw-rotate 등이
+       없어 값이 무효가 되므로 v3 기본값을 되돌린다. 이 블록은 postcss 단계에서
+       레이어가 풀려 유틸리티 앞 레이어 없는 규칙으로 남는다. */
+    --tw-translate-x: 0;
+    --tw-translate-y: 0;
+    --tw-rotate: 0;
+    --tw-skew-x: 0;
+    --tw-skew-y: 0;
+    --tw-scale-x: 1;
+    --tw-scale-y: 1;
+    border-color: var(--color-gray-200, currentColor);
+  }
+
+  button,
+  [type='button'],
+  [type='reset'],
+  [type='submit'] {
+    cursor: pointer;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-gray-400);
+  }
+}
+
+@utility border-white\/12 {
+  border-color: rgb(255 255 255 / 0.12);
+}
+
+@utility text-blue-100\/72 {
+  color: rgb(219 234 254 / 0.72);
 }

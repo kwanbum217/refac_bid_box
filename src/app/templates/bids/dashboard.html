@@ -16,7 +16,7 @@
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
             <div class="flex items-center space-x-2 mb-1">
-                <span class="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider rounded">분석 센터</span>
+                <span class="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider rounded-sm">분석 센터</span>
                 <span class="text-slate-400 text-[10px] font-bold uppercase tracking-wider">시장 인텔리전스</span>
             </div>
             <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">
@@ -24,7 +24,7 @@
             </h1>
             <p class="text-slate-500 mt-1 font-medium">실시간 G2B 데이터 시각화와 시장 흐름 분석을 한 화면에서 확인합니다.</p>
         </div>
-        <div class="flex items-center space-x-3 px-4 py-2 bg-white rounded-lg border border-slate-200 shadow-sm">
+        <div class="flex items-center space-x-3 px-4 py-2 bg-white rounded-lg border border-slate-200 shadow-xs">
             <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
             <span class="text-[11px] font-semibold text-slate-500">마지막 동기화</span>
             <span id="latestCollected" class="text-[11px] font-bold text-slate-900">-</span>
@@ -32,7 +32,7 @@
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-sm">
+        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-xs">
             <div class="flex items-center justify-between mb-4">
                 <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center text-primary border border-blue-100">
                     <i class="fas fa-file-invoice text-lg"></i>
@@ -48,7 +48,7 @@
             </div>
         </div>
 
-        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-sm">
+        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-xs">
             <div class="flex items-center justify-between mb-4">
                 <div class="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
                     <i class="fas fa-won-sign text-lg"></i>
@@ -61,7 +61,7 @@
             </div>
         </div>
 
-        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-sm">
+        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-xs">
             <div class="flex items-center justify-between mb-4">
                 <div class="w-10 h-10 rounded-lg bg-orange-50 flex items-center justify-center text-orange-600 border border-orange-100">
                     <i class="fas fa-percentage text-lg"></i>
@@ -74,12 +74,12 @@
             </div>
         </div>
 
-        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-sm">
+        <div class="h-card stat-card p-6 flex flex-col justify-between group bg-white border border-slate-200 rounded-xl shadow-xs">
             <div class="flex items-center justify-between mb-4">
                 <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
                     <i class="fas fa-shield-check text-lg"></i>
                 </div>
-                <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded">정상</span>
+                <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded-sm">정상</span>
             </div>
             <div>
                 <h3 class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">시스템 상태</h3>
@@ -89,7 +89,7 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div class="h-card p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+        <div class="h-card p-8 bg-white border border-slate-200 rounded-xl shadow-xs">
             <div class="flex items-center justify-between mb-8">
                 <div>
                     <h3 class="text-lg font-bold text-slate-900">월별 낙찰 추이</h3>
@@ -104,7 +104,7 @@
             </div>
         </div>
 
-        <div class="h-card p-8 bg-white border border-slate-200 rounded-xl shadow-sm">
+        <div class="h-card p-8 bg-white border border-slate-200 rounded-xl shadow-xs">
             <div class="flex items-center justify-between mb-8">
                 <div>
                     <h3 class="text-lg font-bold text-slate-900">기관별 계약 규모</h3>
@@ -121,7 +121,7 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
-        <div class="lg:col-span-2 h-card bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="lg:col-span-2 h-card bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
             <div class="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div>
                     <h3 class="text-lg font-bold text-slate-900">총액 계약 상위 10개 업체</h3>
@@ -367,7 +367,7 @@
         tbody.innerHTML = companies.map((c, i) => `
             <tr class="hover:bg-slate-50 transition-colors group">
                 <td class="px-8 py-4">
-                    <span class="inline-flex items-center justify-center w-6 h-6 rounded bg-slate-100 text-slate-500 text-[10px] font-bold group-hover:bg-primary group-hover:text-white transition-colors">
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-sm bg-slate-100 text-slate-500 text-[10px] font-bold group-hover:bg-primary group-hover:text-white transition-colors">
                         ${i + 1}
                     </span>
                 </td>

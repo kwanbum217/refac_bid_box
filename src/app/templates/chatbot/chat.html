@@ -542,7 +542,7 @@
     <div class="flex-1 flex flex-col min-w-0 bg-[#F9FAFB] dark:bg-slate-950">
 
         <!-- Workspace Header -->
-        <header class="h-14 bg-white dark:bg-slate-900 border-b border-harness-border dark:border-slate-800 px-6 flex items-center justify-between flex-shrink-0">
+        <header class="h-14 bg-white dark:bg-slate-900 border-b border-harness-border dark:border-slate-800 px-6 flex items-center justify-between shrink-0">
             <div class="flex items-center gap-4">
                 <div class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                     <i class="fas fa-microchip text-primary"></i>
@@ -551,7 +551,7 @@
                     <span class="text-slate-500">예측 어드바이저</span>
                 </div>
                 <div class="flex items-center gap-2 ml-4">
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 uppercase">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-sm text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 uppercase">
                         <span class="w-1 h-1 bg-green-500 rounded-full mr-1.5 animate-pulse"></span>
                         활성
                     </span>
@@ -630,9 +630,9 @@
                     <div class="relative flex-1">
                         <input type="text" id="chat-input"
                                placeholder="분석하려는 내용이나 궁금한 점을 입력하세요..."
-                               class="w-full bg-slate-50 dark:bg-slate-800 border border-harness-border dark:border-slate-700 focus:border-primary dark:focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10 text-sm py-4 pl-5 pr-20 rounded-xl transition-all">
+                               class="w-full bg-slate-50 dark:bg-slate-800 border border-harness-border dark:border-slate-700 focus:border-primary dark:focus:border-primary focus:outline-hidden focus:ring-4 focus:ring-primary/10 text-sm py-4 pl-5 pr-20 rounded-xl transition-all">
                         <div class="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                            <kbd class="hidden sm:inline-flex px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-400">Enter</kbd>
+                            <kbd class="hidden sm:inline-flex px-1.5 py-0.5 rounded-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-400">Enter</kbd>
                         </div>
                     </div>
                     <button id="btn-send" type="button" class="h-btn-primary chat-send-btn" aria-label="분석 실행">
