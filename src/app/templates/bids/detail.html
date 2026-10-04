@@ -463,6 +463,15 @@
                                         <td class="py-2 text-slate-500">입찰가격 평점의 만점</td>
                                     </tr>
                                     <tr class="bg-blue-50">
+                                        <td class="py-2 pr-4 font-medium text-slate-700" colspan="2">추정가격 (원)</td>
+                                        <td class="py-2 pr-4 text-right">
+                                            <input type="number" id="input-estimated-price" step="1" min="1"
+                                                   class="w-24 bg-white border border-blue-200 rounded px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-none">
+                                        </td>
+                                        <td class="py-2 pr-4 text-right text-slate-400">선택</td>
+                                        <td class="py-2 text-slate-500">공고에 추정가격이 없을 때 구간 판정에 사용</td>
+                                    </tr>
+                                    <tr class="bg-blue-50">
                                         <td class="py-2 pr-4 font-medium text-slate-700" colspan="2">평점 계수 (k)</td>
                                         <td class="py-2 pr-4 text-right">
                                             <input type="number" id="input-multiplier" step="0.01" min="0"
@@ -1256,10 +1265,12 @@ $(document).ready(function() {
     // 정량평가 입력을 서버 계약(quant_items·management_grade·reputation_items)으로 모은다.
     function buildQualificationInput() {
         const reputationItems = collectReputationItems();
+        const estimatedPrice = parseInt($('#input-estimated-price').val(), 10);
         return {
             quant_items: collectQuantItems(),
             management_grade: collectManagementGrade(),
             reputation_items: Object.keys(reputationItems).length > 0 ? reputationItems : null,
+            estimated_price: Number.isFinite(estimatedPrice) && estimatedPrice > 0 ? estimatedPrice : null,
             disqualification: $('#input-disqualification').is(':checked')
         };
     }
@@ -1533,6 +1544,7 @@ $(document).ready(function() {
                     quant_items: qualificationInput.quant_items,
                     management_grade: qualificationInput.management_grade,
                     reputation_items: qualificationInput.reputation_items,
+                    estimated_price: qualificationInput.estimated_price,
                     disqualification: qualificationInput.disqualification,
                     max_price_score: Number.isFinite(maxPriceScore) ? maxPriceScore : null,
                     multiplier: Number.isFinite(multiplier) ? multiplier : null,

@@ -80,6 +80,11 @@ class QualificationInput(BaseModel):
             "서버가 합계를 내고 가점 상한 4.25(산업재해 감점 시 3.0)·감점 상한 -5.0 을 적용합니다."
         ),
     )
+    estimated_price: int | None = Field(
+        default=None,
+        gt=0,
+        description="공고에 추정가격이 없을 때만 구간 판정에 쓰고, 공고 값이 있으면 무시합니다.",
+    )
     # 구형 경로 호환 필드입니다. quant_items·management_grade·reputation_items 가 없을 때만
     # 쓰이며, 값은 여전히 적용 별표 배점한도로 검증되어 초과하면 계산이 막힙니다.
     performance_score: float = Field(
