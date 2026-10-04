@@ -1,10 +1,10 @@
 # Tailwind CSS 4 이전 결과
 
 > 작성일: 2026-10-04
-> Task: task_e3f6ffdb4ce4 (builder rework, 반려된 task_2c72be7dbc26 재작업)
+> Task: task_a4bf17af6680 (builder rework, 반려된 task_e3f6ffdb4ce4 재작업)
 > 브랜치: kwanbum217/tailwind4-migration
 > 범위: 루트 정적 CSS 빌드( `src/app/templates/**/*.html`, `src/app/static/js/**/*.js` ). `frontend/` 는 제외.
-> 상태: 완료. v4 산출물의 `@layer` 래핑을 해제하고, `space-*` 를 v3 선택자/물리 프로퍼티로 되돌려 bootstrap·daisyui 와의 캐스케이드를 v3 와 같게 맞췄습니다. 빌드는 `@tailwindcss/postcss` + `postcss-cli` 로 유지하며 braces 예외는 제거된 상태입니다.
+> 상태: 완료. v4 산출물의 `@layer` 래핑을 전부(잔여 `@layer properties` 포함) 해제하고, `space-*` 를 v3 선택자/물리 프로퍼티로, `text-*` 줄높이와 daisyui 변형 변수 기본값을 v3 값으로 되돌려 bootstrap·daisyui 와의 캐스케이드를 v3 와 같게 맞췄습니다. 빌드는 `@tailwindcss/postcss` + `postcss-cli` 로 유지하며 braces 예외는 제거된 상태입니다.
 
 ---
 
@@ -12,24 +12,36 @@
 
 루트 정적 CSS 빌드를 `tailwindcss 3.4.16` 에서 `tailwindcss 4.3.3` 로 이전합니다. 1차 시도는 `@tailwindcss/cli 4.3.3` 을 썼지만 그 패키지가 `@parcel/watcher -> micromatch -> braces@3.0.3` 을 끌어와 braces 취약점 예외(GHSA-vfj7-8cjw-p6xm)를 제거할 수 없었습니다. 그래서 빌드 경로를 `@tailwindcss/postcss 4.3.3` + `postcss-cli 12.0.0` 으로 바꿔 braces 를 트리에서 없앴고, allowlist 의 braces 예외를 삭제했습니다.
 
-이번 재작업은 반려 사유 두 건을 해결합니다.
+이번 재작업(task_a4bf17af6680)은 이전 재작업(task_e3f6ffdb4ce4)이 해결한 레이어 해제·`space-*` 복원 위에서, 계산 스타일 대조에 남은 잔여 회귀 두 건과 레이어 잔여분을 해결합니다.
 
 1. v4 산출물이 `@layer theme/base/utilities` 안에 생성되어, 레이어 밖의 bootstrap·daisyui 규칙이 항상 우선했습니다. `@import "tailwindcss"` 를 구성 파일 3개(`theme.css`, `preflight.css`, `utilities.css`)로 분리해 레이어를 해제했고, 호환 기본 규칙도 레이어 없이 둬 v3 와 같은 캐스케이드를 만듭니다.
 2. `space-x-*`/`space-y-*` 가 v4 에서 `:where(... > :not(:last-child))` 선택자와 논리 프로퍼티로 생성됩니다. `:where()` 는 명시도가 0 이고 margin-side 가 v3 와 반대라 flex/grid 배치에서 간격이 어긋납니다. 생성된 space 규칙을 v3 선택자(`> :not([hidden]) ~ :not([hidden])`)와 물리 프로퍼티로 변환하는 최소 PostCSS 단계를 추가했습니다.
+3. 잔여 회귀 1: v4 `text-*` 의 줄높이가 비율값(`--text-sm--line-height: calc(1.25 / .875)`)이라, `text-*` 로 줄높이를 받고 `src/app/static/css/harness.css` 의 `.h-btn`(글자 크기 0.875rem)이 글자 크기를 덮어쓴 버튼에서 줄높이가 새 글자 크기에 비례해 커졌습니다(v3 대비 약 3px, 예: `h-btn h-btn-primary text-xs`). `@theme` 에서 v3 의 rem 줄높이(`--text-xs--line-height: 1rem` 등)를 명시해 고정값으로 되돌렸습니다.
+4. 잔여 회귀 2: daisyui 4 는 v3 변형 변수(`--tw-rotate`, `--tw-skew-*`)로 transform 을 조립하지만 v4 에는 그 기본값이 없습니다(`--tw-rotate` 는 아예 없고 `--tw-skew-x` 는 initial-value 없는 `@property` 등록뿐). 최신 브라우저에서는 `@layer properties` 폴백이 `@supports` 조건 밖이라 적용되지 않아 `modal-box`·`dropdown` transform 이 무효였습니다. v3 기본값 7개를 레이어 없는 base 규칙으로 되돌렸습니다.
+5. 레이어 잔여분: v4 는 `@property` 초기값 폴백을 `@layer properties` 블록으로 내보내 `@layer` 가 1개 남았습니다. postcss 단계에서 모든 `@layer` 를 내용만 남기고 푸는 플러그인을 추가해 0개로 만들었습니다.
 
-산출 CSS 는 63,468 바이트(sha256 `83333068d6be001947fc3a4e693fa0d3cff488e13e8efefdd1843f422ba199ae`)이고 클린 재빌드와 바이트 동일합니다. 클래스 선택자 집합 비교에서 이름 변경으로 설명되지 않는 누락은 0건입니다.
+산출 CSS 는 63,482 바이트(sha256 `d88ba73d4774f55a2bf50411e57309e2038fc9cd3ac482102470edca3874af2f`)이고 클린 재빌드와 바이트 동일합니다. 클래스 선택자 집합 비교에서 이름 변경으로 설명되지 않는 누락은 0건입니다.
 
 ---
 
 ## 2. 바꾼 파일
 
-이번 재작업(task_e3f6ffdb4ce4)에서 바꾼 파일입니다.
+task_e3f6ffdb4ce4 재작업에서 바꾼 파일입니다.
 
 | 파일 | 변경 |
 | --- | --- |
 | `postcss.config.mjs` | 배열 플러그인 구성으로 바꾸고, v4 가 생성한 space between 규칙을 v3 형태로 변환하는 인라인 PostCSS 단계(`rewrite-space-between-to-v3`)를 추가 |
 | `src/app/static/css/tailwind.input.css` | `@import "tailwindcss"` 를 `theme.css`/`preflight.css`/`utilities.css`( source(none) ) 3개로 분리해 레이어 해제. 호환 기본 규칙을 `@layer base` 에서 레이어 밖으로 이동 |
 | `src/app/static/css/tailwind.css` | 재생성(63,468 바이트) |
+| `docs/analysis/tailwind4_migration_result_20261004.md` | 본 문서 갱신 |
+
+task_a4bf17af6680 재작업에서 추가로 바꾼 파일입니다.
+
+| 파일 | 변경 |
+| --- | --- |
+| `postcss.config.mjs` | 잔여 `@layer properties` 를 포함한 모든 `@layer` 를 내용만 남기고 푸는 인라인 PostCSS 단계(`unwrap-cascade-layers`)를 추가 |
+| `src/app/static/css/tailwind.input.css` | `@theme` 에 v3 `text-*` 줄높이 13개를 명시. 호환 기본 규칙을 `preflight` 와 `utilities` import 사이 `@layer base` 로 옮겨 v3 처럼 유틸리티 앞에 오게 하고, v3 변형 변수 기본값 7개를 추가 |
+| `src/app/static/css/tailwind.css` | 재생성(63,482 바이트) |
 | `docs/analysis/tailwind4_migration_result_20261004.md` | 본 문서 갱신 |
 
 이전 커밋들에서 이미 반영한 파일은 그대로 유지합니다. `package.json`/`package-lock.json`(postcss 경로 의존성), `.github/vulnerability-allowlist.yml`(`npm: []`), `tests/test_tailwind_build.py`(v4 표기 갱신), 템플릿 11개와 `src/app/static/js/chat.js`(이름 변경 치환), `tailwind.config.js`(시험 검증용 보존)입니다.
@@ -53,15 +65,16 @@
 
 v4 의 `@import "tailwindcss"` 는 `node_modules/tailwindcss/index.css` 를 인라인하며 그 안에서 `@layer theme, base, components, utilities` 를 선언하고 각 부분을 `layer(...)` 로 가져옵니다. CSS 캐스케이드 레이어 규칙상 레이어에 들어간 스타일은 레이어 밖 스타일보다 낮은 우선순위를 가집니다. `base.html` 은 bootstrap(5.3.3)과 daisyui(4.12.23)를 먼저 로드하므로, v4 산출물이 레이어에 있으면 명시도와 무관하게 항상 밀립니다.
 
-그래서 구성 파일을 레이어 없이 직접 가져옵니다.
+그래서 구성 파일을 레이어 없이 직접 가져옵니다. 호환 기본 규칙은 `preflight` 와 `utilities` import 사이에 `@layer base` 로 두어, v3 처럼 유틸리티 앞에 오게 합니다.
 
 ```css
 @import "tailwindcss/theme.css";
 @import "tailwindcss/preflight.css";
+/* 호환 기본 규칙(@layer base) */
 @import "tailwindcss/utilities.css" source(none);
 ```
 
-`source(none)` 는 자동 소스 탐지를 끄는 역할이며 `utilities.css` 를 통한 유틸리티 생성에 그대로 적용됩니다. 호환 기본 규칙(border 기본색, button cursor, placeholder 색)은 `@layer base` 에서 빼 레이어 밖에 두어, 레이어 밖 daisyui 규칙과 같은 조건에서 명시도로 겨루게 했습니다(v3 와 동일).
+`source(none)` 는 자동 소스 탐지를 끄는 역할이며 `utilities.css` 를 통한 유틸리티 생성에 그대로 적용됩니다. v4 는 `@property` 초기값 폴백을 `@layer properties` 로 내보내므로 `@layer` 가 1개 남습니다. postcss 단계의 `unwrap-cascade-layers` 플러그인이 모든 `@layer` 를 내용만 남기고(규칙 순서 유지) 선언형 `@layer a,b;` 는 지워, 산출물의 `@layer` 개수를 0 으로 만듭니다. 호환 기본 규칙(border 기본색, button cursor, placeholder 색, v3 변형 변수)은 이 과정에서 레이어 없이 유틸리티 앞에 남아, 레이어 밖 daisyui 규칙과 같은 조건에서 명시도로 겨루게 됩니다(v3 와 동일).
 
 ### 3.3 `space-*` v3 복원(반려 사유 2)
 
@@ -90,6 +103,7 @@ import tailwindcss from '@tailwindcss/postcss';
 export default {
   plugins: [
     tailwindcss({ optimize: { minify: true } }),
+    unwrapCascadeLayers(),
     rewriteSpaceBetweenToV3(),
   ],
 };
@@ -172,9 +186,10 @@ PY
 | --- | ---: | --- |
 | 이전(v3, main) | 44,081 바이트 | (v3 원본) |
 | 중간(v4, `@layer` 유지, `@tailwindcss/cli`) | 63,653 바이트 | `a5d254d424201c05ac449c564607e3d7efdea89ef0bf95a61da5c6e3e68c5459` |
-| 최종(v4, 레이어 해제 + space v3) | 63,468 바이트 | `83333068d6be001947fc3a4e693fa0d3cff488e13e8efefdd1843f422ba199ae` |
+| 이전 재작업(v4, 레이어 해제 + space v3) | 63,468 바이트 | `83333068d6be001947fc3a4e693fa0d3cff488e13e8efefdd1843f422ba199ae` |
+| 최종(v4, `@layer` 0 + text 줄높이 + 변형 변수) | 63,482 바이트 | `d88ba73d4774f55a2bf50411e57309e2038fc9cd3ac482102470edca3874af2f` |
 
-v4 는 `@layer properties` 폴백 블록과 opacity modifier 용 `color-mix` 폴백을 함께 내보내므로 v3 보다 큽니다. 레이어를 해제하고 space 선택자를 v3 형태로 바꾸면서 중간 산출보다 185 바이트 줄었습니다. 빌드 산출은 두 번 연속 재생성해도, `NODE_ENV` 유무와 무관하게 바이트 동일합니다.
+v4 는 `@property` 초기값 폴백과 opacity modifier 용 `color-mix` 폴백을 함께 내보내므로 v3 보다 큽니다. 이번 재작업에서 `@layer properties` 래퍼를 풀고 v3 `text-*` 줄높이·변형 변수 기본값을 넣으면서 이전 재작업 산출보다 14 바이트 늘었습니다. 빌드 산출은 두 번 연속 재생성해도, `NODE_ENV` 유무와 무관하게 바이트 동일합니다.
 
 ---
 
@@ -245,6 +260,22 @@ found 0 vulnerabilities
 | `uv run pytest tests/ -q -m 'not data_assets'` | 6018 passed, 40 skipped, 3 deselected |
 | `python3 scripts/validate_agent_rules.py --quiet` | 검증 통과 21/21 |
 
+이번 재작업(task_a4bf17af6680)에서 다시 확인한 항목입니다.
+
+| 확인 | 결과 |
+| --- | --- |
+| `grep -c "@layer" src/app/static/css/tailwind.css` | 0 (이전 재작업 산출 1) |
+| `--tw-rotate:0` 포함 여부 | 이전 산출 없음, 현재 있음(v3 기본값 7개 복원) |
+| `--text-sm--line-height` 값 | 이전 `calc(1.25 / .875)`, 현재 `1.25rem`(v3 값) |
+| 호환 기본 규칙 위치 | `--tw-rotate:0` 위치 9,951 < 첫 유틸리티 `.text-sm{` 위치 33,615. 유틸리티 앞, 레이어 없음 |
+| `.space-x-6` 선택자 | `.space-x-6>:not([hidden])~:not([hidden])` 로 v3 형태 |
+| 선택자 비교(4장 명령) | v3=627 v4=627, 설명되지 않는 누락 0(v4_only 1은 동일한 `rounded`) |
+| `npm ci --include=dev` 후 `npm run build:css` 2회 | sha256 `d88ba73d...` 동일(결정적) |
+| `npm ls braces` / `npm ls micromatch` | 빈 결과 |
+| `npm audit` | found 0 vulnerabilities |
+
+환경의 `npm_config_omit=dev`(사용자 `~/.npmrc`) 때문에 `npm ci` 를 그대로 쓰면 dev 의존성이 빠집니다. dev 를 포함한 확인에는 `npm ci --include=dev` 를 씁니다. CI(GitHub Actions)에는 이 설정이 없어 `npm ci` 가 dev 를 포함합니다.
+
 ---
 
 ## 10. main 병합(추정가격 입력) 대응
@@ -256,8 +287,70 @@ found 0 vulnerabilities
 
 ---
 
-## 11. 범위와 잔여
+## 11. 재작업 2(task_a4bf17af6680): `@layer` 0, text 줄높이, daisyui 변형 변수
 
-- 이번 재작업의 직접 대상은 반려 사유에 명시된 레이어 해제와 `space-*` 복원입니다. `divide-x-*`/`divide-y-*` 와 divider 색도 v4 에서 `:where(... > :not(:last-child))` 로 생성되지만, 캡슐의 필수 변경 항목이 아니고 사용처 6곳이 모두 daisyui 표 클래스가 없는 `<tbody>`/일반 `<div>` 라 v3 와 같은 자식 사이 구분선(n-1개, `slate-100`, 1px)을 냅니다. 그래서 이번 범위에서는 손대지 않았습니다.
+### 11.1 `@layer properties` 해제
+
+이전 재작업은 `@import "tailwindcss"` 를 구성 파일 3개로 쪼개 `@layer theme/base/components/utilities` 를 없앴지만, v4 가 `@property` 초기값 폴백용으로 내보내는 `@layer properties` 블록은 남아 `grep -c "@layer"` 가 1 이었습니다. 이 블록은 `@supports (((-webkit-hyphens:none) and (not (margin-trim:inline))) or ((-moz-orient:inline) and (not (color:rgb(from red r g b)))))` 조건 안에 있어 최신 브라우저에서는 적용되지도 않지만, 레이어 규칙상 레이어 밖 bootstrap·daisyui 보다 낮은 우선순위를 가지므로 v3(레이어 0개)와 구조가 달랐습니다.
+
+`postcss.config.mjs` 에 `unwrap-cascade-layers` 플러그인을 추가해, `@tailwindcss/postcss` 다음 순서에서 블록형 `@layer` 는 내용만 남기고 풀고 선언형 `@layer a,b;` 는 지웁니다. 규칙 순서는 그대로입니다. postcss 자체 API(`walkAtRules`)만 쓰며 새 패키지를 추가하지 않습니다.
+
+```text
+$ grep -c "@layer" src/app/static/css/tailwind.css
+0
+```
+
+### 11.2 `text-*` 줄높이를 v3 고정값으로
+
+v4 의 `--text-*--line-height` 기본값은 비율입니다(`--text-sm--line-height: calc(1.25 / .875)`). v3 는 `.text-sm{font-size:.875rem;line-height:1.25rem}` 처럼 rem 고정값이었습니다. `src/app/static/css/harness.css` 의 `.h-btn` 은 `font-size: 0.875rem` 을 지정하고 `line-height` 는 지정하지 않습니다. `.h-btn` 은 tailwind.css 다음에 로드되어 같은 명시도(0,1,0)에서 글자 크기를 이기므로, `text-xs`(v3 줄높이 1rem)를 함께 쓴 버튼은 v3 에서 1rem 이던 줄높이가 v4 에서는 `1rem / 0.75rem * 0.875rem = 1.1667rem`(약 18.67px)가 되어 높이가 약 3px 커졌습니다(예: `h-btn h-btn-primary text-xs`).
+
+`@theme` 에 v3 의 rem 줄높이 13개(`--text-xs--line-height: 1rem` … `--text-9xl--line-height: 1`)를 명시해, `.text-*` 가 글자 크기와 무관한 고정 줄높이를 내게 했습니다.
+
+```text
+$ grep -o -- "--text-sm--line-height:[^;]*" src/app/static/css/tailwind.css
+--text-sm--line-height:1.25rem
+```
+
+### 11.3 daisyui 4 변형 변수 기본값 복원
+
+daisyui 4.12.23 은 transform 을 v3 변수로 조립합니다.
+
+```css
+transform: translate(var(--tw-translate-x), var(--tw-translate-y))
+           rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y))
+           scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))
+```
+
+v4 는 `--tw-rotate` 를 아예 만들지 않고, `--tw-skew-x`/`--tw-skew-y` 는 `initial-value` 없는 `@property` 로만 등록합니다. 최신 브라우저에서 `@layer properties` 폴백은 `@supports` 조건 밖이라 적용되지 않으므로, 이 변수 중 하나라도 무효면 transform 전체가 무효가 됩니다. `modal-box`·`dropdown` transform 이 무효였던 원인입니다.
+
+v3 의 universal 기본값 7개를 레이어 없는 base 규칙으로 되돌렸습니다.
+
+```css
+*,
+::before,
+::after {
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  border-color: var(--color-gray-200, currentColor);
+}
+```
+
+호환 기본 규칙은 `preflight` 와 `utilities` import 사이 `@layer base` 로 두어, unwrap 뒤 v3 처럼 유틸리티 앞 레이어 없는 규칙으로 남습니다. `*` 규칙(명시도 0)은 유틸리티(명시도 1 이상)와 충돌하지 않으므로 순서는 캐스케이드 결과를 바꾸지 않되 v3 구조와 같아집니다. 템플릿에는 `rotate-*`/`scale-*`/`skew-*`/`translate-*` 유틸리티 사용처가 없어 v4 변형 유틸리티와 겹치지 않습니다.
+
+```text
+$ grep -c -- "--tw-rotate:0" src/app/static/css/tailwind.css
+1
+```
+
+---
+
+## 12. 범위와 잔여
+
+- 이번 재작업의 직접 대상은 반려 사유에 명시된 레이어 해제, `space-*` 복원, `text-*` 줄높이와 daisyui 변형 변수 복원입니다. `divide-x-*`/`divide-y-*` 와 divider 색도 v4 에서 `:where(... > :not(:last-child))` 로 생성되지만, 캡슐의 필수 변경 항목이 아니고 사용처 6곳이 모두 daisyui 표 클래스가 없는 `<tbody>`/일반 `<div>` 라 v3 와 같은 자식 사이 구분선(n-1개, `slate-100`, 1px)을 냅니다. 그래서 이번 범위에서는 손대지 않았습니다.
 - `frontend/` React 앱은 별도 빌드이며 이 Task 범위가 아닙니다.
 - `@custom-variant dark (&:where(.dark, .dark *))` 는 v4 공식 방식이며, dark 변형의 명시도가 v3(`.dark .dark\:*`)보다 낮아지는 점은 이전 시도부터 유지한 결정입니다. dark 유틸리티는 변형 정렬상 기본 유틸리티 뒤에 오므로 같은 요소에서 충돌하지 않습니다.

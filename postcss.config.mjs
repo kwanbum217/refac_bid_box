@@ -48,9 +48,28 @@ const rewriteSpaceBetweenToV3 = () => ({
 });
 rewriteSpaceBetweenToV3.postcss = true;
 
+// Tailwind CSS 4 는 @property 초기값 폴백을 `@layer properties` 블록에 담아 낸다. v3
+// 산출물에는 @layer 선언이 0개였고, 레이어 안 규칙은 같은 화면의 bootstrap·daisyui
+// (레이어 밖)에 항상 우선순위를 내준다. 캐스케이드를 v3 와 같게 만들기 위해 블록형
+// @layer 는 내용만 남기고 풀고, 선언형(@layer a,b;)은 지운다. 규칙 순서는 유지한다.
+const unwrapCascadeLayers = () => ({
+  postcssPlugin: 'unwrap-cascade-layers',
+  Once(root) {
+    root.walkAtRules('layer', (atRule) => {
+      if (atRule.nodes) {
+        atRule.replaceWith(...atRule.nodes);
+      } else {
+        atRule.remove();
+      }
+    });
+  },
+});
+unwrapCascadeLayers.postcss = true;
+
 export default {
   plugins: [
     tailwindcss({ optimize: { minify: true } }),
+    unwrapCascadeLayers(),
     rewriteSpaceBetweenToV3(),
   ],
 };
