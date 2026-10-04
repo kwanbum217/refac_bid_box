@@ -659,11 +659,20 @@ async def test_task_notifies_only_when_alert(isolated_db, monkeypatch):
     async def fake_notify(title, lines, *, level="info"):
         sent.append((title, lines, level))
 
+    # 태스크는 date.today() 를 기준일로 쓴다. 실행일이 지나면 최근 성숙 주가 W 에서
+    # 밀려나므로 시험 데이터의 기준일 AS_OF 로 고정한다.
+    class _FrozenDate(date):
+        @classmethod
+        def today(cls) -> date:
+            return AS_OF
+
+    monkeypatch.setattr(coverage_tasks, "date", _FrozenDate)
     monkeypatch.setattr(coverage_tasks, "SessionLocal", lambda: db)
     monkeypatch.setattr(coverage_tasks, "notify", fake_notify)
 
     result = await coverage_tasks.result_coverage_monitor_task({})
     assert result["status"] == "ok"
+    assert result["as_of"] == AS_OF.isoformat()
     assert len(result["alerts"]) == 1
     assert result["alerts"][0]["category"] == "Servc"
     assert result["alerts"][0]["week_start"] == W.isoformat()
