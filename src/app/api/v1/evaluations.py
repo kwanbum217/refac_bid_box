@@ -110,6 +110,7 @@ from src.app.services.evaluation_rules import (
     demand_agency_credit_deduction,
     extract_contract_regime,
     find_reputation_item,
+    method_name_500m_side,
     quant_score_table_for_rule,
     resolve_evaluation_rule_from_raw_data,
     resolve_score_params,
@@ -214,6 +215,8 @@ def _score_table(
     qualification: QualificationInput,
     rule: EvaluationRule,
     bid: BidAnnouncement,
+    estimated_price: Decimal | None = None,
+    estimated_price_source: str | None = None,
 ) -> tuple[ScoreTable | None, list[str], list[str], ScoreParamResolution]:
     """가격점수에 필요한 배점표 파라미터를 규칙 선언값과 사용자 입력으로 정합니다.
 
@@ -221,12 +224,15 @@ def _score_table(
     덮어쓰는 용도입니다. 선언값도 입력도 없는 필드는 추측하지 않고, 결측 필드명과 사용자가
     선언값과 다르게 입력한 필드명을 함께 돌려 점수 계산을 차단합니다. 기준비율은 규칙
     객체의 선언값을 씁니다.
+
+    유효 추정가격을 넘기지 않으면 공고와 자격 입력에서 직접 구합니다(구 호출부 호환).
     """
-    raw_price = getattr(bid, "presmpt_prce", None)
+    if estimated_price_source is None:
+        estimated_price, estimated_price_source = _effective_estimated_price(bid, qualification)
     raw_data = getattr(bid, "raw_data", None) or {}
     resolution = resolve_score_params(
         rule,
-        raw_price,
+        estimated_price,
         getattr(bid, "bid_ntce_dt", None),
         getattr(bid, "sucsfbid_mthd_nm", None)
         or raw_data.get("sucsfbidMthdNm")
@@ -278,6 +284,7 @@ def _rule_score_table_payload(
     missing_fields: list[str],
     override_fields: list[str],
     resolution: ScoreParamResolution | None = None,
+    estimated_price_source: str = "announcement",
 ) -> RuleScoreTable:
     """규칙 선언 배점표와 미확정·덮어쓰기 표시를 응답 스키마로 옮깁니다."""
     return RuleScoreTable(
@@ -290,13 +297,13 @@ def _rule_score_table_payload(
                 else None
             )
         ),
-        max_price_score_basis=_score_param_basis(resolution, "B"),
+        max_price_score_basis=_score_param_basis(resolution, "B", estimated_price_source),
         multiplier=(
             format_decimal_plain(resolution.multiplier)
             if resolution and resolution.multiplier is not None
             else (format_decimal_plain(rule.multiplier) if rule.multiplier is not None else None)
         ),
-        multiplier_basis=_score_param_basis(resolution, "k"),
+        multiplier_basis=_score_param_basis(resolution, "k", estimated_price_source),
         pass_threshold=(
             format_decimal_plain(rule.pass_threshold) if rule.pass_threshold is not None else None
         ),
@@ -306,7 +313,9 @@ def _rule_score_table_payload(
     )
 
 
-def _score_param_basis(resolution: ScoreParamResolution | None, axis: str) -> str | None:
+def _score_param_basis(
+    resolution: ScoreParamResolution | None, axis: str, estimated_price_source: str
+) -> str | None:
     if resolution is None:
         return None
     if axis == "B":
@@ -332,7 +341,8 @@ def _score_param_basis(resolution: ScoreParamResolution | None, axis: str) -> st
     comparison = "≥" if resolution.estimated_price >= boundary else "<"
     price_label = f"{resolution.estimated_price:,.0f}"
     boundary_label = f"{boundary:,.0f}"
-    return f"추정가격 {price_label} {comparison} {boundary_label} → {value}"
+    source_label = "사용자 입력 추정가격" if estimated_price_source == "user" else "추정가격"
+    return f"{source_label} {price_label} {comparison} {boundary_label} → {value}"
 
 
 # =============================================================================
@@ -366,6 +376,19 @@ def _bid_estimated_price(bid: BidAnnouncement) -> Decimal | None:
     except (ArithmeticError, TypeError, ValueError):
         return None
     return value if value > Decimal("0") else None
+
+
+def _effective_estimated_price(
+    bid: BidAnnouncement, qualification: QualificationInput
+) -> tuple[Decimal | None, str]:
+    """공고 추정가격을 우선하고 없을 때만 사용자 입력을 구간 판정에 씁니다."""
+    announced_price = _bid_estimated_price(bid)
+    if announced_price is not None:
+        return announced_price, "announcement"
+    user_price = qualification.estimated_price
+    if user_price is not None and user_price > 0:
+        return Decimal(user_price), "user"
+    return None, "none"
 
 
 def _quant_item_payload(item: QuantScoreItem) -> QuantScoreItemPayload:
@@ -926,6 +949,7 @@ def _score_table_missing_response(
     band: QuantScoreBand | None,
     band_note: str | None,
     resolution: ScoreParamResolution,
+    estimated_price_source: str,
 ) -> EvaluationResponse:
     """배점표 입력이 없어 점수는 계산하지 않습니다. 하한율과 시나리오 구간은 그대로 전달합니다."""
     assert rule_result.rule is not None
@@ -972,7 +996,9 @@ def _score_table_missing_response(
         a_value_amount=None,
         min_bid_amount_with_a=None,
         scenario_results=_unscored_scenario_results(scenarios, candidate_bid_amount),
-        score_table=_rule_score_table_payload(rule, missing_fields, override_fields, resolution),
+        score_table=_rule_score_table_payload(
+            rule, missing_fields, override_fields, resolution, estimated_price_source
+        ),
         quant_score_table=(
             _quant_table_payload(quant_table, band, band_note) if quant_table is not None else None
         ),
@@ -1173,6 +1199,7 @@ def _success_response(
     band: QuantScoreBand | None,
     band_note: str | None,
     resolution: ScoreParamResolution,
+    estimated_price_source: str,
 ) -> EvaluationResponse:
     """규칙 판별 결과와 evaluation_scoring 계산 결과를 응답 스키마로 담습니다."""
     assert rule_result.rule is not None
@@ -1251,7 +1278,9 @@ def _success_response(
             for scenario in scenarios
         ],
         price_compensation=_price_compensation_payload(compensation_result),
-        score_table=_rule_score_table_payload(rule, [], override_fields, resolution),
+        score_table=_rule_score_table_payload(
+            rule, [], override_fields, resolution, estimated_price_source
+        ),
         quant_score_table=(
             _quant_table_payload(quant_table, band, band_note) if quant_table is not None else None
         ),
@@ -1335,6 +1364,13 @@ def _analyze_bid(
     그들이 값을 주지 못하는 구간은 추측하지 않고 차단합니다.
     """
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    estimated_price, estimated_price_source = _effective_estimated_price(
+        bid, payload.qualification_input
+    )
+    ignored_user_price = (
+        estimated_price_source == "announcement"
+        and payload.qualification_input.estimated_price is not None
+    )
     if not institution_loaded:
         institution = _demand_institution_for_bid(db, bid)
     institution_regime = classify_contract_regime(institution)
@@ -1342,6 +1378,10 @@ def _analyze_bid(
 
     def with_contract_regime(response: EvaluationResponse) -> EvaluationResponse:
         response.contract_regime = ContractRegimeDescription(**contract_regime)
+        if ignored_user_price:
+            response.warnings.append(
+                "공고 추정가격이 있어 사용자 입력 추정가격은 구간 판정에 사용하지 않았습니다."
+            )
         return response
 
     region_code, region_name = institution_region(institution)
@@ -1408,7 +1448,16 @@ def _analyze_bid(
             or raw_data.get("sucsfbidMthdNm")
             or raw_data.get("sucsfbid_mthd_nm")
         )
-        band, band_note = select_quant_band(quant_table, _bid_estimated_price(bid), method_name)
+        band, band_note = select_quant_band(quant_table, estimated_price, method_name)
+        if (
+            estimated_price_source == "user"
+            and method_name_500m_side(method_name) is None
+            and band is not None
+        ):
+            user_note = (
+                f"사용자 입력 추정가격 {estimated_price:,.0f}원으로 배점표 구간을 판정했습니다."
+            )
+            band_note = f"{band_note} {user_note}" if band_note else user_note
         if band is None:
             return with_contract_regime(
                 _quant_band_unresolved_response(
@@ -1441,7 +1490,11 @@ def _analyze_bid(
         quant_scores = resolved
 
     table, missing_fields, override_fields, resolution = _score_table(
-        payload.qualification_input, rule, bid
+        payload.qualification_input,
+        rule,
+        bid,
+        estimated_price,
+        estimated_price_source,
     )
     if table is None:
         return with_contract_regime(
@@ -1457,6 +1510,7 @@ def _analyze_bid(
                 band=band,
                 band_note=band_note,
                 resolution=resolution,
+                estimated_price_source=estimated_price_source,
             )
         )
 
@@ -1475,6 +1529,7 @@ def _analyze_bid(
             band=band,
             band_note=band_note,
             resolution=resolution,
+            estimated_price_source=estimated_price_source,
         )
     )
 
