@@ -34,7 +34,7 @@ src/app/api/v1/evaluations.py
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Any
 
@@ -80,13 +80,15 @@ from src.app.schemas.predictions import PredictPriceRequest
 from src.app.services.demand_institutions import (
     classify_contract_regime,
     describe_contract_regime,
-    institution_region,
+    institution_sido,
 )
 from src.app.services.evaluation_rules import (
+    BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
     CREDIT_GRADE_SCORES,
     METHOD_FAMILY_BY_CODE,
     METHOD_SOURCE_CODE,
     POST_20260727_RULES,
+    QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
     QUANT_ITEM_LABOR_PLAN,
     QUANT_ITEM_MANAGEMENT,
     QUANT_ITEM_PERFORMANCE,
@@ -100,12 +102,15 @@ from src.app.services.evaluation_rules import (
     REPUTATION_MAX_BONUS,
     REPUTATION_MAX_PENALTY,
     REPUTATION_OPTION_CHOICE,
+    RULE_SCOPE_ALL,
     EvaluationRule,
+    PriceBand,
     QuantScoreBand,
     QuantScoreItem,
     QuantScoreTable,
     RuleResolutionResult,
     ScoreParamResolution,
+    ThresholdBand,
     credit_score_for_grade,
     demand_agency_credit_deduction,
     extract_contract_regime,
@@ -156,6 +161,16 @@ BLOCK_CODE_QUANT_LIMIT_EXCEEDED = "QUANT_LIMIT_EXCEEDED"
 BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE = "QUANT_ITEM_NOT_IN_TABLE"
 BLOCK_CODE_QUANT_GRADE_UNKNOWN = "QUANT_GRADE_UNKNOWN"
 BLOCK_CODE_QUANT_BAND_UNRESOLVED = "QUANT_BAND_UNRESOLVED"
+# LOCAL 시·도 규칙의 정량 배점표가 기관 원문 미반영이라 정량점수 직접 입력이 필요할 때입니다.
+BLOCK_CODE_LOCAL_QUANT_REQUIRED = "LOCAL_QUANT_REQUIRED"
+
+QUANT_SOURCE_REGISTRY_TABLE = "REGISTRY_TABLE"
+QUANT_SOURCE_USER_INPUT_UNVERIFIED = "USER_INPUT_UNVERIFIED"
+QUANT_SOURCE_NONE = "NONE"
+QUANT_NOTICE_LOCAL_UNVERIFIED = (
+    "정량평가 배점표는 기관 원문 미반영입니다. 입력한 정량점수는 서버가 검증하지 않습니다."
+)
+LOCAL_USER_INPUT_SOURCE = "사용자 입력(지자체 기준 미확보)"
 
 
 @dataclass(frozen=True)
@@ -271,7 +286,7 @@ def _score_table(
             max_price_score=resolved["max_price_score"],
             multiplier=resolved["multiplier"],
             pass_threshold=resolved["pass_threshold"],
-            base_rate=rule.base_rate,
+            base_rate=resolution.base_rate or rule.base_rate,
         ),
         [],
         overridden,
@@ -305,8 +320,16 @@ def _rule_score_table_payload(
         ),
         multiplier_basis=_score_param_basis(resolution, "k", estimated_price_source),
         pass_threshold=(
-            format_decimal_plain(rule.pass_threshold) if rule.pass_threshold is not None else None
+            format_decimal_plain(resolution.pass_threshold)
+            if resolution and resolution.pass_threshold is not None
+            else (
+                format_decimal_plain(rule.pass_threshold)
+                if rule.pass_threshold is not None
+                else None
+            )
         ),
+        price_band_label=resolution.price_band_label if resolution else None,
+        threshold_band_label=resolution.threshold_band_label if resolution else None,
         source=rule.score_table_source,
         missing_fields=list(missing_fields),
         override_fields=list(override_fields),
@@ -336,6 +359,8 @@ def _score_param_basis(
         return "규칙 고정값"
     if basis == "METHOD_NAME":
         return f"낙찰방법명 구간 표기 → {value}"
+    if basis not in {"ESTIMATED_PRICE"} and not basis.startswith("추정가격"):
+        return basis
     if resolution.estimated_price is None or boundary is None:
         return None
     comparison = "≥" if resolution.estimated_price >= boundary else "<"
@@ -343,6 +368,54 @@ def _score_param_basis(
     boundary_label = f"{boundary:,.0f}"
     source_label = "사용자 입력 추정가격" if estimated_price_source == "user" else "추정가격"
     return f"{source_label} {price_label} {comparison} {boundary_label} → {value}"
+
+
+def _local_user_input_rule(qualification: QualificationInput) -> EvaluationRule | None:
+    """시·도 기준이 없을 때 사용자가 입력한 B·k·기준비율·통과점수로 만든 임시 규칙.
+
+    넷 중 하나라도 비면 None 을 돌려주어 차단을 유지합니다(설계 0.1).
+    """
+    values = (
+        qualification.max_price_score,
+        qualification.multiplier,
+        qualification.pass_threshold,
+        qualification.base_rate,
+    )
+    if any(value is None for value in values):
+        return None
+    base_rate = Decimal(str(qualification.base_rate))
+    return EvaluationRule(
+        rule_id="SERVC_LOCAL_USER_INPUT",
+        service_type="GENERAL",
+        table_name="지방계약 가격점수 사용자 입력 기준",
+        description="지자체 기준 미확보 — 사용자 입력 가격점수 파라미터",
+        effective_date="2000-01-01",
+        source=LOCAL_USER_INPUT_SOURCE,
+        patterns=(),
+        lwlt_rate=Decimal("0"),
+        base_rate=base_rate,
+        price_bands=(
+            PriceBand(
+                upper_bound=None,
+                max_price_score=Decimal(str(qualification.max_price_score)),
+                multiplier=Decimal(str(qualification.multiplier)),
+                base_rate=base_rate,
+                label="사용자 입력",
+                source=LOCAL_USER_INPUT_SOURCE,
+            ),
+        ),
+        threshold_bands=(
+            ThresholdBand(
+                upper_bound=None,
+                pass_threshold=Decimal(str(qualification.pass_threshold)),
+                label="사용자 입력",
+                source=LOCAL_USER_INPUT_SOURCE,
+            ),
+        ),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=LOCAL_USER_INPUT_SOURCE,
+        institution_scope=RULE_SCOPE_ALL,
+    )
 
 
 # =============================================================================
@@ -1200,6 +1273,8 @@ def _success_response(
     band_note: str | None,
     resolution: ScoreParamResolution,
     estimated_price_source: str,
+    quant_source: str | None = None,
+    quant_notice: str | None = None,
 ) -> EvaluationResponse:
     """규칙 판별 결과와 evaluation_scoring 계산 결과를 응답 스키마로 담습니다."""
     assert rule_result.rule is not None
@@ -1284,6 +1359,8 @@ def _success_response(
         quant_score_table=(
             _quant_table_payload(quant_table, band, band_note) if quant_table is not None else None
         ),
+        quant_source=quant_source,
+        quant_notice=quant_notice,
         warnings=warnings,
     )
 
@@ -1384,28 +1461,64 @@ def _analyze_bid(
             )
         return response
 
-    region_code, region_name = institution_region(institution)
+    sido_code, sido_name = institution_sido(institution)
     rule_result = resolve_evaluation_rule_from_raw_data(
         category=bid.category,
         raw_data=raw_data,
         institution_name_fallback=bid.dminstt_nm,
         cntrct_mthd_nm=bid.cntrct_mthd_nm,
         institution_regime=institution_regime,
-        region_code=region_code,
-        region_name=region_name,
+        region_code=sido_code,
+        region_name=sido_name,
+        local_service_type=payload.qualification_input.local_service_type,
     )
     if rule_result.is_blocked:
-        response = _blocked_response(
-            bid,
-            rule_result,
-            str(rule_result.block_reason_code),
-            rule_result.block_reason_message or "계산 조건을 충족하지 않았습니다.",
-        )
-        if rule_result.negotiation_variant is not None:
-            response.negotiation_rate_distribution = NegotiationRateDistribution(
-                **get_negotiation_stats(db, rule_result.negotiation_variant)
+        # 지방계약에서 시·도 기준이 없을 때, 사용자가 B·k·기준비율·통과점수를 모두 입력하면
+        # 그 값으로 가격점수를 계산합니다(설계 0.1). 하나라도 비면 차단을 유지합니다.
+        if rule_result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND:
+            synthetic_rule = _local_user_input_rule(payload.qualification_input)
+            if synthetic_rule is not None:
+                user_lwlt: Decimal | None = None
+                raw_lwlt = raw_data.get("sucsfbidLwltRate")
+                if raw_lwlt is not None:
+                    try:
+                        text = str(raw_lwlt).strip()
+                        if text:
+                            user_lwlt = Decimal(text)
+                    except (ArithmeticError, TypeError, ValueError):
+                        user_lwlt = None
+                lwlt_warnings = list(rule_result.warnings)
+                if user_lwlt is None or user_lwlt <= 0:
+                    effective_lwlt = synthetic_rule.lwlt_rate
+                    rate_source = "RULE_DEFAULT"
+                else:
+                    effective_lwlt = user_lwlt
+                    rate_source = "ANNOUNCEMENT"
+                lwlt_warnings.append(
+                    f"{LOCAL_USER_INPUT_SOURCE} — 사용자가 입력한 B·k·기준비율·통과점수로 계산합니다."
+                )
+                rule_result = replace(
+                    rule_result,
+                    is_blocked=False,
+                    block_reason_code=None,
+                    block_reason_message=None,
+                    rule=synthetic_rule,
+                    effective_lwlt_rate=effective_lwlt,
+                    rate_source=rate_source,
+                    warnings=lwlt_warnings,
+                )
+        if rule_result.is_blocked:
+            response = _blocked_response(
+                bid,
+                rule_result,
+                str(rule_result.block_reason_code),
+                rule_result.block_reason_message or "계산 조건을 충족하지 않았습니다.",
             )
-        return with_contract_regime(response)
+            if rule_result.negotiation_variant is not None:
+                response.negotiation_rate_distribution = NegotiationRateDistribution(
+                    **get_negotiation_stats(db, rule_result.negotiation_variant)
+                )
+            return with_contract_regime(response)
 
     assert rule_result.rule is not None
     rule = rule_result.rule
@@ -1423,12 +1536,40 @@ def _analyze_bid(
 
     scenarios = _scenario_prices(bid, payload.price_scenarios, institution_regime)
 
-    # 정량평가 입력은 적용 별표의 선언 배점표로 검증합니다. 배점표가 없는 규칙(별표 귀속
-    # 미확인 일반 띠)은 항목을 검증할 수 없어 값을 받지 않습니다.
+    # 정량평가 입력은 적용 별표의 선언 배점표로 검증합니다. LOCAL 시·도 규칙은 기관 정량
+    # 배점표가 아직 반영되지 않아(quant_basis != REGISTRY) 사용자가 정량점수를 직접 입력합니다.
     quant_table = quant_score_table_for_rule(rule)
     band: QuantScoreBand | None = None
     band_note: str | None = None
-    if quant_table is None:
+    quant_source: str | None = QUANT_SOURCE_NONE
+    quant_notice: str | None = None
+    quant_scores = QuantInputScores(
+        performance=Decimal("0"),
+        labor_plan=Decimal("0"),
+        reputation=Decimal("0"),
+        has_labor_item=False,
+    )
+    if rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED:
+        quant_source = QUANT_SOURCE_USER_INPUT_UNVERIFIED
+        quant_notice = QUANT_NOTICE_LOCAL_UNVERIFIED
+        manual_score = payload.qualification_input.manual_non_price_score
+        if manual_score is None:
+            return with_contract_regime(
+                _blocked_response(
+                    bid,
+                    rule_result,
+                    BLOCK_CODE_LOCAL_QUANT_REQUIRED,
+                    "적용 규칙의 정량평가 배점표가 기관 원문 미반영이라 정량점수"
+                    "(manual_non_price_score)를 직접 입력해야 합니다.",
+                )
+            )
+        quant_scores = QuantInputScores(
+            performance=Decimal(str(manual_score)),
+            labor_plan=Decimal("0"),
+            reputation=Decimal("0"),
+            has_labor_item=False,
+        )
+    elif quant_table is None:
         if any(
             _quant_value(value) != Decimal("0")
             for value in payload.qualification_input.quant_items.values()
@@ -1442,7 +1583,7 @@ def _analyze_bid(
                 )
             )
     else:
-        raw_data = getattr(bid, "raw_data", None) or {}
+        quant_source = QUANT_SOURCE_REGISTRY_TABLE
         method_name = (
             getattr(bid, "sucsfbid_mthd_nm", None)
             or raw_data.get("sucsfbidMthdNm")
@@ -1464,14 +1605,6 @@ def _analyze_bid(
                     bid, payload, rule_result, pred_price, scenarios, quant_table, band_note
                 )
             )
-
-    quant_scores = QuantInputScores(
-        performance=Decimal("0"),
-        labor_plan=Decimal("0"),
-        reputation=Decimal("0"),
-        has_labor_item=False,
-    )
-    if quant_table is not None and band is not None:
         resolved, violations = _resolve_quant_inputs(payload.qualification_input, quant_table, band)
         if resolved is None:
             return with_contract_regime(
@@ -1530,6 +1663,8 @@ def _analyze_bid(
             band_note=band_note,
             resolution=resolution,
             estimated_price_source=estimated_price_source,
+            quant_source=quant_source,
+            quant_notice=quant_notice,
         )
     )
 
@@ -1561,15 +1696,16 @@ def analyze_evaluation(
     if response.status in ("success", "blocked"):
         raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
         institution_regime = classify_contract_regime(institution)
-        region_code, region_name = institution_region(institution)
+        sido_code, sido_name = institution_sido(institution)
         rule_context = resolve_evaluation_rule_from_raw_data(
             category=bid.category,
             raw_data=raw_data,
             institution_name_fallback=bid.dminstt_nm,
             cntrct_mthd_nm=bid.cntrct_mthd_nm,
             institution_regime=institution_regime,
-            region_code=region_code,
-            region_name=region_name,
+            region_code=sido_code,
+            region_name=sido_name,
+            local_service_type=payload.qualification_input.local_service_type,
         )
         input_json = {
             "bid_id": payload.bid_id,
@@ -1662,15 +1798,15 @@ def list_evaluation_rules_meta(
         raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
         institution = _demand_institution_for_bid(db, bid)
         institution_regime = classify_contract_regime(institution)
-        region_code, region_name = institution_region(institution)
+        sido_code, sido_name = institution_sido(institution)
         resolution = resolve_evaluation_rule_from_raw_data(
             category=bid.category,
             raw_data=raw_data,
             institution_name_fallback=bid.dminstt_nm,
             cntrct_mthd_nm=bid.cntrct_mthd_nm,
             institution_regime=institution_regime,
-            region_code=region_code,
-            region_name=region_name,
+            region_code=sido_code,
+            region_name=sido_name,
         )
         matched = resolution.rule
         if matched is not None:

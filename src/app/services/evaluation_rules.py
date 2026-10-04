@@ -23,6 +23,53 @@ RULE_SCOPE_INSTITUTION = "INSTITUTION"
 RULE_SCOPE_REGION = "REGION"
 RULE_SCOPE_VALUES = frozenset({RULE_SCOPE_ALL, RULE_SCOPE_INSTITUTION, RULE_SCOPE_REGION})
 
+QUANT_BASIS_REGISTRY = "REGISTRY"
+QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED = "AGENCY_DOCUMENT_NOT_LOADED"
+
+
+@dataclass(frozen=True)
+class PriceBand:
+    """입찰가격 평점(B·k) 구간 하나.
+
+    upper_bound 는 이 구간의 추정가격 상한(원)이며 이 값 **미만**이 이 구간에 들어갑니다.
+    원문 표기가 "10억원 미만 5억원 이상"이면 upper_bound=10억, "5억원 미만 2억원 이상"이면
+    5억이므로, 경계값은 상위 구간(이상 쪽)에 속합니다. None 은 상한 없음(마지막 구간)입니다.
+    """
+
+    upper_bound: Decimal | None
+    max_price_score: Decimal
+    multiplier: Decimal
+    base_rate: Decimal | None = None
+    flat_score: Decimal | None = None
+    label: str = ""
+    source: str | None = None
+
+
+@dataclass(frozen=True)
+class ThresholdBand:
+    """통과점수(T) 구간 하나. 경계가 PriceBand 와 다를 수 있습니다."""
+
+    upper_bound: Decimal | None
+    pass_threshold: Decimal
+    label: str = ""
+    source: str | None = None
+
+
+def _validate_bands(bands: Sequence[Any], *, axis: str) -> None:
+    open_upper = 0
+    previous: Decimal | None = None
+    for band in bands:
+        if band.upper_bound is None:
+            open_upper += 1
+            continue
+        if previous is not None and band.upper_bound <= previous:
+            raise ValueError(f"{axis} 구간이 추정가격 오름차순이 아닙니다.")
+        previous = band.upper_bound
+    if open_upper > 1:
+        raise ValueError(f"{axis} 구간에서 상한 없는 구간은 마지막 하나만 허용합니다.")
+    if bands and bands[-1].upper_bound is not None:
+        raise ValueError(f"{axis} 구간의 마지막은 상한 없는 구간이어야 합니다.")
+
 
 @dataclass(frozen=True)
 class EvaluationRule:
@@ -49,6 +96,11 @@ class EvaluationRule:
     max_price_score_by_500m: tuple[Decimal, Decimal] | None = None
     multiplier_by_notice: tuple[Decimal, Decimal] | None = None
     pass_threshold: Decimal | None = None
+    # 시·도 자체 별표처럼 추정가격 3~4구간으로 B·k·T 가 갈리는 규칙은 위 단일·2구간 필드 대신
+    # 아래 두 구간 목록으로 표현합니다. 기존 규칙은 모두 None 이라 기존 경로가 그대로 유지됩니다.
+    price_bands: tuple[PriceBand, ...] | None = None
+    threshold_bands: tuple[ThresholdBand, ...] | None = None
+    quant_basis: str = QUANT_BASIS_REGISTRY
     score_table_source: str | None = None
     contract_regime: str | None = None
     institution_scope: str = RULE_SCOPE_ALL
@@ -62,6 +114,30 @@ class EvaluationRule:
             raise ValueError("B 단일값과 추정가격 조건부 값은 동시에 선언할 수 없습니다.")
         if self.multiplier is not None and self.multiplier_by_notice is not None:
             raise ValueError("k 단일값과 고시금액 조건부 값은 동시에 선언할 수 없습니다.")
+        if self.price_bands is not None:
+            if any(
+                value is not None
+                for value in (
+                    self.max_price_score,
+                    self.max_price_score_by_500m,
+                    self.multiplier,
+                    self.multiplier_by_notice,
+                )
+            ):
+                raise ValueError("price_bands 와 기존 B·k 필드는 동시에 선언할 수 없습니다.")
+            if not self.price_bands:
+                raise ValueError("price_bands 는 최소 한 구간이 필요합니다.")
+            if not self.threshold_bands:
+                raise ValueError("price_bands 규칙은 threshold_bands 를 함께 선언해야 합니다.")
+            if any(band.multiplier <= 0 for band in self.price_bands):
+                raise ValueError("PriceBand 의 평점계수(k)는 0보다 커야 합니다.")
+            _validate_bands(self.price_bands, axis="PriceBand")
+        if self.threshold_bands is not None:
+            if self.pass_threshold is not None:
+                raise ValueError("threshold_bands 와 pass_threshold 는 동시에 선언할 수 없습니다.")
+            if not self.threshold_bands:
+                raise ValueError("threshold_bands 는 최소 한 구간이 필요합니다.")
+            _validate_bands(self.threshold_bands, axis="ThresholdBand")
         if self.institution_scope not in RULE_SCOPE_VALUES:
             raise ValueError(f"지원하지 않는 기관 범위입니다: {self.institution_scope}")
         if self.institution_scope == RULE_SCOPE_INSTITUTION and not (
@@ -503,12 +579,55 @@ class ScoreParamResolution:
     max_price_score_boundary: Decimal | None
     multiplier_boundary: Decimal | None
     warnings: tuple[str, ...] = ()
+    base_rate: Decimal | None = None
+    price_band_index: int | None = None
+    price_band_label: str | None = None
+    threshold_band_label: str | None = None
 
 
 def method_name_500m_side(method_name: str | None) -> bool | None:
     """낙찰방법명에 적힌 추정가격 5억원 이상 여부를 반환합니다."""
     match = re.search(r"5\s*억\s*원?\s*(미만|이상)", method_name or "")
     return None if match is None else match.group(1) == "이상"
+
+
+def _select_upper_bound_band(
+    bands: Sequence[Any],
+    price: Decimal | None,
+) -> tuple[Any | None, int | None, str | None]:
+    """추정가격으로 구간 목록에서 하나를 고릅니다.
+
+    상한(upper_bound) 없는 마지막 구간은 나머지 전부를 담당하고, 경계값은 상위 구간
+    (이상 쪽)에 속합니다(예: 정확히 5억원이면 "10억원 미만 5억원 이상" 구간).
+    """
+    if not bands:
+        return None, None, "규모 구간이 없습니다."
+    if price is None:
+        return None, None, "추정가격이 없어 규모 구간을 정할 수 없습니다."
+    open_upper_index: int | None = None
+    for index, band in enumerate(bands):
+        if band.upper_bound is None:
+            open_upper_index = index
+            continue
+        if price < band.upper_bound:
+            return band, index, None
+    if open_upper_index is not None:
+        return bands[open_upper_index], open_upper_index, None
+    return None, None, "추정가격이 어느 규모 구간에도 들지 않습니다."
+
+
+def select_price_band(
+    bands: Sequence[PriceBand], estimated_price: Decimal | None
+) -> tuple[PriceBand | None, int | None, str | None]:
+    """추정가격으로 B·k 구간을 고릅니다. 추정가격이 없으면 임의 선택하지 않습니다."""
+    return _select_upper_bound_band(bands, estimated_price)
+
+
+def select_threshold_band(
+    bands: Sequence[ThresholdBand], estimated_price: Decimal | None
+) -> tuple[ThresholdBand | None, int | None, str | None]:
+    """추정가격으로 T 구간을 고릅니다. B·k 경계와 다른 경계를 씁니다."""
+    return _select_upper_bound_band(bands, estimated_price)
 
 
 def resolve_score_params(
@@ -524,6 +643,40 @@ def resolve_score_params(
             price = None
     except Exception:
         price = None
+    if rule.price_bands is not None:
+        price_band, price_index, price_reason = select_price_band(rule.price_bands, price)
+        threshold_band, _, threshold_reason = select_threshold_band(
+            rule.threshold_bands or (), price
+        )
+        if price_band is None or threshold_band is None:
+            return ScoreParamResolution(
+                max_price_score=None,
+                multiplier=None,
+                pass_threshold=None,
+                max_price_score_basis=None,
+                multiplier_basis=None,
+                pass_threshold_basis=None,
+                estimated_price=price,
+                max_price_score_boundary=None,
+                multiplier_boundary=None,
+                warnings=tuple(reason for reason in (price_reason or threshold_reason,) if reason),
+            )
+        return ScoreParamResolution(
+            max_price_score=price_band.max_price_score,
+            multiplier=price_band.multiplier,
+            pass_threshold=threshold_band.pass_threshold,
+            max_price_score_basis=f"규모 구간: {price_band.label}",
+            multiplier_basis=f"규모 구간: {price_band.label}",
+            pass_threshold_basis=f"규모 구간: {threshold_band.label}",
+            estimated_price=price,
+            max_price_score_boundary=None,
+            multiplier_boundary=None,
+            base_rate=price_band.base_rate,
+            price_band_index=price_index,
+            price_band_label=price_band.label,
+            threshold_band_label=threshold_band.label,
+            warnings=(),
+        )
     year = None
     try:
         if isinstance(announced_date, (date, datetime)):
@@ -1314,6 +1467,829 @@ PRE_20230501_RULES = _with_score_table(PRE_20230501_RULES)
 # 2026-05-26 개정 전 규칙 호환 별칭 (제2023-53호 + 제2025-257호·제2026-15호)
 PRE_20260526_RULES: tuple[EvaluationRule, ...] = PRE_20230501_RULES + PRE_20250901_RULES
 
+# =============================================================================
+# 지방계약(LOCAL) 시·도 자체 별표 규칙
+# =============================================================================
+#
+# 정본: docs/design/local_regime_rules_design_20261005.md 0절(D8)·6.4절, 4절.
+# 수집 원문: docs/analysis/servc_formula_collection_local_20261004.md 4.2~4.12절,
+#           docs/analysis/servc_formula_userfiles_local_20261004.md,
+#           docs/analysis/servc_formula_resolve_daegu_dapa_gg_20261005.md.
+# 시·도 규칙은 낙찰방법명이 아니라 수요기관 시·도로 매칭하며, 조달청 별표를 후보에서 배제합니다.
+# 행정안전부 예규 기본 규칙은 만들지 않습니다(0.1 D8). 시·도 규칙이 없으면 LOCAL_RULE_NOT_FOUND 입니다.
+#
+# B·k 는 price_bands(추정가격 3~4구간), T 는 threshold_bands(경계가 다를 수 있음)로 표현합니다.
+# 모든 밴드의 기준비율은 88%(경기 별표 1-1 의 89 는 미확정이라 규칙을 만들지 않음)입니다.
+_LOCAL_COLLECTION = "docs/analysis/servc_formula_collection_local_20261004.md"
+
+_SRC_INCHEON = (
+    f"{_LOCAL_COLLECTION}:122-146 (인천광역시 일반용역 적격심사 세부기준, "
+    "인천광역시 예규 제488호, 시행 2025-12-24, 별표 1)"
+)
+_SRC_JEJU = (
+    f"{_LOCAL_COLLECTION}:148-173 (제주특별자치도 일반용역 적격심사 세부기준, "
+    "제주특별자치도 예규 제82호, 시행 2024-01-01, 별표 1)"
+)
+_SRC_GANGWON = (
+    f"{_LOCAL_COLLECTION}:175-200 (강원특별자치도 일반용역 적격심사 세부기준, "
+    "강원특별자치도 예규 제832호, 시행 2023-06-11, 별표 1)"
+)
+_SRC_SEJONG = (
+    f"{_LOCAL_COLLECTION}:225-247 (세종특별자치시 일반용역 적격심사 세부기준, "
+    "세종특별자치시 예규 제32호, 시행 2025-12-01, 별표 2~5)"
+)
+_SRC_GB = (
+    f"{_LOCAL_COLLECTION}:249-273 (경상북도 일반용역 등 적격심사 세부기준, "
+    "경상북도 예규 제1571호, 시행 2026-01-08, 별표 1~4)"
+)
+_SRC_ULSAN = (
+    f"{_LOCAL_COLLECTION}:275-306 (울산광역시 일반용역 적격심사 세부기준, "
+    "울산광역시 공고 제2022-1100호, 시행 2022-08-10, 별표 1·1-1·2)"
+)
+_SRC_CB = (
+    f"{_LOCAL_COLLECTION}:308-333 (충청북도 일반용역 적격심사 세부기준, "
+    "충청북도 공고 제2023-1428호, 시행 2023-10-20, 별표 1)"
+)
+_SRC_JNGJ = (
+    f"{_LOCAL_COLLECTION}:335-371 (전남광주통합특별시 일반용역 적격심사 세부지침, "
+    "전남광주통합특별시 예규 제3호, 시행 2026-07-16, 별표 1~6)"
+)
+_SRC_GN = (
+    f"{_LOCAL_COLLECTION}:373-394 (경상남도 일반용역 등 적격심사 세부기준, "
+    "경상남도 공고 제2023-23호, 시행 2023-01-05, 별표 1)"
+)
+_SRC_DAEGU = (
+    f"{_LOCAL_COLLECTION}:202-223 (대구광역시 일반용역 적격심사 세부기준, "
+    "대구광역시 예규 제238호, 시행 2026-05-11, 별표 1 단순노무)"
+)
+_SRC_GG = (
+    f"{_LOCAL_COLLECTION}:396-463 (경기도 일반용역 적격심사 세부기준 지침, "
+    "경기도 예규 제748호, 시행 2025-08-08, 별표 1-2~1-6)"
+)
+
+_LOCAL_NOT_FOUND_MESSAGE = (
+    "해당 지자체의 일반용역 적격심사 기준이 아직 확보되지 않았습니다. "
+    "가격배점한도(B)·평점계수(k)·기준비율·통과점수를 직접 입력하면 가격점수를 계산합니다."
+)
+
+# 시·도별 기본 낙찰하한율은 그 별표에 대응하는 조달청 관행 하한율을 기본값으로 둡니다.
+# 공고에 sucsfbidLwltRate 가 있으면 공고값이 우선합니다(현행과 동일).
+_LOCAL_LWLT_BY_SERVICE: dict[str, str] = {
+    "FACILITY": "87.995",
+    "INSURANCE": "47.995",
+    "PASSENGER_TRANSPORT": "87.995",
+    "FREIGHT": "84.245",
+    "SW": "87.995",
+    "WASTE": "84.245",
+    "WASTE_HOUSEHOLD": "84.245",
+    "REPAIR_INSPECTION": "84.245",
+    "LEASE": "84.245",
+    "GENERAL": "87.995",
+    "SIMPLE_LABOR": "87.995",
+}
+
+
+def _local_price_band(upper: str | None, b: str, k: str, label: str, source: str) -> PriceBand:
+    return PriceBand(
+        upper_bound=Decimal(upper) if upper is not None else None,
+        max_price_score=Decimal(b),
+        multiplier=Decimal(k),
+        base_rate=Decimal("0.88"),
+        label=label,
+        source=source,
+    )
+
+
+def _local_threshold_band(upper: str | None, t: str, label: str, source: str) -> ThresholdBand:
+    return ThresholdBand(
+        upper_bound=Decimal(upper) if upper is not None else None,
+        pass_threshold=Decimal(t),
+        label=label,
+        source=source,
+    )
+
+
+def _four_band_price(source: str, *, simple_labor: bool = False) -> tuple[PriceBand, ...]:
+    """10억/5억/2억 4구간 B·k. 단순노무 행은 k 가 전 구간 20 입니다."""
+    k_top = "20" if simple_labor else "1"
+    k_10 = "20" if simple_labor else "2"
+    k_5 = "20" if simple_labor else "4"
+    return (
+        _local_price_band("200000000", "90", "20", "추정가격 2억원 미만", source),
+        _local_price_band("500000000", "70", k_5, "5억원 미만 2억원 이상", source),
+        _local_price_band("1000000000", "50", k_10, "10억원 미만 5억원 이상", source),
+        _local_price_band(None, "30", k_top, "추정가격 10억원 이상", source),
+    )
+
+
+def _threshold_30_10(source: str) -> tuple[ThresholdBand, ...]:
+    """30억/10억 경계 T: 30억↑85, 10억~30억90, ~10억95."""
+    return (
+        _local_threshold_band("1000000000", "95", "추정가격 10억원 미만", source),
+        _local_threshold_band("3000000000", "90", "30억원 미만 10억원 이상", source),
+        _local_threshold_band(None, "85", "추정가격 30억원 이상", source),
+    )
+
+
+def _single_threshold(value: str, label: str, source: str) -> tuple[ThresholdBand, ...]:
+    return (_local_threshold_band(None, value, label, source),)
+
+
+def _local_rule(
+    rule_id: str,
+    *,
+    sido_code: str,
+    sido_name: str,
+    service_type: str,
+    effective_date: str,
+    source: str,
+    price_bands: tuple[PriceBand, ...],
+    threshold_bands: tuple[ThresholdBand, ...],
+    description: str,
+) -> EvaluationRule:
+    return EvaluationRule(
+        rule_id=rule_id,
+        service_type=service_type,
+        table_name=f"{sido_name} 일반용역 적격심사 ({service_type})",
+        description=description,
+        effective_date=effective_date,
+        source=source,
+        patterns=(),
+        lwlt_rate=Decimal(_LOCAL_LWLT_BY_SERVICE[service_type]),
+        base_rate=Decimal("0.88"),
+        price_bands=price_bands,
+        threshold_bands=threshold_bands,
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=source,
+        contract_regime="LOCAL",
+        institution_scope=RULE_SCOPE_REGION,
+        region_code=sido_code,
+        region_name=sido_name,
+    )
+
+
+LOCAL_RULES: tuple[EvaluationRule, ...] = (
+    # 인천광역시 (예규 제488호, 시행 2025-12-24)
+    _local_rule(
+        "SERVC_LOCAL_INCHEON_20251224_ATTACH_01",
+        sido_code="28",
+        sido_name="인천광역시",
+        service_type="GENERAL",
+        effective_date="2025-12-24",
+        source=_SRC_INCHEON,
+        description="인천광역시 일반용역 적격심사 (단순노무 외)",
+        price_bands=_four_band_price(_SRC_INCHEON),
+        threshold_bands=_threshold_30_10(_SRC_INCHEON),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR",
+        sido_code="28",
+        sido_name="인천광역시",
+        service_type="SIMPLE_LABOR",
+        effective_date="2025-12-24",
+        source=_SRC_INCHEON,
+        description="인천광역시 일반용역 적격심사 (단순노무)",
+        price_bands=_four_band_price(_SRC_INCHEON, simple_labor=True),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_INCHEON),
+    ),
+    # 제주특별자치도 (예규 제82호, 시행 2024-01-01) — 인천과 동일 구조
+    _local_rule(
+        "SERVC_LOCAL_JEJU_20240101_ATTACH_01",
+        sido_code="50",
+        sido_name="제주특별자치도",
+        service_type="GENERAL",
+        effective_date="2024-01-01",
+        source=_SRC_JEJU,
+        description="제주특별자치도 일반용역 적격심사 (단순노무 외)",
+        price_bands=_four_band_price(_SRC_JEJU),
+        threshold_bands=_threshold_30_10(_SRC_JEJU),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_JEJU_20240101_SIMPLE_LABOR",
+        sido_code="50",
+        sido_name="제주특별자치도",
+        service_type="SIMPLE_LABOR",
+        effective_date="2024-01-01",
+        source=_SRC_JEJU,
+        description="제주특별자치도 일반용역 적격심사 (단순노무)",
+        price_bands=_four_band_price(_SRC_JEJU, simple_labor=True),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_JEJU),
+    ),
+    # 강원특별자치도 (예규 제832호, 시행 2023-06-11) — 인천과 동일 구조
+    _local_rule(
+        "SERVC_LOCAL_GANGWON_20230611_ATTACH_01",
+        sido_code="51",
+        sido_name="강원특별자치도",
+        service_type="GENERAL",
+        effective_date="2023-06-11",
+        source=_SRC_GANGWON,
+        description="강원특별자치도 일반용역 적격심사 (단순노무 외)",
+        price_bands=_four_band_price(_SRC_GANGWON),
+        threshold_bands=_threshold_30_10(_SRC_GANGWON),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GANGWON_20230611_SIMPLE_LABOR",
+        sido_code="51",
+        sido_name="강원특별자치도",
+        service_type="SIMPLE_LABOR",
+        effective_date="2023-06-11",
+        source=_SRC_GANGWON,
+        description="강원특별자치도 일반용역 적격심사 (단순노무)",
+        price_bands=_four_band_price(_SRC_GANGWON, simple_labor=True),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_GANGWON),
+    ),
+    # 세종특별자치시 (예규 제32호, 시행 2025-12-01)
+    _local_rule(
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_02",
+        sido_code="36",
+        sido_name="세종특별자치시",
+        service_type="FACILITY",
+        effective_date="2025-12-01",
+        source=_SRC_SEJONG,
+        description="세종특별자치시 시설분야용역 적격심사 (별표 2)",
+        price_bands=(
+            _local_price_band("500000000", "70", "60", "추정가격 5억원 미만", _SRC_SEJONG),
+            _local_price_band(None, "60", "60", "추정가격 5억원 이상", _SRC_SEJONG),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_SEJONG),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_03",
+        sido_code="36",
+        sido_name="세종특별자치시",
+        service_type="SW",
+        effective_date="2025-12-01",
+        source=_SRC_SEJONG,
+        description="세종특별자치시 소프트웨어용역 적격심사 (별표 3)",
+        price_bands=(
+            _local_price_band("500000000", "70", "4", "추정가격 5억원 미만", _SRC_SEJONG),
+            _local_price_band(None, "60", "2", "추정가격 5억원 이상", _SRC_SEJONG),
+        ),
+        threshold_bands=_single_threshold("88", "전 구간 88", _SRC_SEJONG),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_04",
+        sido_code="36",
+        sido_name="세종특별자치시",
+        service_type="WASTE",
+        effective_date="2025-12-01",
+        source=_SRC_SEJONG,
+        description="세종특별자치시 폐기물처리용역 적격심사 (별표 4)",
+        price_bands=(
+            _local_price_band("500000000", "70", "60", "추정가격 5억원 미만", _SRC_SEJONG),
+            _local_price_band(None, "60", "60", "추정가격 5억원 이상", _SRC_SEJONG),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_SEJONG),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_4_2",
+        sido_code="36",
+        sido_name="세종특별자치시",
+        service_type="WASTE_HOUSEHOLD",
+        effective_date="2025-12-01",
+        source=_SRC_SEJONG,
+        description="세종특별자치시 생활폐기물처리용역 적격심사 (별표 4의2)",
+        price_bands=(
+            _local_price_band("500000000", "70", "60", "추정가격 5억원 미만", _SRC_SEJONG),
+            _local_price_band(None, "60", "60", "추정가격 5억원 이상", _SRC_SEJONG),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_SEJONG),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_SEJONG_20251201_ATTACH_05",
+        sido_code="36",
+        sido_name="세종특별자치시",
+        service_type="FREIGHT",
+        effective_date="2025-12-01",
+        source=_SRC_SEJONG,
+        description="세종특별자치시 육상운송용역 적격심사 (별표 5)",
+        price_bands=(
+            _local_price_band("500000000", "70", "4", "추정가격 5억원 미만", _SRC_SEJONG),
+            _local_price_band(None, "60", "2", "추정가격 5억원 이상", _SRC_SEJONG),
+        ),
+        threshold_bands=_single_threshold("88", "전 구간 88", _SRC_SEJONG),
+    ),
+    # 경상북도 (예규 제1571호, 시행 2026-01-08)
+    _local_rule(
+        "SERVC_LOCAL_GB_20260108_ATTACH_01",
+        sido_code="47",
+        sido_name="경상북도",
+        service_type="SIMPLE_LABOR",
+        effective_date="2026-01-08",
+        source=_SRC_GB,
+        description="경상북도 단순노무용역 적격심사 (별표 1)",
+        price_bands=(
+            _local_price_band("500000000", "70", "20", "추정가격 5억원 미만", _SRC_GB),
+            _local_price_band(None, "50", "20", "추정가격 5억원 이상", _SRC_GB),
+        ),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_GB),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GB_20260108_ATTACH_02",
+        sido_code="47",
+        sido_name="경상북도",
+        service_type="SW",
+        effective_date="2026-01-08",
+        source=_SRC_GB,
+        description="경상북도 소프트웨어용역 적격심사 (별표 2)",
+        price_bands=(
+            _local_price_band("500000000", "80", "4", "추정가격 5억원 미만", _SRC_GB),
+            _local_price_band(None, "60", "4", "추정가격 5억원 이상", _SRC_GB),
+        ),
+        threshold_bands=_single_threshold("88", "전 구간 88", _SRC_GB),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GB_20260108_ATTACH_03",
+        sido_code="47",
+        sido_name="경상북도",
+        service_type="WASTE",
+        effective_date="2026-01-08",
+        source=_SRC_GB,
+        description="경상북도 폐기물처리용역 적격심사 (별표 3)",
+        price_bands=(
+            _local_price_band("500000000", "70", "20", "추정가격 5억원 미만", _SRC_GB),
+            _local_price_band(None, "50", "4", "추정가격 5억원 이상", _SRC_GB),
+        ),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_GB),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GB_20260108_ATTACH_04",
+        sido_code="47",
+        sido_name="경상북도",
+        service_type="GENERAL",
+        effective_date="2026-01-08",
+        source=_SRC_GB,
+        description="경상북도 기타 일반용역 적격심사 (별표 4)",
+        price_bands=(
+            _local_price_band("500000000", "70", "20", "추정가격 5억원 미만", _SRC_GB),
+            _local_price_band(None, "50", "4", "추정가격 5억원 이상", _SRC_GB),
+        ),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_GB),
+    ),
+    # 울산광역시 (공고 제2022-1100호, 시행 2022-08-10)
+    _local_rule(
+        "SERVC_LOCAL_ULSAN_20220810_ATTACH_01",
+        sido_code="31",
+        sido_name="울산광역시",
+        service_type="GENERAL",
+        effective_date="2022-08-10",
+        source=_SRC_ULSAN,
+        description="울산광역시 일반용역 적격심사 (별표 1, 단순노무 외)",
+        price_bands=_four_band_price(_SRC_ULSAN),
+        threshold_bands=_threshold_30_10(_SRC_ULSAN),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_ULSAN_20220810_SIMPLE_LABOR",
+        sido_code="31",
+        sido_name="울산광역시",
+        service_type="SIMPLE_LABOR",
+        effective_date="2022-08-10",
+        source=_SRC_ULSAN,
+        description="울산광역시 일반용역 적격심사 (별표 1, 단순노무)",
+        price_bands=_four_band_price(_SRC_ULSAN, simple_labor=True),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_ULSAN),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_ULSAN_20220810_ATTACH_1_1",
+        sido_code="31",
+        sido_name="울산광역시",
+        service_type="WASTE_HOUSEHOLD",
+        effective_date="2022-08-10",
+        source=_SRC_ULSAN,
+        description="울산광역시 생활폐기물 수집·운반 대행용역 적격심사 (별표 1-1)",
+        price_bands=(
+            _local_price_band("1000000000", "70", "20", "추정가격 10억원 미만", _SRC_ULSAN),
+            _local_price_band("3000000000", "50", "20", "30억원 미만 10억원 이상", _SRC_ULSAN),
+            _local_price_band(None, "30", "40", "추정가격 30억원 이상", _SRC_ULSAN),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_ULSAN),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_ULSAN_20220810_ATTACH_02",
+        sido_code="31",
+        sido_name="울산광역시",
+        service_type="WASTE",
+        effective_date="2022-08-10",
+        source=_SRC_ULSAN,
+        description="울산광역시 폐기물처리용역 적격심사 (별표 2)",
+        price_bands=_four_band_price(_SRC_ULSAN),
+        threshold_bands=_threshold_30_10(_SRC_ULSAN),
+    ),
+    # 충청북도 (공고 제2023-1428호, 시행 2023-10-20)
+    _local_rule(
+        "SERVC_LOCAL_CB_20231020_ATTACH_01",
+        sido_code="43",
+        sido_name="충청북도",
+        service_type="GENERAL",
+        effective_date="2023-10-20",
+        source=_SRC_CB,
+        description="충청북도 일반용역 적격심사 (별표 1, 단순노무 외)",
+        price_bands=_four_band_price(_SRC_CB),
+        threshold_bands=_threshold_30_10(_SRC_CB),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_CB_20231020_SIMPLE_LABOR",
+        sido_code="43",
+        sido_name="충청북도",
+        service_type="SIMPLE_LABOR",
+        effective_date="2023-10-20",
+        source=_SRC_CB,
+        description="충청북도 일반용역 적격심사 (별표 1, 단순노무)",
+        price_bands=_four_band_price(_SRC_CB, simple_labor=True),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_CB),
+    ),
+    # 전남광주통합특별시 (예규 제3호, 시행 2026-07-16)
+    _local_rule(
+        "SERVC_LOCAL_JNGJ_20260716_ATTACH_01",
+        sido_code="12",
+        sido_name="전남광주통합특별시",
+        service_type="FACILITY",
+        effective_date="2026-07-16",
+        source=_SRC_JNGJ,
+        description="전남광주통합특별시 시설분야용역 적격심사 (별표 1)",
+        price_bands=(
+            _local_price_band("200000000", "90", "20", "추정가격 2억원 미만", _SRC_JNGJ),
+            _local_price_band("500000000", "70", "20", "5억원 미만 2억원 이상", _SRC_JNGJ),
+            _local_price_band(None, "50", "20", "추정가격 5억원 이상", _SRC_JNGJ),
+        ),
+        threshold_bands=_single_threshold("95", "시설분야 추정가격 무관 95", _SRC_JNGJ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_JNGJ_20260716_ATTACH_02",
+        sido_code="12",
+        sido_name="전남광주통합특별시",
+        service_type="SW",
+        effective_date="2026-07-16",
+        source=_SRC_JNGJ,
+        description="전남광주통합특별시 소프트웨어용역 적격심사 (별표 2)",
+        price_bands=(
+            _local_price_band("200000000", "80", "20", "추정가격 2억원 미만", _SRC_JNGJ),
+            _local_price_band("500000000", "70", "4", "5억원 미만 2억원 이상", _SRC_JNGJ),
+            _local_price_band(None, "50", "2", "추정가격 5억원 이상", _SRC_JNGJ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_JNGJ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_JNGJ_20260716_ATTACH_03",
+        sido_code="12",
+        sido_name="전남광주통합특별시",
+        service_type="WASTE",
+        effective_date="2026-07-16",
+        source=_SRC_JNGJ,
+        description="전남광주통합특별시 폐기물처리용역 적격심사 (별표 3)",
+        price_bands=(
+            _local_price_band("200000000", "90", "20", "추정가격 2억원 미만", _SRC_JNGJ),
+            _local_price_band("500000000", "80", "20", "5억원 미만 2억원 이상", _SRC_JNGJ),
+            _local_price_band(None, "30", "1", "추정가격 5억원 이상", _SRC_JNGJ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_JNGJ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_JNGJ_20260716_ATTACH_04",
+        sido_code="12",
+        sido_name="전남광주통합특별시",
+        service_type="WASTE_HOUSEHOLD",
+        effective_date="2026-07-16",
+        source=_SRC_JNGJ,
+        description="전남광주통합특별시 생활폐기물처리용역 적격심사 (별표 4)",
+        price_bands=(
+            _local_price_band("1000000000", "70", "20", "추정가격 10억원 미만", _SRC_JNGJ),
+            _local_price_band("3000000000", "50", "40", "30억원 미만 10억원 이상", _SRC_JNGJ),
+            _local_price_band(None, "30", "60", "추정가격 30억원 이상", _SRC_JNGJ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_JNGJ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_JNGJ_20260716_ATTACH_05",
+        sido_code="12",
+        sido_name="전남광주통합특별시",
+        service_type="FREIGHT",
+        effective_date="2026-07-16",
+        source=_SRC_JNGJ,
+        description="전남광주통합특별시 육상운송용역 적격심사 (별표 5)",
+        price_bands=(
+            _local_price_band("200000000", "80", "2", "추정가격 2억원 미만", _SRC_JNGJ),
+            _local_price_band("500000000", "70", "2", "5억원 미만 2억원 이상", _SRC_JNGJ),
+            _local_price_band(None, "60", "2", "추정가격 5억원 이상", _SRC_JNGJ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_JNGJ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_JNGJ_20260716_ATTACH_06",
+        sido_code="12",
+        sido_name="전남광주통합특별시",
+        service_type="GENERAL",
+        effective_date="2026-07-16",
+        source=_SRC_JNGJ,
+        description="전남광주통합특별시 어장정화·정비용역 적격심사 (별표 6)",
+        price_bands=_four_band_price(_SRC_JNGJ),
+        threshold_bands=_threshold_30_10(_SRC_JNGJ),
+    ),
+    # 경상남도 (공고 제2023-23호, 시행 2023-01-05)
+    _local_rule(
+        "SERVC_LOCAL_GN_20230105_ATTACH_01",
+        sido_code="48",
+        sido_name="경상남도",
+        service_type="GENERAL",
+        effective_date="2023-01-05",
+        source=_SRC_GN,
+        description="경상남도 일반용역 적격심사 (별표 1)",
+        price_bands=_four_band_price(_SRC_GN),
+        threshold_bands=_threshold_30_10(_SRC_GN),
+    ),
+    # 대구광역시 (예규 제238호, 시행 2026-05-11) — 단순노무만 확정, 일반 별표는 삭제됨
+    _local_rule(
+        "SERVC_LOCAL_DAEGU_20260511_ATTACH_01",
+        sido_code="27",
+        sido_name="대구광역시",
+        service_type="SIMPLE_LABOR",
+        effective_date="2026-05-11",
+        source=_SRC_DAEGU,
+        description="대구광역시 단순노무 일반용역 적격심사 (별표 1)",
+        price_bands=(
+            _local_price_band("200000000", "70", "60", "추정가격 2억원 미만", _SRC_DAEGU),
+            _local_price_band(None, "60", "60", "추정가격 2억원 이상", _SRC_DAEGU),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU),
+    ),
+    # 경기도 (예규 제748호, 시행 2025-08-08) — 별표 1-1(단순노무)은 0.25 불일치로 제외
+    _local_rule(
+        "SERVC_LOCAL_GG_20250808_ATTACH_1_2",
+        sido_code="41",
+        sido_name="경기도",
+        service_type="SW",
+        effective_date="2025-08-08",
+        source=_SRC_GG,
+        description="경기도 소프트웨어용역 적격심사 (별표 1-2)",
+        price_bands=(
+            _local_price_band("200000000", "90", "20", "추정가격 2억원 미만", _SRC_GG),
+            _local_price_band("500000000", "50", "4", "5억원 미만 2억원 이상", _SRC_GG),
+            _local_price_band("1000000000", "50", "2", "10억원 미만 5억원 이상", _SRC_GG),
+            _local_price_band(None, "30", "1", "추정가격 10억원 이상", _SRC_GG),
+        ),
+        threshold_bands=(
+            _local_threshold_band("1000000000", "95", "추정가격 10억원 미만", _SRC_GG),
+            _local_threshold_band(None, "90", "추정가격 10억원 이상", _SRC_GG),
+        ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GG_20250808_ATTACH_1_3",
+        sido_code="41",
+        sido_name="경기도",
+        service_type="WASTE",
+        effective_date="2025-08-08",
+        source=_SRC_GG,
+        description="경기도 폐기물처리용역 적격심사 (별표 1-3)",
+        price_bands=(
+            _local_price_band("200000000", "70", "20", "추정가격 2억원 미만", _SRC_GG),
+            _local_price_band("500000000", "60", "4", "5억원 미만 2억원 이상", _SRC_GG),
+            _local_price_band("1000000000", "50", "2", "10억원 미만 5억원 이상", _SRC_GG),
+            _local_price_band(None, "30", "1", "추정가격 10억원 이상", _SRC_GG),
+        ),
+        threshold_bands=(
+            _local_threshold_band("1000000000", "95", "추정가격 10억원 미만", _SRC_GG),
+            _local_threshold_band(None, "90", "추정가격 10억원 이상", _SRC_GG),
+        ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GG_20250808_ATTACH_1_4",
+        sido_code="41",
+        sido_name="경기도",
+        service_type="PASSENGER_TRANSPORT",
+        effective_date="2025-08-08",
+        source=_SRC_GG,
+        description="경기도 육상운송용역 적격심사 (별표 1-4)",
+        price_bands=(
+            _local_price_band("200000000", "90", "20", "추정가격 2억원 미만", _SRC_GG),
+            _local_price_band("500000000", "70", "20", "5억원 미만 2억원 이상", _SRC_GG),
+            _local_price_band("1000000000", "50", "4", "10억원 미만 5억원 이상", _SRC_GG),
+            _local_price_band(None, "30", "4", "추정가격 10억원 이상", _SRC_GG),
+        ),
+        threshold_bands=(
+            _local_threshold_band("1000000000", "95", "추정가격 10억원 미만", _SRC_GG),
+            _local_threshold_band(None, "90", "추정가격 10억원 이상", _SRC_GG),
+        ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GG_20250808_ATTACH_1_5",
+        sido_code="41",
+        sido_name="경기도",
+        service_type="INSURANCE",
+        effective_date="2025-08-08",
+        source=_SRC_GG,
+        description="경기도 보험용역 적격심사 (별표 1-5)",
+        price_bands=(
+            _local_price_band("500000000", "70", "0.375", "추정가격 5억원 미만", _SRC_GG),
+            _local_price_band(None, "60", "0.375", "추정가격 5억원 이상", _SRC_GG),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_GG),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GG_20250808_ATTACH_1_6",
+        sido_code="41",
+        sido_name="경기도",
+        service_type="GENERAL",
+        effective_date="2025-08-08",
+        source=_SRC_GG,
+        description="경기도 기타 일반용역 적격심사 (별표 1-6)",
+        price_bands=_four_band_price(_SRC_GG),
+        threshold_bands=(
+            _local_threshold_band("1000000000", "95", "추정가격 10억원 미만", _SRC_GG),
+            _local_threshold_band(None, "90", "추정가격 10억원 이상", _SRC_GG),
+        ),
+    ),
+)
+
+# 낙찰방법명·조달분류에서 시·도 별표의 용역 세부유형을 정하는 신호. 자동 확정이 아니라
+# 후보를 좁히는 데만 쓰고, 단순노무는 낙찰방법명 표기 또는 사용자 선택으로만 확정합니다(D5).
+_METHOD_SERVICE_MARKERS: tuple[tuple[str, str], ...] = (
+    ("생활폐기물", "WASTE_HOUSEHOLD"),
+    ("폐기물", "WASTE"),
+    ("시설분야", "FACILITY"),
+    ("보험", "INSURANCE"),
+    ("여객", "PASSENGER_TRANSPORT"),
+    ("화물", "FREIGHT"),
+    ("소프트웨어", "SW"),
+    ("수리ㆍ점검", "REPAIR_INSPECTION"),
+    ("수리", "REPAIR_INSPECTION"),
+    ("임대차", "LEASE"),
+    ("수요기관 지정형", "DEMAND_AGENCY"),
+    ("학술연구", "ACADEMIC"),
+    ("어장정화", "GENERAL"),
+)
+_PROCUREMENT_SERVICE_MARKERS: tuple[tuple[str, str], ...] = (
+    ("폐기물", "WASTE"),
+    ("소프트웨어", "SW"),
+)
+_PROCUREMENT_CLASS_KEYS = (
+    "pubPrcrmntLrgClsfcNm",
+    "pubPrcrmntMidClsfcNm",
+    "pubPrcrmntClsfcNm",
+    "pubPrcrmntDtlClsfcNm",
+)
+_SIMPLE_LABOR_RECOMMEND_KEYWORDS = ("청소", "경비", "시설관리", "주차", "미화")
+
+
+def resolve_local_service_type(
+    raw_data: dict[str, Any] | None, method_name: str | None
+) -> tuple[str, str, str | None]:
+    """시·도 별표의 용역 세부유형을 (service_type, 근거, 미판정 사유)로 돌려줍니다.
+
+    판정 순서: 낙찰방법명의 단순노무·별표 식별 문자열 -> 조달분류 -> 미판정(GENERAL).
+    단순노무 여부는 낙찰방법명에 '단순노무' 가 있을 때만 확정합니다(D5).
+    """
+    name = method_name or ""
+    if "단순노무" in name:
+        return "SIMPLE_LABOR", "METHOD_NAME", None
+    for marker, service_type in _METHOD_SERVICE_MARKERS:
+        if marker in name:
+            return service_type, "METHOD_NAME", None
+    data = raw_data if isinstance(raw_data, dict) else {}
+    class_text = " ".join(str(data.get(key) or "") for key in _PROCUREMENT_CLASS_KEYS)
+    for marker, service_type in _PROCUREMENT_SERVICE_MARKERS:
+        if marker in class_text:
+            return service_type, "PROCUREMENT_CLASS", None
+    return "GENERAL", "UNRESOLVED", "낙찰방법명과 조달분류에서 용역 세부유형을 확정하지 못했습니다."
+
+
+def _recommend_local_service_type(
+    raw_data: dict[str, Any] | None, method_name: str | None
+) -> str | None:
+    """공고명·조달분류 키워드로 단순노무 별표를 추천합니다. 확정하지 않습니다."""
+    data = raw_data if isinstance(raw_data, dict) else {}
+    text = " ".join(
+        [
+            method_name or "",
+            str(data.get("bidNtceNm") or ""),
+            *(str(data.get(key) or "") for key in _PROCUREMENT_CLASS_KEYS),
+        ]
+    )
+    for keyword in _SIMPLE_LABOR_RECOMMEND_KEYWORDS:
+        if keyword in text:
+            return f"SIMPLE_LABOR 추천 (공고명·조달분류 키워드 '{keyword}')"
+    return None
+
+
+def _select_local_rule(
+    method_name: str | None,
+    raw_data: dict[str, Any] | None,
+    *,
+    sido_code: str | None,
+    sido_name: str | None,
+    configured_service_type: str | None = None,
+) -> tuple[EvaluationRule | None, str | None, str, list[str]]:
+    """LOCAL 규칙 후보를 수요기관 시·도와 용역 세부유형으로 골라 돌려줍니다.
+
+    반환: (규칙, 차단 코드, 사유, 경고). 규칙을 못 고르면 차단 코드와 사유를 채웁니다.
+    """
+    warnings: list[str] = []
+    region_rules = [
+        rule
+        for rule in LOCAL_RULES
+        if _axis_matches(
+            rule,
+            institution_code=None,
+            institution_name=None,
+            region_code=sido_code,
+            region_name=sido_name,
+            contract_regime="LOCAL",
+        )
+    ]
+    if not region_rules:
+        return None, BLOCK_CODE_LOCAL_RULE_NOT_FOUND, _LOCAL_NOT_FOUND_MESSAGE, warnings
+
+    if configured_service_type and configured_service_type.strip():
+        service_type = configured_service_type.strip().upper()
+        basis = "USER_SELECTION"
+    else:
+        service_type, basis, _ = resolve_local_service_type(raw_data, method_name)
+
+    if basis == "UNRESOLVED":
+        general = [rule for rule in region_rules if rule.service_type == "GENERAL"]
+        simple = [rule for rule in region_rules if rule.service_type == "SIMPLE_LABOR"]
+        if general and simple:
+            candidates = general + simple
+            warnings.append(
+                "후보 별표: "
+                + ", ".join(f"{rule.rule_id} ({rule.table_name})" for rule in candidates)
+            )
+            recommendation = _recommend_local_service_type(raw_data, method_name)
+            if recommendation:
+                warnings.append(f"추천: {recommendation}")
+            return (
+                None,
+                BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED,
+                "단순노무 여부에 따라 적용 별표가 갈리는데 낙찰방법명에 '단순노무' 표기가 없습니다. "
+                "용역 세부유형(local_service_type, 예: GENERAL 또는 SIMPLE_LABOR)을 선택해 주십시오.",
+                warnings,
+            )
+        if general:
+            return general[0], None, "", warnings
+        if simple:
+            return simple[0], None, "", warnings
+        return None, BLOCK_CODE_LOCAL_RULE_NOT_FOUND, _LOCAL_NOT_FOUND_MESSAGE, warnings
+
+    candidates = [rule for rule in region_rules if rule.service_type == service_type]
+    if not candidates and service_type != "GENERAL":
+        fallback = [rule for rule in region_rules if rule.service_type == "GENERAL"]
+        if fallback:
+            warnings.append(f"별표 유형 {service_type} 이(가) 없어 일반 별표를 적용했습니다.")
+            candidates = fallback
+    if not candidates:
+        return None, BLOCK_CODE_LOCAL_RULE_NOT_FOUND, _LOCAL_NOT_FOUND_MESSAGE, warnings
+    if len(candidates) > 1:
+        warnings.append(
+            "후보 별표: " + ", ".join(f"{rule.rule_id} ({rule.table_name})" for rule in candidates)
+        )
+        return (
+            None,
+            BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED,
+            "같은 조건에 맞는 시·도 별표가 여러 개라 하나를 확정하지 못했습니다.",
+            warnings,
+        )
+    return candidates[0], None, "", warnings
+
+
+def _apply_rule_lwlt(
+    result: RuleResolutionResult,
+    rule: EvaluationRule,
+    sucsfbid_lwlt_rate: Decimal | str | float | None,
+) -> RuleResolutionResult:
+    """선택한 규칙으로 하한율을 다시 적용합니다. 공고 하한율이 별표 기본값보다 우선합니다."""
+    parsed: Decimal | None = None
+    if sucsfbid_lwlt_rate is not None:
+        try:
+            text = str(sucsfbid_lwlt_rate).strip()
+            if text:
+                parsed = Decimal(text)
+        except (ArithmeticError, TypeError, ValueError):
+            parsed = None
+    if parsed is None or parsed <= 0:
+        return replace(
+            result,
+            rule=rule,
+            effective_lwlt_rate=rule.lwlt_rate,
+            rate_source="RULE_DEFAULT",
+            warnings=[
+                *result.warnings,
+                f"공고에 낙찰하한율이 명시되지 않아 별표 기본값({rule.lwlt_rate}%)을 적용합니다.",
+            ],
+        )
+    warnings = list(result.warnings)
+    if parsed != rule.lwlt_rate:
+        warnings.append(
+            f"공고 하한율({parsed}%)이 별표 기본값({rule.lwlt_rate}%)과 일치하지 않아 "
+            "공고 하한율을 우선 적용합니다."
+        )
+    return replace(
+        result,
+        rule=rule,
+        effective_lwlt_rate=parsed,
+        rate_source="ANNOUNCEMENT",
+        warnings=warnings,
+    )
+
+
 # 공고일 시행일 구간 경계 (내림차순). 공고일이 속한 구간의 벌로 계산합니다.
 RULE_REGIME_BOUNDARIES: tuple[tuple[date, tuple[EvaluationRule, ...]], ...] = (
     (date(2026, 7, 27), POST_20260727_RULES),
@@ -1333,6 +2309,9 @@ BLOCK_CODE_TECH_SERVICE_MISSING_LWLT = "TECH_SERVICE_MISSING_LWLT"
 BLOCK_CODE_NOT_QUALIFICATION_METHOD = "NOT_QUALIFICATION_METHOD"
 BLOCK_CODE_RULE_REGIME_MISMATCH = "RULE_REGIME_MISMATCH"
 BLOCK_CODE_RULE_SCOPE_AMBIGUOUS = "RULE_SCOPE_AMBIGUOUS"
+# 지방계약(LOCAL) 전용 차단 코드
+BLOCK_CODE_LOCAL_RULE_NOT_FOUND = "LOCAL_RULE_NOT_FOUND"
+BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED = "LOCAL_SERVICE_TYPE_UNRESOLVED"
 
 METHOD_NAME_PLACEHOLDER = "공고서참조"
 METHOD_SOURCE_ANNOUNCEMENT = "ANNOUNCEMENT"
@@ -1584,6 +2563,8 @@ def resolve_evaluation_rule(
     institution_name: str | None = None,
     region_code: str | None = None,
     region_name: str | None = None,
+    raw_data: dict[str, Any] | None = None,
+    local_service_type: str | None = None,
 ) -> RuleResolutionResult:
     """낙찰방법 출처를 정하고 별표를 판별한 뒤 공고일과 별표 시행일을 대조합니다.
 
@@ -1594,6 +2575,9 @@ def resolve_evaluation_rule(
       공고일이 없으면 현행인 제2026-390호 벌을 씁니다.
       고른 벌에 이름이 없으면 현행 벌까지 대조하고, 어느 벌에도 없으면 RULE_NOT_FOUND 입니다.
     - 원문 낙찰방법이 '공고서참조'면 sucsfbidMthdCd 계열명으로 판별
+    - contract_regime == "LOCAL" 이면 조달청 규칙을 후보에서 배제하고 시·도 자체 별표
+      (LOCAL_RULES)만 봅니다. region_code/region_name 은 수요기관 시·도 값입니다(5.4절).
+      시·도 규칙이 없으면 LOCAL_RULE_NOT_FOUND 로 차단합니다(D8, 행안부 기본 규칙 없음).
     - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).
       공고일이 없으면 대조하지 않고, 있는데 읽을 수 없으면 차단 대신 경고만 남깁니다.
     """
@@ -1615,7 +2599,37 @@ def resolve_evaluation_rule(
         srvce_div_nm=srvce_div_nm,
     )
     scope_stage: str | None = None
-    if result.rule is not None and result.rule.rule_id != "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT":
+    if (
+        contract_regime == "LOCAL"
+        and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
+        and not (
+            result.rule is not None and result.rule.rule_id == "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT"
+        )
+    ):
+        selected, local_code, local_reason, local_warnings = _select_local_rule(
+            method_name,
+            raw_data,
+            sido_code=region_code,
+            sido_name=region_name,
+            configured_service_type=local_service_type,
+        )
+        if selected is None:
+            result = replace(
+                result,
+                is_blocked=True,
+                block_reason_code=local_code,
+                block_reason_message=local_reason,
+                rule=None,
+                effective_lwlt_rate=None,
+                rate_source=None,
+                warnings=[*result.warnings, *local_warnings],
+            )
+        else:
+            result = _apply_rule_lwlt(result, selected, sucsfbid_lwlt_rate)
+            if local_warnings:
+                result = replace(result, warnings=[*result.warnings, *local_warnings])
+            scope_stage = RULE_SCOPE_REGION
+    elif result.rule is not None and result.rule.rule_id != "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT":
         matching_rules = [
             candidate
             for candidate in allocated_rules
@@ -1972,10 +2986,13 @@ def resolve_evaluation_rule_from_raw_data(
     institution_regime: str | None = None,
     region_code: str | None = None,
     region_name: str | None = None,
+    local_service_type: str | None = None,
 ) -> RuleResolutionResult:
     """raw_data 딕셔너리에서 기관 필드를 추출하여 적격심사 규칙을 판별합니다.
 
     rules 를 명시하지 않으면 bidNtceDt 로 고른 시행일 구간 벌로 판별합니다.
+    region_code/region_name 은 LOCAL 판정에서 수요기관 시·도 값을 담습니다(5.4절).
+    local_service_type 은 사용자가 고른 시·도 별표 세부유형(D5)입니다.
     """
     if raw_data is None:
         raw_data = {}
@@ -2006,6 +3023,8 @@ def resolve_evaluation_rule_from_raw_data(
         ),
         region_code=_clean_axis_value(region_code),
         region_name=_clean_axis_value(region_name),
+        raw_data=raw_data,
+        local_service_type=local_service_type,
     )
 
 
@@ -2707,7 +3726,11 @@ def quant_score_table_for_rule(rule: EvaluationRule) -> QuantScoreTable | None:
     """규칙이 어느 별표인지에 따라 정량평가 배점표를 돌려줍니다.
 
     별표 귀속이 미확인인 규칙(일반 띠)은 표를 만들지 않고 None 을 돌려줍니다.
+    LOCAL 시·도 규칙처럼 기관 정량 배점표를 아직 반영하지 않은 규칙(quant_basis != REGISTRY)은
+    조달청 배점표를 잘못 적용하지 않도록 무조건 None 을 돌려줍니다.
     """
+    if rule.quant_basis != QUANT_BASIS_REGISTRY:
+        return None
     suffix = "_".join(rule.rule_id.rsplit("_", 2)[-2:])
     return QUANT_SCORE_TABLES.get(suffix)
 
