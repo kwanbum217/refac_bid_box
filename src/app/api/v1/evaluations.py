@@ -356,9 +356,26 @@ def _rule_score_table_payload(
     override_fields: list[str],
     resolution: ScoreParamResolution | None = None,
     estimated_price_source: str = "announcement",
+    *,
+    applied_max_price_score: Decimal | None = None,
+    applied_multiplier: Decimal | None = None,
 ) -> RuleScoreTable:
-    """규칙 선언 배점표와 미확정·덮어쓰기 표시를 응답 스키마로 옮깁니다."""
-    flat_zone = _selected_flat_zone(rule, resolution) if resolution is not None else None
+    """규칙 선언 배점표와 미확정·덮어쓰기 표시를 응답 스키마로 옮깁니다.
+
+    applied_max_price_score·applied_multiplier 는 실제 점수 계산에 쓴 B·k 입니다. 주어지면
+    평탄 표시도 그 값으로 조회해, 계산에 적용하지 않은 평탄이 표시되는 불일치를 막습니다.
+    주지 않으면 종전처럼 규칙 선언 배점표 값으로 조회합니다.
+    """
+    flat_zone = (
+        _selected_flat_zone(
+            rule,
+            resolution,
+            max_price_score=applied_max_price_score,
+            multiplier=applied_multiplier,
+        )
+        if resolution is not None
+        else None
+    )
     return RuleScoreTable(
         max_price_score=(
             format_decimal_plain(resolution.max_price_score)
@@ -1417,7 +1434,13 @@ def _success_response(
         ],
         price_compensation=_price_compensation_payload(compensation_result),
         score_table=_rule_score_table_payload(
-            rule, [], override_fields, resolution, estimated_price_source
+            rule,
+            [],
+            override_fields,
+            resolution,
+            estimated_price_source,
+            applied_max_price_score=table.max_price_score,
+            applied_multiplier=table.multiplier,
         ),
         quant_score_table=(
             _quant_table_payload(quant_table, band, band_note) if quant_table is not None else None

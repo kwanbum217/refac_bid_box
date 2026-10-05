@@ -205,7 +205,8 @@ def _flat_zone_for_bid(
     """선택된 규칙·가격 구간의 원문 평탄 규정을 조회합니다.
 
     지방 규칙은 추정가격으로 고른 price_bands 구간으로, 조달청 규칙은 실제 적용한
-    B(5억)·k(고시금액) 값이 어느 축인지로 조회합니다. 평탄 데이터가 없으면 None 입니다.
+    B(5억)·k(고시금액) 값이 어느 축인지로 조회합니다. 조건부 축의 적용값이 없으면 규칙
+    선언값으로 대체하지 않고, 평탄 데이터가 없으면 None 을 돌려줍니다.
     """
     price_bands = getattr(rule, "price_bands", None)
     if price_bands:
@@ -225,6 +226,12 @@ def _flat_zone_for_bid(
     effective_b = max_price_score
     effective_k = multiplier
     if effective_b is None or effective_k is None:
+        # 조건부 축의 적용값이 없으면 규칙 선언값으로 대체하지 않습니다. 대체하면 점수
+        # 계산에 쓰지 않은 축을 적용한 것처럼 평탄을 조회하게 되어 실제 적용과 어긋납니다.
+        if (rule.max_price_score_by_500m is not None and effective_b is None) or (
+            rule.multiplier_by_notice is not None and effective_k is None
+        ):
+            return None
         resolution = resolve_score_params(
             rule,
             _band_estimated_price(bid),
