@@ -28,6 +28,7 @@ from src.app.services.evaluation_scoring import (
     FOUR_DECIMALS,
     calculate_min_bid_amount,
     calculate_price_score,
+    format_decimal_plain,
 )
 
 # 소수점 넷째 자리 반올림 격자의 절반 (ROUND_HALF_UP 경계 판정용)
@@ -228,8 +229,11 @@ def invert_pass_bid_range(
     낙찰하한율이 주어지면 미달 구간을 제외한 유효 구간과 독립된 하한율 판정을 함께 담습니다.
 
     [평탄]
-    x >= flat_ratio 에서 평점이 flat_score 로 고정되므로, flat_score >= N 이면 기준비율 위쪽
-    평탄 구간 전체가 통과합니다. 이때 통과 상한은 예정가격(비율 1)까지 넓어집니다.
+    x >= flat_ratio 에서 평점이 flat_score 로 고정되므로, flat_score >= N 이면 평탄 구간
+    (비율 flat_ratio ~ 1) 전체가 통과합니다. 이 평탄 구간이 산식 통과 구간과 이어지면
+    통과 상한이 예정가격(비율 1)까지 넓어지지만, flat_score 가 산식값보다 커서 두 구간이
+    떨어지면 통과 구간이 둘로 나뉩니다. 이 함수는 하나의 연속 구간만 표현하므로 그때는
+    기준비율을 포함한 산식 구간만 돌려주고 평탄 구간이 따로 통과함을 사유에 남깁니다.
     flat_ratio·flat_score 가 None 이면 기존 동작과 완전히 같습니다.
     """
     missing: list[str] = []
@@ -362,15 +366,33 @@ def invert_pass_bid_range(
             )
         tolerance = (max_price_score - required) / (HUNDRED * multiplier)
         ratio_low = max(ZERO, base_ratio - tolerance)
-        if flat_ratio is not None and flat_score is not None and flat_score >= required:
-            # 평탄 구간이 필요점수를 충족하면 x >= flat_ratio 전 구간이 통과하므로
-            # 통과 상한이 예정가격(비율 1)까지 넓어집니다.
-            ratio_high = ONE
+        algebra_high = min(ONE, base_ratio + tolerance)
+        extra_reasons = []
+        if (
+            flat_ratio is not None
+            and flat_score is not None
+            and flat_ratio <= ONE
+            and flat_score >= required
+        ):
+            if flat_ratio <= algebra_high:
+                # 평탄 구간이 산식 통과 구간과 이어져 하나의 연속 구간이 됩니다.
+                ratio_high = ONE
+            else:
+                # 평탄 구간이 필요점수를 충족하지만 산식 통과 구간과 떨어져 있어 통과
+                # 구간이 둘로 나뉩니다. 단일 연속 구간만 표현할 수 있으므로 기준비율을
+                # 포함한 산식 구간을 돌려주고, 평탄 구간도 통과함을 사유로 남깁니다.
+                ratio_high = algebra_high
+                flat_plain = format_decimal_plain(flat_ratio)
+                extra_reasons.append(
+                    f"평탄 구간(비율 {flat_plain} 이상)이 필요 가격점수를 충족하지만 "
+                    "산식 통과 구간과 떨어져 있어 통과 구간이 둘로 나뉩니다. "
+                    "단일 연속 구간으로 표현할 수 없어 산식 통과 구간만 표시하며, "
+                    f"평탄 구간(비율 {flat_plain} ~ 1)도 통과합니다."
+                )
         else:
-            ratio_high = min(ONE, base_ratio + tolerance)
+            ratio_high = algebra_high
         grid_low = ratio_low.quantize(FOUR_DECIMALS, rounding=ROUND_CEILING)
         grid_high = ratio_high.quantize(FOUR_DECIMALS, rounding=ROUND_FLOOR)
-        extra_reasons = []
         if grid_low > grid_high:
             return build(
                 status="impossible",
