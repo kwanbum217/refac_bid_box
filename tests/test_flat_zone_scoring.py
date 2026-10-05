@@ -175,7 +175,8 @@ class TestScoreTablePayloadExposesFlat:
         assert payload.flat_score == "85"
 
     def test_flat_fields_null_when_no_flat_data(self) -> None:
-        rule = _rule_by_id("SERVC_LOCAL_SEJONG_20251201_ATTACH_03")
+        # 경기 별표 1-5(보험)는 원문에 평탄 문장이 없는 규칙이다.
+        rule = _rule_by_id("SERVC_LOCAL_GG_20250808_ATTACH_1_5")
         resolution = resolve_score_params(rule, Decimal("300000000"), None, None)
         payload = _rule_score_table_payload(rule, [], [], resolution)
         assert payload.flat_ratio is None

@@ -187,7 +187,8 @@ def test_local_price_only_computes_price_score(client, isolated_db, as_user):
 def test_local_no_rule_user_input_computes_price_only(client, isolated_db, as_user):
     """시·도 기준이 없어도 B·k·기준비율·통과점수를 모두 입력하면 계산하고 미확보를 표시한다."""
     as_user(10)
-    _create_institution(isolated_db, code="1234", toplvl_nm="서울특별시")
+    # 16개 시·도 모두 규칙이 생겨 시·도 미확인 기관으로 규칙 없음 경로를 확인한다.
+    _create_institution(isolated_db, code="1234", toplvl_nm="(없음)")
     bid = _create_local_bid(isolated_db)
 
     response = _client_post(
@@ -214,7 +215,7 @@ def test_local_no_rule_user_input_computes_price_only(client, isolated_db, as_us
 def test_local_no_rule_without_all_inputs_stays_blocked(client, isolated_db, as_user):
     """B·k·기준비율·통과점수 중 하나라도 비면 LOCAL_RULE_NOT_FOUND 차단을 유지한다."""
     as_user(10)
-    _create_institution(isolated_db, code="1234", toplvl_nm="서울특별시")
+    _create_institution(isolated_db, code="1234", toplvl_nm="(없음)")
     bid = _create_local_bid(isolated_db)
 
     payload = _client_post(

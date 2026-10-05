@@ -193,18 +193,18 @@ def test_local_registry_has_regional_rules_only_without_mois_default() -> None:
 
 
 def test_local_regime_uses_sido_rule() -> None:
-    """LOCAL + 인천 → 인천 규칙, 시·도 규칙 없는 시·도 → LOCAL_RULE_NOT_FOUND."""
+    """LOCAL + 인천 → 인천 규칙, 시·도 미확인 → LOCAL_RULE_NOT_FOUND."""
     incheon = _resolve(sucsfbid_mthd_nm=METHOD_FACILITY, region_code="28", region_name="인천광역시")
     assert incheon.rule is not None
     assert incheon.rule.rule_id == "SERVC_LOCAL_INCHEON_20251224_ATTACH_01"
     assert incheon.is_blocked is False
 
-    # 서울은 별표 미수집이라 시·도 규칙이 없다(D8, 행안부 기본 없음).
-    seoul = _resolve(sucsfbid_mthd_nm=METHOD_FACILITY, region_code="11", region_name="서울특별시")
-    assert seoul.rule is None
-    assert seoul.is_blocked is True
-    assert seoul.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert "B" in (seoul.block_reason_message or "")
+    # 서울을 포함한 16개 시·도에 규칙이 생겼습니다. 시·도 미확인 공고는 규칙 없음이다(D8).
+    unknown = _resolve(sucsfbid_mthd_nm=METHOD_FACILITY, region_code=None, region_name=None)
+    assert unknown.rule is None
+    assert unknown.is_blocked is True
+    assert unknown.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+    assert "B" in (unknown.block_reason_message or "")
 
 
 def test_local_regime_never_matches_traffic_rules() -> None:
@@ -726,7 +726,7 @@ _LOCAL_REPRESENTATIVE_METHOD: dict[str, str] = {
 }
 
 # 대표 낙찰방법명만으로는 확정되지 않아 사용자 선택이 필요한 규칙. 일반 띠에서 단순노무
-# 여부가 갈리는 지역(D5)과 세종 중소기업자간 경쟁제품 대상/비대상 분기(B4)가 해당한다.
+# 여부가 갈리는 지역(D5), 세종·충남 중소기업자간 경쟁제품 분기가 해당한다.
 _LOCAL_SELECTION_REQUIRED: frozenset[str] = frozenset(
     {
         "SERVC_LOCAL_INCHEON_20251224_ATTACH_01",
@@ -739,6 +739,11 @@ _LOCAL_SELECTION_REQUIRED: frozenset[str] = frozenset(
         "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME",
         "SERVC_LOCAL_SEJONG_20251201_ATTACH_05",
         "SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME",
+        "SERVC_LOCAL_SEOUL_20240812_ATTACH_01",
+        "SERVC_LOCAL_BUSAN_20250626_ATTACH_01",
+        "SERVC_LOCAL_DAEJEON_20260101_ATTACH_01",
+        "SERVC_LOCAL_JEONBUK_20240118_ATTACH_01",
+        "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_2_1",
     }
 )
 
@@ -764,7 +769,7 @@ def test_local_rule_resolution_never_keeps_stale_block(rule: EvaluationRule) -> 
 
     이전에는 _apply_rule_lwlt 가 rule 만 교체하고 is_blocked=True 를 그대로 두어,
     조달청 단계에서 미매칭된 공고가 36개 규칙 중 33개에서 '차단+규칙 동시 보유' 상태가 됐다.
-    36개 전부를 대표 낙찰방법명으로 판별해 확정 규칙은 is_blocked=False 를, 사용자 선택이
+    전 규칙을 대표 낙찰방법명으로 판별해 확정 규칙은 is_blocked=False 를, 사용자 선택이
     필요한 규칙은 LOCAL_SERVICE_TYPE_UNRESOLVED 를 확인한다.
     """
     method = _LOCAL_REPRESENTATIVE_METHOD[rule.service_type]
