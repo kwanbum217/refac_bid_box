@@ -28,7 +28,8 @@ src/app/api/v1/evaluations.py
 차단 코드:
 - 규칙 판별 차단 (evaluation_rules): NOT_SERVC, NON_PRED_PRICE, MANUAL_EVALUATION, RULE_NOT_FOUND,
   NEGOTIATION_CONTRACT, TECH_SERVICE_MISSING_LWLT, NOT_QUALIFICATION_METHOD, RULE_REGIME_MISMATCH
-- 입력·데이터 부족 차단 (본 파일): MISSING_SCORE_TABLE, PRED_PRICE_UNAVAILABLE
+- 입력·데이터 부족 차단 (본 파일): MISSING_SCORE_TABLE, PRED_PRICE_UNAVAILABLE,
+  QUANT_BAND_UNRESOLVED, LWLT_RATE_UNRESOLVED
 """
 
 from __future__ import annotations
@@ -164,6 +165,8 @@ BLOCK_CODE_QUANT_GRADE_UNKNOWN = "QUANT_GRADE_UNKNOWN"
 BLOCK_CODE_QUANT_BAND_UNRESOLVED = "QUANT_BAND_UNRESOLVED"
 # LOCAL 시·도 규칙의 정량 배점표가 기관 원문 미반영이라 정량점수 직접 입력이 필요할 때입니다.
 BLOCK_CODE_LOCAL_QUANT_REQUIRED = "LOCAL_QUANT_REQUIRED"
+# 구간별로 인쇄된 낙찰하한율이 서로 다른 규칙인데 추정가격을 몰라 구간을 고르지 못했을 때입니다.
+BLOCK_CODE_LWLT_RATE_UNRESOLVED = "LWLT_RATE_UNRESOLVED"
 
 QUANT_SOURCE_REGISTRY_TABLE = "REGISTRY_TABLE"
 QUANT_SOURCE_USER_INPUT_UNVERIFIED = "USER_INPUT_UNVERIFIED"
@@ -1503,6 +1506,7 @@ def _analyze_bid(
         region_code=sido_code,
         region_name=sido_name,
         local_service_type=payload.qualification_input.local_service_type,
+        estimated_price=estimated_price,
     )
     if rule_result.is_blocked:
         # 지방계약에서 시·도 기준이 없을 때, 사용자가 B·k·기준비율·통과점수를 모두 입력하면
@@ -1554,6 +1558,18 @@ def _analyze_bid(
 
     assert rule_result.rule is not None
     rule = rule_result.rule
+    if rule_result.effective_lwlt_rate is None:
+        # 구간별로 인쇄된 낙찰하한율이 서로 다른 규칙인데 추정가격을 몰라 구간을 고르지
+        # 못한 경우입니다. 규칙 대표값으로 추측하지 않고 추정가격 입력을 요구합니다.
+        return with_contract_regime(
+            _blocked_response(
+                bid,
+                rule_result,
+                BLOCK_CODE_LWLT_RATE_UNRESOLVED,
+                "추정가격이 없어 적용할 구간 낙찰하한율을 확정하지 못했습니다. "
+                "추정가격을 입력해 주십시오.",
+            )
+        )
 
     pred_price = _announcement_pred_price(bid)
     if pred_price is None:

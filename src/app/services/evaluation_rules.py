@@ -43,6 +43,10 @@ class PriceBand:
     flat_score: Decimal | None = None
     label: str = ""
     source: str | None = None
+    # 이 구간에 인쇄된 낙찰하한율(%). 원문이 구간마다 다른 하한율을 인쇄한 별표만 값을
+    # 가지며, None 이면 규칙 대표값(EvaluationRule.lwlt_rate)을 씁니다. 공고 하한율이
+    # 있으면 언제나 공고값이 우선입니다.
+    lwlt_rate: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -1618,7 +1622,13 @@ _LOCAL_LWLT_BY_SERVICE: dict[str, str] = {
 
 
 def _local_price_band(
-    upper: str | None, b: str, k: str, label: str, source: str, base_rate: str = "0.88"
+    upper: str | None,
+    b: str,
+    k: str,
+    label: str,
+    source: str,
+    base_rate: str = "0.88",
+    lwlt_rate: str | None = None,
 ) -> PriceBand:
     return PriceBand(
         upper_bound=Decimal(upper) if upper is not None else None,
@@ -1627,6 +1637,7 @@ def _local_price_band(
         base_rate=Decimal(base_rate),
         label=label,
         source=source,
+        lwlt_rate=Decimal(lwlt_rate) if lwlt_rate is not None else None,
     )
 
 
@@ -1639,16 +1650,32 @@ def _local_threshold_band(upper: str | None, t: str, label: str, source: str) ->
     )
 
 
-def _four_band_price(source: str, *, simple_labor: bool = False) -> tuple[PriceBand, ...]:
-    """10억/5억/2억 4구간 B·k. 단순노무 행은 k 가 전 구간 20 입니다."""
+def _four_band_price(
+    source: str,
+    *,
+    simple_labor: bool = False,
+    lwlt_rates: tuple[str | None, str | None, str | None, str | None] | None = None,
+) -> tuple[PriceBand, ...]:
+    """10억/5억/2억 4구간 B·k. 단순노무 행은 k 가 전 구간 20 입니다.
+
+    lwlt_rates 를 주면 구간 순서(2억 미만, 5억 미만, 10억 미만, 10억 이상)대로 인쇄된
+    낙찰하한율을 덧붙입니다. 원문이 구간 하나에 값을 확정하지 못하는 자리는 None 으로
+    두어 규칙 대표값을 쓰게 합니다.
+    """
     k_top = "20" if simple_labor else "1"
     k_10 = "20" if simple_labor else "2"
     k_5 = "20" if simple_labor else "4"
-    return (
+    bands = (
         _local_price_band("200000000", "90", "20", "추정가격 2억원 미만", source),
         _local_price_band("500000000", "70", k_5, "5억원 미만 2억원 이상", source),
         _local_price_band("1000000000", "50", k_10, "10억원 미만 5억원 이상", source),
         _local_price_band(None, "30", k_top, "추정가격 10억원 이상", source),
+    )
+    if lwlt_rates is None:
+        return bands
+    return tuple(
+        replace(band, lwlt_rate=Decimal(rate) if rate is not None else None)
+        for band, rate in zip(bands, lwlt_rates, strict=True)
     )
 
 
@@ -2209,6 +2236,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         ),
     ),
     # 서울특별시 (시행 2024-08-12) — 일반 띠 단순노무 외/단순노무가 갈려 두 규칙으로 둡니다.
+    # 추출 원문에는 낙찰하한율 표기가 없어 구간 하한율을 넣지 않습니다(공고 하한율·규칙 대표값 경로 유지).
     _local_rule(
         "SERVC_LOCAL_SEOUL_20240812_ATTACH_01",
         sido_code="11",
@@ -2240,7 +2268,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2025-06-26",
         source=_SRC_BUSAN,
         description="부산광역시 일반용역 적격심사 (별표 1, 단순노무 외)",
-        price_bands=_four_band_price(_SRC_BUSAN),
+        # 별표 1 입찰가격 평가는 구간마다 낙찰하한율을 인쇄합니다(원문 :149).
+        # 10억원 이상 구간은 원문이 30억원 경계로 72.995/77.995% 로 갈려 단일 구간값이
+        # 없으므로 넣지 않고 규칙 대표값을 쓰게 둡니다(추측 금지).
+        price_bands=_four_band_price(_SRC_BUSAN, lwlt_rates=("87.745", "86.745", "85.495", None)),
         threshold_bands=_threshold_30_10(_SRC_BUSAN),
     ),
     _local_rule(
@@ -2263,7 +2294,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2026-01-01",
         source=_SRC_DAEJEON,
         description="대전광역시 일반용역 적격심사 (소프트웨어·폐기물처리·기타 일반용역)",
-        price_bands=_four_band_price(_SRC_DAEJEON),
+        # 별표 6 소프트웨어·폐기물처리·기타 일반용역 행은 구간마다 낙찰하한율을
+        # 인쇄합니다(원문 :262). 10억원 이상 행은 원문이 30억원 경계로
+        # 72.995/77.995% 로 갈려 단일 구간값이 없어 규칙 대표값을 쓰게 둡니다.
+        price_bands=_four_band_price(_SRC_DAEJEON, lwlt_rates=("87.745", "86.745", "85.495", None)),
         threshold_bands=_threshold_30_10(_SRC_DAEJEON),
     ),
     _local_rule(
@@ -2347,6 +2381,8 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2026-07-13",
         source=_SRC_CHUNGNAM_ATTACH_05,
         description="충청남도 해양환경관리 및 어장관리용역 적격심사 (별표 5)",
+        # 별표 5 입찰가격 평점산식은 추정가격 5억원 미만 87.995%, 5억원 이상 80.495%
+        # 낙찰하한율을 인쇄합니다(원문 :2334-2366). 공고 하한율이 없으면 이 구간값을 씁니다.
         price_bands=(
             _local_price_band(
                 "500000000",
@@ -2355,6 +2391,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
                 "추정가격 5억원 미만",
                 _SRC_CHUNGNAM_ATTACH_05,
                 base_rate="0.91",
+                lwlt_rate="87.995",
             ),
             _local_price_band(
                 None,
@@ -2363,6 +2400,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
                 "추정가격 5억원 이상",
                 _SRC_CHUNGNAM_ATTACH_05,
                 base_rate="0.88",
+                lwlt_rate="80.495",
             ),
         ),
         threshold_bands=_single_threshold("85", "전 구간 85", _SRC_CHUNGNAM_ATTACH_05),
@@ -2377,7 +2415,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-01-18",
         source=_SRC_JEONBUK,
         description="전북특별자치도 일반용역 적격심사 (별표 1, 단순노무 외)",
-        price_bands=_four_band_price(_SRC_JEONBUK),
+        # 별표 1 단순노무 외 행은 구간마다 낙찰하한율을 인쇄합니다(원문 :127-137,
+        # :357-366, :583-592, :792-799). 10억원 이상 구간은 원문이 30억원 경계로
+        # 72.995/77.995% 로 갈려 단일 구간값이 없어 규칙 대표값을 쓰게 둡니다.
+        price_bands=_four_band_price(_SRC_JEONBUK, lwlt_rates=("87.745", "86.745", "85.495", None)),
         threshold_bands=_threshold_30_10(_SRC_JEONBUK),
     ),
     _local_rule(
@@ -2601,12 +2642,58 @@ def _select_local_rule(
     return _applied(candidates[0])
 
 
+def _normalized_price(value: Decimal | str | float | int | None) -> Decimal | None:
+    """추정가격 입력을 구간 판정용 Decimal 로 정규화합니다. 0 이하는 미상으로 봅니다."""
+    try:
+        price = Decimal(str(value)) if value not in (None, "") else None
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return price if price is not None and price > 0 else None
+
+
+def _band_lwlt_rate(
+    rule: EvaluationRule, estimated_price: Decimal | None
+) -> tuple[Decimal | None, str | None, str | None]:
+    """공고 하한율이 없을 때 쓸 구간 하한율을 고릅니다.
+
+    반환: (하한율, 구간 라벨, 미확정 사유). 셋째 값이 있으면 구간별 하한율이 서로 다른데
+    추정가격을 몰라 구간을 고르지 못한 경우이며, 호출부는 규칙 대표값으로 추측하지 않고
+    하한율을 미확정으로 남깁니다. 구간 하한율이 없는 규칙은 사유 없이 (None, None, None)
+    이라 기존 규칙 대표값 경로가 그대로 유지됩니다.
+    """
+    bands = rule.price_bands or ()
+    band_rates = {band.lwlt_rate for band in bands if band.lwlt_rate is not None}
+    if not band_rates:
+        return None, None, None
+    if estimated_price is None:
+        if len(band_rates) == 1:
+            return next(iter(band_rates)), None, None
+        return (
+            None,
+            None,
+            "추정가격이 없어 구간별로 다른 낙찰하한율을 확정하지 못했습니다. "
+            "추정가격을 입력해야 계산할 수 있습니다.",
+        )
+    band, _, reason = select_price_band(bands, estimated_price)
+    if band is None:
+        return None, None, reason
+    if band.lwlt_rate is None:
+        return None, None, None
+    return band.lwlt_rate, band.label, None
+
+
 def _apply_rule_lwlt(
     result: RuleResolutionResult,
     rule: EvaluationRule,
     sucsfbid_lwlt_rate: Decimal | str | float | None,
+    estimated_price: Decimal | str | float | int | None = None,
 ) -> RuleResolutionResult:
-    """선택한 규칙으로 하한율을 다시 적용합니다. 공고 하한율이 별표 기본값보다 우선합니다."""
+    """선택한 규칙으로 하한율을 다시 적용합니다. 공고 하한율이 별표 기본값보다 우선합니다.
+
+    공고 하한율이 없으면 추정가격으로 고른 구간의 하한율을 쓰고, 그 구간에 하한율이 없으면
+    규칙 대표값을 씁니다. 다만 구간별 하한율이 서로 다른데 추정가격을 몰라 구간을 고르지
+    못하면 대표값으로 추측하지 않고 하한율을 미확정으로 남깁니다.
+    """
     parsed: Decimal | None = None
     if sucsfbid_lwlt_rate is not None:
         try:
@@ -2616,6 +2703,30 @@ def _apply_rule_lwlt(
         except (ArithmeticError, TypeError, ValueError):
             parsed = None
     if parsed is None or parsed <= 0:
+        band_rate, band_label, band_reason = _band_lwlt_rate(
+            rule, _normalized_price(estimated_price)
+        )
+        if band_reason is not None:
+            return replace(
+                result,
+                rule=rule,
+                effective_lwlt_rate=None,
+                rate_source=None,
+                warnings=[*result.warnings, band_reason],
+            )
+        if band_rate is not None:
+            label = f", {band_label}" if band_label else ""
+            return replace(
+                result,
+                rule=rule,
+                effective_lwlt_rate=band_rate,
+                rate_source="RULE_DEFAULT",
+                warnings=[
+                    *result.warnings,
+                    "공고에 낙찰하한율이 명시되지 않아 "
+                    f"별표 구간 하한율({band_rate}%{label})을 적용합니다.",
+                ],
+            )
         return replace(
             result,
             rule=rule,
@@ -2916,6 +3027,7 @@ def resolve_evaluation_rule(
     region_name: str | None = None,
     raw_data: dict[str, Any] | None = None,
     local_service_type: str | None = None,
+    estimated_price: Decimal | str | float | int | None = None,
 ) -> RuleResolutionResult:
     """낙찰방법 출처를 정하고 별표를 판별한 뒤 공고일과 별표 시행일을 대조합니다.
 
@@ -2931,6 +3043,9 @@ def resolve_evaluation_rule(
       시·도 규칙이 없으면 LOCAL_RULE_NOT_FOUND 로 차단합니다(D8, 행안부 기본 규칙 없음).
     - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).
       공고일이 없으면 대조하지 않고, 있는데 읽을 수 없으면 차단 대신 경고만 남깁니다.
+    - 공고 하한율이 없으면 estimated_price 로 고른 구간의 하한율을 씁니다. 구간별
+      하한율이 서로 다른데 추정가격이 없으면 하한율을 확정하지 않고(effective_lwlt_rate
+      None) 호출부가 추정가격 입력을 요구합니다.
     """
     method_name, method_source, method_warnings = resolve_method_name(
         sucsfbid_mthd_nm, sucsfbid_mthd_cd
@@ -2979,7 +3094,7 @@ def resolve_evaluation_rule(
             # 시·도 규칙을 확정했으므로 조달청 매칭 단계에서 세워진 RULE_NOT_FOUND 차단을
             # 해제합니다. 이 플래그를 남기면 아래 조기 반환이 유효한 규칙을 차단합니다.
             result = replace(
-                _apply_rule_lwlt(result, selected, sucsfbid_lwlt_rate),
+                _apply_rule_lwlt(result, selected, sucsfbid_lwlt_rate, estimated_price),
                 is_blocked=False,
                 block_reason_code=None,
                 block_reason_message=None,
@@ -3345,12 +3460,14 @@ def resolve_evaluation_rule_from_raw_data(
     region_code: str | None = None,
     region_name: str | None = None,
     local_service_type: str | None = None,
+    estimated_price: Decimal | str | float | int | None = None,
 ) -> RuleResolutionResult:
     """raw_data 딕셔너리에서 기관 필드를 추출하여 적격심사 규칙을 판별합니다.
 
     rules 를 명시하지 않으면 bidNtceDt 로 고른 시행일 구간 벌로 판별합니다.
     region_code/region_name 은 LOCAL 판정에서 수요기관 시·도 값을 담습니다(5.4절).
     local_service_type 은 사용자가 고른 시·도 별표 세부유형(D5)입니다.
+    estimated_price 는 구간별 낙찰하한율을 고르는 추정가격입니다.
     """
     if raw_data is None:
         raw_data = {}
@@ -3383,6 +3500,7 @@ def resolve_evaluation_rule_from_raw_data(
         region_name=_clean_axis_value(region_name),
         raw_data=raw_data,
         local_service_type=local_service_type,
+        estimated_price=estimated_price,
     )
 
 
