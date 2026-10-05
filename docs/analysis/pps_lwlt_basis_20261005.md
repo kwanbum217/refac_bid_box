@@ -269,13 +269,13 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 
 ### 7.1 제2026-15호 원문으로 확정된 조달청 별표 평탄 비율 (등록 후보)
 
-`flat_ratio` 는 `기준비율` 보다 큰 평탄 비율입니다. 아래 `고시금액 미만`·`고시금액 이상` 열은 별표 예외사항의 추정가격 대역입니다. 코드에서 `ATTACH_06`·`08`·`10` 이 고시금액 미만, `ATTACH_07`·`09`·`11` 이 고시금액 이상이며(`src/app/services/evaluation_rules.py` 의 `PRE_20250901_RULES`), `ATTACH_01`·`03`·`04`·`05`·`15`·`16`·`17` 은 한 규칙이 두 대역을 함께 담습니다. `B`·`k` 는 참고값이며 등록 근거는 별표 원문 행입니다.
+`flat_ratio` 는 `기준비율` 보다 큰 평탄 비율입니다. 아래 `고시금액 미만`·`고시금액 이상` 열은 별표 예외사항의 추정가격 대역입니다. 코드에서 `ATTACH_06`·`08`·`10` 이 고시금액 미만, `ATTACH_07`·`09`·`11` 이 고시금액 이상이며(`src/app/services/evaluation_rules.py` 의 `PRE_20250901_RULES`), `ATTACH_01`·`03`·`04`·`05`·`15`·`16`·`17` 은 한 규칙이 두 대역을 함께 담습니다. 이 가운데 `ATTACH_01`(별표2)·`03`(별표5)·`04`(별표3의2) 의 평탄 문장은 추정가격 대역 구분 없이 단일 `94%` 문장이라 두 대역에 같은 값을 넣습니다(3.3 표와 동일). `B`·`k` 는 참고값이며 등록 근거는 별표 원문 행입니다.
 
 | rule_id | 별표 | 현재 값 | 고시금액 미만 | 고시금액 이상 | 근거 |
 | --- | --- | --- | ---: | ---: | --- |
-| `SERVC_QUAL_PRE_20250901_ATTACH_01` | 별표2 시설분야 | 없음(미등록) | - | 94 | `EXT/pps/pps_2026_15_byl2.txt:52` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_03` | 별표5 여객 | 없음(미등록) | - | 94 | `EXT/pps/pps_2026_15_byl5.txt:53` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_04` | 별표3의2 SW대상 | 없음(미등록) | - | 94 | `EXT/pps/pps_2026_15_byl3_2.txt:52` |
+| `SERVC_QUAL_PRE_20250901_ATTACH_01` | 별표2 시설분야 | 없음(미등록) | 94 | 94 | `EXT/pps/pps_2026_15_byl2.txt:52`(대역 구분 없는 단일 문장) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_03` | 별표5 여객 | 없음(미등록) | 94 | 94 | `EXT/pps/pps_2026_15_byl5.txt:53`(대역 구분 없는 단일 문장) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_04` | 별표3의2 SW대상 | 없음(미등록) | 94 | 94 | `EXT/pps/pps_2026_15_byl3_2.txt:52`(대역 구분 없는 단일 문장) |
 | `SERVC_QUAL_PRE_20250901_ATTACH_05` | 별표3 SW비대상 | 없음(미등록) | 91.75 | 95.5 | `EXT/pps/pps_2026_15_byl3.txt:64`(미만), `:59`(이상) |
 | `SERVC_QUAL_PRE_20250901_ATTACH_06` | 별표1 학술연구(미만) | 없음(미등록) | 91.75 | - | `EXT/pps/pps_2026_15_byl1.txt:62` |
 | `SERVC_QUAL_PRE_20250901_ATTACH_07` | 별표1 학술연구(이상) | 없음(미등록) | - | 95.5 | `EXT/pps/pps_2026_15_byl1.txt:57` |
@@ -323,7 +323,7 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 | 조달청 일반용역 적격심사 세부기준 | 조달청공고 제2025-257호 | 2025-06-26 | 2025-09-01 | `https://www.law.go.kr/flDownload.do?flSeq=153730585` | 2026-10-05 | `EXT/pps/pps_2025_257.pdf`, `pps_2025_257.txt` |
 | 조달청 일반용역 적격심사 세부기준 + 낙찰하한율 안내 | 조달청공고 제2026-260호 | 2026-05-22 | 2026-05-26 | `https://www.pps.go.kr/kor/bbs/view.do?key=00030&bbsSn=2605220029` (첨부 `key=202605220020`) | 2026-10-05 | `EXT/pps/pps_2026_260_lwlt_guide.hwpx`, `pps_2026_260_jeonmun.hwpx`, `pps_2026_260_singu.hwpx` |
 | 조달청 일반용역 적격심사 세부기준 + 낙찰하한율 안내 | 조달청공고 제2026-390호 | 2026-07-24 | 2026-07-27 | `https://www.pps.go.kr/kor/bbs/view.do?key=00030&bbsSn=2607240033` (첨부 `key=202607240030`) | 2026-10-05 | `EXT/pps/pps_2026_390_lwlt_guide.hwpx`, `pps_2026_390_jeonmun.hwpx`, `pps_2026_390_singu.hwpx` |
-| 조달청 일반용역 적격심사 세부기준 (별표, 교차) | 조달청공고 제2026-390호 | 2026-07-24 | 2026-07-27 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000283412` | 2026-10-05 | `EXT/pps/pps_390_byl5.hwpx`, `pps_390_byl3_2.hwpx`, 추출문 |
+| 조달청 일반용역 적격심사 세부기준 (별표, 교차) | 조달청공고 제2026-390호 | 2026-07-24 | 2026-07-27 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000283412` | 2026-10-05 | `EXT/pps/pps_390_byl5_a.bin`, `pps_390_byl5_b.bin`, `pps_390_byl3_2_a.bin`, `pps_390_byl3_2_b.bin`, 추출문 `pps_390_byl5.txt`, `pps_390_byl3_2.txt` |
 | 조달청 기술용역 적격심사 세부기준 | 조달청지침 제5460호 | 2017-09-29 | 2017-11-01 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000099611` | 원문 미확보 | 없음(`EXT/pps` 에 원문 파일 없음) |
 | 조달청 일반용역 적격심사 세부기준 | 조달청공고 제2023-53호 | 2023-03-02 | 2023-05-01 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000220190` | 2026-10-05 | `EXT/pps/pps_2023_53_byl*.hwpx`, 추출문 |
 | (보도) 일반용역 낙찰하한율 확정 | - | - | - | `https://www.jodaleconomy.com/news/articleView.html?idxno=2479` | 2026-10-05 | `EXT/pps/pps_2026_260_lwlt_news_jodaleconomy_2479.html` |
