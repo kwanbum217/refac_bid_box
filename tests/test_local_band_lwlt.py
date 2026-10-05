@@ -279,18 +279,19 @@ def test_region_simple_labor_rate_same_at_30eok_and_above() -> None:
     assert result.effective_lwlt_rate == Decimal("87.745")
 
 
-def test_seoul_general_keeps_four_bands_and_rule_default() -> None:
-    """서울은 10억원 미만 3개 구간만 공고 실측 하한율이고, 20억·40억은 대표값 경고를 쓴다."""
+def test_seoul_general_has_five_bands_with_30eok_split() -> None:
+    """서울은 10억원 이상을 30억원 경계로 나눠 5구간 실측 하한율을 쓴다(경계는 이상 쪽)."""
     rule = _rule(SEOUL_GENERAL_ID)
     assert rule.price_bands is not None
-    assert len(rule.price_bands) == 4
+    assert len(rule.price_bands) == 5
     assert [band.lwlt_rate for band in rule.price_bands] == [
         Decimal("87.745"),
         Decimal("86.745"),
         Decimal("85.495"),
-        None,
+        Decimal("77.995"),
+        Decimal("72.995"),
     ]
-    for price in ("2000000000", "4000000000"):
+    for price, expected_rate in (("2000000000", "77.995"), ("4000000000", "72.995")):
         result = _resolve(
             method="시설분야용역 적격심사 추정가격 5억원 이상",
             region_code="11",
@@ -299,10 +300,9 @@ def test_seoul_general_keeps_four_bands_and_rule_default() -> None:
         )
         assert result.rule is not None
         assert result.rule.rule_id == SEOUL_GENERAL_ID
-        assert result.effective_lwlt_rate == Decimal("87.995")
+        assert result.effective_lwlt_rate == Decimal(expected_rate)
         assert result.rate_source == "RULE_DEFAULT"
-        assert any("별표 기본값" in warning for warning in result.warnings)
-        assert not any("구간 하한율" in warning for warning in result.warnings)
+        assert any("별표 구간 하한율" in warning for warning in result.warnings)
 
 
 def test_seoul_simple_labor_rate_unchanged() -> None:

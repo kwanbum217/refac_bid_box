@@ -278,8 +278,12 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
         None: _zone("0.905", "20", _SRC_GG),
     },
     "SERVC_LOCAL_GG_20250808_ATTACH_1_6": _four_band_general(_SRC_GG),
-    # 서울특별시 (시행 2024-08-12)
-    "SERVC_LOCAL_SEOUL_20240812_ATTACH_01": _four_band_general(_SRC_SEOUL),
+    # 서울특별시 (시행 2024-08-12) — 10억원 이상을 30억원 경계로 나눈 서울 전용 매핑.
+    # 새 상한 키 3000000000 은 분할 전 10억원 이상 구간(None)과 같은 평탄(98% -> 20점)을 씁니다.
+    "SERVC_LOCAL_SEOUL_20240812_ATTACH_01": {
+        **_four_band_general(_SRC_SEOUL),
+        Decimal("3000000000"): _zone("0.98", "20", _SRC_SEOUL),
+    },
     "SERVC_LOCAL_SEOUL_20240812_SIMPLE_LABOR": _four_band_simple_labor(_SRC_SEOUL),
     # 부산광역시 (공고 제2025-1981호) — 10억원 이상을 30억원 경계로 나눠 두 구간 모두 같은 평탄
     "SERVC_LOCAL_BUSAN_20250626_ATTACH_01": _five_band_general(_SRC_BUSAN),
