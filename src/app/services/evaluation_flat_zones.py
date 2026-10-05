@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 _COLLECTION = "docs/analysis/servc_formula_collection_local_20261004.md"
+_RECOVER = "docs/analysis/servc_formula_recover_c_20261005.md"
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,45 @@ _SRC_GN = f"{_COLLECTION}:387-392 (4.11 경상남도 별표 1 평탄 문장)"
 _SRC_DAEGU = f"{_COLLECTION}:218-221 (4.5 대구광역시 별표 1 단순노무 평탄 문장)"
 _SRC_GG = f"{_COLLECTION}:427-461 (4.12 경기도 별표 1-2~1-6 평탄 문장)"
 
+# 2단계 추가 5곳은 재수집 문서 절과 EXT 원문 행을 함께 인용합니다. 충남은 원문이 비율만
+# 인쇄하고 점수는 미인쇄라 flat_score 가 산식 대입값입니다.
+_SRC_SEOUL = (
+    f"{_RECOVER}:90-99 (4.1 서울특별시 별표 1~4 평탄 문장); "
+    "EXT/seoul/seoul_general_2024_08_12.tbl.txt:379-384,722-727,1065-1070,1318-1323"
+)
+_SRC_BUSAN = (
+    f"{_RECOVER}:121-128 (4.2 부산광역시 별표 1 평탄 문장); "
+    "EXT/busan/busan_general_2025_1981.txt:149-150"
+)
+_SRC_DAEJEON = (
+    f"{_RECOVER}:161-164 (4.3 대전광역시 별표 6 소프트웨어류 10억원 이상 평탄 문장); "
+    "EXT/daejeon/daejeon_2025_9528.txt:262"
+)
+_SRC_CHUNGNAM_01 = (
+    f"{_RECOVER}:188 (4.4 충청남도 별표 1 시설분야 평탄 문장, 점수 미인쇄 대입값); "
+    "EXT/chungnam/chungnam_2026_1235.txt:551-560; EXT/chungnam/chungnam_tables.txt:2-18"
+)
+_SRC_CHUNGNAM_2_1 = (
+    f"{_RECOVER}:191 (4.4 충청남도 별표 2의1 정보통신 대상 평탄 문장, 점수 미인쇄 대입값); "
+    "EXT/chungnam/chungnam_2026_1235.txt:1172-1180; EXT/chungnam/chungnam_tables.txt:47-63"
+)
+_SRC_CHUNGNAM_05 = (
+    f"{_RECOVER}:197-198 (4.4 충청남도 별표 5 해양환경·어장관리 평탄 문장, 점수 미인쇄 대입값); "
+    "EXT/chungnam/chungnam_2026_1235.txt:2334-2366; EXT/chungnam/chungnam_tables.txt:137-158"
+)
+_SRC_JEONBUK = (
+    f"{_RECOVER}:220-226 (4.5 전북특별자치도 별표 1 평탄 문장); "
+    "EXT/jeonbuk/jb_general_2024_10.tbl.txt:127-137,357-366,583-592,792-799"
+)
+_SRC_SEJONG_SW = (
+    f"{_COLLECTION}:225-247 (4.6 세종특별자치시 별표 2~5); "
+    "EXT/sejong/byp3_sw_2025.txt:16-34 (비대상 95.5%, 대상 91%; 점수 미인쇄 대입값)"
+)
+_SRC_SEJONG_LT = (
+    f"{_COLLECTION}:225-247 (4.6 세종특별자치시 별표 2~5); "
+    "EXT/sejong/byp5_2025.txt:19-34 (비대상 95.5%, 대상 91%; 점수 미인쇄 대입값)"
+)
+
 
 def _four_band_general(source: str) -> dict[Decimal | None, FlatZone]:
     """B 30/50/70/90, k 1/2/4/20 구간의 일반 산식 평탄."""
@@ -86,7 +126,8 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
     # 강원특별자치도 (예규 제832호) — 인천과 동일
     "SERVC_LOCAL_GANGWON_20230611_ATTACH_01": _four_band_general(_SRC_GANGWON),
     "SERVC_LOCAL_GANGWON_20230611_SIMPLE_LABOR": _four_band_simple_labor(_SRC_GANGWON),
-    # 세종특별자치시 (예규 제32호) — 시설·폐기물·생활폐기물. SW·육상운송은 평탄 점수 미인쇄로 제외
+    # 세종특별자치시 (예규 제32호) — 시설·폐기물·생활폐기물. SW·육상운송은 점수 미인쇄라
+    # 산식 대입값(비대상 95.5%, 대상 91%)을 씁니다.
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_02": {
         Decimal("500000000"): _zone("0.8825", "55", _SRC_SEJONG),
         None: _zone("0.8825", "45", _SRC_SEJONG),
@@ -98,6 +139,22 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_4_2": {
         Decimal("500000000"): _zone("0.8825", "55", _SRC_SEJONG),
         None: _zone("0.8825", "45", _SRC_SEJONG),
+    },
+    "SERVC_LOCAL_SEJONG_20251201_ATTACH_03": {
+        Decimal("500000000"): _zone("0.955", "55", _SRC_SEJONG_SW),
+        None: _zone("0.955", "45", _SRC_SEJONG_SW),
+    },
+    "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME": {
+        Decimal("500000000"): _zone("0.91", "58", _SRC_SEJONG_SW),
+        None: _zone("0.91", "48", _SRC_SEJONG_SW),
+    },
+    "SERVC_LOCAL_SEJONG_20251201_ATTACH_05": {
+        Decimal("500000000"): _zone("0.955", "55", _SRC_SEJONG_LT),
+        None: _zone("0.955", "45", _SRC_SEJONG_LT),
+    },
+    "SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME": {
+        Decimal("500000000"): _zone("0.91", "58", _SRC_SEJONG_LT),
+        None: _zone("0.91", "48", _SRC_SEJONG_LT),
     },
     # 경상북도 (예규 제1571호)
     "SERVC_LOCAL_GB_20260108_ATTACH_01": {
@@ -182,6 +239,32 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
         None: _zone("0.905", "20", _SRC_GG),
     },
     "SERVC_LOCAL_GG_20250808_ATTACH_1_6": _four_band_general(_SRC_GG),
+    # 서울특별시 (시행 2024-08-12)
+    "SERVC_LOCAL_SEOUL_20240812_ATTACH_01": _four_band_general(_SRC_SEOUL),
+    "SERVC_LOCAL_SEOUL_20240812_SIMPLE_LABOR": _four_band_simple_labor(_SRC_SEOUL),
+    # 부산광역시 (공고 제2025-1981호)
+    "SERVC_LOCAL_BUSAN_20250626_ATTACH_01": _four_band_general(_SRC_BUSAN),
+    "SERVC_LOCAL_BUSAN_20250626_SIMPLE_LABOR": _four_band_simple_labor(_SRC_BUSAN),
+    # 대전광역시 (공고 제2025-9528호) — 10억원 이상 소프트웨어류에만 평탄 문장이 인쇄됨
+    "SERVC_LOCAL_DAEJEON_20260101_ATTACH_01": {
+        None: _zone("0.98", "20", _SRC_DAEJEON),
+    },
+    # 충청남도 (공고 2026-1235호) — 점수 미인쇄, 산식 대입값
+    "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_01": {
+        Decimal("500000000"): _zone("0.94", "55", _SRC_CHUNGNAM_01),
+        None: _zone("0.94", "45", _SRC_CHUNGNAM_01),
+    },
+    "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_2_1": {
+        Decimal("500000000"): _zone("0.94", "58", _SRC_CHUNGNAM_2_1),
+        None: _zone("0.94", "48", _SRC_CHUNGNAM_2_1),
+    },
+    "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_05": {
+        Decimal("500000000"): _zone("0.94", "55", _SRC_CHUNGNAM_05),
+        None: _zone("0.955", "45", _SRC_CHUNGNAM_05),
+    },
+    # 전북특별자치도 (부칙 제2024-10호)
+    "SERVC_LOCAL_JEONBUK_20240118_ATTACH_01": _four_band_general(_SRC_JEONBUK),
+    "SERVC_LOCAL_JEONBUK_20240118_SIMPLE_LABOR": _four_band_simple_labor(_SRC_JEONBUK),
 }
 
 
