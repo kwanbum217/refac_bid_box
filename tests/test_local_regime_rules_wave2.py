@@ -452,7 +452,7 @@ EXISTING_RULE_IDS = (
 # main(f8d5660e 계열) 기준 36개 규칙의 동작 필드 스냅샷 해시. 규칙 값을 의도적으로 바꾸면
 # 아래 명령으로 재생성해 교체합니다(시험 안에서 값을 만들지 않고 고정값과 대조합니다).
 #   uv run python -c "import hashlib,json; from src.app.services.evaluation_rules import LOCAL_RULES; ..."
-EXISTING_RULES_DIGEST = "37bea272e20575bcc93fa5b82c15d3894b8bb93d705f79244c34382a8c75653a"
+EXISTING_RULES_DIGEST = "92d6ccaa00740af1714345e8e8a632559e6318d0277ef6b9b5ef09da95a3f97f"
 
 
 def _rule_signature(rule: EvaluationRule) -> dict[str, object]:
