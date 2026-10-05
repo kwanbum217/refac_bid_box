@@ -339,7 +339,7 @@ UNCHANGED_RULE_IDS = (
     "SERVC_LOCAL_GN_20230105_ATTACH_01",
     "SERVC_LOCAL_GG_20250808_ATTACH_1_5",
 )
-UNCHANGED_RULES_DIGEST = "dd362b0e55c04c2f837a1b0c5194be4b9ae7c24641e9aa95c591612a36aadc6d"
+UNCHANGED_RULES_DIGEST = "434e1dd4a925839f783771eccf912b9050ff10c5f3f31ab6561cc7b1de154c95"
 
 
 def test_uncorrected_rules_keep_behavior_fields() -> None:
@@ -354,14 +354,14 @@ def test_uncorrected_rules_keep_behavior_fields() -> None:
 
 
 def test_uncorrected_local_rules_keep_rule_default() -> None:
-    """원문이 하한율을 인쇄하지 않은 규칙은 구간 하한율 없이 종전 대표값을 쓴다."""
+    """원문이 하한율을 인쇄하지 않았고 공고 실측 반영 대상도 아닌 규칙은 종전 대표값을 쓴다.
+
+    인천·제주·강원·경남·경북 04·서울 01 GENERAL 은 공고 실측 구간 하한율 대상이라
+    이 목록에서 제외합니다(tests/test_local_lwlt_measured.py 가 새 동작을 고정합니다).
+    """
     cases = (
-        ("SERVC_LOCAL_INCHEON_20251224_ATTACH_01", "87.995"),
         ("SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR", "87.995"),
-        ("SERVC_LOCAL_JEJU_20240101_ATTACH_01", "87.995"),
-        ("SERVC_LOCAL_GANGWON_20230611_ATTACH_01", "87.995"),
         ("SERVC_LOCAL_GB_20260108_ATTACH_02", "87.995"),
-        ("SERVC_LOCAL_GN_20230105_ATTACH_01", "87.995"),
         ("SERVC_LOCAL_GG_20250808_ATTACH_1_5", "47.995"),
     )
     for rule_id, expected_rate in cases:

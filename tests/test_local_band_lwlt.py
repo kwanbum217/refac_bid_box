@@ -280,11 +280,16 @@ def test_region_simple_labor_rate_same_at_30eok_and_above() -> None:
 
 
 def test_seoul_general_keeps_four_bands_and_rule_default() -> None:
-    """서울은 30억 분할 대상이 아니어서 20억·40억 모두 규칙 대표값과 기본값 경고를 쓴다."""
+    """서울은 10억원 미만 3개 구간만 공고 실측 하한율이고, 20억·40억은 대표값 경고를 쓴다."""
     rule = _rule(SEOUL_GENERAL_ID)
     assert rule.price_bands is not None
     assert len(rule.price_bands) == 4
-    assert [band.lwlt_rate for band in rule.price_bands] == [None, None, None, None]
+    assert [band.lwlt_rate for band in rule.price_bands] == [
+        Decimal("87.745"),
+        Decimal("86.745"),
+        Decimal("85.495"),
+        None,
+    ]
     for price in ("2000000000", "4000000000"):
         result = _resolve(
             method="시설분야용역 적격심사 추정가격 5억원 이상",
@@ -389,7 +394,6 @@ def test_unknown_price_with_uniform_band_rates_uses_shared_value(monkeypatch) ->
 
 UNCHANGED_CASES = (
     (CHUNGNAM_FACILITY_ID, "44", "충청남도", "시설분야용역 적격심사 추정가격 5억원 이상", "87.995"),
-    (SEOUL_GENERAL_ID, "11", "서울특별시", "시설분야용역 적격심사 추정가격 5억원 이상", "87.995"),
     (
         None,
         None,

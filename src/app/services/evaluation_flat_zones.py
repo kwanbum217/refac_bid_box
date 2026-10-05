@@ -184,8 +184,12 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
         Decimal("500000000"): _zone("0.8825", "65", _SRC_GB),
         None: _zone("0.8925", "45", _SRC_GB),
     },
+    # 별표 4 는 공고 실측 구간 하한율을 붙이려고 5억원 미만/이상 두 행을 2억·10억에서
+    # 나눴습니다. 나눈 구간은 원래 행의 평탄을 그대로 쓰므로 같은 값을 키만 늘려 둡니다.
     "SERVC_LOCAL_GB_20260108_ATTACH_04": {
+        Decimal("200000000"): _zone("0.8825", "65", _SRC_GB),
         Decimal("500000000"): _zone("0.8825", "65", _SRC_GB),
+        Decimal("1000000000"): _zone("0.8925", "45", _SRC_GB),
         None: _zone("0.8925", "45", _SRC_GB),
     },
     # 울산광역시 (공고 제2022-1100호)
