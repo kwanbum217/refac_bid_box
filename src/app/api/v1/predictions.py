@@ -25,6 +25,7 @@ from src.app.core.db import get_db
 from src.app.core.security import enforce_anonymous_api_quota
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement
+from src.app.models.demand_institutions import G2BDemandInstitution
 from src.app.schemas.predictions import (
     PredictionRequest,
     PredictionResponse,
@@ -36,9 +37,13 @@ from src.app.services.bid_queries import (
     DEFAULT_PREDICTION_MODEL,
     DEFAULT_PREDICTION_MODEL_BY_CATEGORY,
 )
+from src.app.services.demand_institutions import classify_contract_regime, institution_sido
+from src.app.services.evaluation_flat_zones import FlatZone, flat_zone_for
 from src.app.services.evaluation_rules import (
+    EvaluationRule,
     RuleResolutionResult,
     resolve_evaluation_rule_from_raw_data,
+    resolve_score_params,
 )
 from src.app.services.evaluation_scoring import format_decimal_plain
 from src.app.services.price_score_verification import (
@@ -148,6 +153,53 @@ def _join_warning(existing: str | None, extra: str) -> str:
     return f"{existing} {extra}" if existing else extra
 
 
+def _demand_institution_for_bid(db: Session, bid: BidAnnouncement) -> G2BDemandInstitution | None:
+    """공고 raw_data 의 수요기관 코드로 수요기관을 조회합니다 (없으면 None)."""
+    raw: dict[str, Any] = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    code = str(raw.get("dminsttCd") or "").strip()
+    return db.get(G2BDemandInstitution, code) if code else None
+
+
+def _raw_method_name(bid: BidAnnouncement) -> str | None:
+    """공고에서 낙찰방법명을 읽습니다 (컬럼 우선, 없으면 raw_data)."""
+    raw: dict[str, Any] = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    value = (
+        getattr(bid, "sucsfbid_mthd_nm", None)
+        or raw.get("sucsfbidMthdNm")
+        or raw.get("sucsfbid_mthd_nm")
+    )
+    return str(value) if value else None
+
+
+def _band_estimated_price(bid: BidAnnouncement) -> Decimal | None:
+    """규모 구간 판정에 쓸 추정가격. 추정가격 우선, 없으면 예측 기준금액을 씁니다."""
+    for candidate in (bid.presmpt_prce, bid.prediction_reference_amount):
+        if candidate:
+            return Decimal(str(candidate))
+    return None
+
+
+def _flat_zone_for_bid(bid: BidAnnouncement, rule: EvaluationRule) -> FlatZone | None:
+    """선택된 규칙·가격 구간의 원문 평탄 규정을 조회합니다.
+
+    추정가격으로 규모 구간을 골라 rule_id·upper_bound 로 평탄 데이터를 찾습니다.
+    규칙이 규모 구간을 쓰지 않거나 평탄 데이터가 없으면 None 입니다.
+    """
+    price_bands = getattr(rule, "price_bands", None)
+    if not price_bands:
+        return None
+    resolution = resolve_score_params(
+        rule,
+        _band_estimated_price(bid),
+        getattr(bid, "bid_ntce_dt", None),
+        _raw_method_name(bid),
+    )
+    index = resolution.price_band_index
+    if index is None or index >= len(price_bands):
+        return None
+    return flat_zone_for(rule.rule_id, price_bands[index].upper_bound)
+
+
 def _interval_overlap_ratio(
     predicted_low: int | None,
     predicted_high: int | None,
@@ -169,6 +221,7 @@ def _interval_overlap_ratio(
 def _score_verdict(
     payload: PredictPriceRequest,
     bid: BidAnnouncement,
+    db: Session,
     pred_price: Decimal,
     optimal_price: int,
     price_low: int | None,
@@ -178,6 +231,8 @@ def _score_verdict(
 
     산식은 재구현하지 않고 verify_price_score·invert_pass_bid_range 만 호출합니다.
     B·k·T 가 하나라도 없거나 규칙을 판별하지 못하면 점수를 만들지 않고 사유를 담습니다.
+    선택된 규칙·가격 구간의 평탄(flat_ratio·flat_score)은 evaluations 와 같은 방식으로
+    조회해 채점 함수에 그대로 넘기며, 평탄 데이터가 없으면 None 이라 기존과 같습니다.
     """
     raw: dict[str, Any] = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     missing = [
@@ -191,10 +246,21 @@ def _score_verdict(
     ]
 
     base_rate: Decimal | None = None
+    flat_zone: FlatZone | None = None
     unavailable: list[str] = []
+    institution = _demand_institution_for_bid(db, bid)
+    sido_code, sido_name = institution_sido(institution)
     rule_result: RuleResolutionResult | None
     try:
-        rule_result = resolve_evaluation_rule_from_raw_data(category=bid.category, raw_data=raw)
+        rule_result = resolve_evaluation_rule_from_raw_data(
+            category=bid.category,
+            raw_data=raw,
+            institution_name_fallback=bid.dminstt_nm,
+            cntrct_mthd_nm=bid.cntrct_mthd_nm,
+            institution_regime=classify_contract_regime(institution),
+            region_code=sido_code,
+            region_name=sido_name,
+        )
     except Exception as exc:
         rule_result = None
         unavailable.append(f"적격심사 규칙 판별 중 오류가 발생했습니다 ({exc}).")
@@ -215,6 +281,8 @@ def _score_verdict(
             if base_rate is None or base_rate <= 0:
                 base_rate = None
                 unavailable.append("기준비율이 없거나 0 이하라 평점을 계산할 수 없습니다.")
+            else:
+                flat_zone = _flat_zone_for_bid(bid, rule_result.rule)
 
     if missing:
         labels = ", ".join(_SCORE_TABLE_LABELS[name] for name in missing)
@@ -241,12 +309,17 @@ def _score_verdict(
         q_assumed = False
         non_price_score = Decimal(str(payload.non_price_score))
 
+    flat_ratio = flat_zone.flat_ratio if flat_zone is not None else None
+    flat_score = flat_zone.flat_score if flat_zone is not None else None
+
     optimal_result = verify_price_score(
         bid_price=Decimal(optimal_price),
         pred_price=pred_price,
         base_rate=base_rate,
         max_price_score=max_price_score,
         multiplier=multiplier,
+        flat_ratio=flat_ratio,
+        flat_score=flat_score,
     )
     low_score: Decimal | None = None
     high_score: Decimal | None = None
@@ -257,6 +330,8 @@ def _score_verdict(
             base_rate=base_rate,
             max_price_score=max_price_score,
             multiplier=multiplier,
+            flat_ratio=flat_ratio,
+            flat_score=flat_score,
         ).score
     if price_high is not None:
         high_score = verify_price_score(
@@ -265,6 +340,8 @@ def _score_verdict(
             base_rate=base_rate,
             max_price_score=max_price_score,
             multiplier=multiplier,
+            flat_ratio=flat_ratio,
+            flat_score=flat_score,
         ).score
 
     range_result = invert_pass_bid_range(
@@ -275,6 +352,8 @@ def _score_verdict(
         multiplier=multiplier,
         pred_price=pred_price,
         announcement_lwlt_rate=_announcement_lwlt_rate(raw),
+        flat_ratio=flat_ratio,
+        flat_score=flat_score,
     )
 
     verdict = PredictPriceScoreVerdict(
@@ -539,6 +618,7 @@ def predict_price_api(
     score_verdict = _score_verdict(
         payload=payload,
         bid=bid,
+        db=db,
         pred_price=Decimal(str(reference_amount)),
         optimal_price=optimal_price,
         price_low=price_low,
