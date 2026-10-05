@@ -9,8 +9,9 @@ src/app/services/evaluation_flat_zones.py
 flat_score 아래로 내려가지 않습니다. flat_ratio 는 항상 기준비율보다 큽니다.
 
 [출처 원칙]
-모든 구간은 원문 평탄 문장이 인용된 수집 문서를 source 로 남깁니다. 원문 인용을 찾지 못한
-규칙(조달청 PRE/POST 별표 등)은 데이터를 넣지 않습니다. 추정·역산하지 않습니다.
+모든 구간은 원문 평탄 문장이 인용된 수집 문서를 source 로 남깁니다. 원문 인용이 없는
+규칙(조달청 별표 6 보험, 일반 띠 3개, 기술용역)은 데이터를 넣지 않습니다. 추정·역산하지
+않습니다. 조달청 PRE/POST 별표는 수집 문서의 평탄 비율과 산식 대입 점수를 등록합니다.
 
 이 모듈은 순수 데이터·조회 함수만 제공하며 산식 계산은 evaluation_scoring 이 담당합니다.
 """
@@ -320,9 +321,260 @@ def flat_zone_for(rule_id: str, upper_bound: Decimal | int | str | None) -> Flat
 
 
 def flat_zone_entries() -> tuple[tuple[str, Decimal | None, FlatZone], ...]:
-    """등록된 평탄 구간 전량을 (rule_id, upper_bound, FlatZone) 로 돌려줍니다."""
+    """등록된 지방 규칙 평탄 구간 전량을 (rule_id, upper_bound, FlatZone) 로 돌려줍니다."""
     return tuple(
         (rule_id, upper_bound, zone)
         for rule_id, zones in _FLAT_ZONES.items()
         for upper_bound, zone in zones.items()
+    )
+
+
+# =============================================================================
+# 조달청 PRE/POST 별표 평탄 구간
+# =============================================================================
+
+# 조달청 규칙은 price_bands 대신 두 축으로 배점표를 가릅니다. B 는 추정가격 5억원 축
+# (max_price_score_by_500m), k 는 고시금액 축(multiplier_by_notice)입니다. 평탄 비율은
+# k 축으로, 평탄 점수는 B·k·기준비율 산식 대입값으로 갈리므로 두 축 해당 여부를 키로 둡니다.
+# 값 근거: docs/analysis/pps_flat_zone_source_20261005.md 8장,
+# docs/analysis/pps_lwlt_basis_20261005.md 7.1장.
+_PPS_RATIO_DOC = "docs/analysis/pps_flat_zone_source_20261005.md"
+_PPS_BASIS_DOC = "docs/analysis/pps_lwlt_basis_20261005.md"
+
+
+@dataclass(frozen=True)
+class PpsFlatZone:
+    """조달청 평탄 원문 한 줄.
+
+    flat_score None 은 배점한도(B)가 공고 입력값이라 고정할 수 없어 조회 시 산식 대입값으로
+    산출하는 구간입니다(별표9 수요기관지정형).
+    """
+
+    flat_ratio: Decimal
+    flat_score: Decimal | None
+    source: str
+
+
+def _pps_zone(ratio: str, score: str | None, source: str) -> PpsFlatZone:
+    return PpsFlatZone(
+        flat_ratio=Decimal(ratio),
+        flat_score=Decimal(score) if score is not None else None,
+        source=source,
+    )
+
+
+def _pps_b_band(
+    ratio: str, score_below: str, score_above: str, source: str
+) -> dict[tuple[bool | None, bool | None], PpsFlatZone]:
+    """B(5억) 축만 값이 갈리는 규칙. False=5억원 미만(B 70), True=5억원 이상(B 60)."""
+    return {
+        (False, None): _pps_zone(ratio, score_below, source),
+        (True, None): _pps_zone(ratio, score_above, source),
+    }
+
+
+def _pps_notice_band(
+    ratio_below: str, ratio_above: str, score: str | None, source: str
+) -> dict[tuple[bool | None, bool | None], PpsFlatZone]:
+    """고시금액 축만 값이 갈리는 규칙. False=고시금액 미만(k 4), True=고시금액 이상(k 2)."""
+    return {
+        (None, False): _pps_zone(ratio_below, score, source),
+        (None, True): _pps_zone(ratio_above, score, source),
+    }
+
+
+def _pps_both_bands(
+    ratio_below: str, ratio_above: str, score_below: str, score_above: str, source: str
+) -> dict[tuple[bool | None, bool | None], PpsFlatZone]:
+    """두 축이 함께 갈리는 규칙. 평탄 점수는 B 로, 평탄 비율은 k 축으로 갈립니다."""
+    return {
+        (False, False): _pps_zone(ratio_below, score_below, source),
+        (False, True): _pps_zone(ratio_above, score_below, source),
+        (True, False): _pps_zone(ratio_below, score_above, source),
+        (True, True): _pps_zone(ratio_above, score_above, source),
+    }
+
+
+def _pps_fixed(
+    ratio: str, score: str, source: str
+) -> dict[tuple[bool | None, bool | None], PpsFlatZone]:
+    """두 축 모두 조건이 아닌 규칙."""
+    return {(None, None): _pps_zone(ratio, score, source)}
+
+
+def _pps_pre_source(label: str, row: int, basis_row: int) -> str:
+    return (
+        f"{_PPS_RATIO_DOC}:{row} (8.1 {label} 등록 값, 개정 전 제2023-53호·제2025-257호 두 판 동일); "
+        f"{_PPS_BASIS_DOC}:{basis_row} (7.1 등록 후보); 점수는 원문 미인쇄 산식 대입값"
+    )
+
+
+def _pps_post_source(label: str, row: int) -> str:
+    return (
+        f"{_PPS_RATIO_DOC}:{row} (8.2 {label} 등록 값, 제2026-260호); "
+        "원문 대조 4.3·5.2; 점수는 원문 미인쇄 산식 대입값"
+    )
+
+
+def _pps_post_390_source(label: str, row: int) -> str:
+    return (
+        f"{_PPS_RATIO_DOC}:{row} (8.3 {label} 등록 값, 제2026-390호); "
+        "원문 대조 4.4·5.3; 점수는 원문 미인쇄 산식 대입값"
+    )
+
+
+# 개정 전 제2023-53호·제2025-257호·제2026-15호 값. 두 판이 같아 규칙 ID 접두만 달리 붙입니다.
+_PPS_PRE_ZONES: dict[str, dict[tuple[bool | None, bool | None], PpsFlatZone]] = {
+    "01": _pps_b_band("0.94", "55", "45", _pps_pre_source("별표2 시설분야", 266, 278)),
+    "03": _pps_b_band("0.94", "58", "48", _pps_pre_source("별표5 여객", 267, 279)),
+    "04": _pps_b_band("0.94", "58", "48", _pps_pre_source("별표3의2 SW대상", 268, 280)),
+    "05": _pps_both_bands(
+        "0.9175", "0.955", "55", "45", _pps_pre_source("별표3 SW비대상", 269, 281)
+    ),
+    "06": _pps_fixed("0.9175", "55", _pps_pre_source("별표1 학술연구 고시 미만", 270, 282)),
+    "07": _pps_b_band("0.955", "55", "45", _pps_pre_source("별표1 학술연구 고시 이상", 271, 283)),
+    "08": _pps_fixed("0.9175", "55", _pps_pre_source("별표4 폐기물 고시 미만", 272, 284)),
+    "09": _pps_b_band("0.955", "55", "45", _pps_pre_source("별표4 폐기물 고시 이상", 273, 285)),
+    "10": _pps_fixed("0.9175", "55", _pps_pre_source("별표5의2 화물 고시 미만", 274, 286)),
+    "11": _pps_b_band("0.955", "55", "45", _pps_pre_source("별표5의2 화물 고시 이상", 275, 287)),
+    "15": _pps_both_bands(
+        "0.9175", "0.955", "55", "45", _pps_pre_source("별표7 수리·점검", 276, 288)
+    ),
+    "16": _pps_notice_band("0.9175", "0.955", "55", _pps_pre_source("별표8 임대차", 277, 289)),
+    "17": _pps_notice_band(
+        "0.9175",
+        "0.955",
+        None,
+        _pps_pre_source("별표9 수요기관지정형(B 공고 입력값, 점수 B-15)", 278, 290),
+    ),
+}
+
+
+_PPS_FLAT_ZONES: dict[str, dict[tuple[bool | None, bool | None], PpsFlatZone]] = {
+    # 개정 전 제2023-53호 (시행 2023-05-01)
+    "SERVC_QUAL_PRE_20230501_ATTACH_01": _PPS_PRE_ZONES["01"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_03": _PPS_PRE_ZONES["03"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_04": _PPS_PRE_ZONES["04"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_05": _PPS_PRE_ZONES["05"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_06": _PPS_PRE_ZONES["06"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_07": _PPS_PRE_ZONES["07"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_08": _PPS_PRE_ZONES["08"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_09": _PPS_PRE_ZONES["09"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_10": _PPS_PRE_ZONES["10"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_11": _PPS_PRE_ZONES["11"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_15": _PPS_PRE_ZONES["15"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_16": _PPS_PRE_ZONES["16"],
+    "SERVC_QUAL_PRE_20230501_ATTACH_17": _PPS_PRE_ZONES["17"],
+    # 개정 전 제2025-257호·제2026-15호 (시행 2025-09-01) — 위와 값 동일
+    "SERVC_QUAL_PRE_20250901_ATTACH_01": _PPS_PRE_ZONES["01"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_03": _PPS_PRE_ZONES["03"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_04": _PPS_PRE_ZONES["04"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_05": _PPS_PRE_ZONES["05"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_06": _PPS_PRE_ZONES["06"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_07": _PPS_PRE_ZONES["07"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_08": _PPS_PRE_ZONES["08"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_09": _PPS_PRE_ZONES["09"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_10": _PPS_PRE_ZONES["10"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_11": _PPS_PRE_ZONES["11"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_15": _PPS_PRE_ZONES["15"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_16": _PPS_PRE_ZONES["16"],
+    "SERVC_QUAL_PRE_20250901_ATTACH_17": _PPS_PRE_ZONES["17"],
+    # 개정 후 제2026-260호 (시행 2026-05-26). 별표 6 보험(ATTACH_02)은 평탄 문장이 없어 제외합니다.
+    "SERVC_QUAL_POST_20260526_ATTACH_01": _pps_b_band(
+        "0.96", "55", "45", _pps_post_source("별표2 시설분야", 284)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_03": _pps_b_band(
+        "0.94", "58", "48", _pps_post_source("별표5 여객", 285)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_04": _pps_b_band(
+        "0.94", "58", "48", _pps_post_source("별표3의2 SW대상", 286)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_05": _pps_both_bands(
+        "0.9375", "0.975", "55", "45", _pps_post_source("별표3 SW비대상", 287)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_06": _pps_fixed(
+        "0.9375", "55", _pps_post_source("별표1 학술연구 고시 미만", 288)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_07": _pps_b_band(
+        "0.975", "55", "45", _pps_post_source("별표1 학술연구 고시 이상", 289)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_08": _pps_fixed(
+        "0.9375", "55", _pps_post_source("별표4 폐기물 고시 미만", 290)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_09": _pps_b_band(
+        "0.975", "55", "45", _pps_post_source("별표4 폐기물 고시 이상", 291)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_10": _pps_fixed(
+        "0.9375", "55", _pps_post_source("별표5의2 화물 고시 미만", 292)
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_11": _pps_b_band(
+        "0.975", "55", "45", _pps_post_source("별표5의2 화물 고시 이상", 293)
+    ),
+    # 개정 후 제2026-390호 (시행 2026-07-27, 신규 2개). 나머지 12칸은 제2026-260호 객체 재사용입니다.
+    "SERVC_QUAL_POST_20260727_ATTACH_03": _pps_b_band(
+        "0.96", "58", "48", _pps_post_390_source("별표5 여객", 299)
+    ),
+    "SERVC_QUAL_POST_20260727_ATTACH_04": _pps_b_band(
+        "0.96", "58", "48", _pps_post_390_source("별표3의2 SW대상", 300)
+    ),
+}
+
+
+def pps_axis_side(
+    conditional: tuple[Decimal, Decimal] | None, value: Decimal | None
+) -> bool | None:
+    """조건부 축(B·k)에서 실제 적용한 값이 어느 쪽인지(이상=True)를 돌려줍니다.
+
+    evaluation_rules 의 조건부 선언 튜플은 (미만, 이상) 순서입니다. 값이 어느 쪽과도 다르면
+    None 을 돌려주어 호출부가 평탄을 적용하지 않게 합니다.
+    """
+    if conditional is None or value is None:
+        return None
+    below, above = conditional
+    if value == above:
+        return True
+    if value == below:
+        return False
+    return None
+
+
+def pps_flat_zone_for(
+    rule_id: str,
+    *,
+    above_500m: bool | None,
+    above_notice: bool | None,
+    max_price_score: Decimal | None = None,
+    multiplier: Decimal | None = None,
+    base_rate: Decimal | None = None,
+) -> FlatZone | None:
+    """조달청 규칙의 평탄 규정을 두 축 해당 여부로 조회합니다.
+
+    above_500m: 추정가격이 5억원 이상이면 True. 규칙의 B 가 5억 축 조건이 아니면 None.
+    above_notice: 추정가격이 고시금액 이상이면 True. 규칙의 k 가 고시금액 축 조건이 아니면 None.
+    max_price_score·multiplier·base_rate 는 별표9(수요기관 지정형)처럼 B 가 공고 입력값이라
+    점수를 저장할 수 없는 구간의 산식 대입값을 계산할 때만 씁니다. 데이터가 없거나 축 값이
+    등록 키와 맞지 않으면 None 을 돌려주며, 호출부는 그대로 평탄을 적용하지 않습니다.
+    """
+    zones = _PPS_FLAT_ZONES.get(rule_id)
+    if not zones:
+        return None
+    zone = zones.get((above_500m, above_notice))
+    if zone is None:
+        return None
+    score = zone.flat_score
+    if score is None:
+        if max_price_score is None or multiplier is None or base_rate is None:
+            return None
+        normalized_base = base_rate / Decimal("100") if base_rate > Decimal("1") else base_rate
+        diff = abs(zone.flat_ratio - normalized_base) * Decimal("100")
+        score = max_price_score - multiplier * diff
+    return FlatZone(flat_ratio=zone.flat_ratio, flat_score=score, source=zone.source)
+
+
+def pps_flat_zone_entries() -> tuple[tuple[str, tuple[bool | None, bool | None], PpsFlatZone], ...]:
+    """등록된 조달청 평탄 구간 전량을 (rule_id, 두 축 키, 원문 데이터) 로 돌려줍니다."""
+    return tuple(
+        (rule_id, key, zone)
+        for rule_id, zones in _PPS_FLAT_ZONES.items()
+        for key, zone in zones.items()
     )
