@@ -179,6 +179,17 @@ def _band_estimated_price(bid: BidAnnouncement) -> Decimal | None:
     return None
 
 
+def _band_price_from_prediction_reference(bid: BidAnnouncement) -> bool:
+    """추정가격이 없어 규모 구간을 예측 기준금액으로 대체했는지 봅니다."""
+    return not bid.presmpt_prce and bool(bid.prediction_reference_amount)
+
+
+_BAND_PRICE_SUBSTITUTION_NOTICE = (
+    "추정가격이 없어 예측 기준금액으로 규모 구간을 판정했습니다. "
+    "추정가격이 있는 공고와 구간이 달라질 수 있습니다."
+)
+
+
 def _flat_zone_for_bid(bid: BidAnnouncement, rule: EvaluationRule) -> FlatZone | None:
     """선택된 규칙·가격 구간의 원문 평탄 규정을 조회합니다.
 
@@ -198,6 +209,22 @@ def _flat_zone_for_bid(bid: BidAnnouncement, rule: EvaluationRule) -> FlatZone |
     if index is None or index >= len(price_bands):
         return None
     return flat_zone_for(rule.rule_id, price_bands[index].upper_bound)
+
+
+def _band_specific_lwlt_rate(rule_result: RuleResolutionResult) -> Decimal | None:
+    """구간별 낙찰하한율이 있는 규칙의 유효 하한율을 /evaluations 와 같게 돌려줍니다.
+
+    공고 하한율이 없을 때 추정가격으로 고른 구간값을 쓰도록 해석 단계에서 이미 계산한
+    effective_lwlt_rate 를 그대로 씁니다. 구간 하한율이 없는 규칙은 None 을 돌려주어
+    종전과 같이 공고 하한율만 반영하게 합니다(불변).
+    """
+    rule = rule_result.rule
+    if rule is None:
+        return None
+    bands = getattr(rule, "price_bands", None) or ()
+    if not any(band.lwlt_rate is not None for band in bands):
+        return None
+    return rule_result.effective_lwlt_rate
 
 
 def _interval_overlap_ratio(
@@ -247,6 +274,7 @@ def _score_verdict(
 
     base_rate: Decimal | None = None
     flat_zone: FlatZone | None = None
+    band_lwlt_rate: Decimal | None = None
     unavailable: list[str] = []
     institution = _demand_institution_for_bid(db, bid)
     sido_code, sido_name = institution_sido(institution)
@@ -260,6 +288,7 @@ def _score_verdict(
             institution_regime=classify_contract_regime(institution),
             region_code=sido_code,
             region_name=sido_name,
+            estimated_price=_band_estimated_price(bid),
         )
     except Exception as exc:
         rule_result = None
@@ -283,6 +312,7 @@ def _score_verdict(
                 unavailable.append("기준비율이 없거나 0 이하라 평점을 계산할 수 없습니다.")
             else:
                 flat_zone = _flat_zone_for_bid(bid, rule_result.rule)
+                band_lwlt_rate = _band_specific_lwlt_rate(rule_result)
 
     if missing:
         labels = ", ".join(_SCORE_TABLE_LABELS[name] for name in missing)
@@ -351,7 +381,9 @@ def _score_verdict(
         max_price_score=max_price_score,
         multiplier=multiplier,
         pred_price=pred_price,
-        announcement_lwlt_rate=_announcement_lwlt_rate(raw),
+        announcement_lwlt_rate=(
+            band_lwlt_rate if band_lwlt_rate is not None else _announcement_lwlt_rate(raw)
+        ),
         flat_ratio=flat_ratio,
         flat_score=flat_score,
     )
@@ -593,13 +625,19 @@ def predict_price_api(
     )
 
     uncertainty_warning: str | None = None
+    if _band_price_from_prediction_reference(bid):
+        uncertainty_warning = _BAND_PRICE_SUBSTITUTION_NOTICE
     if lwlt_missing:
-        uncertainty_warning = (
+        uncertainty_warning = _join_warning(
+            uncertainty_warning,
             "낙찰하한율 정보가 없는 공고 유형(수의시담·협상·규격가격동시 등)으로 "
-            "예측 불확실성이 큽니다. 예측 구간을 반드시 참고하십시오."
+            "예측 불확실성이 큽니다. 예측 구간을 반드시 참고하십시오.",
         )
     elif wide_interval_warning:
-        uncertainty_warning = "예측 구간 폭이 넓어 불확실성이 큽니다. 참고용으로만 활용하십시오."
+        uncertainty_warning = _join_warning(
+            uncertainty_warning,
+            "예측 구간 폭이 넓어 불확실성이 큽니다. 참고용으로만 활용하십시오.",
+        )
 
     message = (
         f"{model_name} 분석이 완료되었습니다. 예상 낙찰률은 {prediction_rate_percent}% 입니다."
