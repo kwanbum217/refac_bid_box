@@ -234,6 +234,8 @@ def invert_pass_bid_range(
     통과 상한이 예정가격(비율 1)까지 넓어지지만, flat_score 가 산식값보다 커서 두 구간이
     떨어지면 통과 구간이 둘로 나뉩니다. 이 함수는 하나의 연속 구간만 표현하므로 그때는
     기준비율을 포함한 산식 구간만 돌려주고 평탄 구간이 따로 통과함을 사유에 남깁니다.
+    반대로 flat_score < N 이면 x >= flat_ratio 구간은 통과하지 못하므로, 산식 통과 상한이
+    flat_ratio 이상일 때 그 상한을 flat_ratio 미만의 격자값으로 잘라냅니다.
     flat_ratio·flat_score 가 None 이면 기존 동작과 완전히 같습니다.
     """
     missing: list[str] = []
@@ -348,12 +350,9 @@ def invert_pass_bid_range(
                 ],
             )
         tolerance: Decimal | None = None
-        ratio_low, ratio_high = ZERO, ONE
-        grid_low, grid_high = ZERO, ONE
-        amount_low, amount_high = ZERO, pred_price
-        extra_reasons = [
-            "평점 계수가 0이면 가격점수는 배점한도로 고정되므로 비율 구간 전체가 통과 구간입니다."
-        ]
+        ratio_low = ZERO
+        ratio_high = ONE
+        extra_reasons: list[str] = []
     else:
         if max_price_score < required:
             return build(
@@ -391,43 +390,71 @@ def invert_pass_bid_range(
                 )
         else:
             ratio_high = algebra_high
-        grid_low = ratio_low.quantize(FOUR_DECIMALS, rounding=ROUND_CEILING)
+
+    # 평탄 고정 점수가 필요 가격점수에 미달하면 x >= flat_ratio 구간은 통과하지 못한다.
+    # 통과 상한이 평탄 시작 비율 이상이면 그 아래로 잘라 실제 점수 곡선과 맞춘다.
+    flat_cut_ratio: Decimal | None = None
+    if (
+        flat_ratio is not None
+        and flat_score is not None
+        and flat_ratio <= ONE
+        and flat_score < required
+        and ratio_high >= flat_ratio
+    ):
+        flat_cut_ratio = flat_ratio
+        ratio_high = flat_ratio
+        extra_reasons.append(
+            f"평탄 구간(비율 {format_decimal_plain(flat_ratio)} 이상)의 고정 점수 "
+            f"{format_decimal_plain(flat_score)}점이 필요 가격점수 "
+            f"{format_decimal_plain(required)}점에 미달하여 통과하지 못합니다. "
+            "비율이 평탄 시작 이상이면 점수가 그 값으로 떨어지므로 "
+            "통과 상한을 평탄 시작 비율 미만으로 잘랐습니다."
+        )
+
+    if multiplier == ZERO and flat_cut_ratio is None:
+        extra_reasons.append(
+            "평점 계수가 0이면 가격점수는 배점한도로 고정되므로 비율 구간 전체가 통과 구간입니다."
+        )
+
+    grid_low = ratio_low.quantize(FOUR_DECIMALS, rounding=ROUND_CEILING)
+    if flat_cut_ratio is not None:
+        # x >= flat_ratio 는 평탄으로 점수가 떨어지므로 그 미만에서 가장 큰 격자값을 쓴다.
+        grid_high = flat_cut_ratio.quantize(FOUR_DECIMALS, rounding=ROUND_CEILING) - FOUR_DECIMALS
+    else:
         grid_high = ratio_high.quantize(FOUR_DECIMALS, rounding=ROUND_FLOOR)
-        if grid_low > grid_high:
-            return build(
-                status="impossible",
-                is_feasible=False,
-                reasons=[
-                    "허용 비율 구간이 소수점 넷째 자리 격자를 포함하지 않아 "
-                    "원 단위 입찰가로 도달할 수 없습니다."
-                ],
-                tolerance=tolerance,
-                ratio_low=ratio_low,
-                ratio_high=ratio_high,
-                ratio_grid_low=grid_low,
-                ratio_grid_high=grid_high,
-            )
-        amount_low = max(
-            ZERO,
-            (pred_price * (grid_low - HALF_UNIT)).to_integral_value(rounding=ROUND_CEILING),
+    if grid_low > grid_high:
+        return build(
+            status="impossible",
+            is_feasible=False,
+            reasons=[
+                "허용 비율 구간이 소수점 넷째 자리 격자를 포함하지 않아 "
+                "원 단위 입찰가로 도달할 수 없습니다."
+            ],
+            tolerance=tolerance,
+            ratio_low=ratio_low,
+            ratio_high=ratio_high,
+            ratio_grid_low=grid_low,
+            ratio_grid_high=grid_high,
         )
-        amount_high = min(
-            pred_price,
-            (pred_price * (grid_high + HALF_UNIT)).to_integral_value(rounding=ROUND_CEILING) - ONE,
+    amount_low = max(
+        ZERO,
+        (pred_price * (grid_low - HALF_UNIT)).to_integral_value(rounding=ROUND_CEILING),
+    )
+    amount_high = min(
+        pred_price,
+        (pred_price * (grid_high + HALF_UNIT)).to_integral_value(rounding=ROUND_CEILING) - ONE,
+    )
+    if amount_low > amount_high:
+        return build(
+            status="impossible",
+            is_feasible=False,
+            reasons=["허용 비율 구간에 해당하는 원 단위 금액이 존재하지 않아 도달할 수 없습니다."],
+            tolerance=tolerance,
+            ratio_low=ratio_low,
+            ratio_high=ratio_high,
+            ratio_grid_low=grid_low,
+            ratio_grid_high=grid_high,
         )
-        if amount_low > amount_high:
-            return build(
-                status="impossible",
-                is_feasible=False,
-                reasons=[
-                    "허용 비율 구간에 해당하는 원 단위 금액이 존재하지 않아 도달할 수 없습니다."
-                ],
-                tolerance=tolerance,
-                ratio_low=ratio_low,
-                ratio_high=ratio_high,
-                ratio_grid_low=grid_low,
-                ratio_grid_high=grid_high,
-            )
 
     effective_ratio_low: Decimal | None = ratio_low
     effective_ratio_high: Decimal | None = ratio_high
