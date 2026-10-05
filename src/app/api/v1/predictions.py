@@ -38,7 +38,12 @@ from src.app.services.bid_queries import (
     DEFAULT_PREDICTION_MODEL_BY_CATEGORY,
 )
 from src.app.services.demand_institutions import classify_contract_regime, institution_sido
-from src.app.services.evaluation_flat_zones import FlatZone, flat_zone_for
+from src.app.services.evaluation_flat_zones import (
+    FlatZone,
+    flat_zone_for,
+    pps_axis_side,
+    pps_flat_zone_for,
+)
 from src.app.services.evaluation_rules import (
     EvaluationRule,
     RuleResolutionResult,
@@ -190,25 +195,54 @@ _BAND_PRICE_SUBSTITUTION_NOTICE = (
 )
 
 
-def _flat_zone_for_bid(bid: BidAnnouncement, rule: EvaluationRule) -> FlatZone | None:
+def _flat_zone_for_bid(
+    bid: BidAnnouncement,
+    rule: EvaluationRule,
+    *,
+    max_price_score: Decimal | None = None,
+    multiplier: Decimal | None = None,
+) -> FlatZone | None:
     """선택된 규칙·가격 구간의 원문 평탄 규정을 조회합니다.
 
-    추정가격으로 규모 구간을 골라 rule_id·upper_bound 로 평탄 데이터를 찾습니다.
-    규칙이 규모 구간을 쓰지 않거나 평탄 데이터가 없으면 None 입니다.
+    지방 규칙은 추정가격으로 고른 price_bands 구간으로, 조달청 규칙은 실제 적용한
+    B(5억)·k(고시금액) 값이 어느 축인지로 조회합니다. 평탄 데이터가 없으면 None 입니다.
     """
     price_bands = getattr(rule, "price_bands", None)
-    if not price_bands:
+    if price_bands:
+        resolution = resolve_score_params(
+            rule,
+            _band_estimated_price(bid),
+            getattr(bid, "bid_ntce_dt", None),
+            _raw_method_name(bid),
+        )
+        index = resolution.price_band_index
+        if index is None or index >= len(price_bands):
+            return None
+        return flat_zone_for(rule.rule_id, price_bands[index].upper_bound)
+    # 두 축을 선언하지 않은 시험용 규칙 객체는 건드리지 않습니다(기존 동작 보존).
+    if not hasattr(rule, "max_price_score_by_500m"):
         return None
-    resolution = resolve_score_params(
-        rule,
-        _band_estimated_price(bid),
-        getattr(bid, "bid_ntce_dt", None),
-        _raw_method_name(bid),
+    effective_b = max_price_score
+    effective_k = multiplier
+    if effective_b is None or effective_k is None:
+        resolution = resolve_score_params(
+            rule,
+            _band_estimated_price(bid),
+            getattr(bid, "bid_ntce_dt", None),
+            _raw_method_name(bid),
+        )
+        if effective_b is None:
+            effective_b = resolution.max_price_score
+        if effective_k is None:
+            effective_k = resolution.multiplier
+    return pps_flat_zone_for(
+        rule.rule_id,
+        above_500m=pps_axis_side(rule.max_price_score_by_500m, effective_b),
+        above_notice=pps_axis_side(rule.multiplier_by_notice, effective_k),
+        max_price_score=effective_b,
+        multiplier=effective_k,
+        base_rate=rule.base_rate,
     )
-    index = resolution.price_band_index
-    if index is None or index >= len(price_bands):
-        return None
-    return flat_zone_for(rule.rule_id, price_bands[index].upper_bound)
 
 
 def _band_specific_lwlt_rate(rule_result: RuleResolutionResult) -> Decimal | None:
@@ -311,7 +345,12 @@ def _score_verdict(
                 base_rate = None
                 unavailable.append("기준비율이 없거나 0 이하라 평점을 계산할 수 없습니다.")
             else:
-                flat_zone = _flat_zone_for_bid(bid, rule_result.rule)
+                flat_zone = _flat_zone_for_bid(
+                    bid,
+                    rule_result.rule,
+                    max_price_score=_decimal_or_none(payload.max_price_score),
+                    multiplier=_decimal_or_none(payload.multiplier),
+                )
                 band_lwlt_rate = _band_specific_lwlt_rate(rule_result)
 
     if missing:

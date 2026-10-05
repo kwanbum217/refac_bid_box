@@ -83,7 +83,12 @@ from src.app.services.demand_institutions import (
     describe_contract_regime,
     institution_sido,
 )
-from src.app.services.evaluation_flat_zones import FlatZone, flat_zone_for
+from src.app.services.evaluation_flat_zones import (
+    FlatZone,
+    flat_zone_for,
+    pps_axis_side,
+    pps_flat_zone_for,
+)
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
     CREDIT_GRADE_SCORES,
@@ -236,18 +241,36 @@ def _get_snapshot_or_404(db: Session, snapshot_id: int, user_id: int) -> BidEval
     return snapshot
 
 
-def _selected_flat_zone(rule: EvaluationRule, resolution: ScoreParamResolution) -> FlatZone | None:
+def _selected_flat_zone(
+    rule: EvaluationRule,
+    resolution: ScoreParamResolution,
+    *,
+    max_price_score: Decimal | None = None,
+    multiplier: Decimal | None = None,
+) -> FlatZone | None:
     """선택된 규칙·가격 구간의 원문 평탄 규정을 찾습니다.
 
-    규칙이 price_bands 를 쓰고 구간이 선택됐을 때만 조회하며, 평탄 데이터가 없으면 None 입니다.
+    지방 규칙은 price_bands 의 추정가격 구간으로, 조달청 규칙은 B(5억)·k(고시금액) 두 축의
+    해당 여부로 조회합니다. 평탄 데이터가 없으면 None 입니다.
     """
-    if rule.price_bands is None or resolution.price_band_index is None:
-        return None
-    try:
-        band = rule.price_bands[resolution.price_band_index]
-    except IndexError:
-        return None
-    return flat_zone_for(rule.rule_id, band.upper_bound)
+    if rule.price_bands is not None:
+        if resolution.price_band_index is None:
+            return None
+        try:
+            band = rule.price_bands[resolution.price_band_index]
+        except IndexError:
+            return None
+        return flat_zone_for(rule.rule_id, band.upper_bound)
+    effective_b = max_price_score if max_price_score is not None else resolution.max_price_score
+    effective_k = multiplier if multiplier is not None else resolution.multiplier
+    return pps_flat_zone_for(
+        rule.rule_id,
+        above_500m=pps_axis_side(rule.max_price_score_by_500m, effective_b),
+        above_notice=pps_axis_side(rule.multiplier_by_notice, effective_k),
+        max_price_score=effective_b,
+        multiplier=effective_k,
+        base_rate=resolution.base_rate if resolution.base_rate is not None else rule.base_rate,
+    )
 
 
 def _score_table(
@@ -305,7 +328,12 @@ def _score_table(
     if missing:
         return None, missing, overridden, resolution
 
-    flat_zone = _selected_flat_zone(rule, resolution)
+    flat_zone = _selected_flat_zone(
+        rule,
+        resolution,
+        max_price_score=resolved["max_price_score"],
+        multiplier=resolved["multiplier"],
+    )
 
     return (
         ScoreTable(

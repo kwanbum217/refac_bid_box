@@ -25,7 +25,12 @@ from src.app.main import app
 from src.app.models.bids import BidAnnouncement
 from src.app.models.demand_institutions import G2BDemandInstitution
 from src.app.schemas.predictions import PredictPriceResponse
-from src.app.services.evaluation_flat_zones import FlatZone, flat_zone_entries, flat_zone_for
+from src.app.services.evaluation_flat_zones import (
+    FlatZone,
+    flat_zone_entries,
+    flat_zone_for,
+    pps_flat_zone_for,
+)
 from src.app.services.evaluation_rules import LOCAL_RULES, resolve_score_params
 from src.app.services.evaluation_scoring import (
     calculate_price_score,
@@ -86,8 +91,19 @@ class TestFlatZoneData:
             assert zone is not None, rule_id
 
     def test_traffic_rule_has_no_flat_data(self) -> None:
-        assert flat_zone_for("SERVC_QUAL_PRE_20250901_ATTACH_01", None) is None
-        assert flat_zone_for("SERVC_QUAL_POST_20260526_ATTACH_01", Decimal("500000000")) is None
+        # 조달청 별표 6 보험(ATTACH_02)은 원문에 평탄 문장이 없어 두 축 어느 쪽으로도 없습니다.
+        assert (
+            pps_flat_zone_for(
+                "SERVC_QUAL_PRE_20250901_ATTACH_02", above_500m=True, above_notice=None
+            )
+            is None
+        )
+        assert (
+            pps_flat_zone_for(
+                "SERVC_QUAL_POST_20260526_ATTACH_02", above_500m=False, above_notice=None
+            )
+            is None
+        )
 
     def test_unknown_rule_has_no_flat_data(self) -> None:
         assert flat_zone_for("SERVC_LOCAL_UNKNOWN", None) is None

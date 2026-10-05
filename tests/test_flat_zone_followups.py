@@ -25,7 +25,7 @@ import pytest
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
 from src.app.models.demand_institutions import G2BDemandInstitution
-from src.app.services.evaluation_flat_zones import flat_zone_for
+from src.app.services.evaluation_flat_zones import pps_flat_zone_for
 from src.app.services.evaluation_scoring import calculate_price_score, resolve_price_compensation
 from src.app.services.price_score_verification import invert_pass_bid_range
 from src.ml.model_registry import PredictionOutcome
@@ -339,7 +339,13 @@ class TestNoFlatRuleUnchanged:
     """평탄 데이터가 없는 규칙은 평탄 인자가 None 일 때 기존과 완전히 같다."""
 
     def test_traffic_rule_has_no_flat_zone(self) -> None:
-        assert flat_zone_for("SERVC_QUAL_PRE_20250901_ATTACH_01", None) is None
+        # 조달청 별표 6 보험(ATTACH_02)은 원문에 평탄 문장이 없어 두 축 어느 쪽으로도 없습니다.
+        assert (
+            pps_flat_zone_for(
+                "SERVC_QUAL_PRE_20250901_ATTACH_02", above_500m=True, above_notice=None
+            )
+            is None
+        )
 
     def test_calculate_price_score_unchanged_without_flat(self) -> None:
         baseline = calculate_price_score(
