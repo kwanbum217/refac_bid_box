@@ -503,10 +503,12 @@ def resolve_local_service_type(
 | `SERVC_LOCAL_JEJU_20240101_ATTACH_01` (GENERAL/SIMPLE_LABOR) | 제주 | GENERAL / SIMPLE_LABOR | 인천과 동일 | 인천과 동일 | 수집 4.3 |
 | `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` (GENERAL/SIMPLE_LABOR) | 강원 | GENERAL / SIMPLE_LABOR | 인천과 동일 | 인천과 동일 | 수집 4.4 |
 | `SERVC_LOCAL_SEJONG_20251201_ATTACH_02` | 세종 | FACILITY | 5억↑ 60/60, ~5억 70/60 | 전 구간 85 | 수집 4.6 |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_03` | 세종 | SW | 5억↑ 60/2, ~5억 70/4 | 전 구간 88 | 수집 4.6 |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_03` | 세종 | SW (중소기업간 경쟁제품 비대상) | 5억↑ 60/2, ~5억 70/2 | 전 구간 85 | 수집 4.6 |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME` | 세종 | SW_SME (대상) | 5억↑ 60/4, ~5억 70/4 | 전 구간 88 | 수집 4.6 |
 | `SERVC_LOCAL_SEJONG_20251201_ATTACH_04` | 세종 | WASTE | 5억↑ 60/60, ~5억 70/60 | 전 구간 85 | 수집 4.6 |
 | `SERVC_LOCAL_SEJONG_20251201_ATTACH_4_2` | 세종 | WASTE_HOUSEHOLD | 5억↑ 60/60, ~5억 70/60 | 전 구간 85 | 수집 4.6 |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_05` | 세종 | FREIGHT | 5억↑ 60/2, ~5억 70/4 | 전 구간 88 | 수집 4.6 |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_05` | 세종 | LAND_TRANSPORT (비대상) | 5억↑ 60/2, ~5억 70/2 | 전 구간 85 | 수집 4.6 |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME` | 세종 | LAND_TRANSPORT_SME (대상) | 5억↑ 60/4, ~5억 70/4 | 전 구간 88 | 수집 4.6 |
 | `SERVC_LOCAL_GB_20260108_ATTACH_01` | 경북 | SIMPLE_LABOR | 5억↑ 50/20, ~5억 70/20 | 전 구간 95 | 수집 4.7 |
 | `SERVC_LOCAL_GB_20260108_ATTACH_02` | 경북 | SW | 5억↑ 60/4, ~5억 80/4 | 전 구간 88 | 수집 4.7 |
 | `SERVC_LOCAL_GB_20260108_ATTACH_03` | 경북 | WASTE | 5억↑ 50/4, ~5억 70/20 | 전 구간 95 | 수집 4.7 |
@@ -519,6 +521,8 @@ def resolve_local_service_type(
 | `SERVC_LOCAL_GN_20230105_ATTACH_01` | 경남 | GENERAL | 10억↑ 30/1, 5억~10억 50/2, 2억~5억 70/4, ~2억 90/20 | 30억↑ 85, 10억~30억 90, ~10억 95 | 수집 4.11 |
 | `SERVC_LOCAL_DAEGU_20260511_ATTACH_01` | 대구 | SIMPLE_LABOR | 2억↑ 60/60, ~2억 70/60 | 전 구간 85 | 수집 4.5 |
 | `SERVC_LOCAL_GG_20250808_ATTACH_1_2`~`_1_6` | 경기 | SW/WASTE/PASSENGER_TRANSPORT/INSURANCE/GENERAL | 별표별 4구간(1-5 보험 60/0.375·70/0.375) | 10억↑ 90, ~10억 95(보험 85) | 수집 4.12 |
+
+**정정 (2026-10-05)**: 세종 별표 3·5 의 k 는 가격 구간이 아니라 중소기업간 경쟁제품 해당 여부로 갈립니다. 최초 표는 `~5억 70/4` 처럼 가격 구간으로 적었고 통과점수도 88 하나로 적었습니다. 비대상 k 2·통과 85·하한율 80.495%, 대상(`_SME`) k 4·통과 88·하한율 84.995% 입니다(`sejong_body_2025.txt` 제7조, `byp3_sw_2025.txt:16-34`, `byp5_2025.txt:19-34`). 육상운송은 여객·화물 구분이 없어 `FREIGHT` 가 아니라 `LAND_TRANSPORT` 입니다.
 
 - 인천·제주·강원은 같은 별표 안에 일반 행과 단순노무 행이 함께 있으므로 `GENERAL` 과 `SIMPLE_LABOR` 규칙을 각각 만듭니다(제주·강원은 인천과 동일 값). 울산·충북도 단순노무 행이 있으므로 같은 방식으로 만듭니다.
 - 대구는 단순노무 외 일반용역 별표가 삭제됐으므로(`EXT/daegu/elis_daegu_main.txt:165-171`) **단순노무 외는 시·도 규칙을 만들지 않고 행안부 기본**으로 보냅니다.
