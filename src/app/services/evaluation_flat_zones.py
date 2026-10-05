@@ -188,18 +188,29 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
         None: _zone("0.8925", "45", _SRC_GB),
     },
     # 울산광역시 (공고 제2022-1100호)
-    "SERVC_LOCAL_ULSAN_20220810_ATTACH_01": _four_band_general(_SRC_ULSAN),
+    # 30억원 분할 키는 분할 전 10억원 이상 구간(None)과 같은 평탄 값을 씁니다.
+    "SERVC_LOCAL_ULSAN_20220810_ATTACH_01": {
+        **_four_band_general(_SRC_ULSAN),
+        Decimal("3000000000"): _zone("0.98", "20", _SRC_ULSAN),
+    },
     "SERVC_LOCAL_ULSAN_20220810_SIMPLE_LABOR": _four_band_simple_labor(_SRC_ULSAN),
     "SERVC_LOCAL_ULSAN_20220810_ATTACH_1_1": {
         Decimal("1000000000"): _zone("0.8825", "65", _SRC_ULSAN),
         Decimal("3000000000"): _zone("0.8825", "45", _SRC_ULSAN),
         None: _zone("0.8825", "20", _SRC_ULSAN),
     },
-    "SERVC_LOCAL_ULSAN_20220810_ATTACH_02": _four_band_general(_SRC_ULSAN),
+    "SERVC_LOCAL_ULSAN_20220810_ATTACH_02": {
+        **_four_band_general(_SRC_ULSAN),
+        Decimal("3000000000"): _zone("0.98", "20", _SRC_ULSAN),
+    },
     # 충청북도 (공고 제2023-1428호)
-    "SERVC_LOCAL_CB_20231020_ATTACH_01": _four_band_general(_SRC_CB),
+    "SERVC_LOCAL_CB_20231020_ATTACH_01": {
+        **_four_band_general(_SRC_CB),
+        Decimal("3000000000"): _zone("0.98", "20", _SRC_CB),
+    },
     "SERVC_LOCAL_CB_20231020_SIMPLE_LABOR": _four_band_simple_labor(_SRC_CB),
     # 전남광주통합특별시 (예규 제3호)
+    # 별표 2·3·5·6 의 10억·30억 분할 키는 분할 전 5억원 이상 구간(None)과 같은 평탄 값을 씁니다.
     "SERVC_LOCAL_JNGJ_20260716_ATTACH_01": {
         Decimal("200000000"): _zone("0.8825", "85", _SRC_JNGJ),
         Decimal("500000000"): _zone("0.8825", "65", _SRC_JNGJ),
@@ -208,11 +219,15 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
     "SERVC_LOCAL_JNGJ_20260716_ATTACH_02": {
         Decimal("200000000"): _zone("0.8825", "75", _SRC_JNGJ),
         Decimal("500000000"): _zone("0.8925", "65", _SRC_JNGJ),
+        Decimal("1000000000"): _zone("0.905", "45", _SRC_JNGJ),
+        Decimal("3000000000"): _zone("0.905", "45", _SRC_JNGJ),
         None: _zone("0.905", "45", _SRC_JNGJ),
     },
     "SERVC_LOCAL_JNGJ_20260716_ATTACH_03": {
         Decimal("200000000"): _zone("0.8825", "85", _SRC_JNGJ),
         Decimal("500000000"): _zone("0.8825", "75", _SRC_JNGJ),
+        Decimal("1000000000"): _zone("0.93", "25", _SRC_JNGJ),
+        Decimal("3000000000"): _zone("0.93", "25", _SRC_JNGJ),
         None: _zone("0.93", "25", _SRC_JNGJ),
     },
     "SERVC_LOCAL_JNGJ_20260716_ATTACH_04": {
@@ -223,9 +238,14 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
     "SERVC_LOCAL_JNGJ_20260716_ATTACH_05": {
         Decimal("200000000"): _zone("0.905", "75", _SRC_JNGJ),
         Decimal("500000000"): _zone("0.905", "65", _SRC_JNGJ),
+        Decimal("1000000000"): _zone("0.905", "55", _SRC_JNGJ),
+        Decimal("3000000000"): _zone("0.905", "55", _SRC_JNGJ),
         None: _zone("0.905", "55", _SRC_JNGJ),
     },
-    "SERVC_LOCAL_JNGJ_20260716_ATTACH_06": _four_band_general(_SRC_JNGJ),
+    "SERVC_LOCAL_JNGJ_20260716_ATTACH_06": {
+        **_four_band_general(_SRC_JNGJ),
+        Decimal("3000000000"): _zone("0.98", "20", _SRC_JNGJ),
+    },
     # 경상남도 (공고 제2023-23호)
     "SERVC_LOCAL_GN_20230105_ATTACH_01": _four_band_general(_SRC_GN),
     # 대구광역시 (예규 제238호) — 단순노무만. 원문 평탄 점수 미인쇄, 산식 대입값을 씁니다.
