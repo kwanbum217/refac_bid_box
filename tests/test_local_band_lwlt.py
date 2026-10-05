@@ -4,9 +4,11 @@
  - src/app/services/evaluation_rules.py 의 PriceBand.lwlt_rate 와 _apply_rule_lwlt
  - EXT/chungnam/chungnam_2026_1235.txt:2334-2366
    (충남 별표 5, 5억원 미만 87.995% / 5억원 이상 80.495%)
- - EXT/busan/busan_general_2025_1981.txt:149 (부산 별표 1 구간 하한율)
- - EXT/daejeon/daejeon_2025_9528.txt:262 (대전 별표 6 구간 하한율)
- - EXT/jeonbuk/jb_general_2024_10.tbl.txt:127-137,357-366,583-592,792-799
+ - EXT/busan/busan_general_2025_1981.txt:149
+   (부산 별표 1, 10억원 이상 30억원 미만 77.995% / 30억원 이상 72.995%)
+ - EXT/daejeon/daejeon_2025_9528.txt:262
+   (대전 별표 6, 소프트웨어·폐기물·기타 일반용역 10억원 이상 30억원 경계)
+ - EXT/jeonbuk/jb_general_2024_10.tbl.txt:127-145,357-366,583-592,792-799
  - docs/analysis/servc_formula_recover_c_20261005.md 4.1~4.5절
 
 평가 API 끝단은 mock 없이 TestClient 로 호출합니다. 예측 모델만 이 워크트리에 모델 파일이
@@ -42,9 +44,13 @@ CHUNGNAM_FISHERY_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_05"
 CHUNGNAM_FISHERY_METHOD = "적격심사제-어장정화·정비용역"
 CHUNGNAM_FACILITY_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_01"
 BUSAN_GENERAL_ID = "SERVC_LOCAL_BUSAN_20250626_ATTACH_01"
+BUSAN_SIMPLE_ID = "SERVC_LOCAL_BUSAN_20250626_SIMPLE_LABOR"
 DAEJEON_GENERAL_ID = "SERVC_LOCAL_DAEJEON_20260101_ATTACH_01"
+DAEJEON_SIMPLE_ID = "SERVC_LOCAL_DAEJEON_20260101_SIMPLE_LABOR"
 JEONBUK_GENERAL_ID = "SERVC_LOCAL_JEONBUK_20240118_ATTACH_01"
+JEONBUK_SIMPLE_ID = "SERVC_LOCAL_JEONBUK_20240118_SIMPLE_LABOR"
 SEOUL_GENERAL_ID = "SERVC_LOCAL_SEOUL_20240812_ATTACH_01"
+SEOUL_SIMPLE_ID = "SERVC_LOCAL_SEOUL_20240812_SIMPLE_LABOR"
 NATIONAL_FACILITY_ID = "SERVC_QUAL_POST_20260526_ATTACH_01"
 NATIONAL_FACILITY_METHOD = "적격심사제-시설분야용역 적격심사 추정가격 5억원 미만"
 
@@ -105,17 +111,16 @@ REGION_GENERAL_CASES = (
     (DAEJEON_GENERAL_ID, "daejeon_2025_9528.txt:39,68-71,260-265"),
     (
         JEONBUK_GENERAL_ID,
-        "jb_general_2024_10.tbl.txt:35-37,44-49,127-137,357-366,583-592,792-799",
+        "jb_general_2024_10.tbl.txt:35-37,44-49,127-145,357-366,583-592,792-799",
     ),
 )
 
 
 @pytest.mark.parametrize(("rule_id", "source_token"), REGION_GENERAL_CASES)
 def test_region_general_band_rates_are_sourced(rule_id: str, source_token: str) -> None:
-    """부산·대전·전북 단순노무 외 별표는 2억/5억/10억 경계 구간 하한율을 인쇄한다.
+    """부산·대전·전북 단순노무 외 별표는 5구간 하한율을 인쇄한다.
 
-    10억원 이상 구간은 원문이 30억원 경계로 72.995/77.995% 로 갈려 단일 구간값이 없어
-    넣지 않는다(추측 금지). 그 구간은 규칙 대표값을 쓴다.
+    10억원 이상은 30억원 경계로 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈린다.
     """
     rule = _rule(rule_id)
     assert rule.price_bands is not None
@@ -123,10 +128,13 @@ def test_region_general_band_rates_are_sourced(rule_id: str, source_token: str) 
         Decimal("87.745"),
         Decimal("86.745"),
         Decimal("85.495"),
-        None,
+        Decimal("77.995"),
+        Decimal("72.995"),
     ]
     for band in rule.price_bands:
         assert source_token in (band.source or "")
+    # 규칙 대표값은 분할 전과 같은 87.995 로 두어 대표값 경로 자체는 바뀌지 않는다.
+    assert rule.lwlt_rate == Decimal("87.995")
 
 
 # --------------------------------------------------------------------------- #
@@ -166,10 +174,19 @@ REGION_PRICE_CASES = (
     (BUSAN_GENERAL_ID, "26", "부산광역시", "150000000", "87.745"),
     (BUSAN_GENERAL_ID, "26", "부산광역시", "300000000", "86.745"),
     (BUSAN_GENERAL_ID, "26", "부산광역시", "700000000", "85.495"),
+    (BUSAN_GENERAL_ID, "26", "부산광역시", "2000000000", "77.995"),
+    (BUSAN_GENERAL_ID, "26", "부산광역시", "3000000000", "72.995"),
+    (BUSAN_GENERAL_ID, "26", "부산광역시", "4000000000", "72.995"),
     (DAEJEON_GENERAL_ID, "30", "대전광역시", "150000000", "87.745"),
     (DAEJEON_GENERAL_ID, "30", "대전광역시", "700000000", "85.495"),
+    (DAEJEON_GENERAL_ID, "30", "대전광역시", "2000000000", "77.995"),
+    (DAEJEON_GENERAL_ID, "30", "대전광역시", "3000000000", "72.995"),
+    (DAEJEON_GENERAL_ID, "30", "대전광역시", "4000000000", "72.995"),
     (JEONBUK_GENERAL_ID, "52", "전북특별자치도", "300000000", "86.745"),
     (JEONBUK_GENERAL_ID, "52", "전북특별자치도", "700000000", "85.495"),
+    (JEONBUK_GENERAL_ID, "52", "전북특별자치도", "2000000000", "77.995"),
+    (JEONBUK_GENERAL_ID, "52", "전북특별자치도", "3000000000", "72.995"),
+    (JEONBUK_GENERAL_ID, "52", "전북특별자치도", "4000000000", "72.995"),
 )
 
 
@@ -182,20 +199,111 @@ def test_region_general_band_rate_applied(
     assert result.rule is not None
     assert result.rule.rule_id == rule_id
     assert result.effective_lwlt_rate == Decimal(expected_rate)
+    assert result.rate_source == "RULE_DEFAULT"
 
 
-def test_region_general_open_band_keeps_rule_default() -> None:
-    """10억원 이상 구간은 원문이 30억원 경계로 갈려 구간값을 넣지 않아 대표값을 쓴다."""
+SPLIT_LABEL_CASES = (
+    (BUSAN_GENERAL_ID, "26", "부산광역시", "2000000000", "77.995", "30억원 미만 10억원 이상"),
+    (BUSAN_GENERAL_ID, "26", "부산광역시", "3000000000", "72.995", "추정가격 30억원 이상"),
+    (DAEJEON_GENERAL_ID, "30", "대전광역시", "2000000000", "77.995", "30억원 미만 10억원 이상"),
+    (DAEJEON_GENERAL_ID, "30", "대전광역시", "4000000000", "72.995", "추정가격 30억원 이상"),
+    (JEONBUK_GENERAL_ID, "52", "전북특별자치도", "2000000000", "77.995", "30억원 미만 10억원 이상"),
+    (JEONBUK_GENERAL_ID, "52", "전북특별자치도", "3000000000", "72.995", "추정가격 30억원 이상"),
+)
+
+
+@pytest.mark.parametrize(
+    ("rule_id", "code", "name", "price", "expected_rate", "band_label"), SPLIT_LABEL_CASES
+)
+def test_region_general_30eok_split_names_printed_band(
+    rule_id: str, code: str, name: str, price: str, expected_rate: str, band_label: str
+) -> None:
+    """30억원 경계 분할값은 경고에서도 원문 구간 라벨과 함께 확인된다.
+
+    경계값(정확히 30억원)은 상위 구간(이상 쪽)에 속한다.
+    """
     result = _resolve(
         method="시설분야용역 적격심사 추정가격 5억원 이상",
-        region_code="26",
-        region_name="부산광역시",
-        estimated_price="2000000000",
+        region_code=code,
+        region_name=name,
+        estimated_price=price,
     )
     assert result.rule is not None
-    assert result.rule.rule_id == BUSAN_GENERAL_ID
-    assert result.effective_lwlt_rate == result.rule.lwlt_rate
-    assert any("별표 기본값" in warning for warning in result.warnings)
+    assert result.rule.rule_id == rule_id
+    assert result.effective_lwlt_rate == Decimal(expected_rate)
+    assert any(
+        f"별표 구간 하한율({expected_rate}%" in warning and band_label in warning
+        for warning in result.warnings
+    )
+
+
+REGION_SIMPLE_LABOR_CASES = (
+    (BUSAN_SIMPLE_ID, "26", "부산광역시"),
+    (DAEJEON_SIMPLE_ID, "30", "대전광역시"),
+    (JEONBUK_SIMPLE_ID, "52", "전북특별자치도"),
+)
+
+
+@pytest.mark.parametrize(("rule_id", "code", "name"), REGION_SIMPLE_LABOR_CASES)
+def test_region_simple_labor_rule_rate_is_source_value(rule_id: str, code: str, name: str) -> None:
+    """부산·대전·전북 단순노무 별표의 규칙 단위 하한율은 원문 87.745% 다.
+
+    단순노무 행은 구간 하한율을 따로 인쇄하지 않아 구간 선택 없이 규칙 대표값을 쓴다.
+    """
+    rule = _rule(rule_id)
+    assert rule.lwlt_rate == Decimal("87.745")
+    assert all(band.lwlt_rate is None for band in rule.price_bands or ())
+    result = _resolve(
+        method="단순노무용역 적격심사 추정가격 5억원 미만",
+        region_code=code,
+        region_name=name,
+        estimated_price="300000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == rule_id
+    assert result.effective_lwlt_rate == Decimal("87.745")
+    assert result.rate_source == "RULE_DEFAULT"
+    assert any("별표 기본값(87.745%)" in warning for warning in result.warnings)
+
+
+def test_region_simple_labor_rate_same_at_30eok_and_above() -> None:
+    """단순노무 행은 30억원 경계 분할 없이 추정가격 40억원도 87.745% 다."""
+    result = _resolve(
+        method="단순노무용역 적격심사 추정가격 5억원 미만",
+        region_code="26",
+        region_name="부산광역시",
+        estimated_price="4000000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == BUSAN_SIMPLE_ID
+    assert result.effective_lwlt_rate == Decimal("87.745")
+
+
+def test_seoul_general_keeps_four_bands_and_rule_default() -> None:
+    """서울은 30억 분할 대상이 아니어서 20억·40억 모두 규칙 대표값과 기본값 경고를 쓴다."""
+    rule = _rule(SEOUL_GENERAL_ID)
+    assert rule.price_bands is not None
+    assert len(rule.price_bands) == 4
+    assert [band.lwlt_rate for band in rule.price_bands] == [None, None, None, None]
+    for price in ("2000000000", "4000000000"):
+        result = _resolve(
+            method="시설분야용역 적격심사 추정가격 5억원 이상",
+            region_code="11",
+            region_name="서울특별시",
+            estimated_price=price,
+        )
+        assert result.rule is not None
+        assert result.rule.rule_id == SEOUL_GENERAL_ID
+        assert result.effective_lwlt_rate == Decimal("87.995")
+        assert result.rate_source == "RULE_DEFAULT"
+        assert any("별표 기본값" in warning for warning in result.warnings)
+        assert not any("구간 하한율" in warning for warning in result.warnings)
+
+
+def test_seoul_simple_labor_rate_unchanged() -> None:
+    """서울 단순노무 별표 대표값은 이번 변경 대상이 아니어서 87.995% 그대로다."""
+    rule = _rule(SEOUL_SIMPLE_ID)
+    assert rule.lwlt_rate == Decimal("87.995")
 
 
 # --------------------------------------------------------------------------- #
@@ -375,6 +483,7 @@ def _create_local_bid(
     presmpt_prce: int | None,
     announced_rate: str | None = None,
     business_budget: str | None = None,
+    institution_name: str = "충청남도",
 ) -> BidAnnouncement:
     data: dict[str, str] = {
         "prearngPrceDcsnMthdNm": "복수예가",
@@ -394,7 +503,7 @@ def _create_local_bid(
         bid_ntce_no="EVAL-BAND-LWLT-001",
         bid_ntce_ord="000",
         ntce_instt_nm="테스트 공고기관",
-        dminstt_nm="충청남도 본청",
+        dminstt_nm=f"{institution_name} 본청",
         base_amount=presmpt_prce,
         presmpt_prce=presmpt_prce,
         bid_ntce_dt=utcnow(),
@@ -461,6 +570,167 @@ def test_chungnam_band_lwlt_through_analyze_api(
 
     assert payload["status"] == "success", payload.get("blocked_reason")
     assert payload["rule_id"] == CHUNGNAM_FISHERY_ID
+    assert payload["lower_bound_rate"] == pytest.approx(expected_rate)
+    assert any(
+        f"낙찰하한율 {expected_rate}% 적용 최저 투찰금액: {expected_min_bid:,}원" in warning
+        for warning in payload["warnings"]
+    )
+
+
+# (지역명, 낙찰방법명, 규칙 ID, 추정가격, 투찰금액, 기대 하한율, 기대 최저투찰금액)
+# 부산·대전·전북 일반 띠 10억원 이상은 30억원 경계로 77.995/72.995% 이고,
+# 단순노무 띠는 규칙 대표값 87.745% 다. 최저투찰금액은 추정가격 x 하한율 그대로다.
+REGION_SPLIT_E2E_CASES = (
+    (
+        "부산광역시",
+        "시설분야용역 적격심사 추정가격 5억원 이상",
+        BUSAN_GENERAL_ID,
+        2_000_000_000,
+        1_700_000_000,
+        77.995,
+        1_559_900_000,
+    ),
+    (
+        "부산광역시",
+        "시설분야용역 적격심사 추정가격 5억원 이상",
+        BUSAN_GENERAL_ID,
+        3_000_000_000,
+        2_600_000_000,
+        72.995,
+        2_189_850_000,
+    ),
+    (
+        "부산광역시",
+        "시설분야용역 적격심사 추정가격 5억원 이상",
+        BUSAN_GENERAL_ID,
+        4_000_000_000,
+        3_500_000_000,
+        72.995,
+        2_919_800_000,
+    ),
+    (
+        "부산광역시",
+        "단순노무용역 적격심사 추정가격 5억원 미만",
+        BUSAN_SIMPLE_ID,
+        2_000_000_000,
+        1_800_000_000,
+        87.745,
+        1_754_900_000,
+    ),
+    (
+        "대전광역시",
+        "소프트웨어용역 적격심사 추정가격 5억원 이상",
+        DAEJEON_GENERAL_ID,
+        2_000_000_000,
+        1_700_000_000,
+        77.995,
+        1_559_900_000,
+    ),
+    (
+        "대전광역시",
+        "소프트웨어용역 적격심사 추정가격 5억원 이상",
+        DAEJEON_GENERAL_ID,
+        3_000_000_000,
+        2_600_000_000,
+        72.995,
+        2_189_850_000,
+    ),
+    (
+        "대전광역시",
+        "소프트웨어용역 적격심사 추정가격 5억원 이상",
+        DAEJEON_GENERAL_ID,
+        4_000_000_000,
+        3_500_000_000,
+        72.995,
+        2_919_800_000,
+    ),
+    (
+        "대전광역시",
+        "단순노무용역 적격심사 추정가격 5억원 미만",
+        DAEJEON_SIMPLE_ID,
+        2_000_000_000,
+        1_800_000_000,
+        87.745,
+        1_754_900_000,
+    ),
+    (
+        "전북특별자치도",
+        "시설분야용역 적격심사 추정가격 5억원 이상",
+        JEONBUK_GENERAL_ID,
+        2_000_000_000,
+        1_700_000_000,
+        77.995,
+        1_559_900_000,
+    ),
+    (
+        "전북특별자치도",
+        "시설분야용역 적격심사 추정가격 5억원 이상",
+        JEONBUK_GENERAL_ID,
+        3_000_000_000,
+        2_600_000_000,
+        72.995,
+        2_189_850_000,
+    ),
+    (
+        "전북특별자치도",
+        "시설분야용역 적격심사 추정가격 5억원 이상",
+        JEONBUK_GENERAL_ID,
+        4_000_000_000,
+        3_500_000_000,
+        72.995,
+        2_919_800_000,
+    ),
+    (
+        "전북특별자치도",
+        "단순노무용역 적격심사 추정가격 5억원 미만",
+        JEONBUK_SIMPLE_ID,
+        2_000_000_000,
+        1_800_000_000,
+        87.745,
+        1_754_900_000,
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    (
+        "region_name",
+        "method",
+        "expected_rule_id",
+        "presmpt_prce",
+        "bid_amount",
+        "expected_rate",
+        "expected_min_bid",
+    ),
+    REGION_SPLIT_E2E_CASES,
+)
+def test_region_split_lwlt_through_analyze_api(
+    client,
+    isolated_db,
+    as_user,
+    region_name: str,
+    method: str,
+    expected_rule_id: str,
+    presmpt_prce: int,
+    bid_amount: int,
+    expected_rate: float,
+    expected_min_bid: int,
+) -> None:
+    """부산·대전·전북 공고가 30억 분할·단순노무 하한율로 최저투찰금액까지 계산한다."""
+    as_user(10)
+    _create_institution(isolated_db, code=API_INSTITUTION_CODE, toplvl_nm=region_name)
+    bid = _create_local_bid(
+        isolated_db,
+        institution_code=API_INSTITUTION_CODE,
+        institution_name=region_name,
+        method=method,
+        presmpt_prce=presmpt_prce,
+    )
+
+    payload = _analyze(client, bid.id, bid_amount)
+
+    assert payload["status"] == "success", payload.get("blocked_reason")
+    assert payload["rule_id"] == expected_rule_id
     assert payload["lower_bound_rate"] == pytest.approx(expected_rate)
     assert any(
         f"낙찰하한율 {expected_rate}% 적용 최저 투찰금액: {expected_min_bid:,}원" in warning

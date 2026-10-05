@@ -83,7 +83,7 @@ _SRC_CHUNGNAM_05 = (
 )
 _SRC_JEONBUK = (
     f"{_RECOVER}:220-226 (4.5 전북특별자치도 별표 1 평탄 문장); "
-    "EXT/jeonbuk/jb_general_2024_10.tbl.txt:127-137,357-366,583-592,792-799"
+    "EXT/jeonbuk/jb_general_2024_10.tbl.txt:127-145,357-366,583-592,792-799"
 )
 _SRC_SEJONG_SW = (
     f"{_COLLECTION}:225-247 (4.6 세종특별자치시 별표 2~5); "
@@ -112,6 +112,20 @@ def _four_band_simple_labor(source: str) -> dict[Decimal | None, FlatZone]:
         Decimal("500000000"): _zone("0.8825", "65", source),
         Decimal("1000000000"): _zone("0.8825", "45", source),
         None: _zone("0.8825", "25", source),
+    }
+
+
+def _five_band_general(source: str) -> dict[Decimal | None, FlatZone]:
+    """10억원 이상을 30억원 경계로 나눈 5구간의 일반 산식 평탄.
+
+    30억원 미만·이상 두 구간 모두 원래 10억원 이상 구간의 평탄(98% -> 20점)을 씁니다.
+    """
+    return {
+        Decimal("200000000"): _zone("0.8825", "85", source),
+        Decimal("500000000"): _zone("0.8925", "65", source),
+        Decimal("1000000000"): _zone("0.905", "45", source),
+        Decimal("3000000000"): _zone("0.98", "20", source),
+        None: _zone("0.98", "20", source),
     }
 
 
@@ -242,11 +256,14 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
     # 서울특별시 (시행 2024-08-12)
     "SERVC_LOCAL_SEOUL_20240812_ATTACH_01": _four_band_general(_SRC_SEOUL),
     "SERVC_LOCAL_SEOUL_20240812_SIMPLE_LABOR": _four_band_simple_labor(_SRC_SEOUL),
-    # 부산광역시 (공고 제2025-1981호)
-    "SERVC_LOCAL_BUSAN_20250626_ATTACH_01": _four_band_general(_SRC_BUSAN),
+    # 부산광역시 (공고 제2025-1981호) — 10억원 이상을 30억원 경계로 나눠 두 구간 모두 같은 평탄
+    "SERVC_LOCAL_BUSAN_20250626_ATTACH_01": _five_band_general(_SRC_BUSAN),
     "SERVC_LOCAL_BUSAN_20250626_SIMPLE_LABOR": _four_band_simple_labor(_SRC_BUSAN),
-    # 대전광역시 (공고 제2025-9528호) — 10억원 이상 소프트웨어류에만 평탄 문장이 인쇄됨
+    # 대전광역시 (공고 제2025-9528호) — 10억원 이상 소프트웨어류에만 평탄 문장이 인쇄됨.
+    # 30억원 이상 구간은 원문 문장이 30억원 미만을 가리키지만, 분할 전 동작을 유지하도록
+    # 두 구간에 같은 평탄을 둡니다.
     "SERVC_LOCAL_DAEJEON_20260101_ATTACH_01": {
+        Decimal("3000000000"): _zone("0.98", "20", _SRC_DAEJEON),
         None: _zone("0.98", "20", _SRC_DAEJEON),
     },
     # 충청남도 (공고 2026-1235호) — 점수 미인쇄, 산식 대입값
@@ -262,8 +279,8 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
         Decimal("500000000"): _zone("0.94", "55", _SRC_CHUNGNAM_05),
         None: _zone("0.955", "45", _SRC_CHUNGNAM_05),
     },
-    # 전북특별자치도 (부칙 제2024-10호)
-    "SERVC_LOCAL_JEONBUK_20240118_ATTACH_01": _four_band_general(_SRC_JEONBUK),
+    # 전북특별자치도 (부칙 제2024-10호) — 10억원 이상을 30억원 경계로 나눠 두 구간 모두 같은 평탄
+    "SERVC_LOCAL_JEONBUK_20240118_ATTACH_01": _five_band_general(_SRC_JEONBUK),
     "SERVC_LOCAL_JEONBUK_20240118_SIMPLE_LABOR": _four_band_simple_labor(_SRC_JEONBUK),
 }
 

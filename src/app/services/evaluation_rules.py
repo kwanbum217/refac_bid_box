@@ -1541,11 +1541,15 @@ _SRC_SEOUL = (
 )
 _SRC_BUSAN = (
     f"{_SRC_RECOVER}:105-132 (부산광역시 일반용역 적격심사 세부기준, 공고 제2025-1981호, "
-    "시행 2025-06-26, 별표 1); EXT/busan/busan_general_2025_1981.txt:57,82-84,149-150"
+    "시행 2025-06-26, 별표 1); EXT/busan/busan_general_2025_1981.txt:57,82-84,149-150 "
+    "(149 입찰가격 평가: 단순노무 외 10억원 이상 30억원 미만 77.995%, 30억원 이상 72.995%; "
+    "단순노무 87.745%)"
 )
 _SRC_DAEJEON = (
     f"{_SRC_RECOVER}:134-168 (대전광역시 일반용역 적격심사 세부기준, 공고 제2025-9528호, "
-    "시행 2026-01-01, 별표 6); EXT/daejeon/daejeon_2025_9528.txt:39,68-71,260-265"
+    "시행 2026-01-01, 별표 6); EXT/daejeon/daejeon_2025_9528.txt:39,68-71,260-265 "
+    "(262 입찰가격 평가: 소프트웨어·폐기물·기타 일반용역 10억원 이상 30억원 미만 77.995%, "
+    "30억원 이상 72.995%; 청소·시설물경비·시설물관리 87.745%)"
 )
 _SRC_CHUNGNAM_ATTACH_01 = (
     f"{_SRC_RECOVER}:170-202 (충청남도 일반용역 적격심사 세부기준, 공고 2026-1235호, "
@@ -1565,7 +1569,9 @@ _SRC_CHUNGNAM_ATTACH_05 = (
 _SRC_JEONBUK = (
     f"{_SRC_RECOVER}:204-230 (전북특별자치도 일반용역 적격심사 세부기준, 부칙 제2024-10호, "
     "시행 2024-01-18, 별표 1); EXT/jeonbuk/jb_general_2024_10.tbl.txt:"
-    "35-37,44-49,127-137,357-366,583-592,792-799"
+    "35-37,44-49,127-145,357-366,583-592,792-799 "
+    "(138-145 입찰가격 평가: 단순노무 외 10억원 이상 30억원 미만 77.995%, 30억원 이상 "
+    "72.995%; 단순노무 87.745%)"
 )
 
 # 세종 별표 3(소프트웨어)·별표 5(육상운송)는 같은 별표 안에서 중소기업자간 경쟁제품
@@ -1670,6 +1676,33 @@ def _four_band_price(
         _local_price_band("500000000", "70", k_5, "5억원 미만 2억원 이상", source),
         _local_price_band("1000000000", "50", k_10, "10억원 미만 5억원 이상", source),
         _local_price_band(None, "30", k_top, "추정가격 10억원 이상", source),
+    )
+    if lwlt_rates is None:
+        return bands
+    return tuple(
+        replace(band, lwlt_rate=Decimal(rate) if rate is not None else None)
+        for band, rate in zip(bands, lwlt_rates, strict=True)
+    )
+
+
+def _five_band_price(
+    source: str,
+    *,
+    lwlt_rates: tuple[str | None, str | None, str | None, str | None, str | None] | None = None,
+) -> tuple[PriceBand, ...]:
+    """10억원 이상을 30억원 경계로 나눈 5구간 B·k. 부산·대전·전북 일반 띠 전용입니다.
+
+    원문은 10억원 이상 행을 30억원 미만 77.995%, 30억원 이상 72.995% 로 나눠 인쇄합니다.
+    B·k·기준비율은 나눈 두 구간 모두 10억원 이상 값(B 30·k 1·0.88)입니다. 서울 등 나머지
+    시·도는 이 분할이 없어 기존 _four_band_price 를 그대로 씁니다.
+    lwlt_rates 순서는 (2억원 미만, 5억원 미만, 10억원 미만, 30억원 미만, 30억원 이상)입니다.
+    """
+    bands = (
+        _local_price_band("200000000", "90", "20", "추정가격 2억원 미만", source),
+        _local_price_band("500000000", "70", "4", "5억원 미만 2억원 이상", source),
+        _local_price_band("1000000000", "50", "2", "10억원 미만 5억원 이상", source),
+        _local_price_band("3000000000", "30", "1", "30억원 미만 10억원 이상", source),
+        _local_price_band(None, "30", "1", "추정가격 30억원 이상", source),
     )
     if lwlt_rates is None:
         return bands
@@ -2268,10 +2301,12 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2025-06-26",
         source=_SRC_BUSAN,
         description="부산광역시 일반용역 적격심사 (별표 1, 단순노무 외)",
-        # 별표 1 입찰가격 평가는 구간마다 낙찰하한율을 인쇄합니다(원문 :149).
-        # 10억원 이상 구간은 원문이 30억원 경계로 72.995/77.995% 로 갈려 단일 구간값이
-        # 없으므로 넣지 않고 규칙 대표값을 쓰게 둡니다(추측 금지).
-        price_bands=_four_band_price(_SRC_BUSAN, lwlt_rates=("87.745", "86.745", "85.495", None)),
+        # 별표 1 입찰가격 평가는 구간마다 낙찰하한율을 인쇄합니다(원문 :149). 10억원 이상은
+        # 30억원 경계로 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
+        price_bands=_five_band_price(
+            _SRC_BUSAN,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
         threshold_bands=_threshold_30_10(_SRC_BUSAN),
     ),
     _local_rule(
@@ -2282,8 +2317,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2025-06-26",
         source=_SRC_BUSAN,
         description="부산광역시 일반용역 적격심사 (별표 1, 단순노무)",
+        # 단순노무 행의 낙찰하한율은 구간 구분 없이 87.745% 입니다(원문 :149).
         price_bands=_four_band_price(_SRC_BUSAN, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_BUSAN),
+        lwlt_rate="87.745",
     ),
     # 대전광역시 (공고 제2025-9528호, 시행 2026-01-01) — 별표 6 이 두 행 묶음으로 인쇄됩니다.
     _local_rule(
@@ -2295,9 +2332,12 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         source=_SRC_DAEJEON,
         description="대전광역시 일반용역 적격심사 (소프트웨어·폐기물처리·기타 일반용역)",
         # 별표 6 소프트웨어·폐기물처리·기타 일반용역 행은 구간마다 낙찰하한율을
-        # 인쇄합니다(원문 :262). 10억원 이상 행은 원문이 30억원 경계로
-        # 72.995/77.995% 로 갈려 단일 구간값이 없어 규칙 대표값을 쓰게 둡니다.
-        price_bands=_four_band_price(_SRC_DAEJEON, lwlt_rates=("87.745", "86.745", "85.495", None)),
+        # 인쇄합니다(원문 :262). 10억원 이상은 30억원 경계로 30억원 미만 77.995%,
+        # 30억원 이상 72.995% 로 갈립니다.
+        price_bands=_five_band_price(
+            _SRC_DAEJEON,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
         threshold_bands=_threshold_30_10(_SRC_DAEJEON),
     ),
     _local_rule(
@@ -2308,8 +2348,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2026-01-01",
         source=_SRC_DAEJEON,
         description="대전광역시 일반용역 적격심사 (청소·시설물경비·시설물관리용역)",
+        # 청소·시설물경비·시설물관리 행의 낙찰하한율은 구간 구분 없이 87.745% 입니다(원문 :262).
         price_bands=_four_band_price(_SRC_DAEJEON, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_DAEJEON),
+        lwlt_rate="87.745",
     ),
     # 충청남도 (공고 2026-1235호, 시행 2026-07-13) — 별표 1·2의1·5 만 등록합니다.
     # 별표 2·3·4 는 B(5억 축)와 k(고시금액 축)가 결합 인쇄되지 않아 짝짓기를 추론하지 않고
@@ -2415,10 +2457,13 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-01-18",
         source=_SRC_JEONBUK,
         description="전북특별자치도 일반용역 적격심사 (별표 1, 단순노무 외)",
-        # 별표 1 단순노무 외 행은 구간마다 낙찰하한율을 인쇄합니다(원문 :127-137,
-        # :357-366, :583-592, :792-799). 10억원 이상 구간은 원문이 30억원 경계로
-        # 72.995/77.995% 로 갈려 단일 구간값이 없어 규칙 대표값을 쓰게 둡니다.
-        price_bands=_four_band_price(_SRC_JEONBUK, lwlt_rates=("87.745", "86.745", "85.495", None)),
+        # 별표 1 단순노무 외 행은 구간마다 낙찰하한율을 인쇄합니다(원문 :127-145,
+        # :357-366, :583-592, :792-799). 10억원 이상은 30억원 경계로 30억원 미만
+        # 77.995%, 30억원 이상 72.995% 로 갈립니다.
+        price_bands=_five_band_price(
+            _SRC_JEONBUK,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
         threshold_bands=_threshold_30_10(_SRC_JEONBUK),
     ),
     _local_rule(
@@ -2429,8 +2474,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-01-18",
         source=_SRC_JEONBUK,
         description="전북특별자치도 일반용역 적격심사 (별표 1, 단순노무)",
+        # 단순노무 행의 낙찰하한율은 구간 구분 없이 87.745% 입니다(원문 :140-143).
         price_bands=_four_band_price(_SRC_JEONBUK, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_JEONBUK),
+        lwlt_rate="87.745",
     ),
 )
 
