@@ -271,6 +271,74 @@ def test_multi_option_reputation_codes_are_not_guessed(client, isolated_db, as_u
     assert any("평점 선택이 필요한" in warning for warning in payload["warnings"])
 
 
+def test_member_reputation_ratings_are_autofilled(client, isolated_db, as_user):
+    """회원이 고른 항목별 평점(dict)은 그대로 추천 계산에 자동 기입되고 경고가 없다."""
+    as_user(10)
+    _add_member_facts(
+        isolated_db,
+        10,
+        credit_grade=MEMBER_CREDIT_GRADE,
+        reputation_items={"sme_consortium": 1.5, "job_creation": 2.0},
+    )
+    bid = _create_bid(isolated_db)
+
+    payload = _recommend(client, bid, overrides=_registry_overrides()).json()
+
+    assert payload["status"] == "success", payload
+    assert payload["reputation_grade_required"] == []
+    items = {item["item_key"]: item["score"] for item in payload["non_price_items"]}
+    # 수행능력 20 + 경영상태 10 + 근로조건 10 + 신인도(1.5 + 2.0) = 43.5
+    assert items["reputation"] == "3.5"
+    assert payload["non_price_score"] == "43.5"
+    assert not any("평점 선택이 필요한" in warning for warning in payload["warnings"])
+
+
+def test_request_reputation_override_wins_per_item(client, isolated_db, as_user):
+    """요청 수정값 reputation_items 는 항목별로 저장 평점을 덮고, 나머지 항목은 저장값을 쓴다."""
+    as_user(10)
+    _add_member_facts(
+        isolated_db,
+        10,
+        credit_grade=MEMBER_CREDIT_GRADE,
+        reputation_items={"sme_consortium": 1.5, "job_creation": 2.0},
+    )
+    bid = _create_bid(isolated_db)
+
+    payload = _recommend(
+        client,
+        bid,
+        overrides=_registry_overrides(reputation_items={"sme_consortium": 1.0}),
+    ).json()
+
+    assert payload["status"] == "success", payload
+    assert payload["reputation_grade_required"] == []
+    items = {item["item_key"]: item["score"] for item in payload["non_price_items"]}
+    # 수정값 sme_consortium 1.0 이 저장값 1.5 를 덮고, job_creation 2.0 은 저장값이 남는다.
+    assert items["reputation"] == "3"
+
+
+def test_request_override_clears_reputation_grade_required(client, isolated_db, as_user):
+    """구형 코드 목록의 '평점 선택 필요'는 요청 수정값이 그 항목을 채우면 사라진다."""
+    as_user(10)
+    _add_member_facts(
+        isolated_db,
+        10,
+        credit_grade=MEMBER_CREDIT_GRADE,
+        reputation_items=["disabled_company", "sme_consortium"],
+    )
+    bid = _create_bid(isolated_db)
+
+    payload = _recommend(
+        client,
+        bid,
+        overrides=_registry_overrides(reputation_items={"sme_consortium": 1.0}),
+    ).json()
+
+    assert payload["status"] == "success", payload
+    assert payload["reputation_grade_required"] == []
+    assert not any("평점 선택이 필요한" in warning for warning in payload["warnings"])
+
+
 # --------------------------------------------------------------------------- #
 # 2. 세 금액: AI 예측가와 최저가·최상가
 # --------------------------------------------------------------------------- #
@@ -484,9 +552,19 @@ class TestComputePriceBounds:
 
 
 class TestConvertReputationCodes:
-    """신인도 코드 환산은 선택지가 하나인 항목만 값을 만든다."""
+    """신인도 원자료 환산: dict 는 저장 평점을 쓰고, 구형 list 는 단일 선택지만 환산한다."""
 
     def test_single_option_is_converted_and_multi_option_is_flagged(self) -> None:
         result = convert_reputation_codes(["disabled_company", "sme_consortium", "unknown_code"])
         assert result.values == {"disabled_company": 1.5}
         assert result.needs_grade_selection == ["sme_consortium", "unknown_code"]
+
+    def test_stored_ratings_are_used_for_multi_option_and_range(self) -> None:
+        result = convert_reputation_codes({"sme_consortium": 1.5, "job_creation": 2.0})
+        assert result.values == {"sme_consortium": 1.5, "job_creation": 2.0}
+        assert result.needs_grade_selection == []
+
+    def test_unknown_code_in_stored_ratings_is_flagged(self) -> None:
+        result = convert_reputation_codes({"sme_consortium": 1.5, "unknown_code": 1.0})
+        assert result.values == {"sme_consortium": 1.5}
+        assert result.needs_grade_selection == ["unknown_code"]

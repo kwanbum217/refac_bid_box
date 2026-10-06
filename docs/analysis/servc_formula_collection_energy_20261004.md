@@ -62,8 +62,8 @@
 | 최종공포일 | 2025.08.20 | `kepcoec_2025_lines.txt:6` |
 | 게시일 | 2026-01-26 (사전정보공표목록) | 출처 URL |
 | 출처 URL | `https://www.kepco-enc.com/portal/advinPblct/DownloadAtchfile?dtl_sn=3164&atch_file_sn=3216` | 사전정보공표 |
-| 원본 경로 | `.orca/capsules/task_cfe0a9372ae4/external/kepcoec/kepcoec_yongyeok_2025.hwpx` | 내려받은 원본 |
-| 추출문 | `.orca/capsules/task_cfe0a9372ae4/external/kepcoec/kepcoec_2025_lines.txt` | 1,863행 |
+| 원본 경로 | `data/sources/qualification/files/kepcoec/780ab4b1fb04_kepcoec_yongyeok_2025.hwpx` | 내려받은 원본 |
+| 추출문 | `data/sources/qualification/files/kepcoec/162b12f697ca_kepcoec_2025_lines.txt` | 1,863행 |
 | 통과점수 | 제12조① 종합평점 85점. 다만 소프트웨어용역의 중소기업자간 경쟁제품 및 여객 육상운송용역은 88점, 수주계약 하도급 조건·건설공사 하도급심사 대상은 92점 | `kepcoec_2025_lines.txt:77` |
 | 확인 날짜 | 2026-10-04 | |
 
@@ -110,8 +110,8 @@
 | 문서명 | 용역적격심사 세부기준 | `kwater_yongyeok_qual.txt:1` |
 | 차수·개정 | 38차 / 개정 2024-11-25 | `kwater_yongyeok_qual.txt:5` |
 | 출처 URL | `https://ebid.kwater.or.kr/sc/file/downloadAtchFileOne.do?xmlValue={"atchflId":"FMS25062514221170521","fileSeq":1}` | ebid.kwater.or.kr |
-| 원본 경로 | `.orca/capsules/task_cfe0a9372ae4/external/kwater/kwater_yongyeok_qual.bin` | 내려받은 원본 |
-| 추출문 | `.orca/capsules/task_cfe0a9372ae4/external/kwater/kwater_yongyeok_qual.txt` | 2,661행 |
+| 원본 경로 | `data/sources/qualification/files/kwater/e9b383e9b056_kwater_yongyeok_qual.bin` | 내려받은 원본 |
+| 추출문 | `data/sources/qualification/files/kwater/5df69fd2a296_kwater_yongyeok_qual.txt` | 2,661행 |
 | 통과점수 | 제11조① 종합평점 85점. 다만 추정가격 10억원 이상 기술용역은 92점, 10억원 미만 기술용역은 95점 | `kwater_yongyeok_qual.txt:337`, `:339` |
 | 확인 날짜 | 2026-10-04 | |
 
@@ -166,8 +166,8 @@
 | 문서명 | 일반용역적격심사세부기준 | `khnp_yongyeok_qual.txt:1` |
 | 마지막 부칙 | 2020.07.20 개정, 시행 2020.08.01 | `khnp_yongyeok_qual.txt:493`, `:495` |
 | 출처 URL | `https://ebiz.khnp.co.kr/download/non-encryption.do?id=91652c48-0a68-4d53-8a00-709fe267aa40-file` | ebiz.khnp.co.kr |
-| 원본 경로 | `.orca/capsules/task_cfe0a9372ae4/external/khnp/khnp_yongyeok_qual.bin` | 내려받은 원본(68쪽) |
-| 추출문 | `.orca/capsules/task_cfe0a9372ae4/external/khnp/khnp_yongyeok_qual.txt` | 7,602행 |
+| 원본 경로 | `data/sources/qualification/files/khnp/6047fce54062_khnp_yongyeok_qual.bin` | 내려받은 원본(68쪽) |
+| 추출문 | `data/sources/qualification/files/khnp/8e9ae7476a67_khnp_yongyeok_qual.txt` | 7,602행 |
 | 통과점수 | 제10조① 종합평점 85점. 소프트웨어용역의 중소기업간 경쟁제품은 88점. 운송주선용역은 규모별 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점 | `khnp_yongyeok_qual.txt:387`, `:389`, `:391` |
 | 확인 날짜 | 2026-10-04 | |
 

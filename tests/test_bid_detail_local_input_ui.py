@@ -215,7 +215,8 @@ def test_detail_payload_uses_qualification_input_field_names(auth_client, isolat
     assert "inputs.base_rate = baseRate" in body
     assert "inputs.manual_non_price_score = manualScore" in body
     assert "inputs.local_service_type = serviceType" in body
-    assert "...buildLocalInputs()" in body
+    assert "buildLocalInputs()" in body
+    assert "buildScoreTableOverrides()" in body
 
 
 def test_detail_maps_local_blocked_reason_and_guidance(auth_client, isolated_db):
@@ -348,4 +349,5 @@ def test_detail_local_inputs_are_omitted_when_empty(auth_client, isolated_db):
     assert "if (Number.isFinite(baseRate)) inputs.base_rate = baseRate;" in body
     assert "if (Number.isFinite(manualScore)) inputs.manual_non_price_score = manualScore;" in body
     assert "if (serviceType) inputs.local_service_type = serviceType;" in body
-    assert "Object.assign(buildQualificationInput(), buildLocalInputs())" in body
+    assert "buildRecommendPayload" in body
+    assert "Object.assign(" in body

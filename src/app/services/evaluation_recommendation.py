@@ -16,7 +16,7 @@ price_score_verification.invert_pass_bid_range 를, 평점 산식은 evaluation_
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
@@ -207,26 +207,46 @@ def compute_price_bounds(
 
 @dataclass(frozen=True)
 class ReputationConversion:
-    """회원 신인도 항목 코드의 평점 환산 결과.
+    """회원 신인도 원자료의 평점 환산 결과.
 
-    values 는 선택지가 하나로 정해지는 항목만 환산한 값이고, needs_grade_selection 은
-    복수 선택지·구간이라 회원 원자료만으로 평점을 정할 수 없는 항목 코드입니다.
+    values 는 항목별 평점입니다. 회원이 고른 평점(dict)은 그대로 쓰고, 구형 항목 코드
+    목록(list)은 선택지가 하나로 정해지는 항목만 자동 환산합니다. needs_grade_selection 은
+    원자료만으로 평점을 정할 수 없어 회원 평점 선택이 필요한 항목 코드입니다.
     """
 
     values: dict[str, float] = field(default_factory=dict)
     needs_grade_selection: list[str] = field(default_factory=list)
 
 
-def convert_reputation_codes(codes: Sequence[str] | None) -> ReputationConversion:
-    """신인도 항목 코드 목록을 평점으로 환산합니다(선택지가 하나인 항목만).
+def convert_reputation_codes(
+    items: Mapping[str, float] | Sequence[str] | None,
+) -> ReputationConversion:
+    """신인도 원자료를 평점으로 환산합니다.
 
-    별표 11 항목은 복수 평점 선택지나 구간을 가질 수 있어 코드만으로 평점을 정할 수 없습니다.
-    추측하지 않고, 선택지가 하나인 항목만 환산하며 나머지는 needs_grade_selection 으로
-    돌려주어 요청 수정값(reputation_items)으로 지정하게 합니다.
+    저장 형식은 두 가지를 함께 받습니다. 회원이 고른 항목별 평점(dict)은 값을 그대로 쓰고,
+    구형 항목 코드 목록(list)은 별표 11 항목의 선택지가 하나일 때만 자동 환산합니다. 복수
+    선택지·구간 항목은 코드만으로 평점을 정할 수 없으므로 추측하지 않고
+    needs_grade_selection 으로 돌려주어 요청 수정값(reputation_items)으로 지정하게 합니다.
     """
+    if items is None:
+        return ReputationConversion()
     values: dict[str, float] = {}
     needs: list[str] = []
-    for raw in codes or ():
+    if isinstance(items, Mapping):
+        for raw_code, raw_value in items.items():
+            code = str(raw_code).strip()
+            if not code:
+                continue
+            item = find_reputation_item(code)
+            if item is None:
+                needs.append(code)
+                continue
+            try:
+                values[code] = float(raw_value)
+            except (TypeError, ValueError):
+                needs.append(code)
+        return ReputationConversion(values=values, needs_grade_selection=needs)
+    for raw in items:
         code = str(raw).strip()
         if not code:
             continue

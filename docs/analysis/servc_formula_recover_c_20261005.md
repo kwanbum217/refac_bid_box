@@ -79,13 +79,13 @@ flowchart TD
 | --- | --- |
 | 문서명 | 서울특별시 일반용역 적격심사 세부기준 (개정전문) |
 | 문서번호·차수 | 서울특별시 재무공고. 파일 머리말 `2024. 7.` 개정전문 |
-| 시행일 | 2024. 8. 12. 이후 시행 (`EXT/seoul/seoul_general_2024_08_12.tbl.txt:36`) |
+| 시행일 | 2024. 8. 12. 이후 시행 (`data/sources/qualification/files/seoul/c3c437588e9f_seoul_general_2024_08_12.tbl.txt:36`) |
 | 출처 | 나라장터 공고 `R26BK01557506`(서울특별시 재무공고 제2026-1589호) 첨부 5번 `★서울시 일반용역 적격심사 세부기준(2024.8.12.).hwp`. 보조: 서울시 정보소통광장 `https://opengov.seoul.go.kr/sanction/18765847` |
 | 확인 날짜 | 2026-10-05 |
-| 원본 파일 | `EXT/seoul/seoul_general_2024_08_12.hwp`, 추출 `EXT/seoul/seoul_general_2024_08_12.tbl.txt` |
+| 원본 파일 | `data/sources/qualification/files/seoul/8cf449ed49f4_seoul_general_2024_08_12.hwp`, 추출 `data/sources/qualification/files/seoul/c3c437588e9f_seoul_general_2024_08_12.tbl.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/seoul/seoul_general_2024_08_12.tbl.txt:2`~`:3` = `서울특별시 일반용역 적격심사 세부기준 개정(전문)`. 통과점수 `:32` — 추정가격 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점, 보험용역 85점. 아래 표의 인용은 모두 `EXT/seoul/seoul_general_2024_08_12.tbl.txt` 입니다.
+문서 머리말 `data/sources/qualification/files/seoul/c3c437588e9f_seoul_general_2024_08_12.tbl.txt:2`~`:3` = `서울특별시 일반용역 적격심사 세부기준 개정(전문)`. 통과점수 `:32` — 추정가격 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점, 보험용역 85점. 아래 표의 인용은 모두 `data/sources/qualification/files/seoul/c3c437588e9f_seoul_general_2024_08_12.tbl.txt` 입니다.
 
 | 적용 구간·구분 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -111,10 +111,10 @@ flowchart TD
 | 시행일 | 2025. 6. 26.부터 입찰공고분. 다만 제9조②만 2025. 7. 1. (`:85`) |
 | 출처 | 부산시 고시공고 `https://www.busan.go.kr/nbgosi/view?sno=72702&gosiGbn=A` 첨부 `[개정전문]부산광역시 일반용역 적격심사 세부기준.hwpx` |
 | 확인 날짜 | 2026-10-05 |
-| 원본 파일 | `EXT/busan/busan_general_hwpx.hwpx`, 추출 `EXT/busan/busan_general_2025_1981.txt` |
+| 원본 파일 | `data/sources/qualification/files/busan/b142d8a724f1_busan_general_hwpx.hwpx`, 추출 `data/sources/qualification/files/busan/242b87586a42_busan_general_2025_1981.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/busan/busan_general_2025_1981.txt:1` = `부산광역시 공고 제2025-1981호(2025. 6. 10.)`. 통과점수 제7조 `:57` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 보험서비스 용역은 예정가격 이하 최저가. 아래 표의 인용은 `:149`(입찰가격 평점 산식)와 `:150`입니다.
+문서 머리말 `data/sources/qualification/files/busan/242b87586a42_busan_general_2025_1981.txt:1` = `부산광역시 공고 제2025-1981호(2025. 6. 10.)`. 통과점수 제7조 `:57` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 보험서비스 용역은 예정가격 이하 최저가. 아래 표의 인용은 `:149`(입찰가격 평점 산식)와 `:150`입니다.
 
 | 적용 구간·구분 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 | 낙찰하한율 |
 | --- | ---: | ---: | ---: | --- | ---: | --- | --- |
@@ -140,10 +140,10 @@ flowchart TD
 | 시행일 | 2026. 1. 1.부터 시행, 2026. 1. 1. 이후 최초 입찰공고분부터 적용 (`:69`, `:70`) |
 | 출처 | 대전시청 공고 `https://www.daejeon.go.kr/drh/drhGosiView.do?gosigbn=A&sno=56877&menuSeq=1908` 첨부 `대전광역시 일반용역 적격심사 세부기준(대전광역시 공고 제2025-9528호).hwpx`. 별표 6의 원문 머리말은 `대전광역시 공고 제2025-9528호` |
 | 확인 날짜 | 2026-10-05 |
-| 원본 파일 | `EXT/daejeon/daejeon_2025_9528.hwpx`, 추출 `EXT/daejeon/daejeon_2025_9528.txt` |
+| 원본 파일 | `data/sources/qualification/files/daejeon/194799c3a43d_daejeon_2025_9528.hwpx`, 추출 `data/sources/qualification/files/daejeon/6cfe2e0ddf33_daejeon_2025_9528.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/daejeon/daejeon_2025_9528.txt:1` = `대전광역시 공고 제2025-9528호`. 통과점수 제8조 `:39` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 청소·시설물경비·시설물관리용역은 추정가격 무관 95점. 입찰가격 산식은 별표 6(입찰가격)이며 `:262` 한 행에 인쇄되어 있습니다.
+문서 머리말 `data/sources/qualification/files/daejeon/6cfe2e0ddf33_daejeon_2025_9528.txt:1` = `대전광역시 공고 제2025-9528호`. 통과점수 제8조 `:39` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 청소·시설물경비·시설물관리용역은 추정가격 무관 95점. 입찰가격 산식은 별표 6(입찰가격)이며 `:262` 한 행에 인쇄되어 있습니다.
 
 **별표 6 — 청소·시설물경비·시설물관리용역 (k=20)**
 
@@ -176,12 +176,12 @@ flowchart TD
 | 시행일 | 원문 표지에 행정안전부 협의일 인쇄. 게시 본문은 적용례를 별도 명시하지 않음 |
 | 출처 | 충청남도 계약법령예규·도정공고 `https://www.chungnam.go.kr/cnportal/province/province/view.do?nttId=2178926&menuNo=500487` 첨부 `충청남도 일반용역 적격심사 세부기준(2026년).hwpx` 계열 파일. 내려받기는 `chungnam.go.kr/gyeyak` 파일서버에서 PDF 로 수신 |
 | 확인 날짜 | 2026-10-05 |
-| 원본 파일 | `EXT/chungnam/cn_gyeyak.bin`(PDF, 실제 파일명 계열 `충청남도 일반용역 적격심사 세부기준(2026년)`), 추출 `EXT/chungnam/chungnam_2026_1235.txt`, 표 재추출 `EXT/chungnam/chungnam_tables.txt` |
+| 원본 파일 | `data/sources/qualification/files/chungnam/d0bbd1b2e704_cn_gyeyak.bin`(PDF, 실제 파일명 계열 `충청남도 일반용역 적격심사 세부기준(2026년)`), 추출 `data/sources/qualification/files/chungnam/d123ad901f6f_chungnam_2026_1235.txt`, 표 재추출 `data/sources/qualification/files/chungnam/679905cdbce5_chungnam_tables.txt` |
 | 등급 | 부분 |
 
 **부분 사유**: 별표 1(시설분야), 별표 2·2의1(정보통신), 별표 3(폐기물처리), 별표 4(육상운송)의 B·k·기준비율·낙찰하한율은 원문에 인쇄되어 있으나, 평탄 구간이 비율(94%, 95.5%, 91.75%)만 인쇄되고 점수는 인쇄되지 않았으며(규칙 7), 최저평점 조항이 추출 원문에 없습니다. 그래서 평탄 행은 대입값만 적고 검산 통과로 세지 않습니다.
 
-문서 머리말 `EXT/chungnam/chungnam_2026_1235.txt:1` = `충청남도 공고 2026-1235호`, `:3` = `행정안전부 협의(2026. 06. 16.)`. 통과점수 제6절 `:457`~`:459` — 종합평점 85점 이상. 다만 `정보통신 용역의 중소기업자간 경쟁제품은 88점`. B·k·기준비율 인용은 `EXT/chungnam/chungnam_tables.txt`(PDF 표 재추출)입니다.
+문서 머리말 `data/sources/qualification/files/chungnam/d123ad901f6f_chungnam_2026_1235.txt:1` = `충청남도 공고 2026-1235호`, `:3` = `행정안전부 협의(2026. 06. 16.)`. 통과점수 제6절 `:457`~`:459` — 종합평점 85점 이상. 다만 `정보통신 용역의 중소기업자간 경쟁제품은 88점`. B·k·기준비율 인용은 `data/sources/qualification/files/chungnam/679905cdbce5_chungnam_tables.txt`(PDF 표 재추출)입니다.
 
 | 별표(대상) | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입값 | 낙찰하한율 |
 | --- | --- | ---: | ---: | --- | --- | --- | --- |
@@ -210,10 +210,10 @@ flowchart TD
 | 시행일 | 2024. 1. 18. 이후 시행, 이후 입찰공고분부터 적용 (`:48`, `:49`) |
 | 출처 | 전북특별자치도 계약정보공개 알림 자료실 `https://www.jeonbuk.go.kr/board/view.jeonbuk?boardId=BBS_0000028&menuCd=DOM_000000103004007000&dataSid=535515` |
 | 확인 날짜 | 2026-10-05 |
-| 원본 파일 | `EXT/jeonbuk/jb_general_2024_10.hwp`, 표 추출 `EXT/jeonbuk/jb_general_2024_10.tbl.txt` |
+| 원본 파일 | `data/sources/qualification/files/jeonbuk/0238c8e43939_jb_general_2024_10.hwp`, 표 추출 `data/sources/qualification/files/jeonbuk/5110c07087d6_jb_general_2024_10.tbl.txt` |
 | 등급 | 확인 |
 
-문서 제1조 `EXT/jeonbuk/jb_general_2024_10.tbl.txt:7`, 부칙 `:47`~`:49`. 통과점수 제8조 `:66` — 추정가격 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표 인용은 모두 `EXT/jeonbuk/jb_general_2024_10.tbl.txt` 입니다.
+문서 제1조 `data/sources/qualification/files/jeonbuk/5110c07087d6_jb_general_2024_10.tbl.txt:7`, 부칙 `:47`~`:49`. 통과점수 제8조 `:66` — 추정가격 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표 인용은 모두 `data/sources/qualification/files/jeonbuk/5110c07087d6_jb_general_2024_10.tbl.txt` 입니다.
 
 | 적용 구간·구분 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 | 낙찰하한율 |
 | --- | ---: | ---: | ---: | --- | ---: | --- | --- |

@@ -97,15 +97,15 @@
 | 제정·개정 | `1995. 8.29. 제정` 부터 `2021. 3. 2. 개정` 까지 25차 개정 연혁 |
 | 시행 | 부칙 제1조 `이 세부기준은 2021년 3월 2일 이후에 입찰공고를 한 후 실시하는 용역 적격심사부터 적용한다` |
 | 출처 | 사용자 제공 파일(2026-10-04) |
-| 원본 경로 | `.orca/capsules/task_ac5c1133322a/external/user_files/한국도로공사 용역적격심사세부기준(20210302시행).hwp` |
-| 추출문 | `.orca/capsules/task_ac5c1133322a/external/extracted/한국도로공사 용역적격심사세부기준(20210302시행).table.txt` |
+| 원본 경로 | `data/sources/qualification/files/koex/1e0fb31939d2_한국도로공사 용역적격심사세부기준(20210302시행).hwp` |
+| 추출문 | `data/sources/qualification/files/koex/567695672f3f_extracted_TABLE_한국도로공사 용역적격심사세부기준(20210302시행).txt` |
 | 등급 | 부분(시행본 아님, 현행 2022-10-01 판 미확보) |
 
 제1조는 근거를 `공기업·준정부기관 계약사무규칙 제12조 및 기획재정부 계약예규 적격심사기준`에 두고 적용 대상을 `한국도로공사가 집행하는 용역입찰`로 정한다. 아래 수치는 위 추출문 행으로 인용한다.
 
 ### 4.3 입찰가격 평점 산식과 검산 (2021-03-02 판)
 
-통과점수는 제5조제1항에서 인용했다. `85점이상인 자(단, 추정가격이 10억원 이상인 기술용역은 92점, 추정가격이 10억원 미만인 기술용역은 95점 이상인 자)` — `.orca/capsules/task_ac5c1133322a/external/extracted/한국도로공사 용역적격심사세부기준(20210302시행).table.txt:48`.
+통과점수는 제5조제1항에서 인용했다. `85점이상인 자(단, 추정가격이 10억원 이상인 기술용역은 92점, 추정가격이 10억원 미만인 기술용역은 95점 이상인 자)` — `data/sources/qualification/files/koex/567695672f3f_extracted_TABLE_한국도로공사 용역적격심사세부기준(20210302시행).txt:48`.
 
 **별표 1 일반용역**
 
@@ -158,12 +158,12 @@
 
 | 문서 | 범위 | 시행 | 출처·근거 | 등급 |
 | --- | --- | --- | --- | --- |
-| 승강기 점검보수 일반용역 적격심사 세부기준 | 승강기 점검보수용역 한정 | `한국철도공사 건축기술단 공고 제2026-01호(2026.9.14.개정)`, 부칙 `이 기준은 공고된 날로부터 시행` | 사용자 제공 파일, 원본 `.orca/capsules/task_4103791c2123/external/user_files/한국철도공사 승강기_점검보수_일반용역_적격심사_세부기준_개정(2026.09.14).hwp`, 추출문 `.orca/capsules/task_4103791c2123/external/extracted/korail_full.txt` | 확인(분야 한정) |
+| 승강기 점검보수 일반용역 적격심사 세부기준 | 승강기 점검보수용역 한정 | `한국철도공사 건축기술단 공고 제2026-01호(2026.9.14.개정)`, 부칙 `이 기준은 공고된 날로부터 시행` | 사용자 제공 파일, 원본 `data/sources/qualification/files/korail/369f83debc3b_한국철도공사 승강기_점검보수_일반용역_적격심사_세부기준_개정(2026.09.14).hwp`, 추출문 `data/sources/qualification/files/korail/616b07286783_korail.txt` | 확인(분야 한정) |
 | 기술용역 적격심사 세부기준 | 기술용역 | 개정 2022-01-24, 2026-02-27 단서 | 공식 페이지가 자체 기준으로 지목. 원문 파일은 미확보(상업 게시판에 제목·날짜 단서만) | 원문 미확보, 현행판 단서 있음 |
 
 ### 5.2 승강기 점검보수용역 한정 별표 검산 (원문 인용)
 
-통과점수는 제4조제1항에서 인용했다. `추정가격이 10억원 미만인 용역 : 종합평점 95점이상`, `추정가격이 10억원 이상인 용역 : 종합평점 92점 이상` — `.orca/capsules/task_4103791c2123/external/extracted/korail_full.txt:12-13`. 기준비율은 네 구간 모두 90으로 인쇄되어 있다(88·91·93 과 다른 값이다).
+통과점수는 제4조제1항에서 인용했다. `추정가격이 10억원 미만인 용역 : 종합평점 95점이상`, `추정가격이 10억원 이상인 용역 : 종합평점 92점 이상` — `data/sources/qualification/files/korail/616b07286783_korail.txt:12-13`. 기준비율은 네 구간 모두 90으로 인쇄되어 있다(88·91·93 과 다른 값이다).
 
 | 적용 구간(추정가격) | B | k | 기준 | 평탄 문장(원문) | 통과점수 | 최저평점 | 원문 인쇄점수 | 대입값 | 판정 | 인용 |
 | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |
@@ -187,7 +187,7 @@
 ### 6.1 판정
 
 - 전력연구원은 한국전력공사 소속 조직이며, 나라장터 `dminstt_nm='한전전력연구원'` 공고는 Servc 2건뿐이다.
-- 2025-12-08 `인도네시아 ODA 사업용 MDMS 현지화 개발`(추정가격 794,694,018원)은 **조달청 명의** `제한(총액)협상에의한계약` 공고로 적격심사가 아니다. 공고서 원문에 적격심사 인용이 없다 — 원본 `.orca/capsules/task_645f7028e7d6/external/kepri/kepri_gonggo_R25BK01212422.hwp`, 추출문 `.orca/capsules/task_645f7028e7d6/external/kepri/kepri/html/index.xhtml`. 따라서 "전력연구원 발주 용역이 어떤 적격심사 세부기준을 인용하는지"는 이 공고로 확인되지 않는다.
+- 2025-12-08 `인도네시아 ODA 사업용 MDMS 현지화 개발`(추정가격 794,694,018원)은 **조달청 명의** `제한(총액)협상에의한계약` 공고로 적격심사가 아니다. 공고서 원문에 적격심사 인용이 없다 — 원본 `data/sources/qualification/files/kepri/cbfb7cb8e54d_kepri_gonggo_R25BK01212422.hwp`, 추출문 `data/sources/qualification/files/kepri/6f66e559f63b_index.xhtml`. 따라서 "전력연구원 발주 용역이 어떤 적격심사 세부기준을 인용하는지"는 이 공고로 확인되지 않는다.
 - 2015-07-06 `2015년 전력연구원 사옥위탁관리 청소용역`은 나라장터 DB 에 제목만 있고 적격심사 세부기준 인용은 확인하지 않았다.
 - `srm.kepri.re.kr` 는 DNS 해석에 실패했고, `www.kepri.re.kr:20808` 은 열리지만 자체 적격심사 문서가 확인되지 않았다. 규칙 9에 따라 부재로 단정하지 않는다.
 - 전력연구원이 한전 본사 기준을 쓰는지 여부는 확인하지 못했다. 2026-09-30 기록의 쟁점(한전 계약업무 집행지침 제3조가 전력연구원을 포함하지 않음)은 이번 세션에도 해소되지 않았다.
@@ -203,8 +203,8 @@
 | 문서명 | 적격심사기준 | 한국전력공사 기술용역 적격심사 세부기준 |
 | 표제·시행 | 표제 `2026. 4`, 부칙 `2026년 4월 입찰 공고하는 적격심사 대상 용역부터 적용` | 부칙 `이 세부기준은 2026년 8월 18일부터 시행한다` |
 | 출처 URL | `https://srm.kepco.net/printDownloadAttachment.do?id=b3d99179-caf8-4f14-9ddc-8bddba1f90b7` | `https://srm.kepco.net/printDownloadAttachment.do?id=e626a330-4298-46c6-b5b2-c279f2f1e135` |
-| 원본 경로 | `.orca/capsules/task_645f7028e7d6/external/kepri/kepco_ilban_2026_04.bin` | `.orca/capsules/task_645f7028e7d6/external/kepri/kepco_gisul_qual.bin` |
-| 추출문 | `.orca/capsules/task_645f7028e7d6/external/kepri/kepco_ilban_2026_04.txt` | `.orca/capsules/task_645f7028e7d6/external/kepri/kepco_gisul.txt` |
+| 원본 경로 | `data/sources/qualification/files/kepri/39edeaabb702_kepco_ilban_2026_04.bin` | `data/sources/qualification/files/kepri/3d3278a7bb48_kepco_gisul_qual.bin` |
+| 추출문 | `data/sources/qualification/files/kepri/0d3ea51ae087_kepco_ilban_2026_04.txt` | `data/sources/qualification/files/kepri/77f1a64dc14d_kepco_gisul.txt` |
 | 적용 대상 | 제1조 `한국전력공사에서 집행하는 일반용역 입찰` | 제1조 `한전에서 집행하는 기술용역 입찰` |
 | 통과점수 | 제10조① 종합평점 85점(소프트웨어용역의 중소기업자간 경쟁제품, 여객 육상운송용역 88점) | 제5조 `용역규모별 적격통과점수` |
 
@@ -245,13 +245,13 @@
 | 시행 | 2022-08-10(2022.08.10. 입찰공고분부터 적용). 부칙에서 종전 공고 제2019-1401호 폐지 |
 | 출처 URL | `https://contract.ulsan.go.kr/contract/info/regulations?idx=314&mode=view`, 고시공고 `https://www.ulsan.go.kr/u/rep/transfer/notice/34811.ulsan` |
 | 확인 날짜 | 2026-10-05(최신본 여부), 원문 수치 확인 2026-10-04 |
-| 원본 경로 | `.orca/capsules/task_58ea8ddab6fb/external/ulsan/ulsan_general_20220810.hwp` |
-| 추출문 | `.orca/capsules/task_58ea8ddab6fb/external/ulsan/ulsan_general_20220810.tbl.txt`, 본문 `.orca/capsules/task_58ea8ddab6fb/external/ulsan/ulsan_general_20220810.txt` |
+| 원본 경로 | `data/sources/qualification/files/ulsan/0a4c5d79ff9d_ulsan_general_20220810.hwp` |
+| 추출문 | `data/sources/qualification/files/ulsan/0e673b450ec3_ulsan_general_20220810.tbl.txt`, 본문 `data/sources/qualification/files/ulsan/c6a460417140_ulsan.txt` |
 | 등급 | 확인 |
 
 ### 7.3 입찰가격 평점 산식과 검산
 
-통과점수는 제5조제1항에서 인용했다. `추정가격 30억원 이상 용역은 85점 이상, 30억원 미만 10억원 이상인 용역은 90점 이상, 10억원 미만인 용역은 95점 이상`, 단순노무는 추정가격 무관 95점, 생활폐기물은 10억원 이상 90점/미만 95점 — `.orca/capsules/task_58ea8ddab6fb/external/ulsan/ulsan_general_20220810.txt:46`. 기준비율은 모든 별표에서 88이다.
+통과점수는 제5조제1항에서 인용했다. `추정가격 30억원 이상 용역은 85점 이상, 30억원 미만 10억원 이상인 용역은 90점 이상, 10억원 미만인 용역은 95점 이상`, 단순노무는 추정가격 무관 95점, 생활폐기물은 10억원 이상 90점/미만 95점 — `data/sources/qualification/files/ulsan/c6a460417140_ulsan.txt:46`. 기준비율은 모든 별표에서 88이다.
 
 | 별표·적용 구간 | B | k | 기준 | 평탄 문장(원문) | 통과점수 | 최저평점 | 원문 인쇄점수 | 대입 검산 | 판정 | 인용(추출문 `ulsan_general_20220810.tbl.txt`) |
 | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |

@@ -207,6 +207,10 @@ data/backups/snapshots/
 data/feature_store/
 # 측정 산출물(잔차 parquet, 키 조사 CSV). 스크립트로 재생성되며 정본은 docs/design/ 입니다.
 data/analysis/
+# 적격심사 근거 원문 사본. 용량·재배포 문제로 커밋하지 않고 manifest.json 과
+# README.md 만 추적합니다. files/ 아래는 scripts/build_qualification_sources_manifest.py
+# 가 EXT_SRC 로부터 결정적으로 재생성합니다.
+data/sources/qualification/files/
 # 모델 승격 시 직전 서빙본을 옮겨 두는 롤백용 백업입니다(src/ml/promotion.py).
 # 승격마다 덮어써지는 런타임 산출물이며 정본은 data/model_files/ 가 추적합니다.
 data/model_backups/

@@ -74,11 +74,11 @@
 
 | 지역 | 규칙 ID | 원본 파일 | 별표·판본 | 판독 방법 | 10억 이상 하한율 | 인용 위치(원본) | 판정 |
 | --- | --- | --- | --- | --- | --- | --- | :---: |
-| 인천광역시 | `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | `EXT/inan/att008/[별표 1] 일반용역 적격심사 세부기준.hwp` | 별표 1, 개정 2025.12.8(시행 2025.12.24) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 행 배점한도 30, 단서 "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
-| 제주특별자치도 | `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | `EXT/jeju/att/[별표 1] 일반용역 적격심사 심사항목 및 배점기준.hwp` | 별표 1, 개정 2023.12.13(시행 2024.01.01) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 30점, "평점 = 30-&#124;(88/100-입찰가격/예정가격)×100&#124;", "최저평점은 2점" | 부재 확인 |
-| 강원특별자치도 | `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | `EXT/gwd/att/[별표1] 일반용역 적격심사.hwp` | 별표 1(시행 2023.06.11) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 10억 이상 "-1" 단순노무 외 입찰가격 30, "평점 = 30-&#124;(…)×100&#124;", "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
-| 경상북도 | `SERVC_LOCAL_GB_20260108_ATTACH_04` | `EXT/gb/gb_byp004.hwp` | 별표 4(기타 일반용역), 개정 2026.1.8 | hwp5html 표 복원·전문 검색 | 없음(10억 이상 구간 자체 없음) | 표 열 `배점한도` 가 `추정가격 5억원이상\|5억원미만` 2열, "Ⅲ.입찰가격 … 50&#124;70", 산식 단서 "투찰률이 89.25% 이상 … 45점", "88.25% 이상 … 65점" | 부재 확인 |
-| 경상남도 | `SERVC_LOCAL_GN_20230105_ATTACH_01` | `EXT/gn/gn_general.hwp` | 별표 1(시행 2023.01.05) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 30점, "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
+| 인천광역시 | `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | `data/sources/qualification/files/inan/4ae4aff8b521_[별표 1] 일반용역 적격심사 세부기준.hwp` | 별표 1, 개정 2025.12.8(시행 2025.12.24) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 행 배점한도 30, 단서 "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
+| 제주특별자치도 | `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | `data/sources/qualification/files/jeju/35eb99d49807_[별표 1] 일반용역 적격심사 심사항목 및 배점기준.hwp` | 별표 1, 개정 2023.12.13(시행 2024.01.01) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 30점, "평점 = 30-&#124;(88/100-입찰가격/예정가격)×100&#124;", "최저평점은 2점" | 부재 확인 |
+| 강원특별자치도 | `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | `data/sources/qualification/files/gwd/cc7a84631971_[별표1] 일반용역 적격심사.hwp` | 별표 1(시행 2023.06.11) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 10억 이상 "-1" 단순노무 외 입찰가격 30, "평점 = 30-&#124;(…)×100&#124;", "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
+| 경상북도 | `SERVC_LOCAL_GB_20260108_ATTACH_04` | `data/sources/qualification/files/gb/ca623d40a627_gb_byp004.hwp` | 별표 4(기타 일반용역), 개정 2026.1.8 | hwp5html 표 복원·전문 검색 | 없음(10억 이상 구간 자체 없음) | 표 열 `배점한도` 가 `추정가격 5억원이상\|5억원미만` 2열, "Ⅲ.입찰가격 … 50&#124;70", 산식 단서 "투찰률이 89.25% 이상 … 45점", "88.25% 이상 … 65점" | 부재 확인 |
+| 경상남도 | `SERVC_LOCAL_GN_20230105_ATTACH_01` | `data/sources/qualification/files/gn/ef83a05f3449_gn_att0.bin` | 별표 1(시행 2023.01.05) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 30점, "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
 
 ---
 
@@ -93,7 +93,7 @@
 - 단서(원문): `- 추정가격 30억원 미만 10억원 이상인 용역 중 입찰가격이 예정가격 이하로서 예정가격의 100분의 98 이상인 경우의 평점은 20점으로 함.`
 - 단순노무 단서(원문): `- 입찰가격이 예정가격 이하로서 예정가격의 100분의 88.25 이상인 경우의 평점은 25점으로 함.(단순노무용역 적용)`
 - 마무리(원문): `* ｜｜는 절대값 표시임.` / `* 최저평점은 2점으로 함.`
-- 추출본 교차 참조: `EXT/inan/tbl1_008.txt:3,57-70,69,86,90`
+- 추출본 교차 참조: `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt:3,57-70,69,86,90`
 
 ### 4.2 제주특별자치도 (별표 1, 개정 2023.12.13)
 
@@ -104,7 +104,7 @@
 - 단서(원문): `- 추정가격 30억 원 미만 10억 원 이상인 용역의 경우 입찰가격이 예정가격 이하로서 예정가격의 100분의 98이상인 경우의 평점은 20점으로 함.`
 - 단순노무 단서(원문): `▶ 단순노무에 의한 용역: 평점 = 30-20×│(88/100-입찰가격/예정가격)×100│` / `- 입찰가격이 예정가격이하로서 예정가격의 100분의 88.25이상인 경우의 평점은 25점으로 한다.`
 - 마무리(원문): `▶ 최저평점은 2점으로 한다.`
-- 추출본 교차 참조: `EXT/jeju/tbl1_jeju.txt:3,222-229,224`
+- 추출본 교차 참조: `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt:3,222-229,224`
 
 ### 4.3 강원특별자치도 (별표 1)
 
@@ -114,7 +114,7 @@
 - 평점산식(원문): `* 평점 = 30-｜( 88 - 입찰가격 )×100｜ 100 예정가격`
 - 단서(원문): `- 추정가격 30억원 미만 10억원 이상인 용역중 입찰가격이 예정가격 이하로서 예정가격의 100분의 98 이상인 경우의 평점은 20점으로 함.`
 - 마무리(원문): `* 최저평점은 2점으로 함.`
-- 추출본 교차 참조: `EXT/gwd/tbl1_gwd.txt:3,51-58,55`
+- 추출본 교차 참조: `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt:3,51-58,55`
 
 ### 4.4 경상북도 (별표 4, 기타 일반용역)
 
@@ -124,7 +124,7 @@
 - 산식(원문): `㉮ 추정가격 5억원 이상 평점= 50- 4×｜(88/100－입찰가격/예정가격)×100｜ 단 투찰률이 89.25% 이상인 경우의 평점은 45점으로 함.`
 - 산식(원문): `㉯ 추정가격 5억원 미만 평점= 70- 20×｜(88/100－입찰가격/예정가격)×100｜ 단 투찰률이 88.25% 이상인 경우의 평점은 65점으로 함.`
 - 마무리(원문): `- 최저평점은 2점으로 함.`
-- 추출본 교차 참조: `EXT/gb/gb_byp004.tbl.txt:9,12`
+- 추출본 교차 참조: `data/sources/qualification/files/gb/86e6964e38bf_gb_byp004.tbl.txt:9,12`
 - 특이점: 경북 별표 4 는 추정가격 5억원을 경계로 2구간만 인쇄하며 **10억원 이상 구간이 존재하지 않습니다.**
 
 ### 4.5 경상남도 (별표 1)
@@ -135,7 +135,7 @@
 - 평점산식(원문): `*평점=30 -｜( 88 / 100 - 입찰가격 / 예정가격 )×100｜`
 - 단서(원문): `*추정가격 30억원 미만 10억원 이상인 용역 중 입찰가격이 예정가격 이하로서 100분의 98 이상인 경우의 평점은 20점으로 함.`
 - 마무리(원문): `*최저평점은 2점으로 함.`
-- 추출본 교차 참조: `EXT/gn/gn_general.hwp.tbl.txt:6,17`
+- 추출본 교차 참조: `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt:6,17`
 
 ---
 
@@ -162,7 +162,7 @@
 | 각주(footnote)·미주(endnote) | 원본 HTML 에서 `footnote`·`endnote`·`각주`·`미주` 마커 전수 검색 | 0건(5종 모두) | 5종 `index.xhtml` 검색 |
 | 비고 열 | 표 셀 직접 판독 | 하한율 없음(배점한도·선택적용 안내만) | 4.1~4.5절 인용 |
 | 그림(BinData) 존재 | `olefile` 로 CFB 스트림 열거 | 인천·제주·강원·경북 0건, 경남 1건 | `BodyText/Section0` 단일, `BinData/BIN0001.gif` |
-| 그림 속 표 | 내장 그림 이미지 열람 | 경상남도 로고(216×213 GIF). 표 아님 | `EXT/gn/gn_general.hwp` 내장 이미지 |
+| 그림 속 표 | 내장 그림 이미지 열람 | 경상남도 로고(216×213 GIF). 표 아님 | `data/sources/qualification/files/gn/ef83a05f3449_gn_att0.bin` 내장 이미지 |
 | 숨은 섹션 | `BodyText` 스트림 열거 | 5종 모두 `Section0` 1개 | 추가 섹션 없음 |
 | "하한" 문자열 | 원본 복원 전문 전수 검색 | 0건(5종 합계) | 2.2절 절차 |
 | 후보 하한율 숫자 | `7x.995`·`8x.495`·`8x.745`·`8x.995` 전수 검색 | 0건(5종 합계) | 2.2절 절차 |
@@ -175,14 +175,14 @@
 
 | 파일 | 문서 제목(원본 판독) | 10억원 이상 하한율 | 비고 |
 | --- | --- | --- | --- |
-| `EXT/gn/gn_att0.bin` | 경상남도 일반용역 등 적격심사 세부기준(본문) | 없음 | `gn_general.hwp` 와 동일 계열 |
-| `EXT/gn/gn_att1.bin` | 경상남도 청사관리용역 적격심사 세부기준 | 없음 | 10억 구간 단서는 `100분의 88.5` (투찰률, 하한율 아님) |
-| `EXT/gn/gn_att2.bin` | 경상남도 일반용역 등 적격심사 세부기준 | 없음 | 별표 1·2 포함 |
-| `EXT/gn/gn_att3.bin` | 경상남도 청사관리용역 적격심사 세부기준 | 없음 | 10억 구간 단서 `100분의 88.5` |
-| `EXT/gb/gb_byp001.hwp` | [별표 1] 단순노무용역 적격심사 세부기준 | 해당 없음(대상 규칙 아님) | 일반용역 아님 |
-| `EXT/gb/gb_byp002.hwp` | [별표 2] 소프트웨어용역 적격심사 세부기준 | 해당 없음 | 일반용역 아님 |
-| `EXT/gb/gb_byp003.hwp` | [별표 3] 폐기물처리용역 적격심사 세부기준 | 해당 없음 | 일반용역 아님 |
-| `EXT/gb/gb_byp004.hwp` | [별표 4] 기타 일반용역 적격심사 세부기준 | 없음 | 대상(4.4절) |
+| `data/sources/qualification/files/gn/ef83a05f3449_gn_att0.bin` | 경상남도 일반용역 등 적격심사 세부기준(본문) | 없음 | `gn_general.hwp` 와 동일 계열 |
+| `data/sources/qualification/files/gn/ac96024ea5b6_gn_att1.bin` | 경상남도 청사관리용역 적격심사 세부기준 | 없음 | 10억 구간 단서는 `100분의 88.5` (투찰률, 하한율 아님) |
+| `data/sources/qualification/files/gn/5b0642e203c0_gn_att2.bin` | 경상남도 일반용역 등 적격심사 세부기준 | 없음 | 별표 1·2 포함 |
+| `data/sources/qualification/files/gn/2563ab4c1dca_gn_att3.bin` | 경상남도 청사관리용역 적격심사 세부기준 | 없음 | 10억 구간 단서 `100분의 88.5` |
+| `data/sources/qualification/files/gb/66c3aa643d31_gb_byp001.hwp` | [별표 1] 단순노무용역 적격심사 세부기준 | 해당 없음(대상 규칙 아님) | 일반용역 아님 |
+| `data/sources/qualification/files/gb/eadc85c3001b_gb_byp002.hwp` | [별표 2] 소프트웨어용역 적격심사 세부기준 | 해당 없음 | 일반용역 아님 |
+| `data/sources/qualification/files/gb/d6c1f8762125_gb_byp003.hwp` | [별표 3] 폐기물처리용역 적격심사 세부기준 | 해당 없음 | 일반용역 아님 |
+| `data/sources/qualification/files/gb/ca623d40a627_gb_byp004.hwp` | [별표 4] 기타 일반용역 적격심사 세부기준 | 없음 | 대상(4.4절) |
 | `EXT/gb/gb_byp005~008.hwp` | 신용평가등급·신인도·지역업체 참여도·제출서류 | 해당 없음 | 평가기준 부속 |
 
 경남 청사관리용역 별표의 `100분의 88.5` 단서는 평점 상한 기준이며 낙찰하한율이 아닙니다.
@@ -193,18 +193,18 @@
 
 | 구분 | 파일 | 판독 방식 | 용도 |
 | --- | --- | --- | --- |
-| 인천 원본 | `EXT/inan/att008/[별표 1] 일반용역 적격심사 세부기준.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
-| 인천 구판 | `EXT/inan/att/[별표 1] 일반용역 적격심사 세부기준.hwp` | hwp5html | 구판 대조(동일 결과) |
-| 인천 추출본 | `EXT/inan/tbl1_008.txt`, `EXT/inan/elis_inan_008.txt` | 대조 | 교차 참조·준용 조항 |
-| 제주 원본 | `EXT/jeju/att/[별표 1] 일반용역 적격심사 심사항목 및 배점기준.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
-| 제주 추출본 | `EXT/jeju/tbl1_jeju.txt`, `EXT/jeju/elis_jeju_main.txt` | 대조 | 교차 참조·준용 조항 |
-| 강원 원본 | `EXT/gwd/att/[별표1] 일반용역 적격심사.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
-| 강원 추출본 | `EXT/gwd/tbl1_gwd.txt`, `EXT/gwd/elis_gwd_main.txt` | 대조 | 교차 참조·준용 조항 |
-| 경북 원본 | `EXT/gb/gb_byp004.hwp` | hwp5html | 별표 4 입찰가격 표 전문 |
-| 경북 추출본 | `EXT/gb/gb_byp004.tbl.txt`, `EXT/gb/elis_gb_body.txt` | 대조 | 교차 참조·준용 조항 |
-| 경남 원본 | `EXT/gn/gn_general.hwp` | hwp5html | 본문·별표 1 표 전문 |
+| 인천 원본 | `data/sources/qualification/files/inan/4ae4aff8b521_[별표 1] 일반용역 적격심사 세부기준.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
+| 인천 구판 | `data/sources/qualification/files/inan/3b8da01de037_[별표 1] 일반용역 적격심사 세부기준.hwp` | hwp5html | 구판 대조(동일 결과) |
+| 인천 추출본 | `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt`, `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt` | 대조 | 교차 참조·준용 조항 |
+| 제주 원본 | `data/sources/qualification/files/jeju/35eb99d49807_[별표 1] 일반용역 적격심사 심사항목 및 배점기준.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
+| 제주 추출본 | `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt`, `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt` | 대조 | 교차 참조·준용 조항 |
+| 강원 원본 | `data/sources/qualification/files/gwd/cc7a84631971_[별표1] 일반용역 적격심사.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
+| 강원 추출본 | `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt`, `data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt` | 대조 | 교차 참조·준용 조항 |
+| 경북 원본 | `data/sources/qualification/files/gb/ca623d40a627_gb_byp004.hwp` | hwp5html | 별표 4 입찰가격 표 전문 |
+| 경북 추출본 | `data/sources/qualification/files/gb/86e6964e38bf_gb_byp004.tbl.txt`, `data/sources/qualification/files/gb/17af2d266b97_elis_gb_body.txt` | 대조 | 교차 참조·준용 조항 |
+| 경남 원본 | `data/sources/qualification/files/gn/ef83a05f3449_gn_att0.bin` | hwp5html | 본문·별표 1 표 전문 |
 | 경남 추가 | `EXT/gn/gn_att0~3.bin` | hwp5html | 범위 밖 교차 확인 |
-| 경남 추출본 | `EXT/gn/gn_general.hwp.tbl.txt` | 대조 | 교차 참조 |
+| 경남 추출본 | `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt` | 대조 | 교차 참조 |
 | 코드 | `src/app/services/evaluation_rules.py` | 열람 | 규칙·구간값·기본값 대조 |
 
 ---

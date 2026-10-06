@@ -174,7 +174,7 @@ def test_detail_blocked_guidance_is_per_reason(auth_client, isolated_db):
     assert 'id="blocked-guidance"' in body
     assert "function getBlockedGuidanceText(code)" in body
     assert (
-        body.count("$('#blocked-guidance').text(getBlockedGuidanceText(data.blocked_reason));") == 2
+        body.count("$('#blocked-guidance').text(getBlockedGuidanceText(data.blocked_reason));") == 1
     )
     for code in (
         "NOT_SERVC",

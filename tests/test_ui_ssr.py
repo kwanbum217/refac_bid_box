@@ -417,19 +417,25 @@ def test_double_slash_redirect_preserves_query_string(client):
 
 
 def test_prediction_form_enabled_when_amount_available(auth_client, seeded_bid):
-    """금액이 있는 공고는 예측 폼이 정상 노출된다."""
+    """금액이 있는 공고는 자동 추천 카드(세 금액) 요소가 노출된다."""
     bid, _ = seeded_bid
     body = auth_client.get(f"/bids/{bid.id}/").text
 
-    assert 'id="btn-predict"' in body
-    assert 'id="prediction-unavailable"' not in body
+    assert 'id="prediction-result"' in body
+    assert 'id="res-min-price"' in body
+    assert 'id="res-optimal-price"' in body
+    assert 'id="res-max-price"' in body
+    # 수동 예측 입력과 실행 버튼은 추천 자동 호출로 대체되어 제거됐다.
+    assert 'id="btn-predict"' not in body
+    assert 'id="user-price"' not in body
+    assert 'id="recommend-unavailable"' not in body
 
 
-def test_prediction_form_disabled_without_amount(auth_client, isolated_db):
-    """금액을 확정할 수 없는 공고는 예측 버튼을 눌 수 없어야 한다.
+def test_prediction_unavailable_notice_without_amount(auth_client, isolated_db):
+    """금액을 확정할 수 없는 공고는 추천 카드에서 산출 불가 안내를 보여야 한다.
 
-    누르면 422 가 돌아오지만, 그때 알리는 것보다 미리 막고 사유를 보여주는 편이
-    낫습니다. 외자 공고는 절반 가까이가 이 상태입니다.
+    외자 공고는 절반 가까이가 이 상태입니다. 예측을 누를 수 없게 막던 종전 동작은
+    자동 추천 호출로 바뀌었지만, 산출할 수 없다는 사실은 계속 알려야 합니다.
     """
     now = utcnow()
     bid = BidAnnouncement(
@@ -449,10 +455,8 @@ def test_prediction_form_disabled_without_amount(auth_client, isolated_db):
 
     body = auth_client.get(f"/bids/{bid.id}/").text
 
-    assert 'id="prediction-unavailable"' in body
+    assert 'id="recommend-unavailable"' in body
     assert "산출할 수 없습니다" in body
-    # 버튼과 입력창 모두 잠겨 있어야 합니다.
-    button = body.split('id="btn-predict"')[1].split(">")[0]
-    assert "disabled" in button
-    price_input = body.split('id="user-price"')[1].split(">")[0]
-    assert "disabled" in price_input
+    # 수동 예측 입력과 실행 버튼은 제거됐다.
+    assert 'id="btn-predict"' not in body
+    assert 'id="user-price"' not in body

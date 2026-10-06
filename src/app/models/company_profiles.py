@@ -121,8 +121,10 @@ class AccountQualificationFact(Base):
     credit_evaluated_on: Mapped[date | None] = mapped_column(
         Date, nullable=True, comment="신용평가등급 평가일"
     )
-    reputation_items: Mapped[list[str] | None] = mapped_column(
-        JSON, nullable=True, comment="신인도 해당 항목 코드 목록"
+    reputation_items: Mapped[dict[str, float] | list[str] | None] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="신인도 항목 코드 목록(list) 또는 항목별 선택 평점(dict). 구형 list 도 그대로 읽습니다",
     )
     non_price_quant_score: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2), nullable=True, comment="기관 원문 미반영 공고용 비가격 정량점수 기본값"
