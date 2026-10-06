@@ -77,13 +77,14 @@ def _resolve_jngj(**kwargs: object):
 
 
 def test_price_band_selection_by_estimated_price() -> None:
-    """4구간에서 경계값(2억/5억/10억)이 원문 구간 표기대로 선택된다."""
+    """5구간에서 경계값(2억/5억/10억/30억)이 원문 구간 표기대로 선택된다."""
     rule = _rule("SERVC_LOCAL_INCHEON_20251224_ATTACH_01")
     cases = (
         ("150000000", "90", "20", "추정가격 2억원 미만"),
         ("200000000", "70", "4", "5억원 미만 2억원 이상"),
         ("500000000", "50", "2", "10억원 미만 5억원 이상"),
-        ("1000000000", "30", "1", "추정가격 10억원 이상"),
+        ("1000000000", "30", "1", "30억원 미만 10억원 이상"),
+        ("3000000000", "30", "1", "추정가격 30억원 이상"),
     )
     for price, b_value, k_value, label in cases:
         result = resolve_score_params(rule, Decimal(price), None, None)

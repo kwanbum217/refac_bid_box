@@ -109,14 +109,15 @@ class TestFlatZoneData:
         assert flat_zone_for("SERVC_LOCAL_UNKNOWN", None) is None
 
     def test_upper_bound_accepts_int_and_str(self) -> None:
-        by_int = flat_zone_for("SERVC_LOCAL_INCHEON_20251224_ATTACH_01", 200000000)
-        by_str = flat_zone_for("SERVC_LOCAL_INCHEON_20251224_ATTACH_01", "200000000")
+        by_int = flat_zone_for("SERVC_LOCAL_INCHEON_20251224_ATTACH_01", 3000000000)
+        by_str = flat_zone_for("SERVC_LOCAL_INCHEON_20251224_ATTACH_01", "3000000000")
         by_none = flat_zone_for("SERVC_LOCAL_INCHEON_20251224_ATTACH_01", None)
         assert by_int is not None
         assert by_str is not None
-        assert by_none is not None
         assert by_int == by_str
-        assert by_none.flat_ratio == Decimal("0.98")
+        assert by_int.flat_ratio == Decimal("0.98")
+        # 원문 평탄 단서는 30억원 미만 10억원 이상에만 걸려 30억원 이상 구간에는 평탄이 없다.
+        assert by_none is None
 
 
 class TestCalculatePriceScoreFlat:
