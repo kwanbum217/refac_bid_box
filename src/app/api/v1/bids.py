@@ -114,10 +114,9 @@ def list_bids(
         bid_queries.DEFAULT_BID_LIST_SORT, description="정렬 키 (notice/deadline/amount/region)"
     ),
     page: int = Query(1, ge=1),
-    lic: str = Query("", description="업종 코드 (쉼표 구분, 4개 업종 안에서 좁힘)"),
+    lic: str = Query("", description="면허 업종 코드 (쉼표 구분, 미지정 시 업종 제한 없음)"),
     db: Session = Depends(get_db),
 ):
-    industry_codes = bid_queries.industry_filter_codes(lic)
     try:
         page_obj = bid_queries.list_announcements(
             db,
@@ -126,7 +125,7 @@ def list_bids(
             region=region,
             sort=sort,
             page=page,
-            lic=",".join(industry_codes),
+            lic=",".join(bid_queries.normalize_license_codes(lic)),
         )
     except SearchBackendUnavailable as exc:
         logger.exception("공고 목록 검색 백엔드 실패")
