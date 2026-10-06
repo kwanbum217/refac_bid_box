@@ -2140,6 +2140,200 @@
       ],
       "hash": "d3545ead57491842655c4a62129b36e428bcdcd9cd85ecad9aff13d8141e409a"
     },
+    "bid_prearng_prices": {
+      "name": "bid_prearng_prices",
+      "columns": [
+        {
+          "name": "bid_clsfc_no",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_nm",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bss_up_num",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bssamt",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "category",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "collected_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dminstt_nm",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "drwt_prce_num",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "inpt_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "items",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "mkng_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "plnprc",
+          "type": "BIGINT",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "raw_data",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rbid_no",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rl_openg_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sajeong_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "slctn_bss",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "tot_prce_num",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_prearng_collected",
+          "column_names": [
+            "collected_at"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_prearng_dt_cat",
+          "column_names": [
+            "rl_openg_dt",
+            "category"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_prearng_inst_dt",
+          "column_names": [
+            "dminstt_nm",
+            "category",
+            "rl_openg_dt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_bid_prearng_prices",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord",
+            "bid_clsfc_no",
+            "rbid_no",
+            "category"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "e9cfe16810593327143a3d9e03dc2306063dedc08eb66f698c0e0668c008b5b0"
+    },
     "bid_ranking_snapshots": {
       "name": "bid_ranking_snapshots",
       "columns": [
@@ -2948,6 +3142,121 @@
       "foreign_keys": [],
       "indexes": [],
       "hash": "1523d89b43b583007c3443a927c956f4b300b23a4bec5eb4f0ff369b2ba97225"
+    },
+    "institution_sajeong_rate_stats": {
+      "name": "institution_sajeong_rate_stats",
+      "columns": [
+        {
+          "name": "category",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "institution_name",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "max_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "min_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p10_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p50_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p90_rate",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rebuilt_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sample_count",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "scope",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "window_days",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_inst_sajeong_lookup",
+          "column_names": [
+            "scope",
+            "institution_name",
+            "category"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_inst_sajeong",
+          "column_names": [
+            "scope",
+            "institution_name",
+            "category",
+            "window_days"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "12d48a0a949c5a942e941097654489c7f558cd5817443ea4c45f70990d48198d"
     },
     "institution_win_rate_stats": {
       "name": "institution_win_rate_stats",
@@ -4000,6 +4309,7 @@
     "bid_evaluation_evidence": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a",
     "bid_evaluation_profiles": "fee7f458d7d9966e3c10ce2637420330c5174629f667ac5c826c56bbe28bab8e",
     "bid_evaluation_snapshots": "d3545ead57491842655c4a62129b36e428bcdcd9cd85ecad9aff13d8141e409a",
+    "bid_prearng_prices": "e9cfe16810593327143a3d9e03dc2306063dedc08eb66f698c0e0668c008b5b0",
     "bid_ranking_snapshots": "dd386a5dee7f4abf08926b8978dbad4244f5d69cfbf0d062bdf7b827c1ec5dca",
     "bid_results": "6802c1cceecaef0222f9760ad45dc059a2d84da459bb4ae0b17e71237bb95ade",
     "chat_session_states": "77a97c60bb532b4a5c02ff6b6a50ca7f032e67d42487ee9bb475a653a49cb326",
@@ -4009,6 +4319,7 @@
     "django_session": "b3baa1d9244069838f05dcf65b70d64bc57174860afd9b8425832bb0fb7ddce3",
     "django_site": "6f27de8711c6dd55bebfc8dab3d9b72e3813e0ab97f54247b9d286915abe2042",
     "g2b_demand_institutions": "1523d89b43b583007c3443a927c956f4b300b23a4bec5eb4f0ff369b2ba97225",
+    "institution_sajeong_rate_stats": "12d48a0a949c5a942e941097654489c7f558cd5817443ea4c45f70990d48198d",
     "institution_win_rate_stats": "949ece41bfc66fc2100cefb6574cf873ac4d2f57c9dc770f8daaa065fd74340b",
     "knowledge_base_status": "40a791e9b54e5942499187c00fcd8ff411e517b51a54c36636ba7d847b50ea61",
     "pipeline_executions": "ef98bd6ef8d384fbdd1c9010d8a374379f17bf5599a33d15af254cc95bebaed2",
@@ -4020,7 +4331,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "e72915c9bfbc1e9cb1b68592f3c2884bd43b65500dcac92d892cf35bdf1b63e6",
+  "overall_hash": "78b061043b0b0cb8677c5d40479127ab81f2c5609dda00131cab79b104830d45",
   "orm_tables": [
     "account_company_profiles",
     "account_consent_events",
@@ -4036,10 +4347,12 @@
     "bid_evaluation_evidence",
     "bid_evaluation_profiles",
     "bid_evaluation_snapshots",
+    "bid_prearng_prices",
     "bid_ranking_snapshots",
     "bid_results",
     "chat_session_states",
     "g2b_demand_institutions",
+    "institution_sajeong_rate_stats",
     "institution_win_rate_stats",
     "knowledge_base_status",
     "pipeline_executions",
@@ -4069,6 +4382,7 @@
     "bid_evaluation_evidence",
     "bid_evaluation_profiles",
     "bid_evaluation_snapshots",
+    "bid_prearng_prices",
     "bid_ranking_snapshots",
     "bid_results",
     "chat_session_states",
@@ -4078,6 +4392,7 @@
     "django_session",
     "django_site",
     "g2b_demand_institutions",
+    "institution_sajeong_rate_stats",
     "institution_win_rate_stats",
     "knowledge_base_status",
     "pipeline_executions",
@@ -4090,10 +4405,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-10-06T08:02:37.175141+00:00",
+    "generated_at": "2026-10-06T10:06:01.148762+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "25697b63d54e8b531cfa692bd93ee7c34166ed7c"
+    "git_head": "d0f25040dcbe88816ea78310444f6154506a3ea9"
   }
 }
