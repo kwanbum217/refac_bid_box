@@ -35,7 +35,7 @@ src/app/api/v1/evaluations.py
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Any
 
@@ -47,7 +47,8 @@ from src.app.api.v1.accounts import require_current_user
 from src.app.api.v1.predictions import predict_price_api
 from src.app.core.db import get_db
 from src.app.models.accounts import CustomUser
-from src.app.models.bids import BidAnnouncement
+from src.app.models.bids import BidAnnouncement, BidResult
+from src.app.models.company_profiles import AccountQualificationFact
 from src.app.models.demand_institutions import G2BDemandInstitution
 from src.app.models.evaluations import (
     BidEvaluationEvidence,
@@ -60,12 +61,16 @@ from src.app.schemas.evaluations import (
     EvaluationProfileCreate,
     EvaluationProfileResponse,
     EvaluationProfileUpdate,
+    EvaluationRecommendRequest,
+    EvaluationRecommendResponse,
     EvaluationRequest,
     EvaluationResponse,
     EvaluationSnapshotCreate,
     EvaluationSnapshotResponse,
     EvidenceMetadata,
     NegotiationRateDistribution,
+    NonPriceScoreItem,
+    ParticipantCountStats,
     PriceCompensation,
     PriceCompensationScenario,
     PriceScenarioConfig,
@@ -73,6 +78,9 @@ from src.app.schemas.evaluations import (
     QuantScoreBandPayload,
     QuantScoreItemPayload,
     QuantScoreTablePayload,
+    RecommendationOverrides,
+    RecommendationPrediction,
+    RecommendationPriceBounds,
     ReputationItemPayload,
     RuleScoreTable,
     ScenarioEvaluationResult,
@@ -88,6 +96,19 @@ from src.app.services.evaluation_flat_zones import (
     flat_zone_for,
     pps_axis_side,
     pps_flat_zone_for,
+)
+from src.app.services.evaluation_recommendation import (
+    RATE_SOURCE_THEORETICAL,
+    THEORETICAL_RATE_NOTICE,
+    NonPriceBreakdown,
+    build_non_price_breakdown,
+    compute_price_bounds,
+    convert_reputation_codes,
+    disqualification_status,
+    extract_participant_count,
+    has_disqualification,
+    summarize_participant_counts,
+    theoretical_rate_range,
 )
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
@@ -140,6 +161,7 @@ from src.app.services.evaluation_scoring import (
     resolve_price_compensation,
 )
 from src.app.services.negotiation_stats import get_negotiation_stats
+from src.ml.institution_history import lookup_institution_stats
 
 logger = logging.getLogger(__name__)
 
@@ -507,12 +529,17 @@ _QUANT_INPUT_KINDS = frozenset(
 
 @dataclass(frozen=True)
 class QuantInputScores:
-    """별표 배점표 검증을 통과한 정량평가 입력 점수(수행능력 계/근로조건/신인도)."""
+    """별표 배점표 검증을 통과한 정량평가 입력 점수(수행능력 계/근로조건/신인도).
+
+    performance 는 경영상태를 포함한 수행능력 계이고, management 는 그중 경영상태 몫입니다.
+    내역 표시용으로만 분리하며 점수 합계는 기존과 같습니다.
+    """
 
     performance: Decimal
     labor_plan: Decimal
     reputation: Decimal
     has_labor_item: bool
+    management: Decimal = Decimal("0")
 
 
 def _bid_estimated_price(bid: BidAnnouncement) -> Decimal | None:
@@ -845,6 +872,7 @@ def _resolve_quant_inputs(
             labor_plan=labor_plan,
             reputation=reputation,
             has_labor_item=has_labor_item,
+            management=management,
         ),
         [],
     )
@@ -970,7 +998,7 @@ def _evaluate_scenario(
         performance_score=performance_score,
         labor_condition_score=labor_score,
         reputation_score=credibility_score,
-        has_disqualification=qualification.disqualification,
+        has_disqualification=has_disqualification(qualification.disqualification),
     )
     warnings = [
         warning
@@ -1509,8 +1537,369 @@ def _save_snapshot_async(
 
 
 # =============================================================================
-# 통합 분석 엔드포인트
+# 통합 분석·추천 공통 입력 확정
 # =============================================================================
+
+
+@dataclass
+class _EvaluationInputs:
+    """규칙 판별·정량 점수·배점표까지 확정된 공통 입력.
+
+    is_blocked=True 면 block_kind 와 사유로 어느 단계에서 막혔는지 담고, 나머지 필드는
+    부분적으로만 채워집니다. /analyze 와 /recommend 가 같은 판별·계산 함수를 공유합니다.
+    """
+
+    is_blocked: bool
+    block_kind: str | None = None
+    rule_result: RuleResolutionResult | None = None
+    block_code: str | None = None
+    block_message: str | None = None
+    rule: EvaluationRule | None = None
+    effective_lwlt: Decimal | None = None
+    pred_price: Decimal | None = None
+    estimated_price: Decimal | None = None
+    estimated_price_source: str = "announcement"
+    quant_table: QuantScoreTable | None = None
+    band: QuantScoreBand | None = None
+    band_note: str | None = None
+    quant_source: str | None = None
+    quant_notice: str | None = None
+    quant_scores: QuantInputScores | None = None
+    table: ScoreTable | None = None
+    missing_fields: list[str] = field(default_factory=list)
+    override_fields: list[str] = field(default_factory=list)
+    resolution: ScoreParamResolution | None = None
+    violations: list[tuple[str, str]] = field(default_factory=list)
+
+
+def _blocked_inputs(
+    kind: str,
+    code: str,
+    message: str,
+    rule_result: RuleResolutionResult,
+    **extras: Any,
+) -> _EvaluationInputs:
+    """차단 단계와 사유를 담은 공통 입력 결과를 만듭니다."""
+    return _EvaluationInputs(
+        is_blocked=True,
+        block_kind=kind,
+        rule_result=rule_result,
+        block_code=code,
+        block_message=message,
+        **extras,
+    )
+
+
+def _resolve_evaluation_inputs(
+    bid: BidAnnouncement,
+    qualification: QualificationInput,
+    raw_data: dict[str, Any],
+    institution: G2BDemandInstitution | None,
+    institution_regime: str | None,
+    estimated_price: Decimal | None,
+    estimated_price_source: str,
+) -> _EvaluationInputs:
+    """규칙 판별·정량 점수·배점표를 확정합니다. 막히면 단계와 사유를 담아 돌려줍니다.
+
+    /analyze 와 /recommend 가 같은 함수를 쓰며, 판별은 evaluation_rules, 정량 입력 검증은
+    _resolve_quant_inputs, 배점표 확정은 _score_table 이 정본입니다. 이 계층은 값을 만들지
+    않고 위임 결과를 조립만 합니다.
+    """
+    sido_code, sido_name = institution_sido(institution)
+    rule_result = resolve_evaluation_rule_from_raw_data(
+        category=bid.category,
+        raw_data=raw_data,
+        institution_name_fallback=bid.dminstt_nm,
+        cntrct_mthd_nm=bid.cntrct_mthd_nm,
+        institution_regime=institution_regime,
+        region_code=sido_code,
+        region_name=sido_name,
+        local_service_type=qualification.local_service_type,
+        estimated_price=estimated_price,
+    )
+    if rule_result.is_blocked:
+        # 지방계약에서 시·도 기준이 없을 때, 사용자가 B·k·기준비율·통과점수를 모두 입력하면
+        # 그 값으로 가격점수를 계산합니다(설계 0.1). 하나라도 비면 차단을 유지합니다.
+        if rule_result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND:
+            synthetic_rule = _local_user_input_rule(qualification)
+            if synthetic_rule is not None:
+                user_lwlt: Decimal | None = None
+                raw_lwlt = raw_data.get("sucsfbidLwltRate")
+                if raw_lwlt is not None:
+                    try:
+                        text = str(raw_lwlt).strip()
+                        if text:
+                            user_lwlt = Decimal(text)
+                    except (ArithmeticError, TypeError, ValueError):
+                        user_lwlt = None
+                lwlt_warnings = list(rule_result.warnings)
+                effective_lwlt: Decimal | None
+                if user_lwlt is None or user_lwlt <= 0:
+                    effective_lwlt = synthetic_rule.lwlt_rate
+                    rate_source = "RULE_DEFAULT"
+                else:
+                    effective_lwlt = user_lwlt
+                    rate_source = "ANNOUNCEMENT"
+                lwlt_warnings.append(
+                    f"{LOCAL_USER_INPUT_SOURCE} — 사용자가 입력한 B·k·기준비율·통과점수로 계산합니다."
+                )
+                rule_result = replace(
+                    rule_result,
+                    is_blocked=False,
+                    block_reason_code=None,
+                    block_reason_message=None,
+                    rule=synthetic_rule,
+                    effective_lwlt_rate=effective_lwlt,
+                    rate_source=rate_source,
+                    warnings=lwlt_warnings,
+                )
+        if rule_result.is_blocked:
+            return _blocked_inputs(
+                "rule",
+                str(rule_result.block_reason_code),
+                rule_result.block_reason_message or "계산 조건을 충족하지 않았습니다.",
+                rule_result,
+            )
+
+    assert rule_result.rule is not None
+    rule = rule_result.rule
+    effective_lwlt = rule_result.effective_lwlt_rate
+    if effective_lwlt is None:
+        # 구간별로 인쇄된 낙찰하한율이 서로 다른 규칙인데 추정가격을 몰라 구간을 고르지
+        # 못한 경우입니다. 규칙 대표값으로 추측하지 않고 추정가격 입력을 요구합니다.
+        return _blocked_inputs(
+            "lwlt",
+            BLOCK_CODE_LWLT_RATE_UNRESOLVED,
+            "추정가격이 없어 적용할 구간 낙찰하한율을 확정하지 못했습니다. "
+            "추정가격을 입력해 주십시오.",
+            rule_result,
+            rule=rule,
+        )
+
+    pred_price = _announcement_pred_price(bid)
+    if pred_price is None:
+        return _blocked_inputs(
+            "pred_price",
+            BLOCK_CODE_PRED_PRICE_UNAVAILABLE,
+            "공고에 예정가격(기초금액)이 공개되지 않아 최저 투찰금액과 시나리오를 계산할 분모가 없습니다.",
+            rule_result,
+            rule=rule,
+            effective_lwlt=effective_lwlt,
+        )
+
+    # 정량평가 입력은 적용 별표의 선언 배점표로 검증합니다. LOCAL 시·도 규칙은 기관 정량
+    # 배점표가 아직 반영되지 않아(quant_basis != REGISTRY) 사용자가 정량점수를 직접 입력합니다.
+    quant_table = quant_score_table_for_rule(rule)
+    band: QuantScoreBand | None = None
+    band_note: str | None = None
+    quant_source: str | None = QUANT_SOURCE_NONE
+    quant_notice: str | None = None
+    quant_scores = QuantInputScores(
+        performance=Decimal("0"),
+        labor_plan=Decimal("0"),
+        reputation=Decimal("0"),
+        has_labor_item=False,
+    )
+    if rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED:
+        quant_source = QUANT_SOURCE_USER_INPUT_UNVERIFIED
+        quant_notice = QUANT_NOTICE_LOCAL_UNVERIFIED
+        manual_score = qualification.manual_non_price_score
+        if manual_score is None:
+            return _blocked_inputs(
+                "local_quant",
+                BLOCK_CODE_LOCAL_QUANT_REQUIRED,
+                "적용 규칙의 정량평가 배점표가 기관 원문 미반영이라 정량점수"
+                "(manual_non_price_score)를 직접 입력해야 합니다.",
+                rule_result,
+                rule=rule,
+                effective_lwlt=effective_lwlt,
+                pred_price=pred_price,
+                quant_table=quant_table,
+            )
+        quant_scores = QuantInputScores(
+            performance=Decimal(str(manual_score)),
+            labor_plan=Decimal("0"),
+            reputation=Decimal("0"),
+            has_labor_item=False,
+        )
+    elif quant_table is None:
+        if any(_quant_value(value) != Decimal("0") for value in qualification.quant_items.values()):
+            return _blocked_inputs(
+                "quant_table",
+                BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                "적용 별표의 귀속이 미확인이라 정량평가 입력 항목을 검증할 수 없습니다.",
+                rule_result,
+                rule=rule,
+                effective_lwlt=effective_lwlt,
+                pred_price=pred_price,
+            )
+    else:
+        quant_source = QUANT_SOURCE_REGISTRY_TABLE
+        method_name = (
+            getattr(bid, "sucsfbid_mthd_nm", None)
+            or raw_data.get("sucsfbidMthdNm")
+            or raw_data.get("sucsfbid_mthd_nm")
+        )
+        band, band_note = select_quant_band(quant_table, estimated_price, method_name)
+        if (
+            estimated_price_source == "user"
+            and method_name_500m_side(method_name) is None
+            and band is not None
+        ):
+            user_note = (
+                f"사용자 입력 추정가격 {estimated_price:,.0f}원으로 배점표 구간을 판정했습니다."
+            )
+            band_note = f"{band_note} {user_note}" if band_note else user_note
+        if band is None:
+            return _blocked_inputs(
+                "band",
+                BLOCK_CODE_QUANT_BAND_UNRESOLVED,
+                band_note or "추정가격 구간을 확정할 수 없습니다.",
+                rule_result,
+                rule=rule,
+                effective_lwlt=effective_lwlt,
+                pred_price=pred_price,
+                quant_table=quant_table,
+                band_note=band_note,
+            )
+        resolved, violations = _resolve_quant_inputs(qualification, quant_table, band)
+        if resolved is None:
+            return _blocked_inputs(
+                "quant_violation",
+                violations[0][0] if violations else BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+                " ".join(message for _, message in violations),
+                rule_result,
+                rule=rule,
+                effective_lwlt=effective_lwlt,
+                pred_price=pred_price,
+                quant_table=quant_table,
+                band=band,
+                band_note=band_note,
+                violations=violations,
+            )
+        quant_scores = resolved
+
+    table, missing_fields, override_fields, resolution = _score_table(
+        qualification,
+        rule,
+        bid,
+        estimated_price,
+        estimated_price_source,
+    )
+    if table is None:
+        return _blocked_inputs(
+            "score_table",
+            BLOCK_CODE_MISSING_SCORE_TABLE,
+            "공고문 적격심사 배점표를 입력해야 점수를 계산할 수 있습니다.",
+            rule_result,
+            rule=rule,
+            effective_lwlt=effective_lwlt,
+            pred_price=pred_price,
+            quant_table=quant_table,
+            band=band,
+            band_note=band_note,
+            quant_source=quant_source,
+            quant_notice=quant_notice,
+            quant_scores=quant_scores,
+            missing_fields=missing_fields,
+            override_fields=override_fields,
+            resolution=resolution,
+        )
+
+    return _EvaluationInputs(
+        is_blocked=False,
+        rule_result=rule_result,
+        rule=rule,
+        effective_lwlt=effective_lwlt,
+        pred_price=pred_price,
+        estimated_price=estimated_price,
+        estimated_price_source=estimated_price_source,
+        quant_table=quant_table,
+        band=band,
+        band_note=band_note,
+        quant_source=quant_source,
+        quant_notice=quant_notice,
+        quant_scores=quant_scores,
+        table=table,
+        missing_fields=missing_fields,
+        override_fields=override_fields,
+        resolution=resolution,
+    )
+
+
+def _blocked_inputs_response(
+    bid: BidAnnouncement,
+    payload: EvaluationRequest,
+    inputs: _EvaluationInputs,
+    institution_regime: str | None,
+    db: Session,
+) -> EvaluationResponse:
+    """공통 입력 확정이 막힌 단계에 맞는 차단 응답을 조립합니다."""
+    rule_result = inputs.rule_result
+    assert rule_result is not None
+    if inputs.block_kind == "rule":
+        response = _blocked_response(
+            bid,
+            rule_result,
+            str(inputs.block_code),
+            inputs.block_message or "계산 조건을 충족하지 않았습니다.",
+        )
+        if rule_result.negotiation_variant is not None:
+            response.negotiation_rate_distribution = NegotiationRateDistribution(
+                **get_negotiation_stats(db, rule_result.negotiation_variant)
+            )
+        return response
+    if inputs.block_kind in {"lwlt", "pred_price", "local_quant", "quant_table"}:
+        return _blocked_response(
+            bid,
+            rule_result,
+            str(inputs.block_code),
+            inputs.block_message or "계산 조건을 충족하지 않았습니다.",
+        )
+
+    scenarios = _scenario_prices(bid, payload.price_scenarios, institution_regime)
+    assert inputs.pred_price is not None
+    if inputs.block_kind == "band":
+        assert inputs.quant_table is not None
+        return _quant_band_unresolved_response(
+            bid,
+            payload,
+            rule_result,
+            inputs.pred_price,
+            scenarios,
+            inputs.quant_table,
+            inputs.band_note,
+        )
+    if inputs.block_kind == "quant_violation":
+        assert inputs.quant_table is not None
+        assert inputs.band is not None
+        return _quant_violation_response(
+            bid,
+            payload,
+            rule_result,
+            inputs.pred_price,
+            scenarios,
+            inputs.quant_table,
+            inputs.band,
+            inputs.band_note,
+            inputs.violations,
+        )
+    assert inputs.block_kind == "score_table"
+    assert inputs.resolution is not None
+    return _score_table_missing_response(
+        bid=bid,
+        payload=payload,
+        rule_result=rule_result,
+        pred_price=inputs.pred_price,
+        scenarios=scenarios,
+        missing_fields=inputs.missing_fields,
+        override_fields=inputs.override_fields,
+        quant_table=inputs.quant_table,
+        band=inputs.band,
+        band_note=inputs.band_note,
+        resolution=inputs.resolution,
+        estimated_price_source=inputs.estimated_price_source,
+    )
 
 
 def _analyze_bid(
@@ -1541,229 +1930,54 @@ def _analyze_bid(
 
     def with_contract_regime(response: EvaluationResponse) -> EvaluationResponse:
         response.contract_regime = ContractRegimeDescription(**contract_regime)
+        response.disqualification_status = disqualification_status(
+            payload.qualification_input.disqualification
+        )
         if ignored_user_price:
             response.warnings.append(
                 "공고 추정가격이 있어 사용자 입력 추정가격은 구간 판정에 사용하지 않았습니다."
             )
         return response
 
-    sido_code, sido_name = institution_sido(institution)
-    rule_result = resolve_evaluation_rule_from_raw_data(
-        category=bid.category,
+    inputs = _resolve_evaluation_inputs(
+        bid=bid,
+        qualification=payload.qualification_input,
         raw_data=raw_data,
-        institution_name_fallback=bid.dminstt_nm,
-        cntrct_mthd_nm=bid.cntrct_mthd_nm,
+        institution=institution,
         institution_regime=institution_regime,
-        region_code=sido_code,
-        region_name=sido_name,
-        local_service_type=payload.qualification_input.local_service_type,
         estimated_price=estimated_price,
+        estimated_price_source=estimated_price_source,
     )
-    if rule_result.is_blocked:
-        # 지방계약에서 시·도 기준이 없을 때, 사용자가 B·k·기준비율·통과점수를 모두 입력하면
-        # 그 값으로 가격점수를 계산합니다(설계 0.1). 하나라도 비면 차단을 유지합니다.
-        if rule_result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND:
-            synthetic_rule = _local_user_input_rule(payload.qualification_input)
-            if synthetic_rule is not None:
-                user_lwlt: Decimal | None = None
-                raw_lwlt = raw_data.get("sucsfbidLwltRate")
-                if raw_lwlt is not None:
-                    try:
-                        text = str(raw_lwlt).strip()
-                        if text:
-                            user_lwlt = Decimal(text)
-                    except (ArithmeticError, TypeError, ValueError):
-                        user_lwlt = None
-                lwlt_warnings = list(rule_result.warnings)
-                if user_lwlt is None or user_lwlt <= 0:
-                    effective_lwlt = synthetic_rule.lwlt_rate
-                    rate_source = "RULE_DEFAULT"
-                else:
-                    effective_lwlt = user_lwlt
-                    rate_source = "ANNOUNCEMENT"
-                lwlt_warnings.append(
-                    f"{LOCAL_USER_INPUT_SOURCE} — 사용자가 입력한 B·k·기준비율·통과점수로 계산합니다."
-                )
-                rule_result = replace(
-                    rule_result,
-                    is_blocked=False,
-                    block_reason_code=None,
-                    block_reason_message=None,
-                    rule=synthetic_rule,
-                    effective_lwlt_rate=effective_lwlt,
-                    rate_source=rate_source,
-                    warnings=lwlt_warnings,
-                )
-        if rule_result.is_blocked:
-            response = _blocked_response(
-                bid,
-                rule_result,
-                str(rule_result.block_reason_code),
-                rule_result.block_reason_message or "계산 조건을 충족하지 않았습니다.",
-            )
-            if rule_result.negotiation_variant is not None:
-                response.negotiation_rate_distribution = NegotiationRateDistribution(
-                    **get_negotiation_stats(db, rule_result.negotiation_variant)
-                )
-            return with_contract_regime(response)
-
-    assert rule_result.rule is not None
-    rule = rule_result.rule
-    if rule_result.effective_lwlt_rate is None:
-        # 구간별로 인쇄된 낙찰하한율이 서로 다른 규칙인데 추정가격을 몰라 구간을 고르지
-        # 못한 경우입니다. 규칙 대표값으로 추측하지 않고 추정가격 입력을 요구합니다.
+    if inputs.is_blocked:
         return with_contract_regime(
-            _blocked_response(
-                bid,
-                rule_result,
-                BLOCK_CODE_LWLT_RATE_UNRESOLVED,
-                "추정가격이 없어 적용할 구간 낙찰하한율을 확정하지 못했습니다. "
-                "추정가격을 입력해 주십시오.",
-            )
+            _blocked_inputs_response(bid, payload, inputs, institution_regime, db)
         )
 
-    pred_price = _announcement_pred_price(bid)
-    if pred_price is None:
-        return with_contract_regime(
-            _blocked_response(
-                bid,
-                rule_result,
-                BLOCK_CODE_PRED_PRICE_UNAVAILABLE,
-                "공고에 예정가격(기초금액)이 공개되지 않아 최저 투찰금액과 시나리오를 계산할 분모가 없습니다.",
-            )
-        )
-
+    assert inputs.rule_result is not None
+    assert inputs.table is not None
+    assert inputs.quant_scores is not None
+    assert inputs.resolution is not None
+    assert inputs.pred_price is not None
     scenarios = _scenario_prices(bid, payload.price_scenarios, institution_regime)
-
-    # 정량평가 입력은 적용 별표의 선언 배점표로 검증합니다. LOCAL 시·도 규칙은 기관 정량
-    # 배점표가 아직 반영되지 않아(quant_basis != REGISTRY) 사용자가 정량점수를 직접 입력합니다.
-    quant_table = quant_score_table_for_rule(rule)
-    band: QuantScoreBand | None = None
-    band_note: str | None = None
-    quant_source: str | None = QUANT_SOURCE_NONE
-    quant_notice: str | None = None
-    quant_scores = QuantInputScores(
-        performance=Decimal("0"),
-        labor_plan=Decimal("0"),
-        reputation=Decimal("0"),
-        has_labor_item=False,
-    )
-    if rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED:
-        quant_source = QUANT_SOURCE_USER_INPUT_UNVERIFIED
-        quant_notice = QUANT_NOTICE_LOCAL_UNVERIFIED
-        manual_score = payload.qualification_input.manual_non_price_score
-        if manual_score is None:
-            return with_contract_regime(
-                _blocked_response(
-                    bid,
-                    rule_result,
-                    BLOCK_CODE_LOCAL_QUANT_REQUIRED,
-                    "적용 규칙의 정량평가 배점표가 기관 원문 미반영이라 정량점수"
-                    "(manual_non_price_score)를 직접 입력해야 합니다.",
-                )
-            )
-        quant_scores = QuantInputScores(
-            performance=Decimal(str(manual_score)),
-            labor_plan=Decimal("0"),
-            reputation=Decimal("0"),
-            has_labor_item=False,
-        )
-    elif quant_table is None:
-        if any(
-            _quant_value(value) != Decimal("0")
-            for value in payload.qualification_input.quant_items.values()
-        ):
-            return with_contract_regime(
-                _blocked_response(
-                    bid,
-                    rule_result,
-                    BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
-                    "적용 별표의 귀속이 미확인이라 정량평가 입력 항목을 검증할 수 없습니다.",
-                )
-            )
-    else:
-        quant_source = QUANT_SOURCE_REGISTRY_TABLE
-        method_name = (
-            getattr(bid, "sucsfbid_mthd_nm", None)
-            or raw_data.get("sucsfbidMthdNm")
-            or raw_data.get("sucsfbid_mthd_nm")
-        )
-        band, band_note = select_quant_band(quant_table, estimated_price, method_name)
-        if (
-            estimated_price_source == "user"
-            and method_name_500m_side(method_name) is None
-            and band is not None
-        ):
-            user_note = (
-                f"사용자 입력 추정가격 {estimated_price:,.0f}원으로 배점표 구간을 판정했습니다."
-            )
-            band_note = f"{band_note} {user_note}" if band_note else user_note
-        if band is None:
-            return with_contract_regime(
-                _quant_band_unresolved_response(
-                    bid, payload, rule_result, pred_price, scenarios, quant_table, band_note
-                )
-            )
-        resolved, violations = _resolve_quant_inputs(payload.qualification_input, quant_table, band)
-        if resolved is None:
-            return with_contract_regime(
-                _quant_violation_response(
-                    bid,
-                    payload,
-                    rule_result,
-                    pred_price,
-                    scenarios,
-                    quant_table,
-                    band,
-                    band_note,
-                    violations,
-                )
-            )
-        quant_scores = resolved
-
-    table, missing_fields, override_fields, resolution = _score_table(
-        payload.qualification_input,
-        rule,
-        bid,
-        estimated_price,
-        estimated_price_source,
-    )
-    if table is None:
-        return with_contract_regime(
-            _score_table_missing_response(
-                bid=bid,
-                payload=payload,
-                rule_result=rule_result,
-                pred_price=pred_price,
-                scenarios=scenarios,
-                missing_fields=missing_fields,
-                override_fields=override_fields,
-                quant_table=quant_table,
-                band=band,
-                band_note=band_note,
-                resolution=resolution,
-                estimated_price_source=estimated_price_source,
-            )
-        )
 
     return with_contract_regime(
         _success_response(
             bid=bid,
             payload=payload,
-            rule_result=rule_result,
-            table=table,
-            pred_price=pred_price,
+            rule_result=inputs.rule_result,
+            table=inputs.table,
+            pred_price=inputs.pred_price,
             scenarios=scenarios,
             provenance=_model_provenance(payload, request, db),
-            override_fields=override_fields,
-            quant_scores=quant_scores,
-            quant_table=quant_table,
-            band=band,
-            band_note=band_note,
-            resolution=resolution,
-            estimated_price_source=estimated_price_source,
-            quant_source=quant_source,
-            quant_notice=quant_notice,
+            override_fields=inputs.override_fields,
+            quant_scores=inputs.quant_scores,
+            quant_table=inputs.quant_table,
+            band=inputs.band,
+            band_note=inputs.band_note,
+            resolution=inputs.resolution,
+            estimated_price_source=inputs.estimated_price_source,
+            quant_source=inputs.quant_source,
+            quant_notice=inputs.quant_notice,
         )
     )
 
@@ -1835,6 +2049,396 @@ def analyze_evaluation(
         )
 
     return response
+
+
+# =============================================================================
+# 무상태 투찰가 추천 계산 엔드포인트
+# =============================================================================
+
+# 발주처 참가업체 수 요약에 쓰는 최근 낙찰 결과 표본 상한. 금액 산식에는 넣지 않습니다.
+PARTICIPANT_COUNT_SAMPLE_LIMIT = 500
+
+
+def _resolve_recommend_bid(db: Session, payload: EvaluationRecommendRequest) -> BidAnnouncement:
+    """공고 키(bid_id 또는 bid_ntce_no+차수)로 공고를 찾습니다. 없으면 404."""
+    if payload.bid_id is not None:
+        return _get_bid_or_404(db, payload.bid_id)
+    if payload.bid_ntce_no:
+        query = select(BidAnnouncement).where(BidAnnouncement.bid_ntce_no == payload.bid_ntce_no)
+        if payload.bid_ntce_ord:
+            query = query.where(BidAnnouncement.bid_ntce_ord == payload.bid_ntce_ord)
+        bid = db.execute(query.order_by(BidAnnouncement.id.desc())).scalars().first()
+        if bid is None:
+            raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
+        return bid
+    raise HTTPException(status_code=422, detail="bid_id 또는 bid_ntce_no 중 하나는 필요합니다.")
+
+
+def _member_qualification_facts(db: Session, user_id: int) -> AccountQualificationFact | None:
+    """로그인 회원의 정량 원자료. 없으면 None."""
+    return db.execute(
+        select(AccountQualificationFact).where(AccountQualificationFact.user_id == user_id)
+    ).scalar_one_or_none()
+
+
+@dataclass(frozen=True)
+class _RecommendInputs:
+    """추천 계산용으로 합쳐진 정량 입력과 부가 정보."""
+
+    qualification: QualificationInput
+    reputation_grade_required: list[str]
+    warnings: list[str]
+
+
+def _build_recommend_inputs(
+    overrides: RecommendationOverrides, facts: AccountQualificationFact | None
+) -> _RecommendInputs:
+    """요청 수정값 > 회원 원자료 > 빈 값 우선순위로 추천 입력을 만듭니다.
+
+    회원 신인도 원자료는 항목 코드만 저장되어 복수 선택지·구간 항목의 평점을 정할 수 없어,
+    선택지가 하나인 항목만 레지스트리로 환산하고 나머지는 '평점 선택 필요'로 남깁니다.
+    """
+    warnings: list[str] = []
+    reputation_items: dict[str, float] | None = None
+    reputation_grade_required: list[str] = []
+    if overrides.reputation_items is not None:
+        reputation_items = dict(overrides.reputation_items)
+    elif facts is not None and facts.reputation_items:
+        conversion = convert_reputation_codes(facts.reputation_items)
+        reputation_items = conversion.values or None
+        reputation_grade_required = list(conversion.needs_grade_selection)
+        if reputation_grade_required:
+            warnings.append(
+                "회원 신인도 항목 중 평점 선택이 필요한 항목이 있습니다: "
+                + ", ".join(reputation_grade_required)
+                + ". 요청 수정값(reputation_items)으로 지정해야 합니다."
+            )
+
+    management_grade = overrides.management_grade
+    if management_grade is None and facts is not None:
+        management_grade = facts.credit_grade
+
+    manual_score = overrides.manual_non_price_score
+    if manual_score is None and facts is not None and facts.non_price_quant_score is not None:
+        manual_score = float(facts.non_price_quant_score)
+
+    return _RecommendInputs(
+        qualification=QualificationInput(
+            quant_items=dict(overrides.quant_items or {}),
+            management_grade=management_grade,
+            reputation_items=reputation_items,
+            estimated_price=overrides.estimated_price,
+            manual_non_price_score=manual_score,
+            local_service_type=overrides.local_service_type,
+            max_price_score=overrides.max_price_score,
+            multiplier=overrides.multiplier,
+            pass_threshold=overrides.pass_threshold,
+            base_rate=overrides.base_rate,
+            disqualification=overrides.disqualification,
+        ),
+        reputation_grade_required=reputation_grade_required,
+        warnings=warnings,
+    )
+
+
+def _recommend_institution_features(bid: BidAnnouncement) -> dict[str, Any]:
+    """기관 이력 조회에 필요한 최소 특징만 모읍니다(features.py 와 같은 입력 키)."""
+    return {
+        "dminstt_nm": bid.dminstt_nm,
+        "ntce_instt_nm": bid.ntce_instt_nm,
+        "category": bid.category,
+        "openg_dt": bid.openg_dt,
+        "bid_clse_dt": bid.bid_clse_dt,
+        "bid_ntce_dt": bid.bid_ntce_dt,
+    }
+
+
+def _recommend_prediction(
+    bid: BidAnnouncement,
+    selected_model: str | None,
+    request: Request,
+    db: Session,
+    user: CustomUser,
+) -> RecommendationPrediction:
+    """AI 예측가와 근거 재료를 조회합니다. 예측 실패도 사유만 담고 예외를 올리지 않습니다."""
+    requested_model = selected_model
+    actual_model: str | None = None
+    fallback_used = False
+    fallback_reason: str | None = None
+    optimal_price: int | None = None
+    predicted_rate: float | None = None
+    try:
+        response = predict_price_api(
+            PredictPriceRequest(bid_id=bid.id, selected_model=selected_model, user_price=None),
+            request,
+            db,
+            user,
+        )
+    except HTTPException as exc:
+        fallback_used = True
+        fallback_reason = f"예측 모델을 확인할 수 없습니다 ({exc.status_code}: {exc.detail})"
+    else:
+        requested_model = response.requested_model
+        actual_model = response.model_id
+        fallback_used = response.fallback_used
+        fallback_reason = response.fallback_reason
+        optimal_price = response.optimal_price
+        predicted_rate = response.prediction_rate
+
+    stats = lookup_institution_stats(_recommend_institution_features(bid), db)
+    sample_count = int(stats.get("inst_sample_cnt", 0.0))
+    average_rate = float(stats.get("inst_hist_rate", 0.0)) * 100.0
+    return RecommendationPrediction(
+        optimal_price=optimal_price,
+        predicted_rate=predicted_rate,
+        requested_model=requested_model,
+        actual_model=actual_model,
+        fallback_used=fallback_used,
+        fallback_reason=fallback_reason,
+        institution_average_rate=round(average_rate, 4),
+        institution_sample_count=sample_count,
+        institution_rate_is_fallback=sample_count <= 0,
+    )
+
+
+def _participant_count_stats(db: Session, bid: BidAnnouncement) -> ParticipantCountStats:
+    """발주처 과거 참가업체 수(prtcptCnum) 요약. 금액 산식에는 넣지 않습니다."""
+    if not bid.dminstt_nm:
+        return ParticipantCountStats()
+    rows = (
+        db.execute(
+            select(BidResult.raw_data)
+            .where(BidResult.dminstt_nm == bid.dminstt_nm, BidResult.category == bid.category)
+            .order_by(BidResult.rl_openg_dt.desc())
+            .limit(PARTICIPANT_COUNT_SAMPLE_LIMIT)
+        )
+        .scalars()
+        .all()
+    )
+    summary = summarize_participant_counts(
+        [count for count in map(extract_participant_count, rows) if count is not None]
+    )
+    return ParticipantCountStats(
+        sample_count=summary.sample_count,
+        average=(format_decimal_plain(summary.average) if summary.average is not None else None),
+        minimum=summary.minimum,
+        maximum=summary.maximum,
+    )
+
+
+def _non_price_score_items(breakdown: NonPriceBreakdown) -> list[NonPriceScoreItem]:
+    """항목별 내역을 근거 문장 재료로 옮깁니다. 경영상태는 수행능력에서 분리합니다."""
+    rows = (
+        ("performance", "수행능력", breakdown.performance - breakdown.management),
+        ("management", "경영상태", breakdown.management),
+        ("labor_plan", "근로조건 이행계획", breakdown.labor_plan),
+        ("reputation", "신인도", breakdown.reputation),
+    )
+    return [
+        NonPriceScoreItem(item_key=key, item_name=name, score=format_decimal_plain(value))
+        for key, name, value in rows
+    ]
+
+
+def _recommend_price_bounds(
+    bid: BidAnnouncement,
+    inputs: _EvaluationInputs,
+    breakdown: NonPriceBreakdown,
+    institution_regime: str | None,
+) -> tuple[RecommendationPriceBounds, Decimal]:
+    """이론 사정률 범위로 최저가·최상가를 확정합니다.
+
+    사정률 범위는 아직 과거 실측이 없어 기초금액 ±2%/±3%(generate_pred_price_scenarios)를
+    씁니다. 범위를 인자로 받는 순수 함수 compute_price_bounds 에 위임하며, 실측 분포
+    (min_rate/max_rate)가 확보되면 이 함수의 범위 산출만 바꾸면 됩니다.
+    """
+    assert inputs.table is not None
+    assert inputs.effective_lwlt is not None
+    assert inputs.pred_price is not None
+    theoretical = generate_pred_price_scenarios(
+        inputs.pred_price,
+        is_local_contract=_is_local_contract(bid, institution_regime),
+    )
+    rate_low, rate_high = theoretical_rate_range(theoretical.range_rate)
+    bounds = compute_price_bounds(
+        base_amount=inputs.pred_price,
+        rate_low=rate_low,
+        rate_high=rate_high,
+        pass_threshold=inputs.table.pass_threshold,
+        non_price_score=breakdown.total,
+        base_rate=inputs.table.base_rate,
+        max_price_score=inputs.table.max_price_score,
+        multiplier=inputs.table.multiplier,
+        announcement_lwlt_rate=inputs.effective_lwlt,
+        flat_ratio=inputs.table.flat_ratio,
+        flat_score=inputs.table.flat_score,
+    )
+    return (
+        RecommendationPriceBounds(
+            status=bounds.status,
+            min_bid_amount=(
+                int(bounds.min_bid_amount) if bounds.min_bid_amount is not None else None
+            ),
+            max_bid_amount=(
+                int(bounds.max_bid_amount) if bounds.max_bid_amount is not None else None
+            ),
+            min_pred_price=(
+                int(bounds.min_pred_price) if bounds.min_pred_price is not None else None
+            ),
+            max_pred_price=(
+                int(bounds.max_pred_price) if bounds.max_pred_price is not None else None
+            ),
+            ratio_low=(
+                format_decimal_plain(bounds.ratio_low) if bounds.ratio_low is not None else None
+            ),
+            ratio_high=(
+                format_decimal_plain(bounds.ratio_high) if bounds.ratio_high is not None else None
+            ),
+            rate_low_percent=format_decimal_plain(rate_low * Decimal("100")),
+            rate_high_percent=format_decimal_plain(rate_high * Decimal("100")),
+            reasons=list(bounds.reasons),
+        ),
+        rate_low,
+    )
+
+
+@router.post(
+    "/recommend",
+    response_model=EvaluationRecommendResponse,
+    summary="무상태 투찰가 추천 계산",
+)
+def recommend_evaluation(
+    payload: EvaluationRecommendRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser = Depends(require_current_user),
+) -> EvaluationRecommendResponse:
+    """로그인 회원의 정량 원자료를 자동 기입해 AI 예측가·최저가·최상가 근거 재료를 계산합니다.
+
+    저장하지 않습니다(무상태). 규칙 판별·정량 환산·통과 구간 역산은 /analyze 와 같은 함수를
+    재사용하며, 결격 입력을 생략하면 '미확인'으로 계산합니다. 사정률 범위는 아직 과거 실측이
+    없어 이론 범위(기초금액 ±2%/±3%)를 쓰고, 그 사실을 rate_source·rate_notice 로 알립니다.
+    """
+    bid = _resolve_recommend_bid(db, payload)
+    facts = _member_qualification_facts(db, user.id)
+    built = _build_recommend_inputs(payload.overrides, facts)
+    qualification = built.qualification
+
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    institution = _demand_institution_for_bid(db, bid)
+    institution_regime = classify_contract_regime(institution)
+    contract_regime = describe_contract_regime(raw_data, bid.cntrct_mthd_nm, institution)
+    estimated_price, estimated_price_source = _effective_estimated_price(bid, qualification)
+    ignored_user_price = (
+        estimated_price_source == "announcement" and qualification.estimated_price is not None
+    )
+
+    prediction = _recommend_prediction(bid, payload.selected_model, request, db, user)
+    participant_stats = _participant_count_stats(db, bid)
+
+    inputs = _resolve_evaluation_inputs(
+        bid=bid,
+        qualification=qualification,
+        raw_data=raw_data,
+        institution=institution,
+        institution_regime=institution_regime,
+        estimated_price=estimated_price,
+        estimated_price_source=estimated_price_source,
+    )
+    warnings = list(built.warnings)
+    if ignored_user_price:
+        warnings.append(
+            "공고 추정가격이 있어 사용자 입력 추정가격은 구간 판정에 사용하지 않았습니다."
+        )
+
+    rule_result = inputs.rule_result
+    if inputs.is_blocked:
+        return EvaluationRecommendResponse(
+            status="blocked",
+            blocked=True,
+            blocked_reason=f"{inputs.block_code}: {inputs.block_message}",
+            rule_id=inputs.rule.rule_id if inputs.rule is not None else None,
+            rule_name=inputs.rule.description if inputs.rule is not None else None,
+            rule_basis=_rule_basis(bid, rule_result) if rule_result is not None else None,
+            contract_regime=ContractRegimeDescription(**contract_regime),
+            disqualification_status=disqualification_status(qualification.disqualification),
+            rate_source=RATE_SOURCE_THEORETICAL,
+            rate_notice=THEORETICAL_RATE_NOTICE,
+            base_rate=(_as_percent(inputs.rule.base_rate) if inputs.rule is not None else None),
+            lower_bound_rate=(
+                float(inputs.effective_lwlt) if inputs.effective_lwlt is not None else None
+            ),
+            prediction=prediction,
+            participant_stats=participant_stats,
+            warnings=[*warnings, *(rule_result.warnings if rule_result is not None else [])],
+        )
+
+    assert inputs.rule is not None
+    assert inputs.table is not None
+    assert inputs.quant_scores is not None
+    assert inputs.rule_result is not None
+    assert inputs.effective_lwlt is not None
+    assert inputs.pred_price is not None
+
+    breakdown = build_non_price_breakdown(
+        performance=inputs.quant_scores.performance,
+        management=inputs.quant_scores.management,
+        labor_plan=inputs.quant_scores.labor_plan,
+        reputation=inputs.quant_scores.reputation,
+    )
+    non_price_score = breakdown.total
+    required_price_score = inputs.table.pass_threshold - non_price_score
+    price_bounds, _rate_low = _recommend_price_bounds(bid, inputs, breakdown, institution_regime)
+    bounds_blocked = price_bounds.status != "ok"
+
+    return EvaluationRecommendResponse(
+        status="blocked" if bounds_blocked else "success",
+        blocked=bounds_blocked,
+        blocked_reason=(
+            "PRICE_BOUNDS_UNRESOLVED: " + "; ".join(price_bounds.reasons)
+            if bounds_blocked
+            else None
+        ),
+        rule_id=inputs.rule.rule_id,
+        rule_name=inputs.rule.description,
+        rule_basis=_rule_basis(bid, inputs.rule_result),
+        contract_regime=ContractRegimeDescription(**contract_regime),
+        disqualification_status=disqualification_status(qualification.disqualification),
+        rate_source=RATE_SOURCE_THEORETICAL,
+        rate_notice=THEORETICAL_RATE_NOTICE,
+        base_rate=_as_percent(inputs.table.base_rate),
+        lower_bound_rate=float(inputs.effective_lwlt),
+        max_price_score=format_decimal_plain(inputs.table.max_price_score),
+        non_price_score=format_decimal_plain(non_price_score),
+        pass_threshold=format_decimal_plain(inputs.table.pass_threshold),
+        required_price_score=format_decimal_plain(required_price_score),
+        non_price_items=_non_price_score_items(breakdown),
+        reputation_grade_required=built.reputation_grade_required,
+        quant_source=inputs.quant_source,
+        quant_notice=inputs.quant_notice,
+        score_table=_rule_score_table_payload(
+            inputs.rule,
+            [],
+            inputs.override_fields,
+            inputs.resolution,
+            inputs.estimated_price_source,
+            applied_max_price_score=inputs.table.max_price_score,
+            applied_multiplier=inputs.table.multiplier,
+        ),
+        quant_score_table=(
+            _quant_table_payload(inputs.quant_table, inputs.band, inputs.band_note)
+            if inputs.quant_table is not None
+            else None
+        ),
+        prediction=prediction,
+        price_bounds=price_bounds,
+        participant_stats=participant_stats,
+        warnings=[
+            *warnings,
+            *inputs.rule_result.warnings,
+            *(inputs.resolution.warnings if inputs.resolution is not None else []),
+        ],
+    )
 
 
 # =============================================================================

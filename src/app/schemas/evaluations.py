@@ -103,9 +103,13 @@ class QualificationInput(BaseModel):
     credibility_score: float = Field(
         default=0.0, description="(구형) 신인도 가감점. reputation_items 가 있으면 쓰지 않습니다."
     )
-    disqualification: bool = Field(
-        default=False,
-        description="결격사유 해당 여부 (부정당업자 제재, 영업정지 등 해당 시 True)",
+    disqualification: bool | None = Field(
+        default=None,
+        description=(
+            "결격사유 해당 여부. True/False 를 명시하면 그 값을 그대로 계산에 쓰고, 필드를 "
+            "생략하면 '미확인'으로 보아 결격 없이 점수를 계산합니다. 계산 결과는 같지만 응답의 "
+            "disqualification_status 가 not_checked 로 달라집니다(결격 체크박스 제거 대응)."
+        ),
     )
     evidence_date: date | None = Field(
         default=None,
@@ -600,6 +604,13 @@ class EvaluationResponse(BaseModel):
     quant_notice: str | None = Field(
         default=None, description="정량점수 출처 안내(미검증 입력 고지 등)"
     )
+    disqualification_status: Literal["not_checked", "clear", "disqualified"] | None = Field(
+        default=None,
+        description=(
+            "결격 확인 상태. 입력을 생략하면 not_checked, 명시 True 는 disqualified, "
+            "명시 False 는 clear 입니다. 점수 계산은 세 경우 모두 결격 없이 수행합니다."
+        ),
+    )
     warnings: list[str] = Field(
         default_factory=list,
         description="전체 종합 경고 메시지 목록",
@@ -608,6 +619,191 @@ class EvaluationResponse(BaseModel):
         default_factory=utcnow,
         description="분석 일시",
     )
+
+
+# ============================================================================
+# 무상태 투찰가 추천 계산 스키마 (설계 5장, D-W4)
+# ============================================================================
+
+
+class RecommendationOverrides(BaseModel):
+    """추천 계산에서 회원 원자료를 덮어쓰는 선택 입력.
+
+    None 인 필드는 회원 원자료(account_qualification_facts)를 쓰고, 값이 있으면 요청 값이
+    우선합니다(우선순위: 요청 수정값 > 회원 원자료 > 빈 값).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    quant_items: dict[str, float] | None = Field(
+        default=None, description="(수정값) 적용 별표 심사항목별 점수"
+    )
+    management_grade: str | None = Field(
+        default=None, description="(수정값) 경영상태 신용평가등급 표기"
+    )
+    reputation_items: dict[str, float] | None = Field(
+        default=None,
+        description=(
+            "(수정값) 신인도 항목별 평점. 회원 원자료는 항목 코드만 저장되어 복수 선택지·구간 "
+            "항목의 평점을 정할 수 없으므로, 그 항목의 평점은 이 값으로만 지정합니다."
+        ),
+    )
+    estimated_price: int | None = Field(
+        default=None, gt=0, description="(수정값) 공고에 추정가격이 없을 때 쓰는 추정가격"
+    )
+    manual_non_price_score: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="(수정값) 기관 원문 미반영 공고의 비가격 정량점수",
+    )
+    local_service_type: str | None = Field(
+        default=None, description="(수정값) LOCAL 시·도 별표 용역 세부유형"
+    )
+    max_price_score: float | None = Field(
+        default=None, gt=0.0, description="(수정값) 가격 배점한도 B"
+    )
+    multiplier: float | None = Field(default=None, gt=0.0, description="(수정값) 평점 계수 k")
+    pass_threshold: float | None = Field(
+        default=None, gt=0.0, description="(수정값) 적격 통과점수 T"
+    )
+    base_rate: float | None = Field(
+        default=None, ge=0.80, le=0.95, description="(수정값) 지방계약 가격점수 기준비율"
+    )
+    disqualification: bool | None = Field(
+        default=None,
+        description="(수정값) 결격사유 해당 여부. 생략하면 '미확인'으로 계산합니다.",
+    )
+
+
+class EvaluationRecommendRequest(BaseModel):
+    """무상태 투찰가 추천 계산 요청.
+
+    공고 키(bid_id 또는 bid_ntce_no+bid_ntce_ord)와 선택적 수정값만 받습니다. 서버는 저장하지
+    않습니다. 회원 원자료가 있으면 그 값으로 정량점수를 자동 기입합니다.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    bid_id: int | None = Field(default=None, description="입찰공고 식별자 ID")
+    bid_ntce_no: str | None = Field(default=None, description="입찰공고번호")
+    bid_ntce_ord: str | None = Field(default=None, description="입찰공고차수")
+    selected_model: str | None = Field(default=None, description="선택된 추천 모델 ID")
+    overrides: RecommendationOverrides = Field(
+        default_factory=RecommendationOverrides, description="회원 원자료를 덮어쓰는 수정값"
+    )
+
+
+class NonPriceScoreItem(BaseModel):
+    """회원 정량점수 항목별 내역 한 줄 (근거 문장 재료)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    item_key: str = Field(
+        ..., description="항목 식별자(performance/management/labor_plan/reputation)"
+    )
+    item_name: str = Field(..., description="항목명")
+    score: str = Field(..., description="환산 점수(지수 표기 없는 문자열)")
+
+
+class RecommendationPrediction(BaseModel):
+    """AI 예측가와 근거 재료(대체 여부, 발주처 과거 낙찰률·표본 수)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    optimal_price: int | None = Field(None, description="AI 예측가 (원)")
+    predicted_rate: float | None = Field(None, description="예측 낙찰률 (%)")
+    requested_model: str | None = Field(None, description="요청 모델")
+    actual_model: str | None = Field(None, description="실제 적용 모델")
+    fallback_used: bool = Field(False, description="대체 모델 사용 여부")
+    fallback_reason: str | None = Field(None, description="대체 사유")
+    institution_average_rate: float | None = Field(None, description="발주처 과거 평균 낙찰률 (%)")
+    institution_sample_count: int = Field(0, description="발주처 낙찰 이력 유효 표본 수")
+    institution_rate_is_fallback: bool = Field(
+        False, description="이력 표본 부족으로 카테고리 기본값을 썼는지"
+    )
+
+
+class ParticipantCountStats(BaseModel):
+    """발주처 과거 참가업체 수(prtcptCnum) 요약. 금액 산식에는 넣지 않는다."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    sample_count: int = Field(0, description="유효 표본 수")
+    average: str | None = Field(None, description="평균 참가업체 수")
+    minimum: int | None = Field(None, description="최소 참가업체 수")
+    maximum: int | None = Field(None, description="최대 참가업체 수")
+
+
+class RecommendationPriceBounds(BaseModel):
+    """사정률 시나리오별 통과 투찰금액 구간.
+
+    최저가는 사정률 하한 예정가격에서, 최상가는 사정률 상한 예정가격에서 통과점수를 넘기는
+    금액입니다. 두 금액 모두 낙찰하한율 이상이며, rate_source 가 theoretical 이면 과거 실측이
+    아닌 이론 범위(기초금액 ±2%/±3%)입니다.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: Literal["ok", "blocked"] = Field(..., description="구간 확정 상태")
+    min_bid_amount: int | None = Field(None, description="최저가 (원)")
+    max_bid_amount: int | None = Field(None, description="최상가 (원)")
+    min_pred_price: int | None = Field(None, description="사정률 하한 예정가격 (원)")
+    max_pred_price: int | None = Field(None, description="사정률 상한 예정가격 (원)")
+    ratio_low: str | None = Field(None, description="통과 투찰률 구간 하한 (비율)")
+    ratio_high: str | None = Field(None, description="통과 투찰률 구간 상한 (비율)")
+    rate_low_percent: str | None = Field(None, description="사정률 하한 (%)")
+    rate_high_percent: str | None = Field(None, description="사정률 상한 (%)")
+    reasons: list[str] = Field(default_factory=list, description="차단·제한 사유")
+
+
+class EvaluationRecommendResponse(BaseModel):
+    """무상태 투찰가 추천 계산 응답. 저장하지 않으며 근거 문장 재료를 구조화해 돌려줍니다."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: Literal["success", "blocked"] = Field(..., description="계산 상태")
+    blocked: bool = Field(False, description="계산 차단 여부")
+    blocked_reason: str | None = Field(None, description="차단 사유")
+    rule_id: str | None = Field(None, description="적용 규칙 식별자")
+    rule_name: str | None = Field(None, description="적용 규칙 명칭")
+    rule_basis: str | None = Field(None, description="규칙 판별 근거")
+    contract_regime: ContractRegimeDescription | None = Field(None, description="계약 법령 판정")
+    disqualification_status: Literal["not_checked", "clear", "disqualified"] = Field(
+        "not_checked", description="결격 확인 상태"
+    )
+    rate_source: Literal["theoretical", "measured"] = Field(
+        "theoretical", description="사정률 범위 출처. theoretical 은 이론 범위"
+    )
+    rate_notice: str | None = Field(None, description="사정률 범위 주의 문구")
+    base_rate: float | None = Field(None, description="가격점수 기준비율 (%)")
+    lower_bound_rate: float | None = Field(None, description="낙찰하한율 (%)")
+    max_price_score: str | None = Field(None, description="가격 배점한도 B")
+    non_price_score: str | None = Field(None, description="회원 정량점수 S")
+    pass_threshold: str | None = Field(None, description="적격 통과점수 T")
+    required_price_score: str | None = Field(None, description="필요 가격점수 P = T - S")
+    non_price_items: list[NonPriceScoreItem] = Field(
+        default_factory=list, description="회원 정량점수 항목별 내역"
+    )
+    reputation_grade_required: list[str] = Field(
+        default_factory=list,
+        description="회원 원자료만으로 평점을 정할 수 없어 선택이 필요한 신인도 항목 코드",
+    )
+    quant_source: Literal["REGISTRY_TABLE", "USER_INPUT_UNVERIFIED", "NONE"] | None = Field(
+        None, description="정량점수 출처"
+    )
+    quant_notice: str | None = Field(None, description="정량점수 출처 안내")
+    score_table: RuleScoreTable | None = Field(None, description="규칙 선언 배점표(B·k·T)")
+    quant_score_table: QuantScoreTablePayload | None = Field(
+        None, description="적용 별표 정량평가 배점표"
+    )
+    prediction: RecommendationPrediction | None = Field(None, description="AI 예측가와 근거 재료")
+    price_bounds: RecommendationPriceBounds | None = Field(None, description="최저가·최상가 구간")
+    participant_stats: ParticipantCountStats = Field(
+        default_factory=ParticipantCountStats, description="발주처 과거 참여업체 수 요약"
+    )
+    warnings: list[str] = Field(default_factory=list, description="경고 목록")
+    created_at: datetime = Field(default_factory=utcnow, description="계산 일시")
 
 
 # ============================================================================
