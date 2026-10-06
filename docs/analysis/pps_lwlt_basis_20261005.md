@@ -6,7 +6,7 @@
 > **정본 사양**: `.orca/capsules/task_y1_pps_lwlt_basis/capsule.yaml` (`ORCA_TASK_CAPSULE_V2`)
 > **선행 보고**: [`docs/analysis/pps_flat_zone_source_20261005.md`](pps_flat_zone_source_20261005.md). 그 보고서 리뷰(2026-10-05)가 남긴 공백 3건이 이 작업의 대상입니다.
 > **역할 경계**: 코드·설정·DB를 변경하지 않았습니다. 이 문서 한 개가 이번 작업의 커밋 산출물입니다.
-> **원본 위치**: 조달청·국가법령정보센터 고시 원문(HWP·HWPX·PDF)과 추출 텍스트는 `EXT/pps/` 아래에만 두었고 커밋하지 않습니다(`EXT/` 는 `.git/info/exclude` 로 제외).
+> **원본 위치**: 조달청·국가법령정보센터 고시 원문(HWP·HWPX·PDF)과 추출 텍스트는 `data/sources/qualification/files/pps` 아래에만 두었고 커밋하지 않습니다(`EXT/` 는 `.git/info/exclude` 로 제외).
 > **판정 규칙**: 캡슐 3.2 정의대로 `확인`(원문 행 인용), `부분`(일부만 인쇄 또는 대입 산출), `미확인`(원문 미확보 또는 별표 귀속 미확정) 세 등급만 씁니다. 추정·역산한 값을 `확인`·`부분` 으로 적지 않습니다.
 
 ---
@@ -59,10 +59,10 @@
 
 HWP 5.x 는 OLE 복합 파일이라 `zipfile` 로 읽히지 않습니다. `BodyText/Section0`... 스트림을 raw deflate 로 풀고, 레코드 헤더(`tagid`·`level`·`size`)를 파싱했습니다. 본문은 `HWPTAG_PARA_TEXT`(tag 67), 수식은 `HWPTAG_CTRL_EQEDIT`(tag 88)의 `BSTR` 스크립트에서 뽑았습니다. HWPX 는 표준 `zipfile` 로 `Contents/section*.xml` 의 `hp:t` 를 추출했습니다. 새 저장소 의존성은 추가하지 않았습니다.
 
-- 본문 추출: `EXT/pps/pps_2026_15_jeonmun.rec.txt`, 별표별 `EXT/pps/pps_2026_15_byl<N>.txt`
-- 수식 추출: `EXT/pps/pps_2026_15_eqn.txt`
-- 신구조문대비표: `EXT/pps/pps_2026_15_singu.rec.txt`
-- 안내 자료: `EXT/pps/pps_2026_260_lwlt_guide.txt`, `EXT/pps/pps_2026_390_lwlt_guide.txt`
+- 본문 추출: `data/sources/qualification/files/pps/c3bea3338030_pps_2026_15_jeonmun.rec.txt`, 별표별 `EXT/pps/pps_2026_15_byl<N>.txt`
+- 수식 추출: `data/sources/qualification/files/pps/cffbc198c085_pps_2026_15_eqn.txt`
+- 신구조문대비표: `data/sources/qualification/files/pps/84e8a50c6089_pps_2026_15_singu.rec.txt`
+- 안내 자료: `data/sources/qualification/files/pps/7eb25f17fec3_pps_2026_260_lwlt_guide.txt`, `data/sources/qualification/files/pps/7a2276f858d6_pps_2026_390_lwlt_guide.txt`
 
 PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가 PUA 글리프로 나와 복원되지 않았습니다(선행 보고 6장과 같은 한계). 그래서 수식 값은 HWP `eqed` 스크립트에서만 읽었습니다.
 
@@ -84,7 +84,7 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 
 ### 3.2 제2026-15호 신구조문대비표가 바꾼 것
 
-`EXT/pps/pps_2026_15_singu.rec.txt` 를 판독한 변경 목록입니다. **입찰가격 계산식·평탄 문장은 목록에 없습니다.**
+`data/sources/qualification/files/pps/84e8a50c6089_pps_2026_15_singu.rec.txt` 를 판독한 변경 목록입니다. **입찰가격 계산식·평탄 문장은 목록에 없습니다.**
 
 | 위치 | 변경 | 인용 |
 | --- | --- | --- |
@@ -103,7 +103,7 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 
 `B` 는 심사항목 배점한도 표에서, `기준비율`·`k` 는 `eqed` 수식에서, `평탄 문장` 은 별표 예외사항에서 읽었습니다. 값은 제2026-15호 원문에서 확인했고, 제2025-257호와는 평탄 문장 비율만 대조했습니다(수식의 기준비율·k 는 아래 주 참조).
 
-| 별표 | B(5억 이상/미만) | 기준비율 | k(고시 이상/미만) | 평탄 문장 | 제2025-257호 평탄 문장 | 원문 인용 (제2026-15호, `EXT/pps/`) |
+| 별표 | B(5억 이상/미만) | 기준비율 | k(고시 이상/미만) | 평탄 문장 | 제2025-257호 평탄 문장 | 원문 인용 (제2026-15호, `data/sources/qualification/files/pps`) |
 | --- | --- | ---: | --- | --- | --- | --- |
 | 별표 1 학술연구 | 60/70 | 88 | 2/4 | 95.5% / 91.75% | 동일 `pps_2025_257.txt:1002-1011` | B `pps_2026_15_byl1.txt:35-36` · `pps_2026_15_eqn.txt:2-3` · 평탄 `pps_2026_15_byl1.txt:57,62` |
 | 별표 2 시설분야 | 60/70 | 91 | 5 | 94% | 동일 `pps_2025_257.txt:1270-1274` | B `pps_2026_15_byl2.txt:37-38` · `pps_2026_15_eqn.txt:5` · 평탄 `pps_2026_15_byl2.txt:52` |
@@ -147,10 +147,10 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 
 | 파일 | `89.995` | `87.995` |
 | --- | ---: | ---: |
-| `EXT/pps/pps_2026_15_jeonmun.rec.txt` | 0 | 0 |
-| `EXT/pps/pps_2025_257.txt` | 0 | 0 |
-| `EXT/pps/pps_2026_260.txt` | 0 | 0 |
-| `EXT/pps/pps_390_byl5.txt`, `pps_390_byl3_2.txt` | 0 | 0 |
+| `data/sources/qualification/files/pps/c3bea3338030_pps_2026_15_jeonmun.rec.txt` | 0 | 0 |
+| `data/sources/qualification/files/pps/de542165bc64_pps_2025_257.txt` | 0 | 0 |
+| `data/sources/qualification/files/pps/2ca5094609e3_pps_2026_260.txt` | 0 | 0 |
+| `data/sources/qualification/files/pps/f95aadc71e60_pps_390_byl5.txt`, `pps_390_byl3_2.txt` | 0 | 0 |
 
 조달청 일반용역 세부기준은 **낙찰하한율을 조문·별표에 넣지 않습니다.** 낙찰하한율은 배점표(B·k·기준비율·통과점수)에서 결정론적으로 유도되는 값이며, 조달청은 고시와 **함께 별도 「분야별 낙찰하한율 안내」 자료를 첨부**해 배포합니다. 선행 보고 5.3 이 `89.995` 의 출처를 적지 못한 이유가 이것입니다.
 
@@ -160,7 +160,7 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 
 > 안내 자료 표에서 통과점수 85·88 은 세로 병합셀이어서 해당 별표명 행이 아닌 다른 줄에 인쇄됩니다. 아래 인용은 별표명 행과 통과점수 행을 함께 적었습니다.
 
-**제2026-260호 첨부**(`EXT/pps/pps_2026_260_lwlt_guide.txt`, "2026. 5. 26. 이후 최초 공고분부터 적용"):
+**제2026-260호 첨부**(`data/sources/qualification/files/pps/7eb25f17fec3_pps_2026_260_lwlt_guide.txt`, "2026. 5. 26. 이후 최초 공고분부터 적용"):
 
 | 별표 | 통과점수 | 낙찰하한율 | 인용 |
 | --- | ---: | ---: | --- |
@@ -171,7 +171,7 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 | [별표 5] 여객육상운송용역 | 88 | **87.995%** | `:22,24-25` |
 | [별표 6] 보험용역 | 85 | 47.995% | `:26-28` |
 
-**제2026-390호 첨부**(`EXT/pps/pps_2026_390_lwlt_guide.txt`, "2026. 7. 27. 이후 최초 공고분부터 적용"):
+**제2026-390호 첨부**(`data/sources/qualification/files/pps/7a2276f858d6_pps_2026_390_lwlt_guide.txt`, "2026. 7. 27. 이후 최초 공고분부터 적용"):
 
 | 별표 | 통과점수 | 낙찰하한율 | 인용 |
 | --- | ---: | ---: | --- |
@@ -231,7 +231,7 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 
 조달청 일반용역 세부기준 제2조 1호는 일반용역을 "「건설기술진흥법」·「전력기술관리법」 또는 「정보통신공사업법」에서 규정한 용역과 그에 준하는 용역을 제외한 나머지" 로 정의합니다(`pps_2026_15_jeonmun.rec.txt:11`). 기술용역은 이 정의에서 빠지므로 일반용역 세부기준 별표 1~9 의 적용 대상이 아닙니다.
 
-기술용역은 조달청 일반용역 세부기준이 아니라 **별도 고시 「조달청 기술용역 적격심사 세부기준」**(조달청지침 제5460호) 소관으로 알려져 있습니다. 다만 그 고시 원문은 이 워크트리에 확보되지 않았습니다(8장 출처표가 지목한 `EXT/pps/tech.html` 부재, `EXT/pps/` 전체에 `5460`·`기술용역 적격심사 세부기준` 문자열 0건). 따라서 기술용역 세부기준의 별표 구성·적격통과점수는 **미확인**이며, 이 보고서는 그 값을 단정하지 않습니다.
+기술용역은 조달청 일반용역 세부기준이 아니라 **별도 고시 「조달청 기술용역 적격심사 세부기준」**(조달청지침 제5460호) 소관으로 알려져 있습니다. 다만 그 고시 원문은 이 워크트리에 확보되지 않았습니다(8장 출처표가 지목한 `EXT/pps/tech.html` 부재, `data/sources/qualification/files/pps` 전체에 `5460`·`기술용역 적격심사 세부기준` 문자열 0건). 따라서 기술용역 세부기준의 별표 구성·적격통과점수는 **미확인**이며, 이 보고서는 그 값을 단정하지 않습니다.
 
 **판정: `미확인` - 귀속 고시 원문 미확보.** 일반용역 세부기준 별표 1~9 의 적용 대상이 아니라는 점은 제2조 1호 정의(`:11`)로 확인됩니다. 선행 보고 7장의 "기술용역은 별표가 아니라 공고 하한율 경로" 서술을 확정적으로 뒤집으려면 별도 고시 원문이 필요하며, 그 전까지 기술용역 규칙의 별표 값은 확정하지 않습니다.
 
@@ -253,14 +253,14 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 | # | 항목 | 등급 | 값 | 원문 인용 |
 | ---: | --- | --- | --- | --- |
 | 1 | 제2026-15호 별표 1~9 입찰가격 4필드 | 확인 | 3.3 표 전량 | `EXT/pps/pps_2026_15_byl1~9.txt`, `pps_2026_15_eqn.txt` |
-| 2 | 제2026-15호 변경 범위 | 확인 | 입찰가격 무변경 | `EXT/pps/pps_2026_15_singu.rec.txt:5-337` |
-| 3 | 제2026-15호 시행일 | 확인 | 2026-03-01 | `EXT/pps/pps_2026_15_jeonmun.rec.txt:161-162` |
-| 4 | 시설분야 하한율 89.995(제2026-260호) | 확인 | 89.995% | `EXT/pps/pps_2026_260_lwlt_guide.txt:19-20` |
-| 5 | 여객·SW대상 하한율 87.995(제2026-260호) | 확인 | 87.995% | `EXT/pps/pps_2026_260_lwlt_guide.txt:21-25` |
-| 6 | 여객·SW대상 하한율 89.995(제2026-390호) | 확인 | 89.995% | `EXT/pps/pps_2026_390_lwlt_guide.txt:21-24` |
-| 7 | 제2026-390호 배점표 변경(별표 3의2·5) | 확인 | 기준비율 91→93, 평탄 94→96% | `EXT/pps/pps_2026_390_singu.txt:16-101`, `pps_390_byl5.txt:60-65` |
+| 2 | 제2026-15호 변경 범위 | 확인 | 입찰가격 무변경 | `data/sources/qualification/files/pps/84e8a50c6089_pps_2026_15_singu.rec.txt:5-337` |
+| 3 | 제2026-15호 시행일 | 확인 | 2026-03-01 | `data/sources/qualification/files/pps/c3bea3338030_pps_2026_15_jeonmun.rec.txt:161-162` |
+| 4 | 시설분야 하한율 89.995(제2026-260호) | 확인 | 89.995% | `data/sources/qualification/files/pps/7eb25f17fec3_pps_2026_260_lwlt_guide.txt:19-20` |
+| 5 | 여객·SW대상 하한율 87.995(제2026-260호) | 확인 | 87.995% | `data/sources/qualification/files/pps/7eb25f17fec3_pps_2026_260_lwlt_guide.txt:21-25` |
+| 6 | 여객·SW대상 하한율 89.995(제2026-390호) | 확인 | 89.995% | `data/sources/qualification/files/pps/7a2276f858d6_pps_2026_390_lwlt_guide.txt:21-24` |
+| 7 | 제2026-390호 배점표 변경(별표 3의2·5) | 확인 | 기준비율 91→93, 평탄 94→96% | `data/sources/qualification/files/pps/dda0bd0030e3_pps_2026_390_singu.txt:16-101`, `pps_390_byl5.txt:60-65` |
 | 8 | 일반 띠 `ATTACH_12/13/14` 별표 귀속 | 미확인 | - | `pps_2026_15_byl1~9.txt`(이름 없음), `20260930_score_params_acquisition.md:95-101` |
-| 9 | 기술용역 별표 귀속 | 미확인 | 별도 고시 원문 미확보 | `pps_2026_15_jeonmun.rec.txt:11`(일반용역 제외), `EXT/pps/` 에 귀속 고시 원문 없음 |
+| 9 | 기술용역 별표 귀속 | 미확인 | 별도 고시 원문 미확보 | `pps_2026_15_jeonmun.rec.txt:11`(일반용역 제외), `data/sources/qualification/files/pps` 에 귀속 고시 원문 없음 |
 | 10 | 평탄 점수(조달청 별표) | 부분 | 대입 산출 45/55·48/58 | 별표가 점수 미인쇄, `B·k·기준비율` 로 산출 |
 
 ---
@@ -275,30 +275,30 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 
 | rule_id | 별표 | 현재 값 | 고시금액 미만 | 고시금액 이상 | 근거 |
 | --- | --- | --- | ---: | ---: | --- |
-| `SERVC_QUAL_PRE_20250901_ATTACH_01` | 별표2 시설분야 | 없음(미등록) | 94 | 94 | `EXT/pps/pps_2026_15_byl2.txt:52`(대역 구분 없는 단일 문장) |
-| `SERVC_QUAL_PRE_20250901_ATTACH_03` | 별표5 여객 | 없음(미등록) | 94 | 94 | `EXT/pps/pps_2026_15_byl5.txt:53`(대역 구분 없는 단일 문장) |
-| `SERVC_QUAL_PRE_20250901_ATTACH_04` | 별표3의2 SW대상 | 없음(미등록) | 94 | 94 | `EXT/pps/pps_2026_15_byl3_2.txt:52`(대역 구분 없는 단일 문장) |
-| `SERVC_QUAL_PRE_20250901_ATTACH_05` | 별표3 SW비대상 | 없음(미등록) | 91.75 | 95.5 | `EXT/pps/pps_2026_15_byl3.txt:64`(미만), `:59`(이상) |
-| `SERVC_QUAL_PRE_20250901_ATTACH_06` | 별표1 학술연구(미만) | 없음(미등록) | 91.75 | - | `EXT/pps/pps_2026_15_byl1.txt:62` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_07` | 별표1 학술연구(이상) | 없음(미등록) | - | 95.5 | `EXT/pps/pps_2026_15_byl1.txt:57` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_08` | 별표4 폐기물(미만) | 없음(미등록) | 91.75 | - | `EXT/pps/pps_2026_15_byl4.txt:66` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_09` | 별표4 폐기물(이상) | 없음(미등록) | - | 95.5 | `EXT/pps/pps_2026_15_byl4.txt:61` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_10` | 별표5의2 화물(미만) | 없음(미등록) | 91.75 | - | `EXT/pps/pps_2026_15_byl5_2.txt:61` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_11` | 별표5의2 화물(이상) | 없음(미등록) | - | 95.5 | `EXT/pps/pps_2026_15_byl5_2.txt:56` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_15` | 별표7 수리·점검 | 없음(미등록) | 91.75 | 95.5 | `EXT/pps/pps_2026_15_byl7.txt:63`(미만), `:58`(이상) |
-| `SERVC_QUAL_PRE_20250901_ATTACH_16` | 별표8 임대차 | 없음(미등록) | 91.75 | 95.5 | `EXT/pps/pps_2026_15_byl8.txt:49`(미만), `:44`(이상) |
-| `SERVC_QUAL_PRE_20250901_ATTACH_17` | 별표9 수요기관지정형 | 없음(미등록) | 91.75 | 95.5 | `EXT/pps/pps_2026_15_byl9.txt:65`(미만), `:60`(이상) |
-| `SERVC_QUAL_PRE_20250901_ATTACH_02` | 별표6 보험 | 없음(미등록) | 넣지 않음 | 넣지 않음 | `EXT/pps/pps_2026_15_byl6.txt`(평탄 문장 0건) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_01` | 별표2 시설분야 | 없음(미등록) | 94 | 94 | `data/sources/qualification/files/pps/c2ea18cdfea3_pps_2026_15_byl2.txt:52`(대역 구분 없는 단일 문장) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_03` | 별표5 여객 | 없음(미등록) | 94 | 94 | `data/sources/qualification/files/pps/a9755b38e0ba_pps_2026_15_byl5.txt:53`(대역 구분 없는 단일 문장) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_04` | 별표3의2 SW대상 | 없음(미등록) | 94 | 94 | `data/sources/qualification/files/pps/294dcda876cb_pps_2026_15_byl3_2.txt:52`(대역 구분 없는 단일 문장) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_05` | 별표3 SW비대상 | 없음(미등록) | 91.75 | 95.5 | `data/sources/qualification/files/pps/f03906e0bc43_pps_2026_15_byl3.txt:64`(미만), `:59`(이상) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_06` | 별표1 학술연구(미만) | 없음(미등록) | 91.75 | - | `data/sources/qualification/files/pps/bfbb5b5bbffd_pps_2026_15_byl1.txt:62` |
+| `SERVC_QUAL_PRE_20250901_ATTACH_07` | 별표1 학술연구(이상) | 없음(미등록) | - | 95.5 | `data/sources/qualification/files/pps/bfbb5b5bbffd_pps_2026_15_byl1.txt:57` |
+| `SERVC_QUAL_PRE_20250901_ATTACH_08` | 별표4 폐기물(미만) | 없음(미등록) | 91.75 | - | `data/sources/qualification/files/pps/8169f8a15aa6_pps_2026_15_byl4.txt:66` |
+| `SERVC_QUAL_PRE_20250901_ATTACH_09` | 별표4 폐기물(이상) | 없음(미등록) | - | 95.5 | `data/sources/qualification/files/pps/8169f8a15aa6_pps_2026_15_byl4.txt:61` |
+| `SERVC_QUAL_PRE_20250901_ATTACH_10` | 별표5의2 화물(미만) | 없음(미등록) | 91.75 | - | `data/sources/qualification/files/pps/44bb47e6bcc9_pps_2026_15_byl5_2.txt:61` |
+| `SERVC_QUAL_PRE_20250901_ATTACH_11` | 별표5의2 화물(이상) | 없음(미등록) | - | 95.5 | `data/sources/qualification/files/pps/44bb47e6bcc9_pps_2026_15_byl5_2.txt:56` |
+| `SERVC_QUAL_PRE_20250901_ATTACH_15` | 별표7 수리·점검 | 없음(미등록) | 91.75 | 95.5 | `data/sources/qualification/files/pps/50101dc9bb3d_pps_2026_15_byl7.txt:63`(미만), `:58`(이상) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_16` | 별표8 임대차 | 없음(미등록) | 91.75 | 95.5 | `data/sources/qualification/files/pps/c0ab36b3f25e_pps_2026_15_byl8.txt:49`(미만), `:44`(이상) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_17` | 별표9 수요기관지정형 | 없음(미등록) | 91.75 | 95.5 | `data/sources/qualification/files/pps/a24c899ab6d6_pps_2026_15_byl9.txt:65`(미만), `:60`(이상) |
+| `SERVC_QUAL_PRE_20250901_ATTACH_02` | 별표6 보험 | 없음(미등록) | 넣지 않음 | 넣지 않음 | `data/sources/qualification/files/pps/d65d47abf01f_pps_2026_15_byl6.txt`(평탄 문장 0건) |
 
 ### 7.2 하한율 - 코드값 유지, 근거만 보강
 
 | rule_id | 필드 | 현재 값 | 원문 값 | 근거 |
 | --- | --- | --- | --- | --- |
-| `SERVC_QUAL_POST_20260526_ATTACH_01` (별표2) | lwlt_rate | 89.995 | 89.995 | `EXT/pps/pps_2026_260_lwlt_guide.txt:19-20` |
-| `SERVC_QUAL_PRE_20250901_ATTACH_03·04` (여객·SW대상) | lwlt_rate | 87.995 | 87.995 | `EXT/pps/pps_2026_260_lwlt_guide.txt:21-25` |
-| `SERVC_QUAL_POST_20260727_ATTACH_03·04` (여객·SW대상) | lwlt_rate | 89.995 | 89.995 | `EXT/pps/pps_2026_390_lwlt_guide.txt:21-24` |
-| `SERVC_QUAL_POST_20260526_ATTACH_05·06·08·10` (고시 미만) | lwlt_rate | 86.245 | 86.245 | `EXT/pps/pps_2026_260_lwlt_guide.txt:14-16` |
-| `SERVC_QUAL_POST_20260526_ATTACH_07·09·11` (고시 이상) | lwlt_rate | 82.495 | 82.495 | `EXT/pps/pps_2026_260_lwlt_guide.txt:17-18` |
+| `SERVC_QUAL_POST_20260526_ATTACH_01` (별표2) | lwlt_rate | 89.995 | 89.995 | `data/sources/qualification/files/pps/7eb25f17fec3_pps_2026_260_lwlt_guide.txt:19-20` |
+| `SERVC_QUAL_PRE_20250901_ATTACH_03·04` (여객·SW대상) | lwlt_rate | 87.995 | 87.995 | `data/sources/qualification/files/pps/7eb25f17fec3_pps_2026_260_lwlt_guide.txt:21-25` |
+| `SERVC_QUAL_POST_20260727_ATTACH_03·04` (여객·SW대상) | lwlt_rate | 89.995 | 89.995 | `data/sources/qualification/files/pps/7a2276f858d6_pps_2026_390_lwlt_guide.txt:21-24` |
+| `SERVC_QUAL_POST_20260526_ATTACH_05·06·08·10` (고시 미만) | lwlt_rate | 86.245 | 86.245 | `data/sources/qualification/files/pps/7eb25f17fec3_pps_2026_260_lwlt_guide.txt:14-16` |
+| `SERVC_QUAL_POST_20260526_ATTACH_07·09·11` (고시 이상) | lwlt_rate | 82.495 | 82.495 | `data/sources/qualification/files/pps/7eb25f17fec3_pps_2026_260_lwlt_guide.txt:17-18` |
 
 ### 7.3 넣지 않을 값
 
@@ -320,16 +320,16 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 
 | 문서명 | 차수(고시) | 발령일 | 시행일 | URL | 확인일 | EXT 경로 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 조달청 일반용역 적격심사 세부기준 | 조달청공고 제2026-15호 | 2026-01-08 | 2026-03-01 | `https://www.pps.go.kr/kor/bbs/view.do?key=00030&bbsSn=2601080012` | 2026-10-05 | `EXT/pps/pps_2026_15_jeonmun.hwp`, `pps_2026_15_singu.hwp`, 추출문 |
+| 조달청 일반용역 적격심사 세부기준 | 조달청공고 제2026-15호 | 2026-01-08 | 2026-03-01 | `https://www.pps.go.kr/kor/bbs/view.do?key=00030&bbsSn=2601080012` | 2026-10-05 | `data/sources/qualification/files/pps/4c69c651f57a_pps_2026_15_jeonmun.hwp`, `pps_2026_15_singu.hwp`, 추출문 |
 | 조달청 일반용역 적격심사 세부기준 (별표) | 조달청공고 제2026-15호 | 2026-01-08 | 2026-03-01 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000272418&chrClsCd=010202` | 2026-10-05 | `EXT/pps/pps_2026_15_byl1~9.hwpx`, 추출문 |
-| 조달청 일반용역 적격심사 세부기준 | 조달청공고 제2025-257호 | 2025-06-26 | 2025-09-01 | `https://www.law.go.kr/flDownload.do?flSeq=153730585` | 2026-10-05 | `EXT/pps/pps_2025_257.pdf`, `pps_2025_257.txt` |
-| 조달청 일반용역 적격심사 세부기준 + 낙찰하한율 안내 | 조달청공고 제2026-260호 | 2026-05-22 | 2026-05-26 | `https://www.pps.go.kr/kor/bbs/view.do?key=00030&bbsSn=2605220029` (첨부 `key=202605220020`) | 2026-10-05 | `EXT/pps/pps_2026_260_lwlt_guide.hwpx`, `pps_2026_260_jeonmun.hwpx`, `pps_2026_260_singu.hwpx` |
-| 조달청 일반용역 적격심사 세부기준 + 낙찰하한율 안내 | 조달청공고 제2026-390호 | 2026-07-24 | 2026-07-27 | `https://www.pps.go.kr/kor/bbs/view.do?key=00030&bbsSn=2607240033` (첨부 `key=202607240030`) | 2026-10-05 | `EXT/pps/pps_2026_390_lwlt_guide.hwpx`, `pps_2026_390_jeonmun.hwpx`, `pps_2026_390_singu.hwpx` |
-| 조달청 일반용역 적격심사 세부기준 (별표, 교차) | 조달청공고 제2026-390호 | 2026-07-24 | 2026-07-27 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000283412` | 2026-10-05 | `EXT/pps/pps_390_byl5_a.bin`, `pps_390_byl5_b.bin`, `pps_390_byl3_2_a.bin`, `pps_390_byl3_2_b.bin`, 추출문 `pps_390_byl5.txt`, `pps_390_byl3_2.txt` |
-| 조달청 기술용역 적격심사 세부기준 | 조달청지침 제5460호 | 2017-09-29 | 2017-11-01 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000099611` | 원문 미확보 | 없음(`EXT/pps` 에 원문 파일 없음) |
+| 조달청 일반용역 적격심사 세부기준 | 조달청공고 제2025-257호 | 2025-06-26 | 2025-09-01 | `https://www.law.go.kr/flDownload.do?flSeq=153730585` | 2026-10-05 | `data/sources/qualification/files/pps/63f9d9412205_pps_2025_257.pdf`, `pps_2025_257.txt` |
+| 조달청 일반용역 적격심사 세부기준 + 낙찰하한율 안내 | 조달청공고 제2026-260호 | 2026-05-22 | 2026-05-26 | `https://www.pps.go.kr/kor/bbs/view.do?key=00030&bbsSn=2605220029` (첨부 `key=202605220020`) | 2026-10-05 | `data/sources/qualification/files/pps/f2c3c9be94a4_pps_2026_260_lwlt_guide.hwpx`, `pps_2026_260_jeonmun.hwpx`, `pps_2026_260_singu.hwpx` |
+| 조달청 일반용역 적격심사 세부기준 + 낙찰하한율 안내 | 조달청공고 제2026-390호 | 2026-07-24 | 2026-07-27 | `https://www.pps.go.kr/kor/bbs/view.do?key=00030&bbsSn=2607240033` (첨부 `key=202607240030`) | 2026-10-05 | `data/sources/qualification/files/pps/bbaaf2067039_pps_2026_390_lwlt_guide.hwpx`, `pps_2026_390_jeonmun.hwpx`, `pps_2026_390_singu.hwpx` |
+| 조달청 일반용역 적격심사 세부기준 (별표, 교차) | 조달청공고 제2026-390호 | 2026-07-24 | 2026-07-27 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000283412` | 2026-10-05 | `data/sources/qualification/files/pps/27a3425087b8_pps_390_byl5_a.bin`, `pps_390_byl5_b.bin`, `pps_390_byl3_2_a.bin`, `pps_390_byl3_2_b.bin`, 추출문 `pps_390_byl5.txt`, `pps_390_byl3_2.txt` |
+| 조달청 기술용역 적격심사 세부기준 | 조달청지침 제5460호 | 2017-09-29 | 2017-11-01 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000099611` | 원문 미확보 | 없음(`data/sources/qualification/files/pps` 에 원문 파일 없음) |
 | 조달청 일반용역 적격심사 세부기준 | 조달청공고 제2023-53호 | 2023-03-02 | 2023-05-01 | `https://www.law.go.kr/LSW/admRulInfoR.do?admRulSeq=2100000220190` | 2026-10-05 | `EXT/pps/pps_2023_53_byl*.hwpx`, 추출문 |
-| (보도) 일반용역 낙찰하한율 확정 | - | - | - | `https://www.jodaleconomy.com/news/articleView.html?idxno=2479` | 2026-10-05 | `EXT/pps/pps_2026_260_lwlt_news_jodaleconomy_2479.html` |
-| (보도) SW·여객 추가 상향 행정예고 | - | - | - | `https://www.jodaleconomy.com/news/articleView.html?idxno=2705` | 2026-10-05 | `EXT/pps/pps_2026_390_lwlt_news_jodaleconomy_2705.html` |
+| (보도) 일반용역 낙찰하한율 확정 | - | - | - | `https://www.jodaleconomy.com/news/articleView.html?idxno=2479` | 2026-10-05 | `data/sources/qualification/files/pps/47adcc44b334_pps_2026_260_lwlt_news_jodaleconomy_2479.html` |
+| (보도) SW·여객 추가 상향 행정예고 | - | - | - | `https://www.jodaleconomy.com/news/articleView.html?idxno=2705` | 2026-10-05 | `data/sources/qualification/files/pps/62e570159122_pps_2026_390_lwlt_news_jodaleconomy_2705.html` |
 
 - 저장소 교차 근거: [`servc_pre20260526_rules_sourcing_20260929.md`](servc_pre20260526_rules_sourcing_20260929.md):20,269,280-284, [`servc_qualification_evaluation_design_20260909.md`](../design/servc_qualification_evaluation_design_20260909.md):43-56, [`g2b_procurement_institution_analysis.md`](../design/g2b_procurement_institution_analysis.md):133-215, [`20260930_score_params_acquisition.md`](20260930_score_params_acquisition.md):95-101.
 
@@ -341,7 +341,7 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 | --- | --- | --- |
 | 일반 띠 `ATTACH_12·13·14` 별표 귀속 | 미확인 | 이름이 별표 제목이 아니라 추정가격 구간 표기. 단일 별표로 환원 불가 |
 | 제2026-260호 이전(PRE)의 「분야별 낙찰하한율 안내」 | 원문 미확보 | 제2026-15호·제2026-260호 이전 고시 게시글에는 안내 자료 첨부가 없음. PRE 하한율은 저장소 실측 최빈값으로만 존재 |
-| 기술용역 귀속 고시(조달청 기술용역 적격심사 세부기준) | 원문 미확보 | `EXT/pps` 에 원문 파일 없음(`tech.html` 부재). 별표 구성·통과점수 미확인(5.2) |
+| 기술용역 귀속 고시(조달청 기술용역 적격심사 세부기준) | 원문 미확보 | `data/sources/qualification/files/pps` 에 원문 파일 없음(`tech.html` 부재). 별표 구성·통과점수 미확인(5.2) |
 | 조달청 별표 평탄 점수 | 부분 | 별표가 점수를 인쇄하지 않음. `B·k·기준비율` 대입 산출 |
 | HWP 5.x 수식 텍스트화 | 방법 한계 | `eqed` 스크립트에서 직접 추출. PDF 텍스트는 PUA 글리프로 수치 미복원 |
 
@@ -358,4 +358,4 @@ PDF 텍스트 추출(`pdfminer.six`)은 수식의 기준비율·계수 숫자가
 | 변경 파일 | `docs/analysis/pps_lwlt_basis_20261005.md` (문서 1개) |
 | 작업 브랜치 | `kwanbum217/y1-pps-lwlt` (main 직접 커밋 없음) |
 
-원문 대조 재현은 모두 `EXT/pps/` 안에서 가능합니다. HWP 추출은 OLE 스트림 + raw deflate + 레코드 파싱, HWPX 추출은 표준 `zipfile` 을 썼고 새 저장소 의존성은 추가하지 않았습니다.
+원문 대조 재현은 모두 `data/sources/qualification/files/pps` 안에서 가능합니다. HWP 추출은 OLE 스트림 + raw deflate + 레코드 파싱, HWPX 추출은 표준 `zipfile` 을 썼고 새 저장소 의존성은 추가하지 않았습니다.

@@ -82,10 +82,10 @@ flowchart TD
 | 시행일 | 2026. 7. 1. |
 | 출처 URL | `https://www.mois.go.kr/frt/bbs/type001/commonSelectBoardArticle.do?bbsId=BBSMSTR_000000000016&nttId=127353` (행정안전부 개정전문). 교차: 국가법령정보센터 `https://law.go.kr/LSW/admRulLsInfoP.do?admRulId=36201` |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/mois/mois_373_nakchal.hwpx` (1,482,053 B), 추출 `EXT/mois/mois373_body.txt` |
+| 원본 파일 | `data/sources/qualification/files/mois/ca0fc23fdaf7_mois_373_nakchal.hwpx` (1,482,053 B), 추출 `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/mois/mois373_body.txt:1` = `[시행 2026. 7. 1.][행정안전부 예규 제373호, 2026. 6. 29. 일부개정]`. 통과점수는 `EXT/mois/mois373_body.txt:7273` — 기술용역 추정가격 10억원 이상 92점, 10억원 미만 95점, 학술연구용역 85점. 아래 표의 인용은 모두 `EXT/mois/mois373_body.txt` 입니다.
+문서 머리말 `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:1` = `[시행 2026. 7. 1.][행정안전부 예규 제373호, 2026. 6. 29. 일부개정]`. 통과점수는 `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:7273` — 기술용역 추정가격 10억원 이상 92점, 10억원 미만 95점, 학술연구용역 85점. 아래 표의 인용은 모두 `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt` 입니다.
 
 **제2장의2 [별표 1] P.Q 대상 기술용역**
 
@@ -128,10 +128,10 @@ flowchart TD
 | 시행일 | 2025. 12. 24. |
 | 출처 URL | `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=28000032005015&histNo=008` (ELIS). 보조: `https://www.incheon.go.kr/contract/CTRT050100/` 게시목록에 "인천광역시 일반용역 적격심사 세부기준(2025-12-24 시행)" 노출 |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/inan/att008/[별표 1] 일반용역 적격심사 세부기준.hwp`, 추출 `EXT/inan/tbl1_008.txt` |
+| 원본 파일 | `EXT/inan/att008/[별표 1] 일반용역 적격심사 세부기준.hwp`, 추출 `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/inan/elis_inan_008.txt:91` = `[시행 2025.12.24]`, `:92` = `(일부개정) 2025-12-08 예규 제 488호`. 통과점수 `EXT/inan/elis_inan_008.txt:144` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표의 인용은 `EXT/inan/tbl1_008.txt` 입니다.
+문서 머리말 `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:91` = `[시행 2025.12.24]`, `:92` = `(일부개정) 2025-12-08 예규 제 488호`. 통과점수 `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:144` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표의 인용은 `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt` 입니다.
 
 | 적용 구간 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -143,7 +143,7 @@ flowchart TD
 | 5억원 미만 2억원 이상, 단순노무 | 70 (`:560`) | 20 (`:564`) | 88 (`:568`) | 100분의 88.25 이상 → 65점 (`:576`) | 65 | 70−5 = **65.0000** 일치 |
 | 2억원 미만 (단순노무 포함) | 90 (`:793`) | 20 (`:781`) | 88 (`:785`) | 100분의 88.25 이상 → 85점 (`:792`) | 85 | 90−5 = **85.0000** 일치 |
 
-최저평점 2점 (`:90`, `:334`, `:580`, `:798`). 준용 조항: 제10조 "「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등의 예규에서 정한 바에 따른다" (`EXT/inan/elis_inan_008.txt:171`). 이 준용은 소수점 처리 등에 한정하며, 계수는 자체 별표에서 읽었습니다.
+최저평점 2점 (`:90`, `:334`, `:580`, `:798`). 준용 조항: 제10조 "「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등의 예규에서 정한 바에 따른다" (`data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:171`). 이 준용은 소수점 처리 등에 한정하며, 계수는 자체 별표에서 읽었습니다.
 
 ### 4.3 제주특별자치도 — 확인
 
@@ -154,10 +154,10 @@ flowchart TD
 | 시행일 | 2024. 1. 1. |
 | 출처 URL | `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=50000006014013&histNo=003` (ELIS) |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/jeju/att/[별표 1] 일반용역 적격심사 심사항목 및 배점기준.hwp`, 추출 `EXT/jeju/tbl1_jeju.txt` |
+| 원본 파일 | `data/sources/qualification/files/jeju/35eb99d49807_[별표 1] 일반용역 적격심사 심사항목 및 배점기준.hwp`, 추출 `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/jeju/elis_jeju_main.txt:80` = `[시행 2024.01.01]`, `:81` = `(일부개정) 2023-12-13 예규 제 82호`. 통과점수 `EXT/jeju/elis_jeju_main.txt:127` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표의 인용은 `EXT/jeju/tbl1_jeju.txt` 입니다.
+문서 머리말 `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt:80` = `[시행 2024.01.01]`, `:81` = `(일부개정) 2023-12-13 예규 제 82호`. 통과점수 `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt:127` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표의 인용은 `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt` 입니다.
 
 | 적용 구간 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -170,7 +170,7 @@ flowchart TD
 | 2억원 미만, 단순노무 외 | 90 (`:882`) | 20 (`:882`) | 88 (`:882`) | 100분의 88.25 이상 → 85점 (`:883`) | 85 | **85.0000** 일치 |
 | 2억원 미만, 단순노무 | 90 (`:885`) | 20 (`:885`) | 88 (`:885`) | 100분의 88.25 이상 → 85점 (`:886`) | 85 | **85.0000** 일치 |
 
-최저평점 2점 (`:229`, `:455`, `:681`, `:889`). 준용 조항: 제7조 "정하지 아니한 사항은 관련 회계예규 등을 준용" (`EXT/jeju/elis_jeju_main.txt:140`).
+최저평점 2점 (`:229`, `:455`, `:681`, `:889`). 준용 조항: 제7조 "정하지 아니한 사항은 관련 회계예규 등을 준용" (`data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt:140`).
 
 ### 4.4 강원특별자치도 — 확인
 
@@ -181,10 +181,10 @@ flowchart TD
 | 시행일 | 2023. 6. 11. |
 | 출처 URL | `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=42000035005022&histNo=001` (ELIS) |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/gwd/att/[별표1] 일반용역 적격심사.hwp`, 추출 `EXT/gwd/tbl1_gwd.txt` |
+| 원본 파일 | `data/sources/qualification/files/gwd/cc7a84631971_[별표1] 일반용역 적격심사.hwp`, 추출 `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/gwd/elis_gwd_main.txt:232` = `[시행 2023.06.11]`, `:233` = `(제정) 2023-05-26 예규 제 832호 강원도 일반용역 적격심사 세부기준 전부개정지침`. 부칙 `:311` "이 세부기준은 2023년 6월 11일부터 시행한다." 통과점수 `EXT/gwd/elis_gwd_main.txt:276` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 생활폐기물 수집·운반 대행용역 별도. 아래 표의 인용은 `EXT/gwd/tbl1_gwd.txt` 입니다.
+문서 머리말 `data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt:232` = `[시행 2023.06.11]`, `:233` = `(제정) 2023-05-26 예규 제 832호 강원도 일반용역 적격심사 세부기준 전부개정지침`. 부칙 `:311` "이 세부기준은 2023년 6월 11일부터 시행한다." 통과점수 `data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt:276` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 생활폐기물 수집·운반 대행용역 별도. 아래 표의 인용은 `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt` 입니다.
 
 | 적용 구간 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -197,7 +197,7 @@ flowchart TD
 | 2억원 미만, 단순노무 외 | 90 (`:889`) | 20 (`:883`) | 88 (`:882`) | 100분의 88.25 이상 → 85점 (`:885`) | 85 | **85.0000** 일치 |
 | 2억원 미만, 단순노무 | 90 (`:941`) | 20 (`:936`) | 88 (`:935`) | 100분의 88.25 이상 → 85점 (`:937`) | 85 | **85.0000** 일치 |
 
-최저평점 2점 (`:58`, `:124`, `:337`, `:402`, `:615`, `:681`, `:888`, `:940`). 준용 조항: 제11조 "「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등에서 정한 바에 따른다" (`EXT/gwd/elis_gwd_main.txt:306`).
+최저평점 2점 (`:58`, `:124`, `:337`, `:402`, `:615`, `:681`, `:888`, `:940`). 준용 조항: 제11조 "「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등에서 정한 바에 따른다" (`data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt:306`).
 
 ### 4.5 대구광역시 — 부분
 
@@ -208,12 +208,12 @@ flowchart TD
 | 시행일 | 2026. 5. 11. |
 | 출처 URL | `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=27000005004039&histNo=008` (ELIS) |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/daegu/att008/[별표 1] 단순노무 일반용역 적격심사 평가기준.hwp`, 추출 `EXT/daegu/tbl1_daegu.txt` |
+| 원본 파일 | `data/sources/qualification/files/daegu/8d4b05afddb2_[별표 1] 단순노무 일반용역 적격심사 평가기준.hwp`, 추출 `data/sources/qualification/files/daegu/036ab03c59cf_tbl1_daegu.txt` |
 | 등급 | 부분 |
 
-**부분 사유**: 제4조① 각 호에서 "2. 삭제 <2022.9.30.>" 로 일반용역(단순노무 외) 평가기준 별표가 삭제되어(`EXT/daegu/elis_daegu_main.txt:165`~`:171`), 이 예규만으로는 일반용역(단순노무 외) 입찰가격 산식을 확정할 수 없습니다. 삭제된 별표 원본 스텁도 "【별표 2】 삭제 <2022.9.30.>" 로 확인됩니다. 남은 것은 단순노무·소프트웨어·폐기물처리·육상운송 별표이며, 일반용역(단순노무 외)은 행정안전부 예규(4.1)로 넘어갑니다. 준용: 제12조 (`EXT/daegu/elis_daegu_main.txt:218`).
+**부분 사유**: 제4조① 각 호에서 "2. 삭제 <2022.9.30.>" 로 일반용역(단순노무 외) 평가기준 별표가 삭제되어(`data/sources/qualification/files/daegu/856673076d70_elis_daegu_main.txt:165`~`:171`), 이 예규만으로는 일반용역(단순노무 외) 입찰가격 산식을 확정할 수 없습니다. 삭제된 별표 원본 스텁도 "【별표 2】 삭제 <2022.9.30.>" 로 확인됩니다. 남은 것은 단순노무·소프트웨어·폐기물처리·육상운송 별표이며, 일반용역(단순노무 외)은 행정안전부 예규(4.1)로 넘어갑니다. 준용: 제12조 (`data/sources/qualification/files/daegu/856673076d70_elis_daegu_main.txt:218`).
 
-통과점수 `EXT/daegu/elis_daegu_main.txt:196` — 85점(소프트웨어·육상운송 중소기업자간 경쟁대상 88점). 아래 표의 인용은 `EXT/daegu/tbl1_daegu.txt` 입니다.
+통과점수 `data/sources/qualification/files/daegu/856673076d70_elis_daegu_main.txt:196` — 85점(소프트웨어·육상운송 중소기업자간 경쟁대상 88점). 아래 표의 인용은 `data/sources/qualification/files/daegu/036ab03c59cf_tbl1_daegu.txt` 입니다.
 
 | 적용 구간 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입값 |
 | --- | ---: | ---: | ---: | --- | --- | --- |
@@ -231,10 +231,10 @@ flowchart TD
 | 시행일 | 2025. 12. 1. |
 | 출처 URL | `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=36110115281011&histNo=005` (ELIS) |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/sejong/byp2_2025.hwp`(시설), `byp3_sw_2025.hwp`(SW), `byp4_2025.hwp`(폐기물), `byp4_2_2025.hwp`(생활폐기물), `byp5_2025.hwp`(육상운송). 추출 `EXT/sejong/byp*_2025.tbl.txt`, 본문 `EXT/sejong/sejong_body_2025.txt` |
+| 원본 파일 | `data/sources/qualification/files/sejong/1f26b28b4932_byp2_2025.hwp`(시설), `byp3_sw_2025.hwp`(SW), `byp4_2025.hwp`(폐기물), `byp4_2_2025.hwp`(생활폐기물), `byp5_2025.hwp`(육상운송). 추출 `EXT/sejong/byp*_2025.tbl.txt`, 본문 `data/sources/qualification/files/sejong/d9b290e93e43_sejong_body_2025.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/sejong/sejong_body_2025.txt:3` = `[시행 2025.12.01]`, `:5` = `(일부개정) 2025.11.14 예규 제32호`. 통과점수 `EXT/sejong/sejong_body_2025.txt:108` — 85점(소프트웨어·육상운송 중소기업자간 경쟁제품 88점). 최저평점·평탄 점수는 원문 미기재(비율만 인쇄). 아래 표에서 B는 두 열(5억원 이상 / 5억원 미만), 평탄은 해당 별표 .txt 행입니다.
+문서 머리말 `data/sources/qualification/files/sejong/d9b290e93e43_sejong_body_2025.txt:3` = `[시행 2025.12.01]`, `:5` = `(일부개정) 2025.11.14 예규 제32호`. 통과점수 `data/sources/qualification/files/sejong/d9b290e93e43_sejong_body_2025.txt:108` — 85점(소프트웨어·육상운송 중소기업자간 경쟁제품 88점). 최저평점·평탄 점수는 원문 미기재(비율만 인쇄). 아래 표에서 B는 두 열(5억원 이상 / 5억원 미만), 평탄은 해당 별표 .txt 행입니다.
 
 | 별표(대상) | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입값 |
 | --- | ---: | ---: | ---: | --- | --- | --- |
@@ -259,10 +259,10 @@ flowchart TD
 | 시행일 | 2026. 1. 8. |
 | 출처 URL | `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=47000006006048&histNo=009` (ELIS) |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/gb/gb_byp001.hwp`(단순노무), `gb_byp002.hwp`(소프트웨어), `gb_byp003.hwp`(폐기물), `gb_byp004.hwp`(기타). 추출 `EXT/gb/gb_byp00*.tbl.txt`, 본문 `EXT/gb/gb_body.txt` |
+| 원본 파일 | `data/sources/qualification/files/gb/66c3aa643d31_gb_byp001.hwp`(단순노무), `gb_byp002.hwp`(소프트웨어), `gb_byp003.hwp`(폐기물), `gb_byp004.hwp`(기타). 추출 `EXT/gb/gb_byp00*.tbl.txt`, 본문 `data/sources/qualification/files/gb/ab55faa1b1a3_gb_body.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/gb/gb_body.txt:3` = `[시행 2026.01.08]`, `:5` = `(일부개정) 2026-01-08 예규 제 1571호`. 통과점수 `EXT/gb/gb_body.txt:140` — 95점(소프트웨어용역 88점). 최저평점 2점.
+문서 머리말 `data/sources/qualification/files/gb/ab55faa1b1a3_gb_body.txt:3` = `[시행 2026.01.08]`, `:5` = `(일부개정) 2026-01-08 예규 제 1571호`. 통과점수 `data/sources/qualification/files/gb/ab55faa1b1a3_gb_body.txt:140` — 95점(소프트웨어용역 88점). 최저평점 2점.
 
 | 별표(대상) | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -285,10 +285,10 @@ flowchart TD
 | 시행일 | 2022. 8. 10. (2022.08.10. 입찰공고분부터 적용). 부칙에서 종전 공고 제2019-1401호 폐지 |
 | 출처 URL | 계약정보시스템 `https://contract.ulsan.go.kr/contract/info/regulations?idx=314&mode=view`, 고시공고 `https://www.ulsan.go.kr/u/rep/transfer/notice/34811.ulsan?mId=001004002000000000&gosiGbn=A` |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/ulsan/ulsan_general_20220810.hwp`, 추출 `EXT/ulsan/ulsan_general_20220810.tbl.txt`, 고시공고 `EXT/ulsan/ulsan_notice.html` |
+| 원본 파일 | `data/sources/qualification/files/ulsan/0a4c5d79ff9d_ulsan_general_20220810.hwp`, 추출 `data/sources/qualification/files/ulsan/0e673b450ec3_ulsan_general_20220810.tbl.txt`, 고시공고 `data/sources/qualification/files/ulsan/2add796161dd_ulsan_notice.html` |
 | 등급 | 확인 |
 
-통과점수 `EXT/ulsan/ulsan_general_20220810.txt:46` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표의 인용은 `EXT/ulsan/ulsan_general_20220810.tbl.txt` 입니다.
+통과점수 `data/sources/qualification/files/ulsan/c6a460417140_ulsan.txt:46` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표의 인용은 `data/sources/qualification/files/ulsan/0e673b450ec3_ulsan_general_20220810.tbl.txt` 입니다.
 
 | 별표·적용 구간 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -315,13 +315,13 @@ flowchart TD
 | --- | --- |
 | 문서명 | 충청북도 일반용역 적격심사 세부기준 |
 | 문서번호 | 충청북도 공고 제2023-1428호 (일부개정 2023-10-18) |
-| 시행일 | 2023. 10. 20. (`EXT/cb/cb_cjuc.txt:364` "이 기준은 2023년 10월 20일부터 시행한다.") |
+| 시행일 | 2023. 10. 20. (`data/sources/qualification/files/cb/0cfe5136bcc2_cb_cjuc.txt:364` "이 기준은 2023년 10월 20일부터 시행한다.") |
 | 출처 URL | `https://www.cjuc.or.kr/home/board/download.do?menukey=7403&fsn=1772443843-072-639&bsn=1756710989-000-010&dsn=1772442652-603-436` (충북 산하 공공기관 청주도시공사 게시본. 문서 머리말이 "[시행 2023.10.20][충청북도 공고 제2023-1428호]" 인 충북 공고 원문 PDF) |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/cb/cb_cjuc.pdf` (확장자만 .hwp, 실제 PDF), 추출 `EXT/cb/cb_cjuc.txt` |
+| 원본 파일 | `data/sources/qualification/files/cb/bc661e78176a_cb_cjuc.hwp` (확장자만 .hwp, 실제 PDF), 추출 `data/sources/qualification/files/cb/0cfe5136bcc2_cb_cjuc.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/cb/cb_cjuc.txt:1` = `[시행 2023. 10. 20.][충청북도 공고 제2023-1428호, 2023. 10. 18., 일부개정]`. 통과점수 `EXT/cb/cb_cjuc.txt:214`~`:220` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 별표 1 입찰가격 배점한도 `:488`~`:496` — 30 / 50 / 70 / 90. 최저평점 2점 `:1661`, 소수점 다섯째자리 반올림 `:1663`. 아래 표의 인용은 `EXT/cb/cb_cjuc.txt` 입니다.
+문서 머리말 `data/sources/qualification/files/cb/0cfe5136bcc2_cb_cjuc.txt:1` = `[시행 2023. 10. 20.][충청북도 공고 제2023-1428호, 2023. 10. 18., 일부개정]`. 통과점수 `data/sources/qualification/files/cb/0cfe5136bcc2_cb_cjuc.txt:214`~`:220` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 별표 1 입찰가격 배점한도 `:488`~`:496` — 30 / 50 / 70 / 90. 최저평점 2점 `:1661`, 소수점 다섯째자리 반올림 `:1663`. 아래 표의 인용은 `data/sources/qualification/files/cb/0cfe5136bcc2_cb_cjuc.txt` 입니다.
 
 | 별표 1 적용 구간·구분 | B | k | 기준비율 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -345,10 +345,10 @@ flowchart TD
 | 시행일 | 2026. 7. 16. |
 | 출처 URL | `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=12000042005020&histNo=001` (ELIS) |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/jn_gj/jngj_att001.hwp`~`jngj_att006.hwp`, 추출 `EXT/jn_gj/jngj_att00*.hwp.tbl.txt`, 본문 `EXT/jn_gj/elis_jngj_bonmun.txt` |
+| 원본 파일 | `data/sources/qualification/files/jn_gj/691aaba3f21b_jngj_att001.hwp`~`jngj_att006.hwp`, 추출 `EXT/jn_gj/jngj_att00*.hwp.tbl.txt`, 본문 `data/sources/qualification/files/jn_gj/0cb48ef87686_elis_jngj_bonmun.txt` |
 | 등급 | 확인 |
 
-문서 머리말 `EXT/jn_gj/elis_jngj_bonmun.txt:266` = `[시행 2026.07.16]`, `:267` = `(제정) 2026-07-01 예규 제 3호`. 통과점수 `EXT/jn_gj/elis_jngj_bonmun.txt:362` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 시설분야용역은 추정가격 무관 95점. 최저평점 2점. 아래 표의 인용 파일은 `EXT/jn_gj/` 입니다.
+문서 머리말 `data/sources/qualification/files/jn_gj/0cb48ef87686_elis_jngj_bonmun.txt:266` = `[시행 2026.07.16]`, `:267` = `(제정) 2026-07-01 예규 제 3호`. 통과점수 `data/sources/qualification/files/jn_gj/0cb48ef87686_elis_jngj_bonmun.txt:362` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 시설분야용역은 추정가격 무관 95점. 최저평점 2점. 아래 표의 인용 파일은 `data/sources/qualification/files/jn_gj` 입니다.
 
 | 별표(대상) | 구간 | B | k | 기준 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -383,10 +383,10 @@ flowchart TD
 | 시행일 | 부칙 "발령한 날부터 시행, 시행일 이후 최초 입찰공고분부터 적용" |
 | 출처 URL | `https://minwon.gyeongnam.go.kr/citynet/jsp/sap/SAPGosiBizProcess.do?command=searchDetail&flag=gosiGL&svp=Y&sno=40031&gosiGbn=A` (경상남도 고시/공고) |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/gn/gn_general.hwp`, 추출 `EXT/gn/gn_general.hwp.tbl.txt` |
+| 원본 파일 | `data/sources/qualification/files/gn/ef83a05f3449_gn_att0.bin`, 추출 `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt` |
 | 등급 | 확인 |
 
-통과점수 `EXT/gn/gn_general.hwp.tbl.txt:1` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점. 최저평점 2점. 아래 표의 인용은 `EXT/gn/gn_general.hwp.tbl.txt` 입니다.
+통과점수 `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt:1` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점. 최저평점 2점. 아래 표의 인용은 `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt` 입니다.
 
 | 별표 1 일반용역 구간 | B | k | 기준 | 평탄 문장(원문) | 인쇄점수 | 대입 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |
@@ -395,7 +395,7 @@ flowchart TD
 | 추정가격 5억원 미만 2억원 이상 | 70 (`:109`) | 4 (`:109`) | 88 (`:109`) | 100분의 89.25 이상 → 65점 (`:117`) | 65 | **65.0000** 일치 |
 | 추정가격 2억원 미만 | 90 (`:157`) | 20 (`:157`) | 88 (`:157`) | 100분의 88.25 이상 → 85점 (`:165`) | 85 | **85.0000** 일치 |
 
-종전 단서 "분자가 추출에 없어 기준 88로 확정하지 않음"은 해소되었습니다 — 각 구간 산식 표의 분자 칸이 `88` 입니다. "가운데 구간은 산식 참조만"도 배점표의 `※ 입찰가격 평점산식 참조` 지시일 뿐 실제 산식은 각 구간에 인쇄되어 있습니다. 준용: 제7조 "정하지 않은 사항은 관련 행정안전부 지방계약예규 등을 준용" (`EXT/gn/gn_general.hwp.tbl.txt`).
+종전 단서 "분자가 추출에 없어 기준 88로 확정하지 않음"은 해소되었습니다 — 각 구간 산식 표의 분자 칸이 `88` 입니다. "가운데 구간은 산식 참조만"도 배점표의 `※ 입찰가격 평점산식 참조` 지시일 뿐 실제 산식은 각 구간에 인쇄되어 있습니다. 준용: 제7조 "정하지 않은 사항은 관련 행정안전부 지방계약예규 등을 준용" (`data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt`).
 
 ### 4.12 경기도 — 부분
 
@@ -406,16 +406,16 @@ flowchart TD
 | 시행일 | 2025. 8. 8. |
 | 출처 URL | ELIS `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=41000006005065&histNo=005`. 나라장터 첨부(파일 머리말이 "경기도 일반용역 적격심사 세부기준 지침") |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | ELIS 별표 `EXT/gg/gg_elis_hist005_att001.hwp`(+`gg_elis_hist005_att001_eqscripts.txt`), 나라장터 PDF `EXT/gg/gg_g2b_20251210.pdf`(디코딩 `gg_g2b_20251210_dec.txt`), 표 `EXT/gg/gg_748_biapyo_table.txt` |
+| 원본 파일 | ELIS 별표 `data/sources/qualification/files/gg/bc31be3c3de5_gg_elis_hist005_att001.hwp`(+`gg_elis_hist005_att001_eqscripts.txt`), 나라장터 PDF `data/sources/qualification/files/gg/34a6d96489ff_gg_g2b_20251210.pdf`(디코딩 `gg_g2b_20251210_dec.txt`), 표 `data/sources/qualification/files/gg/53a88f2293de_gg_748_biapyo_table.txt` |
 | 등급 | 부분 |
 
 **부분 사유**: 별표 1-1(단순노무용역)의 산식은 k=5, 기준 89인데 평탄 예외 상수 89.95%를 대입하면 0.25점이 인쇄 정수보다 높아 규칙 7에 따라 미확정입니다. 나머지 별표(1-2~1-6)와 보험은 인쇄 점수와 대입값이 전부 일치합니다.
 
-문서 머리말 `EXT/gg/gg_g2b_748.txt:3` = `[시행 2025.08.08]`, `EXT/gg/gg_g2b_20251210.txt:11` = `(일부개정) 2025-07-18 예규 제 748호`. 통과점수 제8조① (`EXT/gg/gg_g2b_20251210_dec.txt:166`~`:169`) — 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점, 보험용역 85점. 최저평점 2점.
+문서 머리말 `data/sources/qualification/files/gg/f4ff4966bfc6_gg_g2b_748.txt:3` = `[시행 2025.08.08]`, `data/sources/qualification/files/gg/407fa1d637b5_gg_g2b_20251210.txt:11` = `(일부개정) 2025-07-18 예규 제 748호`. 통과점수 제8조① (`data/sources/qualification/files/gg/ef0df12af478_gg_g2b_20251210_dec.txt:166`~`:169`) — 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점, 보험용역 85점. 최저평점 2점.
 
 **별표 1-1 단순노무용역 — 미확정(규칙 7)**
 
-수식 스크립트 원문 `EXT/gg/gg_elis_hist005_att001_eqscripts.txt`: `평점=30-5 TIMES LEFT | ( {89} over {100} - {입찰가격} over {예정가격} ) TIMES 100 RIGHT |` (B 30/50/70/90 네 개). 평탄 문장과 인쇄 점수는 `EXT/gg/gg_748_biapyo_table.txt:11`~`:14`.
+수식 스크립트 원문 `data/sources/qualification/files/gg/0de2fbf8468c_gg_elis_hist005_att001_eqscripts.txt`: `평점=30-5 TIMES LEFT | ( {89} over {100} - {입찰가격} over {예정가격} ) TIMES 100 RIGHT |` (B 30/50/70/90 네 개). 평탄 문장과 인쇄 점수는 `data/sources/qualification/files/gg/53a88f2293de_gg_748_biapyo_table.txt:11`~`:14`.
 
 | 구간 | B | k | 기준 | 평탄 문장(원문) | 인쇄점수 | 대입값 | 판정 |
 | --- | ---: | ---: | ---: | --- | ---: | ---: | --- |
@@ -426,7 +426,7 @@ flowchart TD
 
 낙찰하한율 87.995% (`gg_748_biapyo_table.txt:11`~`:14`). 원문 자체의 불일치이며 반올림으로 확정하지 않았습니다.
 
-**별표 1-2 소프트웨어용역 (전부 일치)** — 인용 `EXT/gg/gg_g2b_20251210_dec.txt`
+**별표 1-2 소프트웨어용역 (전부 일치)** — 인용 `data/sources/qualification/files/gg/ef0df12af478_gg_g2b_20251210_dec.txt`
 
 | 구간 | B | k | 기준 | 평탄 문장(원문) | 인쇄점수 | 검산 |
 | --- | ---: | ---: | ---: | --- | ---: | --- |

@@ -28,7 +28,7 @@
 2. **5개 시·도 세부기준의 준용 조항은 모두 "이 세부기준에서 정하지 아니한 사항은 … 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등에서 정한 바에 따른다" 형태의 포괄 준용입니다.** 낙찰하한율을 지목해 준용하는 문구는 5곳 모두 없습니다.
 3. **행정안전부 예규 「지방자치단체 입찰시 낙찰자 결정기준」(예규 제373호, 시행 2026-07-01)이 낙찰하한율을 괄호로 인쇄하는 위치는 제2장의2 기술·학술연구 용역 적격심사 세부기준 별표 1 뿐입니다.** 10억원 이상 79.995%, 10억원 미만 5억원 이상 85.495%, 5억원 미만 2억원 이상 86.745%, 2억원 미만 1억원 이상 87.745%, 1억원 미만 87.745%, 재난복구 1억원 이상 87.745% 입니다.
 4. **행안부 예규에는 일반용역(청소·경비·시설관리 등) 적격심사 별표나 낙찰하한율 표가 없습니다.** 예규 전체에서 "일반용역"은 협상에 의한 계약의 단순노무 포함 문구 2건뿐이고, "청소용역"·"경비용역"·"시설관리"는 0건입니다. 따라서 이 예규의 하한율 표는 시·도 일반용역 GENERAL 규칙의 근거가 될 수 없습니다.
-5. **5개 시·도 원문 수집분 전체(별표·본문·부칙·고시 포함)에서 "하한" 문자열이 0건입니다.** `EXT/inan`, `EXT/jeju`, `EXT/gwd`, `EXT/gb`, `EXT/gn` 어느 파일에도 낙찰하한율이 인쇄되지 않았습니다.
+5. **5개 시·도 원문 수집분 전체(별표·본문·부칙·고시 포함)에서 "하한" 문자열이 0건입니다.** `data/sources/qualification/files/inan`, `data/sources/qualification/files/jeju`, `data/sources/qualification/files/gwd`, `data/sources/qualification/files/gb`, `data/sources/qualification/files/gn` 어느 파일에도 낙찰하한율이 인쇄되지 않았습니다.
 
 ---
 
@@ -38,8 +38,8 @@
 
 | 조사 대상 | 확인할 것 | 이 워크트리 원문 |
 | --- | --- | --- |
-| 시·도 세부기준 본문 준용 조항 | 낙찰하한율을 행안부 예규에 명시 준용하는지 | `EXT/inan/elis_inan_008.txt`, `EXT/jeju/elis_jeju_main.txt`, `EXT/gwd/elis_gwd_main.txt`, `EXT/gb/elis_gb_body.txt`, `EXT/gn/gn_general.hwp.tbl.txt` |
-| 행안부 「지방자치단체 입찰시 낙찰자 결정기준」 예규 하한율 표 | 10억원 이상 하한율 값과 구간 표 | `EXT/mois/mois373_body.txt` (동일 문서 HWPX `EXT/mois/mois_373_nakchal.hwpx`), `EXT/mois/mois_body.txt`(2013년판) |
+| 시·도 세부기준 본문 준용 조항 | 낙찰하한율을 행안부 예규에 명시 준용하는지 | `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt`, `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt`, `data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt`, `data/sources/qualification/files/gb/17af2d266b97_elis_gb_body.txt`, `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt` |
+| 행안부 「지방자치단체 입찰시 낙찰자 결정기준」 예규 하한율 표 | 10억원 이상 하한율 값과 구간 표 | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt` (동일 문서 HWPX `data/sources/qualification/files/mois/ca0fc23fdaf7_mois_373_nakchal.hwpx`), `data/sources/qualification/files/mois/857dcfac98b7_mois_body.txt`(2013년판) |
 | 시·도 계약 예규·고시 | 시·도가 별도로 인쇄한 하한율 | 위 5개 시·도 수집분 전체 |
 
 판정 등급(캡슐 3.2): **확인** = 시·도 문서 원문 행 인용, **준용 확인** = 시·도 준용 조항 + 행안부 표 행 인용, **미확인** = 원문 미인쇄.
@@ -66,21 +66,21 @@
 
 | rule_id | 시·도 (예규·시행일) | 10~30억 후보(원문) | 30억 이상 후보(원문) | 별표 근거 (파일:행) | 준용 조항 (파일:행) | 준용 근거 | 판정 | 공고 실측(10~30억 / 30억 이상)과 일치 |
 | --- | --- | --- | --- | --- | --- | --- | :---: | --- |
-| `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | 인천광역시 (예규 제488호, 2025-12-24) | 없음(미인쇄) | 없음(미인쇄) | `EXT/inan/tbl1_008.txt:3`(1. 추정가격 10억원 이상), 산식·단서 `:55-70,69,90` | `EXT/inan/elis_inan_008.txt:171` (제10조①) | 포괄 준용 | 미확인 | 77.995 우세/혼재 · 87.745 우세/혼재 |
-| `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | 제주특별자치도 (예규 제82호, 2024-01-01) | 없음(미인쇄) | 없음(미인쇄) | `EXT/jeju/tbl1_jeju.txt:3`(1. 추정가격 10억원 이상), 산식·단서 `:222-229,224` | `EXT/jeju/elis_jeju_main.txt:140` (제7조) | 포괄 준용 | 미확인 | 85.495 단일(5건) · 표본 없음 |
-| `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | 강원특별자치도 (예규 제832호, 2023-06-11) | 없음(미인쇄) | 없음(미인쇄) | `EXT/gwd/tbl1_gwd.txt:3`(1. 추정가격 10억원 이상), 산식·단서 `:51-58,55` | `EXT/gwd/elis_gwd_main.txt:306` (제11조①) | 포괄 준용 | 미확인 | 87.745 우세/혼재 · 87.745 우세 |
-| `SERVC_LOCAL_GB_20260108_ATTACH_04` | 경상북도 (예규 제1571호, 2026-01-08) | 없음(미인쇄) | 없음(미인쇄) | `EXT/gb/gb_byp004.tbl.txt:9,12` (Ⅲ.입찰가격, 5억원 이상/미만 2구간) | `EXT/gb/elis_gb_body.txt:622` (제13조) | 포괄 준용 | 미확인 | 87.745 우세/혼재 · 86.745 우세/혼재 |
-| `SERVC_LOCAL_GN_20230105_ATTACH_01` | 경상남도 (공고 제2023-23호, 2023-01-05) | 없음(미인쇄) | 없음(미인쇄) | `EXT/gn/gn_general.hwp.tbl.txt:2-18`(별표 1 1. 추정가격 10억원 이상), 산식·단서 `:9-17` | `EXT/gn/gn_general.hwp.tbl.txt:1` (제7조) | 포괄 준용 | 미확인 | 87.745 우세/혼재 · 87.745 우세/혼재 |
+| `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | 인천광역시 (예규 제488호, 2025-12-24) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt:3`(1. 추정가격 10억원 이상), 산식·단서 `:55-70,69,90` | `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:171` (제10조①) | 포괄 준용 | 미확인 | 77.995 우세/혼재 · 87.745 우세/혼재 |
+| `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | 제주특별자치도 (예규 제82호, 2024-01-01) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt:3`(1. 추정가격 10억원 이상), 산식·단서 `:222-229,224` | `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt:140` (제7조) | 포괄 준용 | 미확인 | 85.495 단일(5건) · 표본 없음 |
+| `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | 강원특별자치도 (예규 제832호, 2023-06-11) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt:3`(1. 추정가격 10억원 이상), 산식·단서 `:51-58,55` | `data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt:306` (제11조①) | 포괄 준용 | 미확인 | 87.745 우세/혼재 · 87.745 우세 |
+| `SERVC_LOCAL_GB_20260108_ATTACH_04` | 경상북도 (예규 제1571호, 2026-01-08) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/gb/86e6964e38bf_gb_byp004.tbl.txt:9,12` (Ⅲ.입찰가격, 5억원 이상/미만 2구간) | `data/sources/qualification/files/gb/17af2d266b97_elis_gb_body.txt:622` (제13조) | 포괄 준용 | 미확인 | 87.745 우세/혼재 · 86.745 우세/혼재 |
+| `SERVC_LOCAL_GN_20230105_ATTACH_01` | 경상남도 (공고 제2023-23호, 2023-01-05) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt:2-18`(별표 1 1. 추정가격 10억원 이상), 산식·단서 `:9-17` | `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt:1` (제7조) | 포괄 준용 | 미확인 | 87.745 우세/혼재 · 87.745 우세/혼재 |
 
 ### 3.1 준용 조항 원문 (포괄 준용, 하한율 명시 없음)
 
 | 시·도 | 조항 | 원문 (해당 행) |
 | --- | --- | --- |
-| 인천 | 제10조(준용규정)① | "이 세부기준에서 정하지 아니한 사항은 관련 법령 및 「지방자치단체를 당사자로 하는 계약에 관한 법률」, 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등의 예규에서 정한 바에 따른다." (`EXT/inan/elis_inan_008.txt:171`) |
-| 제주 | 제7조(준용규정) | "이 세부기준에 정하지 아니한 사항은 관련 회계예규 등을 준용하며, 이 세부기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 내용에 대하여는 입찰공고 등에 별도로 반영하여 시행할 수 있다." (`EXT/jeju/elis_jeju_main.txt:140`) |
-| 강원 | 제11조(그 밖의 사항)① | "이 세부기준에서 정하지 아니한 사항은 관련 법령 및 「지방계약법」, 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등에서 정한 바에 따른다." (`EXT/gwd/elis_gwd_main.txt:306`) |
-| 경북 | 제13조(기타사항) | "이 세부기준에 정하지 아니한 사항은 「지방자치단체 입찰시 낙찰자 결정기준 및 관련 회계예규」 등에 따르며, 이 기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 경우에는 입찰공고 등에 별도로 반영하여 집행할 수 있다." (`EXT/gb/elis_gb_body.txt:622`) |
-| 경남 | 제7조(그 밖의 사항) | "이 세부기준에 정하지 아니한 사항은 관련 행정안전부 지방계약예규 등을 준용하며, 청소용역·폐기물처리용역·헬기임차용역 등 다른…" (`EXT/gn/gn_general.hwp.tbl.txt:1`) |
+| 인천 | 제10조(준용규정)① | "이 세부기준에서 정하지 아니한 사항은 관련 법령 및 「지방자치단체를 당사자로 하는 계약에 관한 법률」, 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등의 예규에서 정한 바에 따른다." (`data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:171`) |
+| 제주 | 제7조(준용규정) | "이 세부기준에 정하지 아니한 사항은 관련 회계예규 등을 준용하며, 이 세부기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 내용에 대하여는 입찰공고 등에 별도로 반영하여 시행할 수 있다." (`data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt:140`) |
+| 강원 | 제11조(그 밖의 사항)① | "이 세부기준에서 정하지 아니한 사항은 관련 법령 및 「지방계약법」, 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등에서 정한 바에 따른다." (`data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt:306`) |
+| 경북 | 제13조(기타사항) | "이 세부기준에 정하지 아니한 사항은 「지방자치단체 입찰시 낙찰자 결정기준 및 관련 회계예규」 등에 따르며, 이 기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 경우에는 입찰공고 등에 별도로 반영하여 집행할 수 있다." (`data/sources/qualification/files/gb/17af2d266b97_elis_gb_body.txt:622`) |
+| 경남 | 제7조(그 밖의 사항) | "이 세부기준에 정하지 아니한 사항은 관련 행정안전부 지방계약예규 등을 준용하며, 청소용역·폐기물처리용역·헬기임차용역 등 다른…" (`data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt:1`) |
 
 5곳 모두 낙찰하한율 항목을 지목하지 않습니다. 낙찰하한율은 별표가 인쇄하지 않은 값이므로 논리적으로 "정하지 아니한 사항"에 해당할 수 있으나, 준용 조항이 그 값을 특정해 위임하지는 않으므로 이 보고서는 **준용 근거 없음**으로 판정합니다(추정 금지).
 
@@ -88,11 +88,11 @@
 
 | 시·도 | 별표·구간 | 인쇄된 내용 | 근거 행 |
 | --- | --- | --- | --- |
-| 인천 | 별표 1, 1. 추정가격 10억원 이상인 일반용역 | 평점 = 30 − ｜(88/100 − 입찰가격/예정가격)×100｜, 단순노무 평점 = 30 − 20×｜…｜, 단서 "30억원 미만 10억원 이상 … 100분의 98 이상인 경우의 평점은 20점", "최저평점은 2점" | `EXT/inan/tbl1_008.txt:3,57-70,69,74-86,90` |
-| 제주 | 별표 1, 1. 추정가격 10억원 이상인 일반용역 | 평점 = 30 − ｜(88/100 − 입찰가격/예정가격)×100｜, 단서 "30억원 미만 10억원 이상 … 100분의 98 이상 … 20점", "최저평점은 2점" | `EXT/jeju/tbl1_jeju.txt:3,222-229,224` |
-| 강원 | 별표 1, 1. 추정가격 10억원 이상인 일반용역 | 평점 = 30 − ｜(88/100 − 입찰가격/예정가격)×100｜, 단서 "30억원 미만 10억원 이상 … 100분의 98 이상 … 20점", "최저평점은 2점" | `EXT/gwd/tbl1_gwd.txt:3,51-58,55` |
-| 경북 | 별표 4(기타 일반용역), Ⅲ.입찰가격 | 5억원 이상 평점 = 50 − 4×｜(88/100 − 입찰가격/예정가격)×100｜(투찰률 89.25% 이상 → 45점), 5억원 미만 평점 = 70 − 20×｜…｜(투찰률 88.25% 이상 → 65점), "최저평점은 2점". 10억원 경계 없이 5억원 기준 2구간만 인쇄 | `EXT/gb/gb_byp004.tbl.txt:9,12` |
-| 경남 | 별표 1, 1. 추정가격 10억원 이상인 일반용역 | 평점 = 30 − ｜(88/100 − 입찰가격/예정가격)×100｜, 단서 "추정가격 30억원 미만 10억원 이상 … 100분의 98 이상 … 20점", "최저평점은 2점" | `EXT/gn/gn_general.hwp.tbl.txt:2-18` |
+| 인천 | 별표 1, 1. 추정가격 10억원 이상인 일반용역 | 평점 = 30 − ｜(88/100 − 입찰가격/예정가격)×100｜, 단순노무 평점 = 30 − 20×｜…｜, 단서 "30억원 미만 10억원 이상 … 100분의 98 이상인 경우의 평점은 20점", "최저평점은 2점" | `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt:3,57-70,69,74-86,90` |
+| 제주 | 별표 1, 1. 추정가격 10억원 이상인 일반용역 | 평점 = 30 − ｜(88/100 − 입찰가격/예정가격)×100｜, 단서 "30억원 미만 10억원 이상 … 100분의 98 이상 … 20점", "최저평점은 2점" | `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt:3,222-229,224` |
+| 강원 | 별표 1, 1. 추정가격 10억원 이상인 일반용역 | 평점 = 30 − ｜(88/100 − 입찰가격/예정가격)×100｜, 단서 "30억원 미만 10억원 이상 … 100분의 98 이상 … 20점", "최저평점은 2점" | `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt:3,51-58,55` |
+| 경북 | 별표 4(기타 일반용역), Ⅲ.입찰가격 | 5억원 이상 평점 = 50 − 4×｜(88/100 − 입찰가격/예정가격)×100｜(투찰률 89.25% 이상 → 45점), 5억원 미만 평점 = 70 − 20×｜…｜(투찰률 88.25% 이상 → 65점), "최저평점은 2점". 10억원 경계 없이 5억원 기준 2구간만 인쇄 | `data/sources/qualification/files/gb/86e6964e38bf_gb_byp004.tbl.txt:9,12` |
+| 경남 | 별표 1, 1. 추정가격 10억원 이상인 일반용역 | 평점 = 30 − ｜(88/100 − 입찰가격/예정가격)×100｜, 단서 "추정가격 30억원 미만 10억원 이상 … 100분의 98 이상 … 20점", "최저평점은 2점" | `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt:2-18` |
 
 별표가 인쇄한 투찰률 단서(98%·90.5%·89.25%·88.25%)는 평점 상한(만점 근처) 기준이며 낙찰하한율이 아닙니다. 낙찰하한율은 별표 산식·최저평점으로부터 유도되지 않으므로(예: 경남 2억원 미만 B=90, k=20에서 최저평점 2점은 투찰률 약 83.6%를 가리켜 공고 실측 87.745%와 다름) 원문 미인쇄를 역산으로 채우지 않았습니다.
 
@@ -100,19 +100,19 @@
 
 ## 4. 행정안전부 예규 낙찰하한율 표 인용
 
-문서: 「지방자치단체 입찰시 낙찰자 결정기준」[시행 2026-07-01][행정안전부 예규 제373호, 2026-06-29 일부개정]. 원문 텍스트 `EXT/mois/mois373_body.txt`, 동일 문서 HWPX `EXT/mois/mois_373_nakchal.hwpx`(미리보기 `EXT/mois/mois373_preview.txt`).
+문서: 「지방자치단체 입찰시 낙찰자 결정기준」[시행 2026-07-01][행정안전부 예규 제373호, 2026-06-29 일부개정]. 원문 텍스트 `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt`, 동일 문서 HWPX `data/sources/qualification/files/mois/ca0fc23fdaf7_mois_373_nakchal.hwpx`(미리보기 `data/sources/qualification/files/mois_exec/75553eda6b51_PrvText.txt`).
 
 ### 4.1 낙찰하한율이 인쇄된 표 (제2장의2 기술·학술연구 용역 적격심사 세부기준 별표 1)
 
 | 구간 | 낙찰하한율(괄호 인쇄) | 근거 파일:행 |
 | --- | ---: | --- |
-| 추정가격 10억원 이상 (P.Q 대상 기술용역) | 79.995% | `EXT/mois/mois373_body.txt:7481` |
-| 추정가격 10억원 이상 (기술용역) | 79.995% | `EXT/mois/mois373_body.txt:7895` |
-| 추정가격 10억원 미만 5억원 이상 | 85.495% | `EXT/mois/mois373_body.txt:8100` |
-| 추정가격 5억원 미만 2억원 이상 | 86.745% | `EXT/mois/mois373_body.txt:8308` |
-| 추정가격 2억원 미만 1억원 이상 | 87.745% | `EXT/mois/mois373_body.txt:8500` |
-| 추정가격 1억원 미만 | 87.745% | `EXT/mois/mois373_body.txt:8660` |
-| 재난복구 기술용역 1억원 이상 | 87.745% | `EXT/mois/mois373_body.txt:8826` |
+| 추정가격 10억원 이상 (P.Q 대상 기술용역) | 79.995% | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:7481` |
+| 추정가격 10억원 이상 (기술용역) | 79.995% | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:7895` |
+| 추정가격 10억원 미만 5억원 이상 | 85.495% | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:8100` |
+| 추정가격 5억원 미만 2억원 이상 | 86.745% | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:8308` |
+| 추정가격 2억원 미만 1억원 이상 | 87.745% | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:8500` |
+| 추정가격 1억원 미만 | 87.745% | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:8660` |
+| 재난복구 기술용역 1억원 이상 | 87.745% | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:8826` |
 
 인쇄 형태는 예시로 `가) 추정가격이 10억원 이상인 용역의 입찰가격 평점산식 (79.995%)` 입니다(`:7481,7895`). 이 값은 기술·학술연구 용역(엔지니어링·건설기술·학술연구)의 입찰가격 평가에 붙는 낙찰하한율입니다.
 
@@ -120,12 +120,12 @@
 
 | 확인 | 결과 | 근거 |
 | --- | --- | --- |
-| 예규 목차에 일반용역 장 존재 여부 | 없음(제2장의2 기술·학술연구 용역, 제2장의3 물품만) | `EXT/mois/mois373_preview.txt:11-16` |
-| 예규 전체 "일반용역" 등장 | 2건, 모두 협상에 의한 계약의 단순노무 포함 문구 | `EXT/mois/mois373_body.txt:21376,21426` |
+| 예규 목차에 일반용역 장 존재 여부 | 없음(제2장의2 기술·학술연구 용역, 제2장의3 물품만) | `data/sources/qualification/files/mois_exec/75553eda6b51_PrvText.txt:11-16` |
+| 예규 전체 "일반용역" 등장 | 2건, 모두 협상에 의한 계약의 단순노무 포함 문구 | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt:21376,21426` |
 | 예규 전체 "청소용역"·"경비용역"·"시설관리" | 0건 | `grep -c` 결과 0 |
 | 낙찰하한율 % 인쇄 위치 | 위 7개 행뿐(기술용역·재난복구) | `grep -nE "평점산식 \([0-9]"` 결과 |
 
-즉 행안부 예규의 낙찰하한율 표는 일반용역용이 아니므로, 인천·제주·강원·경북·경남 GENERAL(일반용역) 규칙의 10억원 이상 하한율 근거가 될 수 없습니다. 2013년판(`EXT/mois/mois_body.txt`, 안전행정부예규 제3호)에도 낙찰하한율 % 인쇄가 없어 같은 결론입니다. 「지방자치단체 입찰 및 계약 집행기준」(행안부 예규 제372호) 원문은 이 워크트리에 없습니다(`EXT/mois/article_127353.html` 에 파일명만 등장).
+즉 행안부 예규의 낙찰하한율 표는 일반용역용이 아니므로, 인천·제주·강원·경북·경남 GENERAL(일반용역) 규칙의 10억원 이상 하한율 근거가 될 수 없습니다. 2013년판(`data/sources/qualification/files/mois/857dcfac98b7_mois_body.txt`, 안전행정부예규 제3호)에도 낙찰하한율 % 인쇄가 없어 같은 결론입니다. 「지방자치단체 입찰 및 계약 집행기준」(행안부 예규 제372호) 원문은 이 워크트리에 없습니다(`data/sources/qualification/files/mois/c84181481a21_article_127353.html` 에 파일명만 등장).
 
 ---
 
@@ -135,9 +135,9 @@
 
 | 확인 | 결과 | 근거 |
 | --- | --- | --- |
-| 5개 시·도 수집분 전체 "하한" 문자열 | 0건 | `EXT/inan`, `EXT/jeju`, `EXT/gwd`, `EXT/gb`, `EXT/gn` 전수 검색 |
+| 5개 시·도 수집분 전체 "하한" 문자열 | 0건 | `data/sources/qualification/files/inan`, `data/sources/qualification/files/jeju`, `data/sources/qualification/files/gwd`, `data/sources/qualification/files/gb`, `data/sources/qualification/files/gn` 전수 검색 |
 | 후보 하한율 값(77.995·72.995·85.495·86.745) 존재 | 0건 | 위 5개 디렉터리 전수 검색 |
-| 시·도 고시 페이지 | 하한율 미기재(게시판 양식 HTML) | `EXT/gn/gn_gosi_40031.html` |
+| 시·도 고시 페이지 | 하한율 미기재(게시판 양식 HTML) | `data/sources/qualification/files/gn/88e9f1c1f078_gn_gosi_40031.html` |
 
 ---
 
@@ -161,17 +161,17 @@
 
 | 구분 | 파일 | 용도 |
 | --- | --- | --- |
-| 인천 별표 | `EXT/inan/tbl1_008.txt` | 별표 1 10억원 이상 산식·단서·최저평점 |
-| 인천 본문 | `EXT/inan/elis_inan_008.txt` | 제10조 준용, 하한 문자열 부재 |
-| 제주 별표 | `EXT/jeju/tbl1_jeju.txt` | 별표 1 10억원 이상 산식 |
-| 제주 본문 | `EXT/jeju/elis_jeju_main.txt` | 제7조 준용 |
-| 강원 별표 | `EXT/gwd/tbl1_gwd.txt` | 별표 1 10억원 이상 산식 |
-| 강원 본문 | `EXT/gwd/elis_gwd_main.txt` | 제11조 준용 |
-| 경북 별표 | `EXT/gb/gb_byp004.tbl.txt` | 별표 4 기타 일반용역 Ⅲ.입찰가격 |
-| 경북 본문 | `EXT/gb/elis_gb_body.txt` | 제13조 준용 |
-| 경남 별표·본문 | `EXT/gn/gn_general.hwp.tbl.txt` | 별표 1 10억원 이상 산식, 제7조 준용 |
-| 행안부 예규(2026) | `EXT/mois/mois373_body.txt`, `EXT/mois/mois_373_nakchal.hwpx`, `EXT/mois/mois373_preview.txt` | 제2장의2 기술용역 낙찰하한율 표 |
-| 행안부 예규(2013) | `EXT/mois/mois_body.txt` | 구판 대조(낙찰하한율 % 미인쇄) |
+| 인천 별표 | `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt` | 별표 1 10억원 이상 산식·단서·최저평점 |
+| 인천 본문 | `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt` | 제10조 준용, 하한 문자열 부재 |
+| 제주 별표 | `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt` | 별표 1 10억원 이상 산식 |
+| 제주 본문 | `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt` | 제7조 준용 |
+| 강원 별표 | `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt` | 별표 1 10억원 이상 산식 |
+| 강원 본문 | `data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt` | 제11조 준용 |
+| 경북 별표 | `data/sources/qualification/files/gb/86e6964e38bf_gb_byp004.tbl.txt` | 별표 4 기타 일반용역 Ⅲ.입찰가격 |
+| 경북 본문 | `data/sources/qualification/files/gb/17af2d266b97_elis_gb_body.txt` | 제13조 준용 |
+| 경남 별표·본문 | `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt` | 별표 1 10억원 이상 산식, 제7조 준용 |
+| 행안부 예규(2026) | `data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt`, `data/sources/qualification/files/mois/ca0fc23fdaf7_mois_373_nakchal.hwpx`, `data/sources/qualification/files/mois_exec/75553eda6b51_PrvText.txt` | 제2장의2 기술용역 낙찰하한율 표 |
+| 행안부 예규(2013) | `data/sources/qualification/files/mois/857dcfac98b7_mois_body.txt` | 구판 대조(낙찰하한율 % 미인쇄) |
 | 코드 | `src/app/services/evaluation_rules.py` | 규칙 정의·구간값·기본값 주입 |
 | 선행 문서 | `docs/analysis/local_lwlt_sources_supplement_20261005.md`, `local_lwlt_announcement_measure_20261005.md`, `local_lwlt_audit_20261005.md` | 준용·미인쇄·공고 실측 선행 판정 |
 

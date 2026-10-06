@@ -5,9 +5,9 @@
 > **목적**: 사용자가 2026-10-04 제공한 지자체 파일 11건에서 일반용역 적격심사 입찰가격 평점 산식(적용 구간, B, k, 기준비율, 평탄 구간, 통과점수, 최저평점)을 원문으로 읽어 판정하고, 기존 수집 문서의 같은 기관 값과 대조해 등급 변경 여부를 결론 낸다.
 > **범위 경계**: 코드·설정·패키지 파일을 바꾸지 않았습니다. `src/app/services/evaluation_rules.py` 에 계수를 입력하지 않았습니다. 커밋 산출물은 이 문서 하나입니다.
 > **대조 대상**: `docs/analysis/servc_formula_collection_local_20261004.md` (지자체 12곳, 이하 `C`).
-> **원문·추출물 위치**: `.orca/capsules/task_b84fb339a406/external/user_files/`(원본)와 `.orca/capsules/task_b84fb339a406/external/extracted/`(추출). 커밋하지 않으며, 이 문서는 `.orca/` 를 마크다운 링크로 걸지 않고 인라인 코드로만 언급합니다.
+> **원문·추출물 위치**: `.orca/capsules/task_b84fb339a406/external/user_files/`(원본)와 `data/sources/qualification/files/extracted`(추출). 커밋하지 않으며, 이 문서는 `.orca/` 를 마크다운 링크로 걸지 않고 인라인 코드로만 언급합니다.
 > **확인 날짜**: 아래 11건 모두 2026-10-04 판독.
-> **경로 약칭**: `U` = `.orca/capsules/task_b84fb339a406/external/user_files`, `X` = `.orca/capsules/task_b84fb339a406/external/extracted`.
+> **경로 약칭**: `U` = `.orca/capsules/task_b84fb339a406/external/user_files`, `X` = `data/sources/qualification/files/extracted`.
 > **결론**: 값이 기존 문서와 일치한 곳 11곳 중 8곳은 등급 유지에 문제없음, 3곳(대구·경기·전남광주)은 부분/제정안 성격 유지, 3곳(강원·제주·세종)은 제공 파일에 별표가 없어 별표 계수를 이 파일로 검증할 수 없음, 1곳(충북)은 파일 판본이 2020년이라 기존 2023년 판 값을 이 파일로 대체할 수 없음. 조달청 별표 숫자를 지자체 계수로 옮긴 곳은 없습니다.
 
 ---

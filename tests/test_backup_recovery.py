@@ -726,3 +726,82 @@ def test_prune_symlink_stale_aborts_with_matching_message(tmp_path: Path):
     assert not any("제외" in err for err in result["errors"])
     assert keep_snap.exists()
     assert link_snap.is_symlink()
+
+
+def _prepare_required_backup_assets(tmp_path: Path) -> None:
+    chroma_dir = tmp_path / "chroma_db"
+    chroma_dir.mkdir(parents=True)
+    (chroma_dir / "chroma.sqlite3").write_bytes(b"chroma")
+    models_dir = tmp_path / "data" / "model_files"
+    models_dir.mkdir(parents=True)
+    (models_dir / "model.bin").write_bytes(b"model")
+
+
+@patch("scripts.backup_recovery.dump_mysql_database")
+@patch("scripts.backup_recovery.query_db_row_counts")
+@patch("scripts.backup_recovery.get_head_commit_sha")
+def test_backup_includes_optional_qualification_sources_asset(
+    mock_head_sha: MagicMock,
+    mock_query_counts: MagicMock,
+    mock_dump_mysql: MagicMock,
+    tmp_path: Path,
+):
+    """원문 폴더가 있으면 선택 자산으로 묶고 파일 수와 sha256 을 기록합니다."""
+    mock_head_sha.return_value = "commit_qual"
+    mock_query_counts.return_value = {"bid_announcements": 10}
+
+    def fake_dump_mysql(db_config, out_path):
+        out_path.write_bytes(b"db dump")
+        return len(b"db dump"), sha256_file(out_path)
+
+    mock_dump_mysql.side_effect = fake_dump_mysql
+    _prepare_required_backup_assets(tmp_path)
+
+    qual_dir = tmp_path / "data" / "sources" / "qualification" / "files" / "inan"
+    qual_dir.mkdir(parents=True)
+    (qual_dir / "aaaa_hwp.hwp").write_bytes(b"original source")
+    (qual_dir / "bbbb_txt.txt").write_bytes(b"extracted text")
+
+    target_out = tmp_path / "snap_qual"
+    with patch.dict("os.environ", {"CHROMA_DB_PATH": str(tmp_path / "chroma_db")}):
+        manifest = execute_backup(output_dir=target_out, execute=True, project_root=tmp_path)
+
+    component = manifest["components"]["qualification_sources"]
+    assert component["file_count"] == 2
+    assert len(component["sha256"]) == 64
+    assert (target_out / "qualification_sources.tar.gz").exists()
+    # 선택 자산은 신뢰 플래그를 흔들지 않는다.
+    assert manifest["recovery_trusted"] is True
+    assert manifest["partial_backup"] is False
+
+
+@patch("scripts.backup_recovery.dump_mysql_database")
+@patch("scripts.backup_recovery.query_db_row_counts")
+@patch("scripts.backup_recovery.get_head_commit_sha")
+def test_backup_missing_optional_qualification_sources_warns_and_succeeds(
+    mock_head_sha: MagicMock,
+    mock_query_counts: MagicMock,
+    mock_dump_mysql: MagicMock,
+    tmp_path: Path,
+    capsys,
+):
+    """원문 폴더가 없으면 경고만 하고 백업은 실패하지 않습니다."""
+    mock_head_sha.return_value = "commit_noqual"
+    mock_query_counts.return_value = {"bid_announcements": 10}
+
+    def fake_dump_mysql(db_config, out_path):
+        out_path.write_bytes(b"db dump")
+        return len(b"db dump"), sha256_file(out_path)
+
+    mock_dump_mysql.side_effect = fake_dump_mysql
+    _prepare_required_backup_assets(tmp_path)
+
+    target_out = tmp_path / "snap_noqual"
+    with patch.dict("os.environ", {"CHROMA_DB_PATH": str(tmp_path / "chroma_db")}):
+        manifest = execute_backup(output_dir=target_out, execute=True, project_root=tmp_path)
+
+    assert "qualification_sources" not in manifest["components"]
+    assert manifest["recovery_trusted"] is True
+    assert manifest["partial_backup"] is False
+    assert not (target_out / "qualification_sources.tar.gz").exists()
+    assert "선택 백업 자산" in capsys.readouterr().out
