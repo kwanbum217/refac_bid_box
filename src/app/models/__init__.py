@@ -17,6 +17,11 @@ from src.app.models.chatbot import (
     KnowledgeBaseStatus,
     PipelineExecution,
 )
+from src.app.models.company_profiles import (
+    AccountCompanyProfile,
+    AccountConsentEvent,
+    AccountQualificationFact,
+)
 from src.app.models.demand_institutions import G2BDemandInstitution
 from src.app.models.evaluations import (
     BidEvaluationEvidence,
@@ -26,6 +31,9 @@ from src.app.models.evaluations import (
 from src.app.models.predictions import PredictionResult, RetrainLog
 
 __all__ = [
+    "AccountCompanyProfile",
+    "AccountConsentEvent",
+    "AccountQualificationFact",
     "AutomationRequest",
     "AutomationSubscription",
     "BidAnnouncement",
