@@ -1738,6 +1738,38 @@ def _measured_lwlt_four_band_price(source: str) -> tuple[PriceBand, ...]:
     )
 
 
+# 서울 GENERAL 전용 30억원 분할. 10억원 이상 공고 실측 하한율이 30억원 경계로
+# 77.995/72.995 로 갈려 서울 규칙만 5구간으로 만듭니다. 구간 라벨은 원문 구간 표기를
+# 따르고, B·k·기준비율은 분할 전 10억원 이상 구간 값(B 30·k 1·0.88) 그대로입니다.
+_SEOUL_TOP_LWLT_RATES: tuple[str, str] = ("77.995", "72.995")
+
+
+def _measured_lwlt_seoul_five_band_price(source: str) -> tuple[PriceBand, ...]:
+    """서울 GENERAL 전용 5구간. 10억원 이상을 30억원 경계로 나눠 실측 하한율을 붙입니다.
+
+    공유 헬퍼(_four_band_price·_measured_lwlt_four_band_price)는 다른 5개 GENERAL 규칙이
+    함께 쓰므로 건드리지 않고, 이 함수에서 10억원 이상 밴드만 두 밴드로 바꿔 끼웁니다.
+    두 밴드의 source 는 분할 전 10억원 미만 구간과 같이 공고 실측임을 함께 밝힙니다.
+    """
+    bands = _measured_lwlt_four_band_price(source)
+    under_30 = replace(
+        bands[-1],
+        upper_bound=Decimal("3000000000"),
+        label="30억원 미만 10억원 이상",
+        lwlt_rate=Decimal(_SEOUL_TOP_LWLT_RATES[0]),
+        source=f"{source}; {_SRC_LWLT_MEASURED}",
+    )
+    over_30 = _local_price_band(
+        None,
+        "30",
+        "1",
+        "추정가격 30억원 이상",
+        f"{source}; {_SRC_LWLT_MEASURED}",
+        lwlt_rate=_SEOUL_TOP_LWLT_RATES[1],
+    )
+    return (*bands[:-1], under_30, over_30)
+
+
 def _five_band_price(
     source: str,
     *,
@@ -2443,8 +2475,8 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         ),
     ),
     # 서울특별시 (시행 2024-08-12) — 일반 띠 단순노무 외/단순노무가 갈려 두 규칙으로 둡니다.
-    # 추출 원문에는 낙찰하한율 표기가 없어 10억원 미만 3개 구간에만 공고 실측 최빈값을 넣고,
-    # 10억원 이상은 규칙 대표값 경로를 유지합니다.
+    # 추출 원문에는 낙찰하한율 표기가 없어 공고 실측 최빈값을 넣고, 10억원 이상은 부산·대전·
+    # 전북과 같은 30억원 경계(30억원 미만 77.995%, 30억원 이상 72.995%)로 나눕니다.
     _local_rule(
         "SERVC_LOCAL_SEOUL_20240812_ATTACH_01",
         sido_code="11",
@@ -2453,7 +2485,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-08-12",
         source=_SRC_SEOUL,
         description="서울특별시 일반용역 적격심사 (별표 1~4, 단순노무 외)",
-        price_bands=_measured_lwlt_four_band_price(_SRC_SEOUL),
+        price_bands=_measured_lwlt_seoul_five_band_price(_SRC_SEOUL),
         threshold_bands=_threshold_30_10(_SRC_SEOUL),
     ),
     _local_rule(

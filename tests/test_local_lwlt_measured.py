@@ -5,9 +5,10 @@
  - .orca/capsules/task_g1_lwlt_measured/capsule.yaml (대상 rule_id·구간 값)
  - src/app/services/evaluation_rules.py 의 PriceBand.lwlt_rate 와 _apply_rule_lwlt
 
-공고 실측값은 자치법규 원문이 인쇄한 값이 아니므로 10억원 이상 구간의 규칙 대표값은
-바꾸지 않는다. 평가 API 끝단은 mock 없이 TestClient 로 호출하고, 이 워크트리에 모델 파일이
-없어 예측 모델만 시험 대역으로 대체한다. 규칙 판별·구간 하한율·최저 투찰금액은 실제 코드다.
+공고 실측값은 자치법규 원문이 인쇄한 값이 아니므로 규칙 대표값은 바꾸지 않는다. 서울 01
+만 10억원 이상을 30억원 경계로 나눠 77.995%·72.995% 를 쓴다. 평가 API 끝단은 mock 없이
+TestClient 로 호출하고, 이 워크트리에 모델 파일이 없어 예측 모델만 시험 대역으로 대체한다.
+규칙 판별·구간 하한율·최저 투찰금액은 실제 코드다.
 """
 
 from __future__ import annotations
@@ -108,10 +109,13 @@ def _resolve(
 
 @pytest.mark.parametrize("rule_id", TARGET_RULE_IDS)
 def test_under_1b_bands_carry_measured_lwlt(rule_id: str) -> None:
-    """대상 6개 규칙의 10억원 미만 3개 구간이 보고서 6.1절 실측값과 일치한다."""
+    """대상 규칙의 10억원 미만 3개 구간이 보고서 6.1절 실측값과 일치한다.
+
+    서울 01 은 10억원 이상이 30억원 경계로 갈려 5구간이다.
+    """
     rule = _rule(rule_id)
     bands = rule.price_bands or ()
-    assert len(bands) == 4, rule_id
+    assert len(bands) == (5 if rule_id == SEOUL_GENERAL_ID else 4), rule_id
     for band, (upper, rate, label) in zip(bands, MEASURED_UNDER_1B, strict=False):
         assert band.upper_bound == Decimal(upper), (rule_id, upper)
         assert band.lwlt_rate == Decimal(rate), (rule_id, upper)
@@ -120,9 +124,12 @@ def test_under_1b_bands_carry_measured_lwlt(rule_id: str) -> None:
         assert "원문 미확인" in (band.source or ""), rule_id
 
 
-@pytest.mark.parametrize("rule_id", TARGET_RULE_IDS)
+NON_SEOUL_RULE_IDS = tuple(rule_id for rule_id in TARGET_RULE_IDS if rule_id != SEOUL_GENERAL_ID)
+
+
+@pytest.mark.parametrize("rule_id", NON_SEOUL_RULE_IDS)
 def test_ten_eok_and_above_keeps_rule_default(rule_id: str) -> None:
-    """10억원 이상 구간은 하한율을 비워 두고 규칙 대표값 87.995%를 그대로 쓴다."""
+    """서울을 뺀 5개 규칙의 10억원 이상 구간은 하한율을 비워 규칙 대표값 87.995%를 쓴다."""
     rule = _rule(rule_id)
     assert rule.lwlt_rate == Decimal("87.995"), rule_id
     assert rule.price_bands is not None
@@ -142,6 +149,38 @@ def test_ten_eok_and_above_keeps_rule_default(rule_id: str) -> None:
         assert result.rate_source == "RULE_DEFAULT"
         assert any("별표 기본값(87.995%)" in warning for warning in result.warnings)
         assert not any("구간 하한율" in warning for warning in result.warnings)
+
+
+def test_seoul_ten_eok_and_above_splits_at_30eok() -> None:
+    """서울 01 은 10억원 이상을 30억원 경계로 나눠 실측 하한율 77.995/72.995 를 쓴다.
+
+    30억원 경계값은 상위 구간(이상 쪽)에 속한다.
+    """
+    rule = _rule(SEOUL_GENERAL_ID)
+    assert rule.lwlt_rate == Decimal("87.995")
+    assert rule.price_bands is not None
+    assert [band.lwlt_rate for band in rule.price_bands[-2:]] == [
+        Decimal("77.995"),
+        Decimal("72.995"),
+    ]
+    assert rule.price_bands[-1].upper_bound is None
+    for price, expected_rate in (
+        ("1000000000", "77.995"),
+        ("1500000000", "77.995"),
+        ("3000000000", "72.995"),
+        ("4000000000", "72.995"),
+    ):
+        result = _resolve(
+            region_code="11",
+            region_name="서울특별시",
+            method=GENERAL_METHOD,
+            estimated_price=price,
+        )
+        assert result.rule is not None
+        assert result.rule.rule_id == SEOUL_GENERAL_ID
+        assert result.effective_lwlt_rate == Decimal(expected_rate), price
+        assert result.rate_source == "RULE_DEFAULT"
+        assert any("별표 구간 하한율" in warning for warning in result.warnings), price
 
 
 # (rule_id, 추정가격, 기대 하한율, 구간 라벨)
@@ -404,7 +443,10 @@ def _analyze(client, bid_id: int, bid_amount: int) -> dict:
     return response.json()
 
 
-# (지역명, 규칙 ID, 추정가격, 기대 하한율, 기대 최저투찰금액). 10억원 이상은 대표값이다.
+# (지역명, 규칙 ID, 추정가격, 기대 하한율, 기대 최저투찰금액). 10억원 이상은 규칙 대표값이고,
+# 서울 01 만 30억원 경계 분할값(15억원 77.995%, 30억원 이상 72.995%)을 쓴다.
+DEFAULT_TOP_PRICE_CASE = (1_500_000_000, 87.995, 1_319_925_000)
+SEOUL_TOP_PRICE_CASE = (1_500_000_000, 77.995, 1_169_925_000)
 API_CASES = tuple(
     (REGION_BY_RULE[rule_id][1], rule_id, presmpt_prce, expected_rate, expected_min_bid)
     for rule_id in TARGET_RULE_IDS
@@ -412,7 +454,7 @@ API_CASES = tuple(
         (150_000_000, 87.745, 131_617_500),
         (300_000_000, 86.745, 260_235_000),
         (700_000_000, 85.495, 598_465_000),
-        (1_500_000_000, 87.995, 1_319_925_000),
+        SEOUL_TOP_PRICE_CASE if rule_id == SEOUL_GENERAL_ID else DEFAULT_TOP_PRICE_CASE,
     )
 )
 
