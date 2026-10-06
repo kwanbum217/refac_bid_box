@@ -949,6 +949,32 @@ def test_server_scores_are_not_the_requested_ones(client, isolated_db, as_user):
     assert base["total_score"] == pytest.approx(76.98)
 
 
+def test_disqualification_status_reports_input_state(client, isolated_db, as_user):
+    """결격 입력을 생략하면 not_checked, 명시 True/False 는 disqualified/clear 로 표시한다."""
+    as_user(10)
+    bid = _create_bid(isolated_db)
+    bid_id = bid.id
+
+    omitted_payload = _analysis_payload(bid_id, score_table=SCORE_TABLE)
+    del omitted_payload["qualification_input"]["disqualification"]
+    omitted = client.post(ANALYZE_URL, json=omitted_payload)
+    assert omitted.status_code == 200, omitted.text
+    assert omitted.json()["disqualification_status"] == "not_checked"
+
+    explicit_false = client.post(
+        ANALYZE_URL, json=_analysis_payload(bid_id, score_table=SCORE_TABLE)
+    )
+    assert explicit_false.json()["disqualification_status"] == "clear"
+
+    explicit_true = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid_id, score_table=SCORE_TABLE, qualification={"disqualification": True}
+        ),
+    )
+    assert explicit_true.json()["disqualification_status"] == "disqualified"
+
+
 def test_disqualification_makes_the_announcement_unqualified(client, isolated_db, as_user):
     """결격사유가 있으면 총점이 높아도 적격이 아니다 (판정 3 조건은 도메인 정본)."""
     as_user(10)

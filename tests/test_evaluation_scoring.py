@@ -10,6 +10,10 @@ from typing import ClassVar
 
 import pytest
 
+from src.app.services.evaluation_recommendation import (
+    disqualification_status,
+    has_disqualification,
+)
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_MANUAL_EVALUATION,
     BLOCK_CODE_NON_PRED_PRICE,
@@ -45,6 +49,20 @@ from src.app.services.evaluation_scoring import (
     invert_lowest_bid_rate,
     resolve_price_compensation,
 )
+
+
+class TestDisqualificationContract:
+    """결격 입력 하위 호환 계약 (설계 5.1, 결격 체크박스 제거 대응)."""
+
+    def test_status_mapping_covers_omitted_and_explicit(self) -> None:
+        assert disqualification_status(None) == "not_checked"
+        assert disqualification_status(False) == "clear"
+        assert disqualification_status(True) == "disqualified"
+
+    def test_omitted_disqualification_is_scored_as_no_disqualification(self) -> None:
+        assert has_disqualification(None) is False
+        assert has_disqualification(False) is False
+        assert has_disqualification(True) is True
 
 
 class TestEvaluationRulesRegistry:
