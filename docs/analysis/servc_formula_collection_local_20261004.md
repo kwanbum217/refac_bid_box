@@ -128,7 +128,7 @@ flowchart TD
 | 시행일 | 2025. 12. 24. |
 | 출처 URL | `https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=28000032005015&histNo=008` (ELIS). 보조: `https://www.incheon.go.kr/contract/CTRT050100/` 게시목록에 "인천광역시 일반용역 적격심사 세부기준(2025-12-24 시행)" 노출 |
 | 확인 날짜 | 2026-10-04 |
-| 원본 파일 | `EXT/inan/att008/[별표 1] 일반용역 적격심사 세부기준.hwp`, 추출 `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt` |
+| 원본 파일 | `data/sources/qualification/files/inan/4ae4aff8b521_[별표 1] 일반용역 적격심사 세부기준.hwp`, 추출 `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt` |
 | 등급 | 확인 |
 
 문서 머리말 `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:91` = `[시행 2025.12.24]`, `:92` = `(일부개정) 2025-12-08 예규 제 488호`. 통과점수 `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:144` — 30억원 이상 85점, 30억원 미만 10억원 이상 90점, 10억원 미만 95점, 단순노무 95점. 아래 표의 인용은 `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt` 입니다.
