@@ -12,11 +12,17 @@ Django Form 전체를 재현하지 않습니다. 검증은 API 계층(Pydantic)�
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from markupsafe import Markup, escape
 
-from src.app.services.evaluation_rules import CREDIT_GRADE_SCORES, REPUTATION_ITEMS
+from src.app.services.evaluation_rules import (
+    CREDIT_GRADE_SCORES,
+    REPUTATION_ITEMS,
+    REPUTATION_OPTION_CHOICE,
+)
+from src.app.services.evaluation_scoring import format_decimal_plain
 
 
 @dataclass
@@ -108,6 +114,75 @@ REPUTATION_ITEM_CHOICES: tuple[tuple[str, str], ...] = tuple(
     (item.item_code, item.item_name) for item in REPUTATION_ITEMS
 )
 
+
+@dataclass
+class ReputationField:
+    """가입 화면 신인도 항목 한 줄.
+
+    선택지가 하나뿐인 항목은 단일 체크박스로, 복수 선택지는 고를 수 있는 평점 목록(select),
+    구간 항목은 범위 안 숫자 입력(number)으로 그립니다. 제출값은 항목별 평점 dict 입니다.
+    """
+
+    code: str
+    name: str
+    label: str
+    option_kind: str
+    score_options: tuple[str, ...]
+    selected: str = ""
+    checked: bool = False
+
+    @property
+    def is_single_option(self) -> bool:
+        return self.option_kind == REPUTATION_OPTION_CHOICE and len(self.score_options) == 1
+
+    @property
+    def is_range(self) -> bool:
+        return self.option_kind != REPUTATION_OPTION_CHOICE
+
+    @property
+    def min_value(self) -> str:
+        return self.score_options[0]
+
+    @property
+    def max_value(self) -> str:
+        return self.score_options[-1]
+
+
+def _plain_score(value: Any) -> str:
+    """제출 평점을 화면 표기 문자열로 만듭니다. 옵션 표기와 같은 규칙을 씁니다."""
+    try:
+        return format_decimal_plain(Decimal(str(value)))
+    except (ArithmeticError, TypeError, ValueError):
+        return str(value)
+
+
+def build_reputation_fields(data: dict[str, Any] | None) -> tuple[ReputationField, ...]:
+    """제출값(dict 또는 구형 list)을 항목별 렌더 정보로 바꿉니다."""
+    raw_items = (data or {}).get("reputation_items")
+    selected: dict[str, Any] = {}
+    if isinstance(raw_items, dict):
+        selected = {str(code): score for code, score in raw_items.items()}
+    elif isinstance(raw_items, (list, tuple)):
+        selected = {str(code): None for code in raw_items}
+    elif isinstance(raw_items, str) and raw_items:
+        selected = {raw_items: None}
+    fields: list[ReputationField] = []
+    for item in REPUTATION_ITEMS:
+        raw_value = selected.get(item.item_code)
+        fields.append(
+            ReputationField(
+                code=item.item_code,
+                name=f"reputation_score__{item.item_code}",
+                label=item.item_name,
+                option_kind=item.option_kind,
+                score_options=tuple(format_decimal_plain(value) for value in item.options),
+                selected="" if raw_value is None else _plain_score(raw_value),
+                checked=item.item_code in selected,
+            )
+        )
+    return tuple(fields)
+
+
 # 원본 SignUpForm 의 필드 정의와 순서를 그대로 따릅니다. 회사·담당자·정량 원자료
 # 필드는 D-W4 로 추가된 선택 섹션입니다.
 SIGNUP_FIELDS: tuple[dict[str, Any], ...] = (
@@ -159,10 +234,12 @@ class RenderForm:
         data: dict[str, Any] | None = None,
         errors: dict[str, list[str]] | None = None,
         non_field_errors: list[str] | None = None,
+        reputation_fields: tuple[ReputationField, ...] = (),
     ):
         data = data or {}
         errors = errors or {}
         self._non_field_errors = non_field_errors or []
+        self.reputation_fields = tuple(reputation_fields)
         self._fields: dict[str, BoundField] = {}
         for spec in specs:
             name = spec["name"]
@@ -204,7 +281,13 @@ class RenderForm:
 
 
 def signup_form(data=None, errors=None, non_field_errors=None) -> RenderForm:
-    return RenderForm(SIGNUP_FIELDS, data, errors, non_field_errors)
+    return RenderForm(
+        SIGNUP_FIELDS,
+        data,
+        errors,
+        non_field_errors,
+        reputation_fields=build_reputation_fields(data),
+    )
 
 
 LOGIN_FIELDS: tuple[dict[str, Any], ...] = (

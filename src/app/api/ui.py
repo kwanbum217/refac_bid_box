@@ -44,6 +44,7 @@ from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import ChatSessionState
 from src.app.services import bid_queries
 from src.app.services.auth_forms import login_form, signup_form
+from src.app.services.evaluation_rules import find_reputation_item
 from src.app.services.home_context import (
     DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES,
     get_home_page_context,
@@ -399,6 +400,36 @@ def _register_user_sync(payload: SignUpRequest, response: Response) -> None:
             db.close()
 
 
+def _reputation_items_from_form(
+    form_data: dict[str, list[str]],
+) -> dict[str, str] | list[str] | None:
+    """SSR 폼의 신인도 입력을 항목별 평점(dict) 또는 구형 코드 목록(list)으로 모읍니다.
+
+    새 화면은 복수 선택지·구간 항목을 reputation_score__<코드> 필드로 보내고, 선택지가
+    하나뿐인 항목은 reputation_items 코드로 보냅니다. 새 필드가 하나도 없으면 구형 폼으로
+    보고 코드 목록을 그대로 돌려줍니다(단일 선택지 자동 환산은 추천 계산이 담당).
+    """
+    scored: dict[str, str] = {}
+    has_score_fields = False
+    for key, values in form_data.items():
+        if not key.startswith("reputation_score__"):
+            continue
+        has_score_fields = True
+        code = key[len("reputation_score__") :].strip()
+        raw = (values or [""])[0].strip()
+        if code and raw:
+            scored[code] = raw
+    codes = [code for code in (form_data.get("reputation_items") or []) if code]
+    if not has_score_fields:
+        return codes or None
+    ratings: dict[str, str] = dict(scored)
+    for code in codes:
+        item = find_reputation_item(code)
+        if item is not None and len(item.options) == 1:
+            ratings[code] = str(item.options[0])
+    return ratings or None
+
+
 @router.post("/accounts/signup/")
 async def signup_submit(request: Request):
     """JavaScript 없이도 원본 SSR 회원가입 폼을 처리합니다."""
@@ -434,7 +465,7 @@ async def signup_submit(request: Request):
         "qualification": {
             "credit_grade": value("credit_grade"),
             "credit_evaluated_on": value("credit_evaluated_on"),
-            "reputation_items": form_data.get("reputation_items") or None,
+            "reputation_items": _reputation_items_from_form(form_data),
             "non_price_quant_score": value("non_price_quant_score") or None,
         },
     }

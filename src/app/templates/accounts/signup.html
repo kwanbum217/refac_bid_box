@@ -195,12 +195,31 @@
                         </div>
                         <div class="space-y-1.5 md:col-span-2">
                             <span class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.reputation_items.label }} (신인도)</span>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
-                                {% for choice in form.reputation_items %}
-                                <label for="{{ choice.id_for_label }}" class="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 transition-all hover:border-primary/40 hover:bg-slate-50 cursor-pointer">
-                                    <input type="checkbox" name="reputation_items" value="{{ choice.value }}" id="{{ choice.id_for_label }}" class="mt-0.5 w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer" {% if form.reputation_items.value and choice.value in form.reputation_items.value %}checked{% endif %}>
-                                    <span>{{ choice.choice_label }}</span>
-                                </label>
+                            <div class="grid grid-cols-1 gap-2 mt-1">
+                                {% for item in form.reputation_fields %}
+                                <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                                    {% if item.is_single_option %}
+                                    <label for="id_reputation_{{ item.code }}" class="flex items-start gap-2 cursor-pointer">
+                                        <input type="checkbox" name="reputation_items" value="{{ item.code }}" data-reputation-score="{{ item.score_options[0] }}" id="id_reputation_{{ item.code }}" class="mt-0.5 w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer" {% if item.checked %}checked{% endif %}>
+                                        <span>{{ item.label }}</span>
+                                    </label>
+                                    {% elif item.is_range %}
+                                    <label for="{{ item.name }}" class="flex items-center gap-2">
+                                        <span class="flex-1">{{ item.label }}</span>
+                                        <input type="number" name="{{ item.name }}" id="{{ item.name }}" value="{{ item.selected }}" min="{{ item.min_value }}" max="{{ item.max_value }}" step="0.25" class="w-24 px-2 py-1 bg-white border border-slate-200 rounded text-right text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="{{ item.min_value }} ~ {{ item.max_value }}">
+                                    </label>
+                                    {% else %}
+                                    <label for="{{ item.name }}" class="flex items-center gap-2">
+                                        <span class="flex-1">{{ item.label }}</span>
+                                        <select name="{{ item.name }}" id="{{ item.name }}" class="px-2 py-1 bg-white border border-slate-200 rounded text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                                            <option value="">선택 안 함</option>
+                                            {% for option in item.score_options %}
+                                            <option value="{{ option }}" {% if item.selected == option %}selected{% endif %}>{{ option }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </label>
+                                    {% endif %}
+                                </div>
                                 {% endfor %}
                             </div>
                             {% if form.reputation_items.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.reputation_items.errors.0 }}</p>{% endif %}
@@ -393,7 +412,14 @@
         signupForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             const fd = new FormData(this);
-            const reputationItems = fd.getAll('reputation_items');
+            const reputationItems = {};
+            this.querySelectorAll('input[name="reputation_items"]:checked').forEach((box) => {
+                reputationItems[box.value] = Number(box.dataset.reputationScore);
+            });
+            this.querySelectorAll('[name^="reputation_score__"]').forEach((field) => {
+                if (field.value === '') return;
+                reputationItems[field.name.slice('reputation_score__'.length)] = Number(field.value);
+            });
             const payload = {
                 username: fd.get('username'),
                 password1: fd.get('password1'),

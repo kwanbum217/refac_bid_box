@@ -311,6 +311,43 @@ def test_ssr_signup_rejects_invalid_credit_grade(isolated_db):
     assert isolated_db.query(CustomUser).count() == 0
 
 
+REPUTATION_RATINGS = {"sme_consortium": 1.5, "job_creation": 2.0}
+
+
+def test_api_signup_stores_reputation_ratings_dict(isolated_db):
+    """항목별로 고른 평점(dict)이 같은 JSON 컬럼에 그대로 저장된다."""
+    client = TestClient(app, follow_redirects=False)
+    payload = _api_payload(
+        qualification={**QUALIFICATION_INPUT, "reputation_items": dict(REPUTATION_RATINGS)}
+    )
+
+    response = client.post(API_SIGNUP_URL, json=payload)
+
+    assert response.status_code == 200, response.text
+    user = isolated_db.query(CustomUser).filter_by(username="profile-user").one()
+    facts = isolated_db.query(AccountQualificationFact).filter_by(user_id=user.id).one()
+    assert facts.reputation_items == REPUTATION_RATINGS
+
+
+@pytest.mark.parametrize(
+    "ratings",
+    [
+        {"job_creation": 5.0},  # 구간 상한 3.0 초과
+        {"delayed_delivery": -0.1},  # 구간 상한 -0.25 초과
+        {"sme_consortium": 9.0},  # 선택 가능한 평점이 아님
+    ],
+)
+def test_signup_rejects_out_of_range_reputation_rating(isolated_db, ratings):
+    """레지스트리 허용 범위 밖 평점은 저장하지 않고 422 로 거부한다."""
+    client = TestClient(app, follow_redirects=False)
+    payload = _api_payload(qualification={**QUALIFICATION_INPUT, "reputation_items": ratings})
+
+    response = client.post(API_SIGNUP_URL, json=payload)
+
+    assert response.status_code == 422, response.text
+    assert isolated_db.query(CustomUser).count() == 0
+
+
 # --------------------------------------------------------------------------- #
 # 원자성
 # --------------------------------------------------------------------------- #
@@ -392,6 +429,19 @@ def test_profile_returns_saved_company_and_qualification(isolated_db):
         QUALIFICATION_INPUT["reputation_items"]
     )
     assert body["qualification"]["non_price_quant_score"] == 40.0
+
+
+def test_profile_returns_reputation_ratings_dict(isolated_db):
+    """프로필 조회가 저장한 항목별 평점 dict 를 그대로 돌려준다."""
+    client = TestClient(app, follow_redirects=False)
+    ratings = dict(REPUTATION_RATINGS)
+    payload = _api_payload(qualification={**QUALIFICATION_INPUT, "reputation_items": ratings})
+    assert client.post(API_SIGNUP_URL, json=payload).status_code == 200
+
+    response = _login_client(isolated_db, "profile-user").get(PROFILE_URL)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["qualification"]["reputation_items"] == ratings
 
 
 def test_profile_returns_null_sections_for_account_without_profile(isolated_db):
