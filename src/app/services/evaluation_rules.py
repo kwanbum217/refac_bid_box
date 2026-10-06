@@ -1488,15 +1488,19 @@ _LOCAL_COLLECTION = "docs/analysis/servc_formula_collection_local_20261004.md"
 
 _SRC_INCHEON = (
     f"{_LOCAL_COLLECTION}:122-146 (인천광역시 일반용역 적격심사 세부기준, "
-    "인천광역시 예규 제488호, 시행 2025-12-24, 별표 1)"
+    "인천광역시 예규 제488호, 시행 2025-12-24, 별표 1); "
+    "EXT/qual_raw/3.txt:170,314,457,600 (별표 1 1~4. 추정가격 구간별 입찰가격 평점산식)"
 )
 _SRC_JEJU = (
     f"{_LOCAL_COLLECTION}:148-173 (제주특별자치도 일반용역 적격심사 세부기준, "
-    "제주특별자치도 예규 제82호, 시행 2024-01-01, 별표 1)"
+    "제주특별자치도 예규 제82호, 시행 2024-01-01, 별표 1); "
+    "EXT/qual_raw/6.txt:18,243,465,687 (별표 1 1~4. 추정가격 구간별 입찰가격 평점산식)"
 )
 _SRC_GANGWON = (
     f"{_LOCAL_COLLECTION}:175-200 (강원특별자치도 일반용역 적격심사 세부기준, "
-    "강원특별자치도 예규 제832호, 시행 2023-06-11, 별표 1)"
+    "강원특별자치도 예규 제832호, 시행 2023-06-11, 별표 1); "
+    "EXT/qual_raw/1.txt:1996-2032 (참고 입찰가격 평점 산식 낙찰하한율 30억 이상 72.995%"
+    "·10억 이상 77.995%), :150,307,463,618 (별표 1 1~4. 구간별 입찰가격 평점산식)"
 )
 _SRC_SEJONG = (
     f"{_LOCAL_COLLECTION}:225-247 (세종특별자치시 일반용역 적격심사 세부기준, "
@@ -1527,7 +1531,8 @@ _SRC_JNGJ = (
 )
 _SRC_GN = (
     f"{_LOCAL_COLLECTION}:373-394 (경상남도 일반용역 등 적격심사 세부기준, "
-    "경상남도 공고 제2023-23호, 시행 2023-01-05, 별표 1)"
+    "경상남도 공고 제2023-23호, 시행 2023-01-05, 별표 1); "
+    "EXT/qual_raw/5.txt:54,300,548,794 (별표 1 1~4. 추정가격 구간별 입찰가격 평점산식)"
 )
 _SRC_DAEGU = (
     f"{_LOCAL_COLLECTION}:202-223 (대구광역시 일반용역 적격심사 세부기준, "
@@ -1623,13 +1628,19 @@ _SRC_SEJONG_WASTE_HOUSEHOLD = (
     f"{_SRC_SEJONG}; EXT/sejong/byp4_2_2025.txt:11 (별표 4의2 생활폐기물 전 구간 87.745%)"
 )
 
-# 2026-10-05 공고 실측: 별표 원문에 하한율이 인쇄되지 않은 GENERAL 규칙 6개의 10억원 미만
-# 구간 최빈값입니다. 자치법규 원문이 인쇄한 값이 아니므로 원문 확인값으로 표기하지 않습니다.
+# 경상북도 별표 4(기타 일반용역) 원문. 5억원 기준 두 구간만 인쇄하므로 5억 경계로 값을 가릅니다.
+_SRC_GB_ATTACH_04 = (
+    f"{_SRC_GB}; EXT/gb/gb_byp004.tbl.txt:9,12 "
+    "(별표 4 기타 일반용역 Ⅲ.입찰가격: 5억원 이상 평점 50-4x|88-투찰률| 89.25% 이상 45점, "
+    "5억원 미만 평점 70-20x|88-투찰률| 88.25% 이상 65점)"
+)
+# 2026-10-05 공고 실측: 자치법규 원문이 낙찰하한율을 인쇄하지 않은 규칙의 10억원 미만 구간
+# 최빈값입니다. 자치법규 원문이 인쇄한 값이 아니므로 원문 확인값으로 표기하지 않습니다.
+# 2026-10-06 부로 이 실측 헬퍼는 서울특별시 GENERAL(10억원 이상 30억원 분할) 전용입니다.
 _SRC_LWLT_MEASURED = (
     "docs/analysis/local_lwlt_announcement_measure_20261005.md:225-235 "
     "6.1 공고 실측 최빈값, 자치법규 원문 미확인"
 )
-_SRC_GB_MEASURED = f"{_SRC_GB}; {_SRC_LWLT_MEASURED}"
 # 구간 순서는 (2억원 미만, 5억원 미만, 10억원 미만, 10억원 이상)입니다. 10억원 이상은
 # 값을 비워 두어 규칙 대표값(EvaluationRule.lwlt_rate)을 쓰게 합니다.
 _MEASURED_LWLT_UNDER_1B: tuple[str | None, str | None, str | None, str | None] = (
@@ -1724,9 +1735,9 @@ def _four_band_price(
 def _measured_lwlt_four_band_price(source: str) -> tuple[PriceBand, ...]:
     """10억원 미만 3개 구간에 공고 실측 하한율을 붙인 10억/5억/2억 4구간.
 
-    2026-10-05 공고 실측 대상 6개 GENERAL 규칙 전용입니다. 구간 하한율을 붙인 구간의
-    source 는 자치법규 원문이 아니라 공고 실측임을 함께 밝히고, 10억원 이상 구간은 값을
-    비워 규칙 대표값(EvaluationRule.lwlt_rate)을 그대로 쓰게 합니다. 이 헬퍼를 쓰지 않는
+    2026-10-06 부로 서울특별시 GENERAL(10억원 이상 30억원 분할) 전용입니다. 구간 하한율을
+    붙인 구간의 source 는 자치법규 원문이 아니라 공고 실측임을 함께 밝히고, 10억원 이상 구간은
+    값을 비워 규칙 대표값(EvaluationRule.lwlt_rate)을 그대로 쓰게 합니다. 이 헬퍼를 쓰지 않는
     다른 규칙의 구간은 종전과 같습니다.
     """
     bands = _four_band_price(source, lwlt_rates=_MEASURED_LWLT_UNDER_1B)
@@ -1739,17 +1750,19 @@ def _measured_lwlt_four_band_price(source: str) -> tuple[PriceBand, ...]:
 
 
 # 서울 GENERAL 전용 30억원 분할. 10억원 이상 공고 실측 하한율이 30억원 경계로
-# 77.995/72.995 로 갈려 서울 규칙만 5구간으로 만듭니다. 구간 라벨은 원문 구간 표기를
+# 77.995/72.995 로 갈려 서울은 공고 실측으로 5구간을 만듭니다. 구간 라벨은 원문 구간 표기를
 # 따르고, B·k·기준비율은 분할 전 10억원 이상 구간 값(B 30·k 1·0.88) 그대로입니다.
+# (인천·제주·강원·경남은 같은 30억 분할을 _five_band_price 로 원문 산식 역산값으로 씁니다.)
 _SEOUL_TOP_LWLT_RATES: tuple[str, str] = ("77.995", "72.995")
 
 
 def _measured_lwlt_seoul_five_band_price(source: str) -> tuple[PriceBand, ...]:
     """서울 GENERAL 전용 5구간. 10억원 이상을 30억원 경계로 나눠 실측 하한율을 붙입니다.
 
-    공유 헬퍼(_four_band_price·_measured_lwlt_four_band_price)는 다른 5개 GENERAL 규칙이
-    함께 쓰므로 건드리지 않고, 이 함수에서 10억원 이상 밴드만 두 밴드로 바꿔 끼웁니다.
-    두 밴드의 source 는 분할 전 10억원 미만 구간과 같이 공고 실측임을 함께 밝힙니다.
+    2026-10-06 부로 공고 실측 하한율을 쓰는 규칙은 서울 GENERAL 하나뿐이므로, 공유 헬퍼
+    (_four_band_price·_measured_lwlt_four_band_price)는 그대로 두고 이 함수에서 10억원 이상
+    밴드만 두 밴드로 바꿔 끼웁니다. 두 밴드의 source 는 분할 전 10억원 미만 구간과 같이
+    공고 실측임을 함께 밝힙니다.
     """
     bands = _measured_lwlt_four_band_price(source)
     under_30 = replace(
@@ -1856,7 +1869,12 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2025-12-24",
         source=_SRC_INCHEON,
         description="인천광역시 일반용역 적격심사 (단순노무 외)",
-        price_bands=_measured_lwlt_four_band_price(_SRC_INCHEON),
+        # 별표 1 1~4 는 구간별 입찰가격 평점산식을 인쇄합니다. 10억원 이상은 30억원 경계로
+        # 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
+        price_bands=_five_band_price(
+            _SRC_INCHEON,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
         threshold_bands=_threshold_30_10(_SRC_INCHEON),
     ),
     _local_rule(
@@ -1867,8 +1885,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2025-12-24",
         source=_SRC_INCHEON,
         description="인천광역시 일반용역 적격심사 (단순노무)",
+        # 단순노무 행의 낙찰하한율은 구간 구분 없이 87.745% 입니다(별표 1 단순노무 평점산식).
         price_bands=_four_band_price(_SRC_INCHEON, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_INCHEON),
+        lwlt_rate="87.745",
     ),
     # 제주특별자치도 (예규 제82호, 시행 2024-01-01) — 인천과 동일 구조
     _local_rule(
@@ -1879,7 +1899,12 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-01-01",
         source=_SRC_JEJU,
         description="제주특별자치도 일반용역 적격심사 (단순노무 외)",
-        price_bands=_measured_lwlt_four_band_price(_SRC_JEJU),
+        # 별표 1 1~4 는 구간별 입찰가격 평점산식을 인쇄합니다. 10억원 이상은 30억원 경계로
+        # 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
+        price_bands=_five_band_price(
+            _SRC_JEJU,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
         threshold_bands=_threshold_30_10(_SRC_JEJU),
     ),
     _local_rule(
@@ -1890,8 +1915,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-01-01",
         source=_SRC_JEJU,
         description="제주특별자치도 일반용역 적격심사 (단순노무)",
+        # 단순노무 행의 낙찰하한율은 구간 구분 없이 87.745% 입니다(별표 1 단순노무 평점산식).
         price_bands=_four_band_price(_SRC_JEJU, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_JEJU),
+        lwlt_rate="87.745",
     ),
     # 강원특별자치도 (예규 제832호, 시행 2023-06-11) — 인천과 동일 구조
     _local_rule(
@@ -1902,7 +1929,12 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2023-06-11",
         source=_SRC_GANGWON,
         description="강원특별자치도 일반용역 적격심사 (단순노무 외)",
-        price_bands=_measured_lwlt_four_band_price(_SRC_GANGWON),
+        # 별표 1 1~4 는 구간별 입찰가격 평점산식과 낙찰하한율을 인쇄합니다(원문 :1996-2032).
+        # 10억원 이상은 30억원 경계로 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
+        price_bands=_five_band_price(
+            _SRC_GANGWON,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
         threshold_bands=_threshold_30_10(_SRC_GANGWON),
     ),
     _local_rule(
@@ -1913,8 +1945,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2023-06-11",
         source=_SRC_GANGWON,
         description="강원특별자치도 일반용역 적격심사 (단순노무)",
+        # 단순노무 행의 낙찰하한율은 구간 구분 없이 87.745% 입니다(원문 :2006-2011).
         price_bands=_four_band_price(_SRC_GANGWON, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_GANGWON),
+        lwlt_rate="87.745",
     ),
     # 세종특별자치시 (예규 제32호, 시행 2025-12-01)
     _local_rule(
@@ -2079,32 +2113,41 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2026-01-08",
         source=_SRC_GB,
         description="경상북도 기타 일반용역 적격심사 (별표 4)",
-        # 별표 4 원문은 5억원 미만 / 5억원 이상 두 행(B70·k20 / B50·k4)만 인쇄하고 하한율은
-        # 인쇄하지 않습니다. 10억원 미만 3개 구간에 공고 실측 최빈값을 붙이려고 각 행을 같은
-        # B·k 로 2억·10억에서 나눴습니다.
+        # 별표 4 원문은 5억원 미만 / 5억원 이상 두 행(B70·k20 / B50·k4)만 인쇄합니다. 구간별
+        # 하한율은 원문 산식과 통과점수 95로 역산합니다. 5억원 미만 행(70-20x|88-투찰률|)은
+        # 비가격 만점 30, 필요 65 → 투찰률 87.75% → 87.745% 이고, 5억원 이상 행
+        # (50-4x|88-투찰률|)은 비가격 만점 50, 필요 45 → 투찰률 86.75% → 86.745% 입니다.
         price_bands=(
             _local_price_band(
-                "200000000", "70", "20", "추정가격 2억원 미만", _SRC_GB_MEASURED, lwlt_rate="87.745"
+                "200000000",
+                "70",
+                "20",
+                "추정가격 2억원 미만",
+                _SRC_GB_ATTACH_04,
+                lwlt_rate="87.745",
             ),
             _local_price_band(
                 "500000000",
                 "70",
                 "20",
                 "5억원 미만 2억원 이상",
-                _SRC_GB_MEASURED,
-                lwlt_rate="86.745",
+                _SRC_GB_ATTACH_04,
+                lwlt_rate="87.745",
             ),
             _local_price_band(
                 "1000000000",
                 "50",
                 "4",
                 "10억원 미만 5억원 이상",
-                _SRC_GB_MEASURED,
-                lwlt_rate="85.495",
+                _SRC_GB_ATTACH_04,
+                lwlt_rate="86.745",
             ),
-            _local_price_band(None, "50", "4", "추정가격 10억원 이상", _SRC_GB),
+            _local_price_band(
+                None, "50", "4", "추정가격 10억원 이상", _SRC_GB_ATTACH_04, lwlt_rate="86.745"
+            ),
         ),
-        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_GB),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_GB_ATTACH_04),
+        lwlt_rate="87.995",
     ),
     # 울산광역시 (공고 제2022-1100호, 시행 2022-08-10)
     _local_rule(
@@ -2345,7 +2388,12 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2023-01-05",
         source=_SRC_GN,
         description="경상남도 일반용역 적격심사 (별표 1)",
-        price_bands=_measured_lwlt_four_band_price(_SRC_GN),
+        # 별표 1 1~4 는 구간별 입찰가격 평점산식을 인쇄합니다. 10억원 이상은 30억원 경계로
+        # 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
+        price_bands=_five_band_price(
+            _SRC_GN,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
         threshold_bands=_threshold_30_10(_SRC_GN),
     ),
     # 대구광역시 (예규 제238호, 시행 2026-05-11) — 단순노무만 확정, 일반 별표는 삭제됨

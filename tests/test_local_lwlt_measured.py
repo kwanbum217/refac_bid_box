@@ -1,14 +1,16 @@
-"""LOCAL GENERAL 규칙 6개의 공고 실측 구간 하한율 시험.
+"""LOCAL GENERAL 규칙 6개의 구간 하한율 시험 (서울 공고 실측 + 5곳 원문 산식 역산).
 
 정본:
- - docs/analysis/local_lwlt_announcement_measure_20261005.md 6.1절 (공고 실측 최빈값)
- - .orca/capsules/task_g1_lwlt_measured/capsule.yaml (대상 rule_id·구간 값)
- - src/app/services/evaluation_rules.py 의 PriceBand.lwlt_rate 와 _apply_rule_lwlt
+ - docs/analysis/local_10eok_lwlt_derivation_20261006.md (인천·제주·강원·경남·경북 원문 역산)
+ - docs/analysis/local_lwlt_announcement_measure_20261005.md 6.1절 (서울 공고 실측 최빈값)
+ - .orca/capsules/task_b1c4b69f0e6f/capsule.yaml
+ - src/app/services/evaluation_rules.py 의 PriceBand.lwlt_rate
 
-공고 실측값은 자치법규 원문이 인쇄한 값이 아니므로 규칙 대표값은 바꾸지 않는다. 서울 01
-만 10억원 이상을 30억원 경계로 나눠 77.995%·72.995% 를 쓴다. 평가 API 끝단은 mock 없이
-TestClient 로 호출하고, 이 워크트리에 모델 파일이 없어 예측 모델만 시험 대역으로 대체한다.
-규칙 판별·구간 하한율·최저 투찰금액은 실제 코드다.
+2026-10-06 부로 서울 GENERAL 만 10억원 미만 3개 구간에 공고 실측 최빈값을 쓰고, 인천·제주·
+강원·경남은 원문 별표 산식과 본문 통과점수로 역산한 5구간(87.745/86.745/85.495/77.995/
+72.995), 경북 04 는 원문 별표 4 두 행(5억원 미만 87.745%, 5억원 이상 86.745%)을 씁니다.
+평가 API 끝단은 mock 없이 TestClient 로 호출하고, 이 워크트리에 모델 파일이 없어 예측 모델만
+시험 대역으로 대체합니다. 규칙 판별·구간 하한율·최저 투찰금액은 실제 코드다.
 """
 
 from __future__ import annotations
@@ -59,18 +61,44 @@ REGION_BY_RULE: dict[str, tuple[str, str]] = {
     SEOUL_GENERAL_ID: ("11", "서울특별시"),
 }
 
-# 시설분야 별표가 없는 6곳이라 시설분야 표기는 일반 별표로 내려간다(다른 시험과 같은 경로).
 GENERAL_METHOD = "시설분야용역 적격심사 추정가격 5억원 이상"
 SIMPLE_LABOR_METHOD = "단순노무용역 적격심사 추정가격 5억원 미만"
 SW_METHOD = "소프트웨어용역 적격심사 추정가격 5억원 미만"
 INSURANCE_METHOD = "보험용역 적격심사 추정가격 5억원 미만"
 
-# (상한, 공고 실측 하한율, 구간 라벨). 보고서 6.1절 10억원 미만 3개 구간.
-MEASURED_UNDER_1B = (
+# (상한, 하한율, 구간 라벨). 10억원 이상을 30억원 경계로 나눈 5구간.
+FIVE_BANDS = (
     ("200000000", "87.745", "추정가격 2억원 미만"),
     ("500000000", "86.745", "5억원 미만 2억원 이상"),
     ("1000000000", "85.495", "10억원 미만 5억원 이상"),
+    ("3000000000", "77.995", "30억원 미만 10억원 이상"),
+    (None, "72.995", "추정가격 30억원 이상"),
 )
+# 경북 별표 4 는 5억원 기준 두 행만 인쇄해 각 하위 구간에 두 값을 적용한다.
+GB_BANDS = (
+    ("200000000", "87.745", "추정가격 2억원 미만"),
+    ("500000000", "87.745", "5억원 미만 2억원 이상"),
+    ("1000000000", "86.745", "10억원 미만 5억원 이상"),
+    (None, "86.745", "추정가격 10억원 이상"),
+)
+
+BANDS_BY_RULE: dict[str, tuple[tuple[str | None, str, str], ...]] = {
+    INCHEON_ID: FIVE_BANDS,
+    JEJU_ID: FIVE_BANDS,
+    GANGWON_ID: FIVE_BANDS,
+    GN_GENERAL_ID: FIVE_BANDS,
+    SEOUL_GENERAL_ID: FIVE_BANDS,
+    GB_GENERAL_ID: GB_BANDS,
+}
+
+# (rule_id, 규칙 source 에 있어야 하는 원문 추출 경로 조각)
+SOURCE_TOKEN_BY_RULE = {
+    INCHEON_ID: "EXT/qual_raw/3.txt",
+    JEJU_ID: "EXT/qual_raw/6.txt",
+    GANGWON_ID: "EXT/qual_raw/1.txt",
+    GN_GENERAL_ID: "EXT/qual_raw/5.txt",
+    GB_GENERAL_ID: "EXT/gb/gb_byp004.tbl.txt",
+}
 MEASURED_SOURCE_DOC = "docs/analysis/local_lwlt_announcement_measure_20261005.md"
 
 
@@ -103,104 +131,76 @@ def _resolve(
 
 
 # --------------------------------------------------------------------------- #
-# 1. 10억원 미만 3개 구간 하한율과 10억원 이상 대표값 유지
+# 1. 구간 값과 근거 (서울 공고 실측 / 5곳 원문 역산)
 # --------------------------------------------------------------------------- #
 
 
 @pytest.mark.parametrize("rule_id", TARGET_RULE_IDS)
-def test_under_1b_bands_carry_measured_lwlt(rule_id: str) -> None:
-    """대상 규칙의 10억원 미만 3개 구간이 보고서 6.1절 실측값과 일치한다.
-
-    서울 01 은 10억원 이상이 30억원 경계로 갈려 5구간이다.
-    """
+def test_target_rule_band_values(rule_id: str) -> None:
+    """대상 규칙의 구간 상한·하한율·라벨이 확정값과 순서대로 같다."""
     rule = _rule(rule_id)
     bands = rule.price_bands or ()
-    assert len(bands) == (5 if rule_id == SEOUL_GENERAL_ID else 4), rule_id
-    for band, (upper, rate, label) in zip(bands, MEASURED_UNDER_1B, strict=False):
-        assert band.upper_bound == Decimal(upper), (rule_id, upper)
+    expected_bands = BANDS_BY_RULE[rule_id]
+    assert len(bands) == len(expected_bands), rule_id
+    for band, (upper, rate, label) in zip(bands, expected_bands, strict=True):
+        assert band.upper_bound == (Decimal(upper) if upper is not None else None), (rule_id, upper)
         assert band.lwlt_rate == Decimal(rate), (rule_id, upper)
         assert band.label == label, (rule_id, upper)
-        assert MEASURED_SOURCE_DOC in (band.source or ""), rule_id
-        assert "원문 미확인" in (band.source or ""), rule_id
-
-
-NON_SEOUL_RULE_IDS = tuple(rule_id for rule_id in TARGET_RULE_IDS if rule_id != SEOUL_GENERAL_ID)
-
-
-@pytest.mark.parametrize("rule_id", NON_SEOUL_RULE_IDS)
-def test_ten_eok_and_above_keeps_rule_default(rule_id: str) -> None:
-    """서울을 뺀 5개 규칙의 10억원 이상 구간은 하한율을 비워 규칙 대표값 87.995%를 쓴다."""
-    rule = _rule(rule_id)
+    # 규칙 대표값은 분할 전과 같은 87.995 로 두어 구간 하한율 없는 경로가 바뀌지 않는다.
     assert rule.lwlt_rate == Decimal("87.995"), rule_id
-    assert rule.price_bands is not None
-    assert rule.price_bands[-1].upper_bound is None
-    assert rule.price_bands[-1].lwlt_rate is None, rule_id
-    code, name = REGION_BY_RULE[rule_id]
-    for price in ("1000000000", "1500000000", "4000000000"):
-        result = _resolve(
-            region_code=code,
-            region_name=name,
-            method=GENERAL_METHOD,
-            estimated_price=price,
-        )
-        assert result.rule is not None
-        assert result.rule.rule_id == rule_id
-        assert result.effective_lwlt_rate == Decimal("87.995"), (rule_id, price)
-        assert result.rate_source == "RULE_DEFAULT"
-        assert any("별표 기본값(87.995%)" in warning for warning in result.warnings)
-        assert not any("구간 하한율" in warning for warning in result.warnings)
 
 
-def test_seoul_ten_eok_and_above_splits_at_30eok() -> None:
-    """서울 01 은 10억원 이상을 30억원 경계로 나눠 실측 하한율 77.995/72.995 를 쓴다.
+@pytest.mark.parametrize(("rule_id", "source_token"), tuple(SOURCE_TOKEN_BY_RULE.items()))
+def test_original_band_sources_cite_ext(rule_id: str, source_token: str) -> None:
+    """원문 역산 5곳은 구간 source 가 공고 실측이 아니라 원문 추출 위치를 가리킨다."""
+    rule = _rule(rule_id)
+    for band in rule.price_bands or ():
+        assert source_token in (band.source or ""), (rule_id, band.label)
+        assert "공고 실측" not in (band.source or ""), (rule_id, band.label)
 
-    30억원 경계값은 상위 구간(이상 쪽)에 속한다.
-    """
+
+def test_seoul_bands_stay_measured() -> None:
+    """서울 01 은 10억원 이상을 30억원 경계로 나눈 공고 실측 5구간이다."""
     rule = _rule(SEOUL_GENERAL_ID)
-    assert rule.lwlt_rate == Decimal("87.995")
-    assert rule.price_bands is not None
-    assert [band.lwlt_rate for band in rule.price_bands[-2:]] == [
-        Decimal("77.995"),
-        Decimal("72.995"),
-    ]
-    assert rule.price_bands[-1].upper_bound is None
-    for price, expected_rate in (
-        ("1000000000", "77.995"),
-        ("1500000000", "77.995"),
-        ("3000000000", "72.995"),
-        ("4000000000", "72.995"),
-    ):
-        result = _resolve(
-            region_code="11",
-            region_name="서울특별시",
-            method=GENERAL_METHOD,
-            estimated_price=price,
-        )
-        assert result.rule is not None
-        assert result.rule.rule_id == SEOUL_GENERAL_ID
-        assert result.effective_lwlt_rate == Decimal(expected_rate), price
-        assert result.rate_source == "RULE_DEFAULT"
-        assert any("별표 구간 하한율" in warning for warning in result.warnings), price
+    bands = rule.price_bands or ()
+    for band, (upper, rate, label) in zip(bands, FIVE_BANDS, strict=True):
+        assert band.upper_bound == (Decimal(upper) if upper is not None else None), upper
+        assert band.lwlt_rate == Decimal(rate), upper
+        assert band.label == label, upper
+    # 실측 하한율을 붙인 구간은 공고 실측임을 함께 밝힌다.
+    for band in bands[:3]:
+        assert MEASURED_SOURCE_DOC in (band.source or ""), band.label
+        assert "원문 미확인" in (band.source or ""), band.label
 
 
-# (rule_id, 추정가격, 기대 하한율, 구간 라벨)
-PRICE_CASES = tuple(
-    (rule_id, price, rate, label)
-    for rule_id in TARGET_RULE_IDS
-    for price, rate, label in (
-        ("150000000", "87.745", "추정가격 2억원 미만"),
-        ("300000000", "86.745", "5억원 미만 2억원 이상"),
-        ("700000000", "85.495", "10억원 미만 5억원 이상"),
-    )
+# --------------------------------------------------------------------------- #
+# 2. 구간 선택과 경계값 (공고 하한율 없음)
+# --------------------------------------------------------------------------- #
+
+# (rule_id, 추정가격, 기대 구간 인덱스). 경계값(10억·30억)은 이상 쪽 구간에 속한다.
+BOUNDARY_CASES = (
+    (INCHEON_ID, "150000000", 0),
+    (INCHEON_ID, "200000000", 1),
+    (INCHEON_ID, "500000000", 2),
+    (INCHEON_ID, "999999999", 2),
+    (INCHEON_ID, "1000000000", 3),
+    (INCHEON_ID, "2999999999", 3),
+    (INCHEON_ID, "3000000000", 4),
+    (SEOUL_GENERAL_ID, "1500000000", 3),
+    (SEOUL_GENERAL_ID, "4000000000", 4),
+    (GB_GENERAL_ID, "199999999", 0),
+    (GB_GENERAL_ID, "499999999", 1),
+    (GB_GENERAL_ID, "500000000", 2),
+    (GB_GENERAL_ID, "4000000000", 3),
 )
 
 
-@pytest.mark.parametrize(("rule_id", "price", "expected_rate", "band_label"), PRICE_CASES)
-def test_measured_band_rate_selected_by_price(
-    rule_id: str, price: str, expected_rate: str, band_label: str
-) -> None:
-    """공고 하한율이 없으면 추정가격이 고른 구간의 공고 실측 하한율을 쓴다."""
+@pytest.mark.parametrize(("rule_id", "price", "band_index"), BOUNDARY_CASES)
+def test_band_selected_by_price(rule_id: str, price: str, band_index: int) -> None:
+    """추정가격이 원문 구간 표기대로 구간을 고르고, 그 구간 하한율을 쓴다."""
     code, name = REGION_BY_RULE[rule_id]
+    expected_rate = BANDS_BY_RULE[rule_id][band_index][1]
+    expected_label = BANDS_BY_RULE[rule_id][band_index][2]
     result = _resolve(
         region_code=code,
         region_name=name,
@@ -212,23 +212,27 @@ def test_measured_band_rate_selected_by_price(
     assert result.effective_lwlt_rate == Decimal(expected_rate), (rule_id, price)
     assert result.rate_source == "RULE_DEFAULT"
     assert any(
-        f"별표 구간 하한율({expected_rate}%" in warning and band_label in warning
+        f"별표 구간 하한율({expected_rate}%" in warning and expected_label in warning
         for warning in result.warnings
     ), (rule_id, price)
 
 
-BOUNDARY_CASES = (
-    ("199999999", "87.745"),
-    ("200000000", "86.745"),
-    ("499999999", "86.745"),
-    ("500000000", "85.495"),
+# (rule_id, 추정가격, 기대 하한율) — 10억원 이상 구간.
+TOP_BAND_CASES = (
+    (INCHEON_ID, "1500000000", "77.995"),
+    (INCHEON_ID, "3000000000", "72.995"),
+    (JEJU_ID, "2500000000", "77.995"),
+    (GANGWON_ID, "4000000000", "72.995"),
+    (GN_GENERAL_ID, "2000000000", "77.995"),
+    (GB_GENERAL_ID, "3000000000", "86.745"),
+    (SEOUL_GENERAL_ID, "1500000000", "77.995"),
 )
 
 
-@pytest.mark.parametrize(("price", "expected_rate"), BOUNDARY_CASES)
-def test_band_boundaries_follow_upper_band(price: str, expected_rate: str) -> None:
-    """경계값(2억·5억)은 이상 쪽 구간에 속한다. 경북 04 의 분할 경계도 같다."""
-    code, name = REGION_BY_RULE[GB_GENERAL_ID]
+@pytest.mark.parametrize(("rule_id", "price", "expected_rate"), TOP_BAND_CASES)
+def test_top_band_rate_selected_by_price(rule_id: str, price: str, expected_rate: str) -> None:
+    """10억원 이상 구간(경북은 5억원 이상)이 원문 역산·실측 하한율을 쓴다."""
+    code, name = REGION_BY_RULE[rule_id]
     result = _resolve(
         region_code=code,
         region_name=name,
@@ -236,13 +240,9 @@ def test_band_boundaries_follow_upper_band(price: str, expected_rate: str) -> No
         estimated_price=price,
     )
     assert result.rule is not None
-    assert result.rule.rule_id == GB_GENERAL_ID
-    assert result.effective_lwlt_rate == Decimal(expected_rate), price
-
-
-# --------------------------------------------------------------------------- #
-# 2. 추정가격 미상 차단과 공고 하한율 우선
-# --------------------------------------------------------------------------- #
+    assert result.rule.rule_id == rule_id
+    assert result.effective_lwlt_rate == Decimal(expected_rate), (rule_id, price)
+    assert result.rate_source == "RULE_DEFAULT"
 
 
 @pytest.mark.parametrize("rule_id", TARGET_RULE_IDS)
@@ -264,8 +264,8 @@ def test_unknown_price_is_not_guessed(rule_id: str) -> None:
 
 
 @pytest.mark.parametrize("rule_id", TARGET_RULE_IDS)
-def test_announcement_rate_wins_over_measured_band(rule_id: str) -> None:
-    """공고 하한율이 있으면 공고 실측 구간값보다 우선한다(종전 동작)."""
+def test_announcement_rate_wins_over_band(rule_id: str) -> None:
+    """공고 하한율이 있으면 구간 하한율보다 우선한다(종전 동작)."""
     code, name = REGION_BY_RULE[rule_id]
     result = _resolve(
         region_code=code,
@@ -285,18 +285,12 @@ def test_announcement_rate_wins_over_measured_band(rule_id: str) -> None:
 # 3. 다른 규칙 불변 (공유 헬퍼 누수 없음)
 # --------------------------------------------------------------------------- #
 
-INCHEON_SIMPLE_ID = "SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR"
-JEJU_SIMPLE_ID = "SERVC_LOCAL_JEJU_20240101_SIMPLE_LABOR"
-GANGWON_SIMPLE_ID = "SERVC_LOCAL_GANGWON_20230611_SIMPLE_LABOR"
 SEOUL_SIMPLE_ID = "SERVC_LOCAL_SEOUL_20240812_SIMPLE_LABOR"
 GB_SW_ID = "SERVC_LOCAL_GB_20260108_ATTACH_02"
 GG_INSURANCE_ID = "SERVC_LOCAL_GG_20250808_ATTACH_1_5"
 
 # (rule_id, 지역코드, 지역명, 낙찰방법명, 규칙 대표값). 모두 구간 하한율이 없어야 한다.
 UNCHANGED_CASES = (
-    (INCHEON_SIMPLE_ID, "28", "인천광역시", SIMPLE_LABOR_METHOD, "87.995"),
-    (JEJU_SIMPLE_ID, "50", "제주특별자치도", SIMPLE_LABOR_METHOD, "87.995"),
-    (GANGWON_SIMPLE_ID, "51", "강원특별자치도", SIMPLE_LABOR_METHOD, "87.995"),
     (SEOUL_SIMPLE_ID, "11", "서울특별시", SIMPLE_LABOR_METHOD, "87.995"),
     (GB_SW_ID, "47", "경상북도", SW_METHOD, "87.995"),
     (GG_INSURANCE_ID, "41", "경기도", INSURANCE_METHOD, "47.995"),
@@ -410,7 +404,7 @@ def _create_local_bid(
         "drwtPrdprcNum": "3",
     }
     bid = BidAnnouncement(
-        bid_ntce_nm="공고 실측 구간 하한율 끝단 시험 공고",
+        bid_ntce_nm="LOCAL 구간 하한율 끝단 시험 공고",
         bid_ntce_no="EVAL-MEASURED-LWLT-001",
         bid_ntce_ord="000",
         ntce_instt_nm="테스트 공고기관",
@@ -443,33 +437,25 @@ def _analyze(client, bid_id: int, bid_amount: int) -> dict:
     return response.json()
 
 
-# (지역명, 규칙 ID, 추정가격, 기대 하한율, 기대 최저투찰금액). 10억원 이상은 규칙 대표값이고,
-# 서울 01 만 30억원 경계 분할값(15억원 77.995%, 30억원 이상 72.995%)을 쓴다.
-DEFAULT_TOP_PRICE_CASE = (1_500_000_000, 87.995, 1_319_925_000)
-SEOUL_TOP_PRICE_CASE = (1_500_000_000, 77.995, 1_169_925_000)
-API_CASES = tuple(
-    (REGION_BY_RULE[rule_id][1], rule_id, presmpt_prce, expected_rate, expected_min_bid)
-    for rule_id in TARGET_RULE_IDS
-    for presmpt_prce, expected_rate, expected_min_bid in (
-        (150_000_000, 87.745, 131_617_500),
-        (300_000_000, 86.745, 260_235_000),
-        (700_000_000, 85.495, 598_465_000),
-        SEOUL_TOP_PRICE_CASE if rule_id == SEOUL_GENERAL_ID else DEFAULT_TOP_PRICE_CASE,
-    )
+# (지역명, 규칙 ID, 추정가격, 기대 하한율, 기대 최저투찰금액). 최저투찰금액 = 추정가격 x 하한율.
+API_CASES = (
+    ("인천광역시", INCHEON_ID, 150_000_000, 87.745, 131_617_500),
+    ("인천광역시", INCHEON_ID, 1_500_000_000, 77.995, 1_169_925_000),
+    ("제주특별자치도", JEJU_ID, 300_000_000, 86.745, 260_235_000),
+    ("강원특별자치도", GANGWON_ID, 3_000_000_000, 72.995, 2_189_850_000),
+    ("경상남도", GN_GENERAL_ID, 700_000_000, 85.495, 598_465_000),
+    ("경상남도", GN_GENERAL_ID, 2_000_000_000, 77.995, 1_559_900_000),
+    ("경상북도", GB_GENERAL_ID, 300_000_000, 87.745, 263_235_000),
+    ("경상북도", GB_GENERAL_ID, 700_000_000, 86.745, 607_215_000),
+    ("서울특별시", SEOUL_GENERAL_ID, 1_500_000_000, 77.995, 1_169_925_000),
 )
 
 
 @pytest.mark.parametrize(
-    (
-        "region_name",
-        "expected_rule_id",
-        "presmpt_prce",
-        "expected_rate",
-        "expected_min_bid",
-    ),
+    ("region_name", "expected_rule_id", "presmpt_prce", "expected_rate", "expected_min_bid"),
     API_CASES,
 )
-def test_measured_lwlt_through_analyze_api(
+def test_lwlt_through_analyze_api(
     client,
     isolated_db,
     as_user,
@@ -479,7 +465,7 @@ def test_measured_lwlt_through_analyze_api(
     expected_rate: float,
     expected_min_bid: int,
 ) -> None:
-    """6개 규칙이 실제 평가 API 에서 공고 실측 구간 하한율과 최저투찰금액을 그대로 쓴다."""
+    """대상 규칙이 실제 평가 API 에서 구간 하한율과 최저투찰금액을 그대로 쓴다."""
     as_user(10)
     _create_institution(isolated_db, code=API_INSTITUTION_CODE, toplvl_nm=region_name)
     bid = _create_local_bid(

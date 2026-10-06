@@ -258,9 +258,9 @@ def test_seoul_simple_labor_unchanged() -> None:
 # --------------------------------------------------------------------------- #
 
 # main 기준 스냅샷 해시. 서울 GENERAL 만 분할 대상이라 이 목록에서 제외한다.
-# 규칙 값을 의도적으로 바꾸면 아래 두 해시를 재생성해 교체한다.
+# 2026-10-06: 인천·제주·강원·경남·경북 04 정정으로 서울 외 LOCAL 규칙 값이 바뀌어 재생성했다.
 LOCAL_RULES_EXCLUDING_SEOUL_DIGEST = (
-    "0cf3b0ab88b7d2e549671cd25044ba33e5dfae837fb5a00902aeb0d8a4661c95"
+    "8994d3da08bb4c9a0eb52f666a843ca76b51cba05b8f8da211c2f8aa302dfccd"
 )
 NATIONAL_RULES_DIGEST = "3436d7f5bfa896ec4b4d4f95e1367add414424ab746143fcae364005f8e00e3f"
 

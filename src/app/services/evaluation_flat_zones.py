@@ -130,16 +130,33 @@ def _five_band_general(source: str) -> dict[Decimal | None, FlatZone]:
     }
 
 
+def _five_band_general_under_30_only(source: str) -> dict[Decimal | None, FlatZone]:
+    """10억원 이상을 30억원 경계로 나눈 5구간이되 30억원 이상에는 평탄을 두지 않는 매핑.
+
+    인천·제주·강원·경남 별표의 평탄 단서는 "추정가격 30억원 미만 10억원 이상인 용역 중
+    입찰가격이 예정가격 이하로서 예정가격의 100분의 98 이상인 경우의 평점은 20점으로 함"으로
+    30억원 미만에만 걸립니다. 따라서 30억원 이상(None) 구간에는 평탄 규정이 없습니다.
+    """
+    return {
+        Decimal("200000000"): _zone("0.8825", "85", source),
+        Decimal("500000000"): _zone("0.8925", "65", source),
+        Decimal("1000000000"): _zone("0.905", "45", source),
+        Decimal("3000000000"): _zone("0.98", "20", source),
+    }
+
+
 # rule_id -> {PriceBand.upper_bound: FlatZone}. upper_bound None 은 상한 없는 마지막 구간입니다.
 _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
-    # 인천광역시 (예규 제488호)
-    "SERVC_LOCAL_INCHEON_20251224_ATTACH_01": _four_band_general(_SRC_INCHEON),
+    # 인천광역시 (예규 제488호) — 별표 1 평탄 단서 "추정가격 30억원 미만 10억원 이상 ...
+    # 100분의 98 이상인 경우의 평점은 20점" 이 30억원 미만에만 걸려 30억원 이상은 평탄 없음.
+    # 추출 원문: EXT/qual_raw/3.txt:170,314,457,600 (별표 1 1~4 입찰가격 평점산식).
+    "SERVC_LOCAL_INCHEON_20251224_ATTACH_01": _five_band_general_under_30_only(_SRC_INCHEON),
     "SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR": _four_band_simple_labor(_SRC_INCHEON),
-    # 제주특별자치도 (예규 제82호) — 인천과 동일
-    "SERVC_LOCAL_JEJU_20240101_ATTACH_01": _four_band_general(_SRC_JEJU),
+    # 제주특별자치도 (예규 제82호) — 인천과 동일. 추출 원문: EXT/qual_raw/6.txt:18,243,465,687.
+    "SERVC_LOCAL_JEJU_20240101_ATTACH_01": _five_band_general_under_30_only(_SRC_JEJU),
     "SERVC_LOCAL_JEJU_20240101_SIMPLE_LABOR": _four_band_simple_labor(_SRC_JEJU),
-    # 강원특별자치도 (예규 제832호) — 인천과 동일
-    "SERVC_LOCAL_GANGWON_20230611_ATTACH_01": _four_band_general(_SRC_GANGWON),
+    # 강원특별자치도 (예규 제832호) — 인천과 동일. 추출 원문: EXT/qual_raw/1.txt:150,307,463,618.
+    "SERVC_LOCAL_GANGWON_20230611_ATTACH_01": _five_band_general_under_30_only(_SRC_GANGWON),
     "SERVC_LOCAL_GANGWON_20230611_SIMPLE_LABOR": _four_band_simple_labor(_SRC_GANGWON),
     # 세종특별자치시 (예규 제32호) — 시설·폐기물·생활폐기물. SW·육상운송은 점수 미인쇄라
     # 산식 대입값(비대상 95.5%, 대상 91%)을 씁니다.
@@ -251,8 +268,9 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
         **_four_band_general(_SRC_JNGJ),
         Decimal("3000000000"): _zone("0.98", "20", _SRC_JNGJ),
     },
-    # 경상남도 (공고 제2023-23호)
-    "SERVC_LOCAL_GN_20230105_ATTACH_01": _four_band_general(_SRC_GN),
+    # 경상남도 (공고 제2023-23호) — 별표 1 평탄 단서가 30억원 미만에만 걸려 30억원 이상은
+    # 평탄 없음. 추출 원문: EXT/qual_raw/5.txt:54,300,548,794 (별표 1 1~4 입찰가격 평점산식).
+    "SERVC_LOCAL_GN_20230105_ATTACH_01": _five_band_general_under_30_only(_SRC_GN),
     # 대구광역시 (예규 제238호) — 단순노무만. 원문 평탄 점수 미인쇄, 산식 대입값을 씁니다.
     "SERVC_LOCAL_DAEGU_20260511_ATTACH_01": {
         Decimal("200000000"): _zone("0.8825", "55", _SRC_DAEGU),

@@ -319,15 +319,10 @@ def test_band_rate_not_guessed_when_price_missing() -> None:
 # 3. 비정정 규칙 불변 (원문 미기재 규칙과 보험·조달청 규칙)
 # --------------------------------------------------------------------------- #
 
-# 정정 대상이 아닌 기존 36개 규칙 16개의 동작 필드 스냅샷 해시. main 기준 값이며,
-# 규칙 값을 의도적으로 바꾸면 위 _signature 로 재생성해 교체합니다.
+# 정정 대상이 아닌 규칙의 동작 필드 스냅샷 해시. main 기준 값이며, 규칙 값을 의도적으로
+# 바꾸면 위 _signature 로 재생성해 교체합니다. 2026-10-06 인천·제주·강원·경남·경북 04 는
+# 이번 정정 대상이라 아래 목록에서 제외했습니다.
 UNCHANGED_RULE_IDS = (
-    "SERVC_LOCAL_INCHEON_20251224_ATTACH_01",
-    "SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR",
-    "SERVC_LOCAL_JEJU_20240101_ATTACH_01",
-    "SERVC_LOCAL_JEJU_20240101_SIMPLE_LABOR",
-    "SERVC_LOCAL_GANGWON_20230611_ATTACH_01",
-    "SERVC_LOCAL_GANGWON_20230611_SIMPLE_LABOR",
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_03",
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME",
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_05",
@@ -335,11 +330,9 @@ UNCHANGED_RULE_IDS = (
     "SERVC_LOCAL_GB_20260108_ATTACH_01",
     "SERVC_LOCAL_GB_20260108_ATTACH_02",
     "SERVC_LOCAL_GB_20260108_ATTACH_03",
-    "SERVC_LOCAL_GB_20260108_ATTACH_04",
-    "SERVC_LOCAL_GN_20230105_ATTACH_01",
     "SERVC_LOCAL_GG_20250808_ATTACH_1_5",
 )
-UNCHANGED_RULES_DIGEST = "434e1dd4a925839f783771eccf912b9050ff10c5f3f31ab6561cc7b1de154c95"
+UNCHANGED_RULES_DIGEST = "ebddc2e99e2533b4ac884d51676fadbfa06c70737c4f705fbb10df0d4feb05fe"
 
 
 def test_uncorrected_rules_keep_behavior_fields() -> None:
@@ -354,13 +347,12 @@ def test_uncorrected_rules_keep_behavior_fields() -> None:
 
 
 def test_uncorrected_local_rules_keep_rule_default() -> None:
-    """원문이 하한율을 인쇄하지 않았고 공고 실측 반영 대상도 아닌 규칙은 종전 대표값을 쓴다.
+    """구간 하한율이 생기지 않은 규칙은 종전 대표값과 구간값 없음 경로를 그대로 쓴다.
 
-    인천·제주·강원·경남·경북 04·서울 01 GENERAL 은 공고 실측 구간 하한율 대상이라
-    이 목록에서 제외합니다(tests/test_local_lwlt_measured.py 가 새 동작을 고정합니다).
+    인천·제주·강원 일반·단순노무와 경북 04 는 이번 정정 대상이라 이 목록에서 제외합니다
+    (tests/test_local_10eok_lwlt.py 가 새 동작을 고정합니다).
     """
     cases = (
-        ("SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR", "87.995"),
         ("SERVC_LOCAL_GB_20260108_ATTACH_02", "87.995"),
         ("SERVC_LOCAL_GG_20250808_ATTACH_1_5", "47.995"),
     )
@@ -626,10 +618,8 @@ def test_corrected_rules_through_analyze_api(
     ), (expected_rule_id, payload["warnings"])
 
 
-def test_uncorrected_rule_min_bid_unchanged_through_analyze_api(
-    client, isolated_db, as_user
-) -> None:
-    """원문 미기재 지역(인천)은 공고 하한율이 없어도 종전 대표값과 최저투찰금액을 쓴다."""
+def test_incheon_general_min_bid_through_analyze_api(client, isolated_db, as_user) -> None:
+    """정정된 인천 GENERAL 은 10억~30억 구간 하한율 77.995% 로 최저투찰금액을 계산한다."""
     as_user(10)
     _create_institution(isolated_db, code=API_INSTITUTION_CODE, toplvl_nm="인천광역시")
     bid = _create_local_bid(
@@ -644,8 +634,8 @@ def test_uncorrected_rule_min_bid_unchanged_through_analyze_api(
 
     assert payload["status"] == "success", payload.get("blocked_reason")
     assert payload["rule_id"] == "SERVC_LOCAL_INCHEON_20251224_ATTACH_01"
-    assert payload["lower_bound_rate"] == pytest.approx(87.995)
+    assert payload["lower_bound_rate"] == pytest.approx(77.995)
     assert any(
-        "낙찰하한율 87.995% 적용 최저 투찰금액: 1,759,900,000원" in warning
+        "낙찰하한율 77.995% 적용 최저 투찰금액: 1,559,900,000원" in warning
         for warning in payload["warnings"]
     )
