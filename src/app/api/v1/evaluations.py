@@ -2095,24 +2095,27 @@ def _build_recommend_inputs(
 ) -> _RecommendInputs:
     """요청 수정값 > 회원 원자료 > 빈 값 우선순위로 추천 입력을 만듭니다.
 
-    회원 신인도 원자료는 항목 코드만 저장되어 복수 선택지·구간 항목의 평점을 정할 수 없어,
-    선택지가 하나인 항목만 레지스트리로 환산하고 나머지는 '평점 선택 필요'로 남깁니다.
+    회원 신인도 원자료는 항목별로 고른 평점(dict)이면 그대로 쓰고, 구형 항목 코드
+    목록(list)이면 선택지가 하나인 항목만 레지스트리로 환산하고 나머지는 '평점 선택
+    필요'로 남깁니다. 요청 수정값 reputation_items 는 항목별로 회원 값보다 우선하며,
+    수정값이 없는 항목은 회원 저장 평점을 그대로 씁니다.
     """
     warnings: list[str] = []
-    reputation_items: dict[str, float] | None = None
-    reputation_grade_required: list[str] = []
-    if overrides.reputation_items is not None:
-        reputation_items = dict(overrides.reputation_items)
-    elif facts is not None and facts.reputation_items:
+    stored_values: dict[str, float] = {}
+    stored_needs: list[str] = []
+    if facts is not None and facts.reputation_items:
         conversion = convert_reputation_codes(facts.reputation_items)
-        reputation_items = conversion.values or None
-        reputation_grade_required = list(conversion.needs_grade_selection)
-        if reputation_grade_required:
-            warnings.append(
-                "회원 신인도 항목 중 평점 선택이 필요한 항목이 있습니다: "
-                + ", ".join(reputation_grade_required)
-                + ". 요청 수정값(reputation_items)으로 지정해야 합니다."
-            )
+        stored_values = dict(conversion.values)
+        stored_needs = list(conversion.needs_grade_selection)
+    override_items = dict(overrides.reputation_items or {})
+    reputation_items = {**stored_values, **override_items} or None
+    reputation_grade_required = [code for code in stored_needs if code not in override_items]
+    if reputation_grade_required:
+        warnings.append(
+            "회원 신인도 항목 중 평점 선택이 필요한 항목이 있습니다: "
+            + ", ".join(reputation_grade_required)
+            + ". 요청 수정값(reputation_items)으로 지정해야 합니다."
+        )
 
     management_grade = overrides.management_grade
     if management_grade is None and facts is not None:

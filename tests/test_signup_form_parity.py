@@ -95,6 +95,17 @@ def test_signup_page_renders_company_and_qualification_fields():
         assert f'name="{name}"' in body, f"{name} 입력란이 없습니다."
 
 
+def test_signup_page_renders_reputation_rating_controls():
+    """복수 선택지 항목은 평점 목록(select), 구간 항목은 범위 숫자 입력으로 그린다."""
+    client = TestClient(app)
+
+    body = client.get(SIGNUP_URL).text
+
+    assert '<select name="reputation_score__sme_consortium"' in body
+    assert 'type="number" name="reputation_score__job_creation"' in body
+    assert 'name="reputation_items" value="disabled_company"' in body
+
+
 def test_both_signup_paths_store_new_fields_identically(isolated_db):
     """API 가입과 SSR 가입이 같은 회사·정량 원자료를 같은 값으로 저장한다."""
     from src.app.models.company_profiles import (
@@ -149,6 +160,75 @@ def test_both_signup_paths_store_new_fields_identically(isolated_db):
         assert company.company_name == "동등성 회사"
         assert facts.credit_grade == "BBB0"
         assert facts.reputation_items == ["sme_support"]
+
+
+def test_both_signup_paths_store_reputation_ratings_identically(isolated_db):
+    """API(dict)와 SSR(항목별 필드) 가입이 같은 항목별 평점을 저장한다."""
+    from src.app.models.company_profiles import AccountQualificationFact
+
+    ratings = {"sme_consortium": 1.5, "job_creation": 2.0, "disabled_company": 1.5}
+
+    api_client = TestClient(app, follow_redirects=False)
+    api_response = api_client.post(
+        "/api/v1/accounts/signup",
+        json={
+            "username": "parity-api-ratings",
+            "password1": "StrongPass123!!",
+            "password2": "StrongPass123!!",
+            "nickname": "평점동등성",
+            "email": "parity-api-ratings@example.com",
+            "birth_date": "1990-01-01",
+            "gender": "M",
+            "agree_terms": True,
+            "agree_privacy": True,
+            "qualification": {
+                "credit_grade": "BBB0",
+                "reputation_items": ratings,
+                "non_price_quant_score": "40.00",
+            },
+        },
+    )
+    assert api_response.status_code == 200, api_response.text
+
+    ssr_client = TestClient(app, follow_redirects=False)
+    ssr_response = ssr_client.post(
+        SIGNUP_URL,
+        data=csrf_form(
+            ssr_client,
+            SIGNUP_URL,
+            _signup_payload(
+                username="parity-ssr-ratings",
+                credit_grade="BBB0",
+                reputation_items=["disabled_company"],
+                reputation_score__sme_consortium="1.5",
+                reputation_score__job_creation="2.0",
+                non_price_quant_score="40.00",
+            ),
+        ),
+    )
+    assert ssr_response.status_code == 303, ssr_response.text
+
+    for username in ("parity-api-ratings", "parity-ssr-ratings"):
+        user = isolated_db.query(CustomUser).filter_by(username=username).one()
+        facts = isolated_db.query(AccountQualificationFact).filter_by(user_id=user.id).one()
+        assert facts.reputation_items == ratings
+
+
+def test_ssr_signup_rejects_out_of_range_reputation_rating(isolated_db):
+    """SSR 경로도 레지스트리 허용 범위 밖 평점을 422 로 거부한다."""
+    client = TestClient(app, follow_redirects=False)
+
+    response = client.post(
+        SIGNUP_URL,
+        data=csrf_form(
+            client,
+            SIGNUP_URL,
+            _signup_payload(reputation_score__job_creation="5.0"),
+        ),
+    )
+
+    assert response.status_code == 422, response.text
+    assert isolated_db.query(CustomUser).count() == 0
 
 
 def test_signup_rejects_mismatched_password_without_creating_user(isolated_db):

@@ -16,6 +16,7 @@ src/app/api/v1/accounts.py
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -53,7 +54,14 @@ from src.app.models.company_profiles import (
     AccountConsentEvent,
     AccountQualificationFact,
 )
-from src.app.services.evaluation_rules import REPUTATION_ITEMS_BY_CODE, find_credit_grade
+from src.app.services.evaluation_rules import (
+    REPUTATION_ITEMS_BY_CODE,
+    REPUTATION_OPTION_CHOICE,
+    ReputationItem,
+    find_credit_grade,
+    find_reputation_item,
+)
+from src.app.services.evaluation_scoring import format_decimal_plain
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
@@ -93,6 +101,25 @@ class CompanyProfileRequest(BaseModel):
         return value
 
 
+def _validate_reputation_score(item: ReputationItem, score: float) -> None:
+    """항목별 선택 평점이 레지스트리 허용 범위인지 검사합니다. 추측·보정하지 않습니다."""
+    try:
+        value = Decimal(str(score))
+    except (ArithmeticError, TypeError, ValueError) as exc:
+        raise ValueError(f"{item.item_name}: 평점은 숫자여야 합니다.") from exc
+    if item.option_kind == REPUTATION_OPTION_CHOICE:
+        if value not in item.options:
+            allowed = ", ".join(format_decimal_plain(option) for option in item.options)
+            raise ValueError(f"{item.item_name}: 선택 가능한 평점({allowed})이 아닙니다.")
+        return
+    low, high = item.options[0], item.options[-1]
+    if value < low or value > high:
+        raise ValueError(
+            f"{item.item_name}: 평점은 {format_decimal_plain(low)}~"
+            f"{format_decimal_plain(high)} 범위여야 합니다."
+        )
+
+
 class QualificationFactsRequest(BaseModel):
     """가입 화면의 정량평가 원자료 섹션. 점수는 계산하지 않고 원자료만 받습니다."""
 
@@ -100,8 +127,12 @@ class QualificationFactsRequest(BaseModel):
         default=None, max_length=50, description="경영상태 신용평가등급 표기(별표 10)"
     )
     credit_evaluated_on: date | None = Field(default=None, description="신용평가등급 평가일")
-    reputation_items: list[str] | None = Field(
-        default=None, description="신인도 해당 항목 코드 목록(별표 11)"
+    reputation_items: dict[str, float] | list[str] | None = Field(
+        default=None,
+        description=(
+            "신인도 항목별 선택 평점(dict 권장): 키는 별표 11 항목 코드, 값은 고른 평점입니다. "
+            "구형 항목 코드 목록(list)도 그대로 받습니다."
+        ),
     )
     non_price_quant_score: Decimal | None = Field(
         default=None,
@@ -119,17 +150,25 @@ class QualificationFactsRequest(BaseModel):
 
     @field_validator("reputation_items", mode="before")
     @classmethod
-    def _clean_reputation_items(cls, value: Any) -> list[str] | None:
-        """빈 값과 공백·중복을 정리합니다. 유효 항목이 없으면 None 으로 접습니다."""
+    def _normalize_reputation_items(cls, value: Any) -> Any:
+        """dict 는 항목별 평점, list 는 구형 코드 목록으로 정리합니다. 빈 값은 None 입니다."""
         if value is None:
             return None
-        items = [value] if isinstance(value, str) else list(value)
-        cleaned: list[str] = []
-        for item in items:
-            code = str(item).strip() if item is not None else ""
-            if code and code not in cleaned:
-                cleaned.append(code)
-        return cleaned or None
+        if isinstance(value, str):
+            value = [value]
+        if isinstance(value, Mapping):
+            cleaned: dict[str, Any] = {}
+            for raw_code, raw_score in value.items():
+                code = str(raw_code).strip() if raw_code is not None else ""
+                if code and code not in cleaned:
+                    cleaned[code] = raw_score
+            return cleaned or None
+        cleaned_codes: list[str] = []
+        for entry in list(value):
+            code = str(entry).strip() if entry is not None else ""
+            if code and code not in cleaned_codes:
+                cleaned_codes.append(code)
+        return cleaned_codes or None
 
     @field_validator("credit_grade")
     @classmethod
@@ -142,8 +181,17 @@ class QualificationFactsRequest(BaseModel):
 
     @field_validator("reputation_items")
     @classmethod
-    def _validate_reputation_items(cls, value: list[str] | None) -> list[str] | None:
+    def _validate_reputation_items(
+        cls, value: dict[str, float] | list[str] | None
+    ) -> dict[str, float] | list[str] | None:
         if not value:
+            return value
+        if isinstance(value, dict):
+            for code, score in value.items():
+                item = find_reputation_item(code)
+                if item is None:
+                    raise ValueError(f"신인도 항목 코드를 확인해 주세요: {code}")
+                _validate_reputation_score(item, score)
             return value
         unknown = sorted(code for code in value if code not in REPUTATION_ITEMS_BY_CODE)
         if unknown:
@@ -225,7 +273,7 @@ class CompanyProfileResponse(BaseModel):
 class QualificationFactsResponse(BaseModel):
     credit_grade: str | None = None
     credit_evaluated_on: date | None = None
-    reputation_items: list[str] = Field(default_factory=list)
+    reputation_items: dict[str, float] | list[str] = Field(default_factory=list)
     non_price_quant_score: float | None = None
     version: str = QUALIFICATION_FACTS_VERSION
 
@@ -256,10 +304,17 @@ def _serialize_profile(
         )
     qualification_payload = None
     if facts is not None:
+        stored_reputation = facts.reputation_items
+        if isinstance(stored_reputation, dict):
+            reputation_items: dict[str, float] | list[str] = {
+                str(code): float(score) for code, score in stored_reputation.items()
+            }
+        else:
+            reputation_items = list(stored_reputation or [])
         qualification_payload = QualificationFactsResponse(
             credit_grade=facts.credit_grade,
             credit_evaluated_on=facts.credit_evaluated_on,
-            reputation_items=list(facts.reputation_items or []),
+            reputation_items=reputation_items,
             non_price_quant_score=(
                 float(facts.non_price_quant_score)
                 if facts.non_price_quant_score is not None
