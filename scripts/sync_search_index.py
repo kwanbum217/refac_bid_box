@@ -1,4 +1,9 @@
-"""Meilisearch 검색 읽기 모델의 초기 전체/증분 동기화 CLI."""
+"""Meilisearch 검색 읽기 모델의 초기 전체/증분 동기화 CLI.
+
+업종 한정(license_codes)과 지역 제한(participation_region_codes)은 색인 문서의
+filterable 필드이므로, 필드를 바꾼 뒤에는 전체 재색인을 한 번 실행해야 기존
+문서에도 값이 채워집니다. 재색인은 공유 자원이라 코디네이터가 병합 후 수행합니다.
+"""
 
 from __future__ import annotations
 

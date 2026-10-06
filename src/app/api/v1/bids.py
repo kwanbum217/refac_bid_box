@@ -109,16 +109,24 @@ def _serialize_results(db: Session, results: Sequence[BidResult]) -> list[dict[s
 def list_bids(
     q: str = Query("", description="공고명/공고번호/수요기관명 검색어"),
     cat: str = Query("", description="업무구분 코드 (Thng/Servc/Cnstwk/Frgcpt)"),
-    region: str = Query("", description="지역 코드"),
+    region: str = Query("", description="참가가능지역 코드"),
     sort: str = Query(
         bid_queries.DEFAULT_BID_LIST_SORT, description="정렬 키 (notice/deadline/amount/region)"
     ),
     page: int = Query(1, ge=1),
+    lic: str = Query("", description="업종 코드 (쉼표 구분, 4개 업종 안에서 좁힘)"),
     db: Session = Depends(get_db),
 ):
+    industry_codes = bid_queries.industry_filter_codes(lic)
     try:
         page_obj = bid_queries.list_announcements(
-            db, q=q, cat=cat, region=region, sort=sort, page=page
+            db,
+            q=q,
+            cat=cat,
+            region=region,
+            sort=sort,
+            page=page,
+            lic=",".join(industry_codes),
         )
     except SearchBackendUnavailable as exc:
         logger.exception("공고 목록 검색 백엔드 실패")
