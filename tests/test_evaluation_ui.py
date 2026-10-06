@@ -86,50 +86,33 @@ class TestEvaluationUITemplate:
         assert "\u00b15.00" not in template_content
 
     def test_labor_plan_is_declared_not_hardcoded(self, template_content):
-        """근로조건 이행계획은 별표 2 전용 항목이라 정적으로 고정하지 않고 선언으로 그린다."""
-        assert "근로조건 이행계획" in template_content
+        """근로조건 이행계획은 별표 2 전용 항목이라 정적으로 고정하지 않고 서버 선언으로 그린다."""
+        # 항목명·입력란은 서버 배점표(band.items)에서 만들고 화면에 고정하지 않는다.
+        assert "labor_plan" not in template_content
+        assert "근로조건 이행계획" not in template_content
+        assert "data-quant-item" in template_content
         assert "단순노무용역" in template_content
-        # 근로조건 입력란은 배점표 항목(item_key=labor_plan)에서 만들어진다.
-        assert "labor_plan" in template_content
 
-    def test_disqualification_checkbox(self, template_content):
-        """결격사유 체크박스가 있다."""
-        assert 'id="input-disqualification"' in template_content
-        assert "결격사유 해당" in template_content
-        assert "부정당업자 제재" in template_content
+    def test_disqualification_checkbox_removed(self, template_content):
+        """결격사유 체크박스는 제거됐다. 서버가 '미확인'으로 계산한다."""
+        assert 'id="input-disqualification"' not in template_content
+        assert "결격사유 해당" not in template_content
 
-    def test_evaluate_button(self, template_content):
-        """분석 실행 버튼이 있다."""
-        assert 'id="btn-evaluate"' in template_content
-        assert "분석 실행" in template_content
+    def test_evaluate_button_removed(self, template_content):
+        """분석 실행 버튼과 내 투찰 금액 입력은 제거됐다. 진입 시 자동으로 계산한다."""
+        assert 'id="btn-evaluate"' not in template_content
+        assert 'id="btn-predict"' not in template_content
+        assert 'id="user-price"' not in template_content
+        assert "분석 실행" not in template_content
 
     # ---------------------------------------------------------------------
-    # 3. 예정가격 시나리오 결과표
+    # 3. 예정가격 시나리오 결과표는 추천 계산으로 대체되어 제거됐다
     # ---------------------------------------------------------------------
-    def test_scenario_results_section(self, template_content):
-        """시나리오 결과 섹션이 있다."""
-        assert 'id="scenario-results"' in template_content
-        assert "예정가격 시나리오별 평가 결과" in template_content
-
-    def test_scenario_table_structure(self, template_content):
-        """시나리오 테이블 헤더가 올바르다."""
-        assert 'id="scenario-table"' in template_content
-        assert "시나리오" in template_content
-        assert "예정가격" in template_content
-        assert "투찰율" in template_content
-        assert "가격점수" in template_content
-        assert "정량점수" in template_content
-        assert "총점" in template_content
-        assert "적격" in template_content
-
-    def test_scenario_tbody(self, template_content):
-        """시나리오 테이블 바디 영역이 있다."""
-        assert 'id="scenario-tbody"' in template_content
-
-    def test_scenario_warnings(self, template_content):
-        """시나리오별 경고 표시 영역이 있다."""
-        assert 'id="scenario-warnings"' in template_content
-        assert 'id="scenario-warnings-list"' in template_content
+    def test_scenario_results_removed(self, template_content):
+        """/analyze 전용 시나리오 결과표는 제거됐다. 세 금액(최저가·AI 예측가·최상가)이 대체한다."""
+        assert 'id="scenario-results"' not in template_content
+        assert 'id="scenario-tbody"' not in template_content
+        assert "예정가격 시나리오별 평가 결과" not in template_content
 
     # ---------------------------------------------------------------------
     # 4. 경고 및 안내
@@ -175,18 +158,19 @@ class TestEvaluationUITemplate:
     # ---------------------------------------------------------------------
     # 기존 AI 투찰 금액 분석기 보존 검증
     # ---------------------------------------------------------------------
-    def test_ai_prediction_section_preserved(self, template_content):
-        """기존 AI 투찰 금액 분석기 섹션이 훼손되지 않음."""
+    def test_ai_prediction_section_reused_for_three_amounts(self, template_content):
+        """기존 AI 투찰 금액 분석기 카드가 세 금액 카드로 재사용된다."""
         assert "AI 투찰 금액 분석기" in template_content
         assert 'id="selected-model"' in template_content
-        assert 'id="user-price"' in template_content
-        assert 'id="btn-predict"' in template_content
         assert 'id="prediction-result"' in template_content
+        assert 'id="res-min-price"' in template_content
         assert 'id="res-optimal-price"' in template_content
+        assert 'id="res-max-price"' in template_content
         assert 'id="res-prediction-rate"' in template_content
         assert 'id="res-fallback"' in template_content
-        assert 'id="res-similarity"' in template_content
-        assert 'id="res-interval"' in template_content
+        # 예측 구간·입력 투찰가 근접도는 제거됐다.
+        assert 'id="res-interval"' not in template_content
+        assert 'id="res-similarity"' not in template_content
 
     def test_evaluation_card_is_below_ai_card(self, template_content):
         """공고 기준 분석 카드는 기존 AI 분석기 아래에 배치된다."""
@@ -207,10 +191,11 @@ class TestEvaluationUITemplate:
     # JavaScript 함수 존재 여부 (정적 분석)
     # ---------------------------------------------------------------------
     def test_evaluation_js_functions(self, template_content):
-        """평가 관련 JS 함수/핸들러가 정의되어 있다."""
-        assert "loadEvaluationRule" in template_content
-        assert "btn-evaluate" in template_content
-        assert "evaluationUrl" in template_content
+        """추천 자동 계산 관련 JS 함수/핸들러가 정의되어 있다."""
+        assert "requestRecommend" in template_content
+        assert "scheduleRecommend" in template_content
+        assert "recommendUrl" in template_content
+        assert "renderRecommendAmounts" in template_content
         assert "getBlockedReasonText" in template_content
         assert "NOT_SERVC" in template_content
         assert "NON_PRED_PRICE" in template_content
@@ -221,34 +206,24 @@ class TestEvaluationUITemplate:
     # 서버 계산 원칙 검증 (브라우저 재계산 금지)
     # ---------------------------------------------------------------------
     def test_no_client_side_calculation(self, template_content):
-        """브라우저에서 점수를 재계산하는 로직이 없다."""
+        """브라우저가 세 금액과 점수를 다시 계산하지 않는다."""
         script_match = re.search(r"<script>(.*?)</script>", template_content, re.DOTALL)
         assert script_match, "평가 스크립트 영역을 찾을 수 없음"
         script = script_match.group(1)
 
-        # 평가 결과의 수치 필드는 서버가 계산한 값을 그대로 표시해야 한다.
+        # 추천 결과의 수치 필드는 서버가 계산한 값을 그대로 표시해야 한다.
         # 필드 바로 뒤에 산술 연산자가 붙으면 브라우저 재계산으로 간주한다.
         server_calculated_fields = (
-            "scenario.bid_to_estimated_ratio",
-            "scenario.price_score",
-            "scenario.qualification_score",
-            "scenario.total_score",
-            "data.a_value_amount",
-            "data.min_bid_amount_with_a",
-            "data.min_possible_bid_rate",
-            # 가격 보완 영역. 서버가 만든 퍼센트·점수 문자열을 그대로 표시한다.
-            "pc.p_req",
-            "pc.score_gap",
-            "pc.score_slack",
-            "pc.floor_price_score",
-            "pc.score_floor_amount",
-            "pc.effective_rate_percent",
-            "pc.base_rate_percent",
-            "row.estimated_price",
-            "row.complement_bid_amount",
-            "row.bid_rate_percent",
-            "row.verified_price_ratio",
-            "row.verified_price_score",
+            "data.max_price_score",
+            "data.non_price_score",
+            "data.pass_threshold",
+            "data.required_price_score",
+            "bounds.min_bid_amount",
+            "bounds.max_bid_amount",
+            "bounds.rate_low_percent",
+            "bounds.rate_high_percent",
+            "prediction.optimal_price",
+            "data.participant_stats.average",
         )
         arithmetic_pattern = re.compile(
             r"(?P<field>" + "|".join(map(re.escape, server_calculated_fields)) + r")\s*[*/+-]"
@@ -256,11 +231,13 @@ class TestEvaluationUITemplate:
         matches = arithmetic_pattern.findall(script)
         assert not matches, f"서버 응답 필드에 브라우저 산술 연산이 적용됨: {matches}"
 
-        # 시나리오 결과의 핵심 수치와 적격 여부는 계산 없이 표시 함수에 바인딩한다.
-        assert "formatRatio(scenario.bid_to_estimated_ratio)" in script
-        assert "formatScore(scenario.price_score)" in script
-        assert "formatScore(scenario.total_score)" in script
-        assert "scenario.is_qualified ?" in script
+        # 세 금액은 서버 응답을 계산 없이 표시 함수에 바인딩한다.
+        assert "amountText(prediction.optimal_price)" in script
+        assert "amountText(bounds.min_bid_amount)" in script
+        assert "amountText(bounds.max_bid_amount)" in script
+        # 정량평가 배점 Q 를 100 - B 로 만들지 않는다.
+        assert "100 -" not in script
+        assert "100-" not in script
 
 
 class TestEvaluationUISchemaAlignment:
@@ -305,7 +282,6 @@ class TestEvaluationUISchemaAlignment:
             ("blocked", 'id="evaluation-blocked"'),
             ("blocked_reason", 'id="blocked-reason"'),
             ("fallback_used", 'id="evaluation-fallback"'),
-            ("scenario_results", 'id="scenario-results"'),
             ("warnings", 'id="warnings-list"'),
             ("lower_bound_rate", 'id="lower-bound-default-value"'),
         ]
@@ -354,7 +330,6 @@ class TestEvaluationUISchemaAlignment:
             'id="qualification-tbody"',
             'id="reputation-section"',
             'id="input-management-grade"',
-            'id="input-disqualification"',
             'id="input-max-price-score"',
             'id="input-multiplier"',
             'id="input-pass-threshold"',
@@ -395,25 +370,21 @@ class TestEvaluationUIScoreTable:
             assert f'id="{field_id}"' in template_content, f"배점표 입력란 {field_id} 누락"
 
     def test_score_table_is_sent_in_request(self, template_content):
-        """배점표 입력값이 분석 요청 본문에 실려야 합니다."""
-        for key in ("max_price_score:", "multiplier:", "pass_threshold:"):
-            assert key in template_content, f"요청 본문에 {key} 누락"
+        """배점표 입력값이 추천 계산의 수정값(overrides)으로 실려야 합니다."""
+        for key in ("max_price_score", "multiplier", "pass_threshold"):
+            assert f"overrides.{key} =" in template_content, f"overrides.{key} 누락"
 
-    def test_unscored_scenario_is_not_shown_as_disqualified(self, template_content):
-        """배점표 결측으로 계산하지 않은 시나리오를 부적격으로 표시하면 안 됩니다.
-
-        계산 불가와 탈락은 다른 상태입니다. is_qualified 가 null 일 때 미계산으로
-        표기해야 사용자가 오해하지 않습니다.
-        """
-        assert "미계산" in template_content, "미계산 표기가 없습니다"
-        assert "scenario.is_qualified === null" in template_content, "null 판별이 없습니다"
+    def test_analyze_only_scenario_rendering_removed(self, template_content):
+        """/analyze 전용 시나리오 렌더링과 미계산 표기는 추천 계산 전환으로 제거됐다."""
+        assert "scenario.is_qualified" not in template_content
+        assert 'id="scenario-tbody"' not in template_content
 
 
-class TestEvaluationUIPriceCompensation:
-    """정량점수 부족분의 입찰가격 보완 영역 검증.
+class TestEvaluationUIPriceCompensationRemoved:
+    """정량점수 부족분의 입찰가격 보완 영역은 세 금액 추천으로 대체되어 제거됐다.
 
-    서버가 계산한 price_compensation 객체를 화면이 그대로 표시하는지만 정적으로
-    확인합니다. 값 변환과 재계산은 금지이며, 응답이 없으면 영역을 숨깁니다.
+    /recommend 응답에는 price_compensation 이 없어 마크업과 렌더 함수를 함께
+    제거했다. 남아 있으면 화면이 채우지 못하는 빈 영역이 된다.
     """
 
     @pytest.fixture(scope="class")
@@ -422,71 +393,12 @@ class TestEvaluationUIPriceCompensation:
         path = Path("src/app/templates/bids/detail.html")
         return path.read_text(encoding="utf-8")
 
-    def _script(self, template_content):
-        match = re.search(r"<script>(.*?)</script>", template_content, re.DOTALL)
-        assert match, "평가 스크립트 영역을 찾을 수 없음"
-        return match.group(1)
-
-    def _function_body(self, script, signature):
-        match = re.search(re.escape(signature) + r"\s*\{(.*?)\n    \}", script, re.DOTALL)
-        assert match, f"{signature} 본문을 찾을 수 없음"
-        return match.group(1)
-
-    def test_price_compensation_placement(self, template_content):
-        """보완 영역은 시나리오 결과표 뒤, 종합 경고 앞에 있다."""
-        scenario_start = template_content.index('id="scenario-results"')
-        compensation = template_content.index('id="price-compensation"')
-        warnings_start = template_content.index('id="evaluation-warnings"')
-        assert scenario_start < compensation < warnings_start
-
-    def test_render_function_called_only_in_success_callback(self, template_content):
-        """렌더 함수는 분석 실행 성공 콜백에서만 호출한다."""
-        script = self._script(template_content)
-        assert "function renderPriceCompensation(pc)" in script
-        assert "renderPriceCompensation(data.price_compensation)" in script
-
-        load_rule_body = self._function_body(script, "function loadEvaluationRule()")
-        assert "renderPriceCompensation" not in load_rule_body, (
-            "loadEvaluationRule 콜백에서는 보완 영역을 그리면 안 됩니다"
-        )
-
-    def test_price_compensation_does_not_reformat_server_values(self, template_content):
-        """퍼센트·점수 문자열은 서버 값을 그대로 쓰고 금액만 formatNumber 를 쓴다."""
-        script = self._script(template_content)
-        body = self._function_body(script, "function renderPriceCompensation(pc)")
-        assert "formatRate(" not in body, "퍼센트를 formatRate 로 변환하면 안 됩니다"
-        assert "formatScore(" not in body, "점수를 formatScore 로 변환하면 안 됩니다"
-        assert "formatNumber(" in body, "금액은 formatNumber 로 표시해야 합니다"
-
-    def test_price_compensation_escapes_server_strings(self, template_content):
-        """시나리오명·행 상태·비율 문자열을 escapeHtml 로 감싼다."""
-        script = self._script(template_content)
-        body = self._function_body(script, "function renderPriceCompensation(pc)")
-        assert "escapeHtml(row.scenario_name)" in body
-        assert "escapeHtml(rowStatusLabels[row.row_status] || row.row_status)" in body
-        assert "escapeHtml(percentText(row.bid_rate_percent))" in body
-        assert "escapeHtml(withDash(row.verified_price_ratio))" in body
-        assert "escapeHtml(withDash(row.verified_price_score))" in body
-
-    def test_price_compensation_hides_when_absent(self, template_content):
-        """응답에 보완 정보가 없으면 영역을 숨긴다."""
-        script = self._script(template_content)
-        body = self._function_body(script, "function renderPriceCompensation(pc)")
-        assert "if (!pc) {" in body
-        assert "$container.addClass('hidden')" in body
-
-    def test_rate_only_scenario_hidden(self, template_content):
-        """금액을 계산하지 않은 응답에서는 시나리오 표를 숨기고 안내 문구를 보인다."""
-        script = self._script(template_content)
-        body = self._function_body(script, "function renderPriceCompensation(pc)")
-        assert "pc.amount_status === 'rate_only'" in body
-        assert "예정가격이 없어 금액을 계산하지 않았습니다" in template_content
-
-    def test_price_compensation_fixed_guidance(self, template_content):
-        """보완 영역 하단 안내 문구가 고정으로 있다."""
-        assert (
-            "기준비율을 넘기면 가격점수가 다시 내려갑니다. 결격사유는 가격점수로 보완되지 않습니다."
-        ) in template_content
+    def test_price_compensation_section_removed(self, template_content):
+        """보완 영역 마크업과 렌더 함수가 제거됐다."""
+        assert 'id="price-compensation"' not in template_content
+        assert 'id="pc-scenario-table"' not in template_content
+        assert "renderPriceCompensation" not in template_content
+        assert "입찰가격 보완 분석" not in template_content
 
 
 class TestEvaluationUIScoreTableDeclaration:
@@ -535,6 +447,6 @@ class TestEvaluationUIScoreTableDeclaration:
         """규칙 선언값은 비어 있는 입력란에만 채워 사용자가 넣은 값을 덮지 않는다."""
         assert "$.trim($input.val()) === ''" in template_content
 
-    def test_declared_table_rendered_in_both_flows(self, template_content):
-        """규칙 카드 로드와 분석 실행 두 흐름 모두에서 선언 배점표를 반영한다."""
-        assert template_content.count("renderRuleScoreTable(data.score_table)") == 2
+    def test_declared_table_rendered_in_recommend_flow(self, template_content):
+        """추천 계산 응답에서 선언 배점표를 반영한다."""
+        assert template_content.count("renderRuleScoreTable(data.score_table)") == 1

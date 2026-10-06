@@ -68,5 +68,6 @@ def test_detail_and_scenario_template_render_regime_and_hide_negotiation_scenari
     assert "{{ contract_regime.label }} · {{ contract_regime.range_rate_label }}" in template
     assert 'title="{{ contract_regime.basis_text or' in template
     assert 'id="contract-regime-range"' in template
-    assert "isNegotiation || $('#scenario-tbody').children().length === 0" in template
+    # 예정가격 시나리오 결과표는 추천 계산 전환으로 제거됐다.
+    assert "scenario-tbody" not in template
     assert "regime.range_rate_label" in template
