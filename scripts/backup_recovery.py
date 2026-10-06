@@ -28,6 +28,7 @@ from scripts.backup_recovery_core import (  # noqa: E402
     REQUIRED_MODEL_SOURCE_PATH,
     REQUIRED_SOURCE_ASSETS,
     BackupAssetError,
+    build_qualification_sources_component,
     cleanup_drill_target_dir,
     create_mysql_database,
     create_tar_archive,
@@ -40,6 +41,7 @@ from scripts.backup_recovery_core import (  # noqa: E402
     get_db_config,
     get_head_commit_sha,
     get_model_source_paths,
+    mask_secret,
     query_db_row_counts,
     restore_mysql_database,
     sha256_file,
@@ -93,11 +95,6 @@ __all__ = [
     "sha256_file",
     "verify_snapshot",
 ]
-
-
-def mask_secret(value: str) -> str:
-    """비밀번호 등 시크릿 문자열을 마스킹 처리합니다."""
-    return "******" if value else "<empty>"
 
 
 def execute_backup(
@@ -165,6 +162,7 @@ def execute_backup(
     models_dump_file, models_size, models_sha256 = _dump_asset(
         "models", model_paths, "models.tar.gz"
     )
+    qualification_component, _ = build_qualification_sources_component(root, target_dir)
 
     manifest_data = {
         "schema": EXPECTED_MANIFEST_SCHEMA,
@@ -214,6 +212,8 @@ def execute_backup(
             },
         },
     }
+    if qualification_component:
+        manifest_data["components"]["qualification_sources"] = qualification_component
     manifest_file = target_dir / MANIFEST_FILENAME
     manifest_file.write_text(
         json.dumps(manifest_data, indent=2, ensure_ascii=False), encoding="utf-8"

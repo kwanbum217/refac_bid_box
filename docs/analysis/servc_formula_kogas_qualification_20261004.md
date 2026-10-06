@@ -5,7 +5,7 @@
 > **정본 사양**: `.orca/capsules/task_a61c0e310be3/capsule.yaml` (`ORCA_TASK_CAPSULE_V2`)
 > **대상**: 한국가스공사 「공사·용역 적격심사 세부기준」 현행판의 용역 입찰가격 평점 산식 및 종합심사낙찰제와의 적용 경계
 > **역할 경계**: 코드·설정·패키지를 변경하지 않았습니다. 이 문서가 이번 작업의 커밋 산출물입니다.
-> **원본 위치**: 내려받은 공식 원본과 추출 텍스트는 `.orca/capsules/task_a61c0e310be3/external/kogas/` 아래에만 두었고 커밋하지 않습니다(`.orca/` 하위는 커밋 금지).
+> **원본 위치**: 내려받은 공식 원본과 추출 텍스트는 `data/sources/qualification/files/kogas` 아래에만 두었고 커밋하지 않습니다(`.orca/` 하위는 커밋 금지).
 > **판정 규칙**: 2026-09-30 수집 세션 3절의 10개 규칙을 그대로 적용합니다.
 
 ---
@@ -54,16 +54,16 @@
 
 | 용도 | .orca 경로 |
 | --- | --- |
-| 현행판 원본 HWP | `.orca/capsules/task_a61c0e310be3/external/kogas/cur2026/공사·용역 적격심사 세부기준.hwp` |
-| 현행판 본문 추출문 | `.orca/capsules/task_a61c0e310be3/external/kogas/cur2026/kogas_cur2026_main.txt` |
-| 현행판 별표9 추출문 | `.orca/capsules/task_a61c0e310be3/external/kogas/cur2026/kogas_cur2026_byul9.txt` |
-| 현행판 별표11 추출문 | `.orca/capsules/task_a61c0e310be3/external/kogas/cur2026/kogas_cur2026_byul11.txt` |
-| 2020 예고안 전문(HTML) | `.orca/capsules/task_a61c0e310be3/external/kogas/kogas_jeonmun.html.txt` |
-| 2020 예고안 신구대비표(HTML) | `.orca/capsules/task_a61c0e310be3/external/kogas/kogas_singubigo.html.txt` |
+| 현행판 원본 HWP | `data/sources/qualification/files/kogas/539376b1c294_공사·용역 적격심사 세부기준.hwp` |
+| 현행판 본문 추출문 | `data/sources/qualification/files/kogas/dd689c321136_kogas_cur2026_main.txt` |
+| 현행판 별표9 추출문 | `data/sources/qualification/files/kogas/6b2ade4bdb3b_kogas_2020_byul9.txt` |
+| 현행판 별표11 추출문 | `data/sources/qualification/files/kogas/57d244ea78a7_kogas_cur2026_byul11.txt` |
+| 2020 예고안 전문(HTML) | `data/sources/qualification/files/kogas/3178431ee902_kogas_jeonmun.html.txt` |
+| 2020 예고안 신구대비표(HTML) | `data/sources/qualification/files/kogas/34cd60c7cf96_kogas_singubigo.html.txt` |
 | 2020 예고안 별표 HWP 묶음 | `.orca/capsules/task_a61c0e310be3/external/kogas/byulji/` |
-| 2020 예고안 별표11 추출문 | `.orca/capsules/task_a61c0e310be3/external/kogas/kogas_2020_byul11.txt` |
-| 종심제 본문 추출문 | `.orca/capsules/task_889fe5b87a19/external/kogas/kogas_jongsim_main.txt` |
-| 종심제 별표1 추출문 | `.orca/capsules/task_889fe5b87a19/external/kogas/kogas_jongsim_byul1.txt` |
+| 2020 예고안 별표11 추출문 | `data/sources/qualification/files/kogas/00d9fcca5541_kogas_2020_byul11.txt` |
+| 종심제 본문 추출문 | `data/sources/qualification/files/kogas/590700f3901c_kogas_jongsim_main.txt` |
+| 종심제 별표1 추출문 | `data/sources/qualification/files/kogas/e94644ffa3e6_kogas_02_[별표 01] 종합심사점수 산정 및 입찰가격 평점 산식.txt` |
 
 ---
 
@@ -71,9 +71,9 @@
 
 | 문서 | 문서번호·차수 | 제정·개정·시행일 | 출처 URL | 확인 날짜 | .orca 원본 경로 | 등급 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 공사·용역 적격심사 세부기준 (현행) | 규정실 `LCD0000017`(ruleSeq 32). 본문 표제 `[시행일자 : 2026-07-09]` | 개정 2026-07-08(부칙), 시행 2026-07-09 | `https://bid.kogas.or.kr:9443/supplier/contents/rule/rule_provision_list.jsp` · 첨부 `.../cnts_download_rule_proc.jsp?ruleSeq=32&rule_no=LCD0000017` | 2026-10-04 | `.orca/capsules/task_a61c0e310be3/external/kogas/cur2026/공사·용역 적격심사 세부기준.hwp` | 확인 |
-| 공사·용역 적격심사 세부기준 (2020 개정예고안) | 개정예고. 신구대비표 표기 `[개정] 2020-04-28`, `[개정] 2020-06-25`. 게시물 작성 2020-07-02 | 시행 2020-07-01 입찰공고건(부칙) | `https://www.kogas.or.kr/site/koGas/bbs/View.do?cbIdx=25&Key=1060102020000&boardIdx=39427` · 첨부 `.../mgr/fileDownload.do?boardIdx=39427&fileNo=37808`(전문), `fileNo=37807`(신구대비표) | 2026-10-04 | `.orca/capsules/task_a61c0e310be3/external/kogas/kogas_jeonmun.html.txt` | 확인(예고안) |
-| 용역계약 종합심사낙찰제 심사세부기준 | 규정실 `LSD0000017`(ruleSeq 7). 표제 `[시행일자 : 2024-09-09]` | 시행 2024-09-09 | `https://bid.kogas.or.kr:9443/supplier/contents/rule/rule_provision_list.jsp` · 첨부 `.../cnts_download_rule_proc.jsp?ruleSeq=7&rule_no=LSD0000017` | 2026-10-04 | `.orca/capsules/task_889fe5b87a19/external/kogas/kogas_jongsim_main.txt` | 확인 |
+| 공사·용역 적격심사 세부기준 (현행) | 규정실 `LCD0000017`(ruleSeq 32). 본문 표제 `[시행일자 : 2026-07-09]` | 개정 2026-07-08(부칙), 시행 2026-07-09 | `https://bid.kogas.or.kr:9443/supplier/contents/rule/rule_provision_list.jsp` · 첨부 `.../cnts_download_rule_proc.jsp?ruleSeq=32&rule_no=LCD0000017` | 2026-10-04 | `data/sources/qualification/files/kogas/539376b1c294_공사·용역 적격심사 세부기준.hwp` | 확인 |
+| 공사·용역 적격심사 세부기준 (2020 개정예고안) | 개정예고. 신구대비표 표기 `[개정] 2020-04-28`, `[개정] 2020-06-25`. 게시물 작성 2020-07-02 | 시행 2020-07-01 입찰공고건(부칙) | `https://www.kogas.or.kr/site/koGas/bbs/View.do?cbIdx=25&Key=1060102020000&boardIdx=39427` · 첨부 `.../mgr/fileDownload.do?boardIdx=39427&fileNo=37808`(전문), `fileNo=37807`(신구대비표) | 2026-10-04 | `data/sources/qualification/files/kogas/3178431ee902_kogas_jeonmun.html.txt` | 확인(예고안) |
+| 용역계약 종합심사낙찰제 심사세부기준 | 규정실 `LSD0000017`(ruleSeq 7). 표제 `[시행일자 : 2024-09-09]` | 시행 2024-09-09 | `https://bid.kogas.or.kr:9443/supplier/contents/rule/rule_provision_list.jsp` · 첨부 `.../cnts_download_rule_proc.jsp?ruleSeq=7&rule_no=LSD0000017` | 2026-10-04 | `data/sources/qualification/files/kogas/590700f3901c_kogas_jongsim_main.txt` | 확인 |
 
 현행판 근거: 전자조달 규정실 `3.공사` 분류에 `공사용역적격심사세부기준`(2026-07-09)이 있고, `5.용역` 분류에는 종심제·일반조건·특수조건·입찰유의서만 있어 별도의 용역 적격심사 문서는 없습니다. 규정실 목록에서 이 문서가 적격심사 최신본입니다(규칙 9에 따라 미출력을 부재로 단정하지 않으나, 다음 개정 표시가 없어 현행으로 봅니다).
 
@@ -83,7 +83,7 @@
 
 ### 5.1 장 구분과 통과점수
 
-- 제8조④: `이 기준의 제9조 내지 제13조는 공사 적격심사에, 제14조 내지 제21조는 용역 적격심사에 각각 적용한다.` — 원문 `.orca/capsules/task_a61c0e310be3/external/kogas/cur2026/kogas_cur2026_main.txt:59`
+- 제8조④: `이 기준의 제9조 내지 제13조는 공사 적격심사에, 제14조 내지 제21조는 용역 적격심사에 각각 적용한다.` — 원문 `data/sources/qualification/files/kogas/dd689c321136_kogas_cur2026_main.txt:59`
 - 제5조① 적격통과점수 — 같은 파일 `:24-32`
   - `1. 85점을 적용하는 경우 : 제2호 이외의 모든 용역` (`:26`)
   - `2. 90점을 적용하는 경우 : <별표8> 2.나.의 시설분야용역` (`:27`)
@@ -139,7 +139,7 @@
 
 ### 5.4 별표11 평점 하한선 (인쇄 점수)
 
-현행 별표11 제목: `투찰율 90%(단, 제17조 제2항의 경우는 92%) 초과시 평점 하한선(제17조 제4항 관련)` `<개정 2026.7.9.>` — 원문 `.orca/capsules/task_a61c0e310be3/external/kogas/cur2026/kogas_cur2026_byul11.txt:1-10`.
+현행 별표11 제목: `투찰율 90%(단, 제17조 제2항의 경우는 92%) 초과시 평점 하한선(제17조 제4항 관련)` `<개정 2026.7.9.>` — 원문 `data/sources/qualification/files/kogas/57d244ea78a7_kogas_cur2026_byul11.txt:1-10`.
 
 | 적격심사 통과점수 | 당해용역수행능력 | 입찰가격 | 평점 하한선 | 원문 행(`kogas_cur2026_byul11.txt`) |
 | --- | ---: | ---: | ---: | --- |
@@ -161,7 +161,7 @@
 
 ## 6. 2020 개정예고안의 용역 입찰가격 산식 (비교)
 
-2020-07-02 게시물의 개정안 전문 `제17조(입찰가격분야 평점산정)` — 원문 `.orca/capsules/task_a61c0e310be3/external/kogas/kogas_jeonmun.html.txt:209-221`:
+2020-07-02 게시물의 개정안 전문 `제17조(입찰가격분야 평점산정)` — 원문 `data/sources/qualification/files/kogas/3178431ee902_kogas_jeonmun.html.txt:209-221`:
 
 ```
 ① 1. 추정가격이 10억원 이상인 경우        평점산식 = (배점한도) - |(88/100 - 입찰가격/예정가격)*100| <개정 2018.11.27>
@@ -189,7 +189,7 @@
 
 ### 7.1 종합심사낙찰제 적용대상 (원문)
 
-「용역계약 종합심사낙찰제 심사세부기준」(시행 2024-09-09) 제1조(목적) — 원문 `.orca/capsules/task_889fe5b87a19/external/kogas/kogas_jongsim_main.txt:4`:
+「용역계약 종합심사낙찰제 심사세부기준」(시행 2024-09-09) 제1조(목적) — 원문 `data/sources/qualification/files/kogas/590700f3901c_kogas_jongsim_main.txt:4`:
 
 > 이 기준은 「국가를 당사자로 하는 계약에 관한 법률 시행령」(이하 "시행령"이라 한다) 제42조제4항제3호부터 제5호까지의 규정 및 기획재정부 계약예규「용역계약 종합심사낙찰제 심사기준」…에 따라 한국가스공사…가 시행하는 용역계약 중 용역계약 종합심사낙찰제 대상 용역의 낙찰자 결정시 필요한 세부기준을 정함을 목적으로 한다.
 
@@ -254,5 +254,5 @@ flowchart TD
 
 - `docs/analysis/servc_formula_collection_central_20261004.md` — 중앙부처·공단 9곳 수집 결과(12절 가스공사 판정 정정 대상)
 - `docs/handoff/session_20260930_servc_formula_collection.md` — 33곳 수집 대장과 판정 규칙 10개
-- `.orca/capsules/task_a61c0e310be3/external/kogas/` — 이번 작업의 공식 원본과 추출 텍스트(커밋하지 않음)
-- `.orca/capsules/task_889fe5b87a19/external/kogas/` — 종합심사낙찰제 원본과 추출 텍스트(커밋하지 않음)
+- `data/sources/qualification/files/kogas` — 이번 작업의 공식 원본과 추출 텍스트(커밋하지 않음)
+- `data/sources/qualification/files/kogas` — 종합심사낙찰제 원본과 추출 텍스트(커밋하지 않음)

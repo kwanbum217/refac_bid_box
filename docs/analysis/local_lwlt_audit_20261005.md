@@ -37,17 +37,17 @@
 
 | 규칙 ID | 별표·용역 | 원문 구간별 하한율 (EXT 파일:행) | 종전 코드 | 정정 코드 | 판정 |
 | --- | --- | --- | --- | --- | --- |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_02` | 별표 2 시설 | 전 구간 87.745% (`EXT/sejong/byp2_2025.txt:31`) | 87.995 (기본값) | 87.745 | 정정(대표값) |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_04` | 별표 4 폐기물 | 전 구간 87.745% (`EXT/sejong/byp4_2025.txt:18`) | 84.245 (기본값) | 87.745 | 정정(대표값) |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_4_2` | 별표 4의2 생활폐기물 | 전 구간 87.745% (`EXT/sejong/byp4_2_2025.txt:11`) | 84.245 (기본값) | 87.745 | 정정(대표값) |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_03` | 별표 3 SW 비대상 | 80.495% (`EXT/sejong/byp3_sw_2025.txt:17`) | 80.495 | 80.495 | 일치 |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME` | 별표 3 SW 대상 | 84.995% (`EXT/sejong/byp3_sw_2025.txt:25`) | 84.995 | 84.995 | 일치 |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_05` | 별표 5 육상운송 비대상 | 80.495% (`EXT/sejong/byp5_2025.txt:20`) | 80.495 | 80.495 | 일치 |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME` | 별표 5 육상운송 대상 | 84.995% (`EXT/sejong/byp5_2025.txt:28`) | 84.995 | 84.995 | 일치 |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_02` | 별표 2 시설 | 전 구간 87.745% (`data/sources/qualification/files/sejong/1f7ff1eafc15_byp2_2025.txt:31`) | 87.995 (기본값) | 87.745 | 정정(대표값) |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_04` | 별표 4 폐기물 | 전 구간 87.745% (`data/sources/qualification/files/sejong/f6909b0180a1_byp4_2025.txt:18`) | 84.245 (기본값) | 87.745 | 정정(대표값) |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_4_2` | 별표 4의2 생활폐기물 | 전 구간 87.745% (`data/sources/qualification/files/sejong/aff68bd433da_byp4_2_2025.txt:11`) | 84.245 (기본값) | 87.745 | 정정(대표값) |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_03` | 별표 3 SW 비대상 | 80.495% (`data/sources/qualification/files/sejong/acbf29823fb4_byp3_sw_2025.txt:17`) | 80.495 | 80.495 | 일치 |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME` | 별표 3 SW 대상 | 84.995% (`data/sources/qualification/files/sejong/acbf29823fb4_byp3_sw_2025.txt:25`) | 84.995 | 84.995 | 일치 |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_05` | 별표 5 육상운송 비대상 | 80.495% (`data/sources/qualification/files/sejong/53fc5b005509_byp5_2025.txt:20`) | 80.495 | 80.495 | 일치 |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME` | 별표 5 육상운송 대상 | 84.995% (`data/sources/qualification/files/sejong/53fc5b005509_byp5_2025.txt:28`) | 84.995 | 84.995 | 일치 |
 
 ### 2.2 울산광역시 (공고 제2022-1100호, 시행 2022-08-10)
 
-원문 근거: `EXT/ulsan/ulsan_general_20220810.tbl.txt:671-713` (별표 1 뒤 참고 "입찰가격 평점 산식", 일반용역·폐기물용역·단순노무·생활폐기물수집·운반대행용역 공통).
+원문 근거: `data/sources/qualification/files/ulsan/0e673b450ec3_ulsan_general_20220810.tbl.txt:671-713` (별표 1 뒤 참고 "입찰가격 평점 산식", 일반용역·폐기물용역·단순노무·생활폐기물수집·운반대행용역 공통).
 
 | 규칙 ID | 별표·용역 | 원문 구간별 하한율 (EXT 파일:행) | 종전 코드 | 정정 코드 | 판정 |
 | --- | --- | --- | --- | --- | --- |
@@ -58,7 +58,7 @@
 
 ### 2.3 충청북도 (공고 제2023-1428호, 시행 2023-10-20)
 
-원문 근거: `EXT/cb/cb_cjuc.txt:1454-1659` (별표 1 "3. 입찰가격 평가").
+원문 근거: `data/sources/qualification/files/cb/0cfe5136bcc2_cb_cjuc.txt:1454-1659` (별표 1 "3. 입찰가격 평가").
 
 | 규칙 ID | 별표·용역 | 원문 구간별 하한율 (EXT 파일:행) | 종전 코드 | 정정 코드 | 판정 |
 | --- | --- | --- | --- | --- | --- |
@@ -69,7 +69,7 @@
 
 | 규칙 ID | 별표·용역 | 원문 구간별 하한율 (EXT 파일:행) | 종전 코드 | 정정 코드 | 판정 |
 | --- | --- | --- | --- | --- | --- |
-| `SERVC_LOCAL_JNGJ_20260716_ATTACH_01` | 별표 1 시설 | 전 구간 87.745% (`EXT/jn_gj/jngj_att001.hwp.tbl.txt:53,61,69`) | 87.995 (기본값) | 87.745 | 정정(대표값) |
+| `SERVC_LOCAL_JNGJ_20260716_ATTACH_01` | 별표 1 시설 | 전 구간 87.745% (`data/sources/qualification/files/jn_gj/7890f3b13189_jngj_att001.hwp.tbl.txt:53,61,69`) | 87.995 (기본값) | 87.745 | 정정(대표값) |
 | `SERVC_LOCAL_JNGJ_20260716_ATTACH_02` | 별표 2 소프트웨어 | 2억 미만 87.745 (`att002:74`), 5억 미만 86.745 (`att002:66`), 5억 이상 85.495·10억 이상 82.995·30억 이상 80.495 (`att002:58`) | 구간값 없음(대표값 87.995) | 구간값 5개, 10억·30억 경계 분할 | 구간 분할 |
 | `SERVC_LOCAL_JNGJ_20260716_ATTACH_03` | 별표 3 폐기물 | 2억 미만·5억 미만 87.745 (`att003:75,67`), 5억 이상 82.995·10억 이상 77.995·30억 이상 72.995 (`att003:59`) | 구간값 없음(대표값 84.245) | 구간값 5개, 10억·30억 경계 분할 | 구간 분할 |
 | `SERVC_LOCAL_JNGJ_20260716_ATTACH_04` | 별표 4 생활폐기물 | 전 구간 87.745% (`att004:50,55,60`) | 84.245 (기본값) | 87.745 | 정정(대표값) |
@@ -78,7 +78,7 @@
 
 ### 2.5 경기도 (예규 제748호, 시행 2025-08-08)
 
-원문 근거: `EXT/gg/gg_g2b_20251210_coord.txt` (별표 1-2~1-6). 별표 1-1(단순노무)은 종전 판단대로 규칙을 만들지 않았습니다.
+원문 근거: `data/sources/qualification/files/gg/c231f0609a39_gg_g2b_20251210_coord.txt` (별표 1-2~1-6). 별표 1-1(단순노무)은 종전 판단대로 규칙을 만들지 않았습니다.
 
 | 규칙 ID | 별표·용역 | 원문 구간별 하한율 (EXT 파일:행) | 종전 코드 | 정정 코드 | 판정 |
 | --- | --- | --- | --- | --- | --- |
@@ -92,21 +92,21 @@
 
 | 규칙 ID | 별표·용역 | 원문 구간별 하한율 (EXT 파일:행) | 종전 코드 | 정정 코드 | 판정 |
 | --- | --- | --- | --- | --- | --- |
-| `SERVC_LOCAL_DAEGU_20260511_ATTACH_01` | 별표 1 단순노무 | 최저 낙찰하한율 87.745% 이상 (`EXT/daegu/tbl1_daegu.txt:150`), 공고문 낙찰하한율 87.745% (`EXT/supplement/daegu/R25BK01157938_f1.txt:47`) | 87.995 (기본값) | 87.745 | 정정(대표값) |
+| `SERVC_LOCAL_DAEGU_20260511_ATTACH_01` | 별표 1 단순노무 | 최저 낙찰하한율 87.745% 이상 (`data/sources/qualification/files/daegu/036ab03c59cf_tbl1_daegu.txt:150`), 공고문 낙찰하한율 87.745% (`data/sources/qualification/files/supplement/6face695bdca_R25BK01157938_f1.txt:47`) | 87.995 (기본값) | 87.745 | 정정(대표값) |
 
 ### 2.7 원문 미기재 지역 (무변경)
 
 | 규칙 ID | 원문 확인 파일 | 종전·현재 코드 | 판정 |
 | --- | --- | --- | --- |
-| `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | `EXT/inan/tbl1_table.txt` (별표 1 입찰가격 배점한도만) | 87.995 | 원문 미기재 |
-| `SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR` | `EXT/inan/tbl1_table.txt` | 87.995 | 원문 미기재 |
-| `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | `EXT/jeju/tbl1_jeju.txt` | 87.995 | 원문 미기재 |
-| `SERVC_LOCAL_JEJU_20240101_SIMPLE_LABOR` | `EXT/jeju/tbl1_jeju.txt` | 87.995 | 원문 미기재 |
-| `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | `EXT/gwd/tbl1_gwd.txt` | 87.995 | 원문 미기재 |
-| `SERVC_LOCAL_GANGWON_20230611_SIMPLE_LABOR` | `EXT/gwd/tbl1_gwd.txt` | 87.995 | 원문 미기재 |
+| `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | `data/sources/qualification/files/inan/140e479e98d1_tbl1_table.txt` (별표 1 입찰가격 배점한도만) | 87.995 | 원문 미기재 |
+| `SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR` | `data/sources/qualification/files/inan/140e479e98d1_tbl1_table.txt` | 87.995 | 원문 미기재 |
+| `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt` | 87.995 | 원문 미기재 |
+| `SERVC_LOCAL_JEJU_20240101_SIMPLE_LABOR` | `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt` | 87.995 | 원문 미기재 |
+| `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt` | 87.995 | 원문 미기재 |
+| `SERVC_LOCAL_GANGWON_20230611_SIMPLE_LABOR` | `data/sources/qualification/files/gwd/6db5320aba06_tbl1_gwd.txt` | 87.995 | 원문 미기재 |
 | `SERVC_LOCAL_GB_20260108_ATTACH_01`~`04` | `EXT/gb/gb_byp001~004.tbl.txt` | 87.995/87.995/84.245/87.995 | 원문 미기재 |
-| `SERVC_LOCAL_GN_20230105_ATTACH_01` | `EXT/gn/gn_general.hwp.tbl.txt` | 87.995 | 원문 미기재 |
-| `SERVC_LOCAL_GG_20250808_ATTACH_1_5` | `EXT/gg/gg_g2b_20251210_coord.txt:723-726` | 47.995 | 원문 미기재 |
+| `SERVC_LOCAL_GN_20230105_ATTACH_01` | `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt` | 87.995 | 원문 미기재 |
+| `SERVC_LOCAL_GG_20250808_ATTACH_1_5` | `data/sources/qualification/files/gg/c231f0609a39_gg_g2b_20251210_coord.txt:723-726` | 47.995 | 원문 미기재 |
 
 인천·제주·강원·경북·경남은 수집 추출물 어디에도 낙찰하한율 표기가 없어 추정·역산하지 않고 값을 바꾸지 않았습니다. 경기 보험 별표 1-5 는 낙찰하한율 열 없이 입찰가격 평점 산식(계수 0.375)만 인쇄되어 있습니다.
 
@@ -118,15 +118,15 @@
 
 | 규칙 ID | 종전 | 정정 | 근거 |
 | --- | ---: | ---: | --- |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_02` | 87.995 | 87.745 | `EXT/sejong/byp2_2025.txt:31` |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_04` | 84.245 | 87.745 | `EXT/sejong/byp4_2025.txt:18` |
-| `SERVC_LOCAL_SEJONG_20251201_ATTACH_4_2` | 84.245 | 87.745 | `EXT/sejong/byp4_2_2025.txt:11` |
-| `SERVC_LOCAL_ULSAN_20220810_SIMPLE_LABOR` | 87.995 | 87.745 | `EXT/ulsan/ulsan_general_20220810.tbl.txt:677,689,701,713` |
-| `SERVC_LOCAL_ULSAN_20220810_ATTACH_1_1` | 84.245 | 87.745 | `EXT/ulsan/ulsan_general_20220810.tbl.txt:680,692,704` |
-| `SERVC_LOCAL_CB_20231020_SIMPLE_LABOR` | 87.995 | 87.745 | `EXT/cb/cb_cjuc.txt:1535-1537,1575-1577,1615-1617,1655-1657` |
-| `SERVC_LOCAL_JNGJ_20260716_ATTACH_01` | 87.995 | 87.745 | `EXT/jn_gj/jngj_att001.hwp.tbl.txt:53,61,69` |
-| `SERVC_LOCAL_JNGJ_20260716_ATTACH_04` | 84.245 | 87.745 | `EXT/jn_gj/jngj_att004.hwp.tbl.txt:50,55,60` |
-| `SERVC_LOCAL_DAEGU_20260511_ATTACH_01` | 87.995 | 87.745 | `EXT/daegu/tbl1_daegu.txt:150`, `EXT/supplement/daegu/R25BK01157938_f1.txt:47` |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_02` | 87.995 | 87.745 | `data/sources/qualification/files/sejong/1f7ff1eafc15_byp2_2025.txt:31` |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_04` | 84.245 | 87.745 | `data/sources/qualification/files/sejong/f6909b0180a1_byp4_2025.txt:18` |
+| `SERVC_LOCAL_SEJONG_20251201_ATTACH_4_2` | 84.245 | 87.745 | `data/sources/qualification/files/sejong/aff68bd433da_byp4_2_2025.txt:11` |
+| `SERVC_LOCAL_ULSAN_20220810_SIMPLE_LABOR` | 87.995 | 87.745 | `data/sources/qualification/files/ulsan/0e673b450ec3_ulsan_general_20220810.tbl.txt:677,689,701,713` |
+| `SERVC_LOCAL_ULSAN_20220810_ATTACH_1_1` | 84.245 | 87.745 | `data/sources/qualification/files/ulsan/0e673b450ec3_ulsan_general_20220810.tbl.txt:680,692,704` |
+| `SERVC_LOCAL_CB_20231020_SIMPLE_LABOR` | 87.995 | 87.745 | `data/sources/qualification/files/cb/0cfe5136bcc2_cb_cjuc.txt:1535-1537,1575-1577,1615-1617,1655-1657` |
+| `SERVC_LOCAL_JNGJ_20260716_ATTACH_01` | 87.995 | 87.745 | `data/sources/qualification/files/jn_gj/7890f3b13189_jngj_att001.hwp.tbl.txt:53,61,69` |
+| `SERVC_LOCAL_JNGJ_20260716_ATTACH_04` | 84.245 | 87.745 | `data/sources/qualification/files/jn_gj/75912ab66990_jngj_att004.hwp.tbl.txt:50,55,60` |
+| `SERVC_LOCAL_DAEGU_20260511_ATTACH_01` | 87.995 | 87.745 | `data/sources/qualification/files/daegu/036ab03c59cf_tbl1_daegu.txt:150`, `data/sources/qualification/files/supplement/6face695bdca_R25BK01157938_f1.txt:47` |
 
 ### 3.2 구간별 하한율 반영 11개
 
@@ -152,12 +152,12 @@
 
 | 규칙 묶음 | source 에 추가한 EXT 근거 |
 | --- | --- |
-| 세종 시설·폐기물·생활폐기물 | `EXT/sejong/byp2_2025.txt:31`, `byp4_2025.txt:18`, `byp4_2_2025.txt:11` |
-| 울산 4개 | `EXT/ulsan/ulsan_general_20220810.tbl.txt:671-713` |
-| 충북 2개 | `EXT/cb/cb_cjuc.txt:1454-1659` |
+| 세종 시설·폐기물·생활폐기물 | `data/sources/qualification/files/sejong/1f7ff1eafc15_byp2_2025.txt:31`, `byp4_2025.txt:18`, `byp4_2_2025.txt:11` |
+| 울산 4개 | `data/sources/qualification/files/ulsan/0e673b450ec3_ulsan_general_20220810.tbl.txt:671-713` |
+| 충북 2개 | `data/sources/qualification/files/cb/0cfe5136bcc2_cb_cjuc.txt:1454-1659` |
 | 전남광주 6개 | `EXT/jn_gj/jngj_att001~006.hwp.tbl.txt` 해당 행 |
-| 경기 4개 | `EXT/gg/gg_g2b_20251210_coord.txt` 별표별 구간 |
-| 대구 1개 | `EXT/daegu/tbl1_daegu.txt:150`, `EXT/supplement/daegu/R25BK01157938_f1.txt:47` |
+| 경기 4개 | `data/sources/qualification/files/gg/c231f0609a39_gg_g2b_20251210_coord.txt` 별표별 구간 |
+| 대구 1개 | `data/sources/qualification/files/daegu/036ab03c59cf_tbl1_daegu.txt:150`, `data/sources/qualification/files/supplement/6face695bdca_R25BK01157938_f1.txt:47` |
 
 ### 3.4 전북특별자치도 source 행 범위 보정
 

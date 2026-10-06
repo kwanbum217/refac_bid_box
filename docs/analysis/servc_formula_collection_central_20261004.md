@@ -75,7 +75,7 @@
 | 출처 URL | `https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000109630` |
 | 원본 내려받기 | `https://www.law.go.kr/LSW/flDownload.do?flSeq=33015758` (171229·180104 전문 HWP) |
 | 확인 날짜 | 2026-10-04 |
-| .orca 원본 경로 | `.orca/capsules/task_889fe5b87a19/external/molit/molit_yongyeok_2018-01-04.hwp`, 추출문 `.orca/capsules/task_889fe5b87a19/external/molit/molit_yongyeok_2018-01-04.txt` |
+| .orca 원본 경로 | `data/sources/qualification/files/molit/609dd07a8b6b_molit_yongyeok_2018-01-04.hwp`, 추출문 `data/sources/qualification/files/molit/5f8edfa04ac7_molit_yongyeok_2018-01-04.txt` |
 | 등급 | 확인 |
 
 국가법령정보센터에서 이 문서는 폐지 표시 없이 현행으로 조회되며, 국토교통부의 "용역" 일반 산식입니다. 같은 부처의 `건설엔지니어링 적격심사 및 협상에 의한 낙찰자 결정기준`(훈령 제1953호, 2026-06-05)은 설계·건설사업관리·정밀안전진단 전용으로 별개 문서이며, 이 일반용역 산식과 합치지 않습니다.
@@ -124,7 +124,7 @@
 | 출처 URL | `https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000241426` |
 | 원본 내려받기 | `https://www.law.go.kr/LSW/flDownload.do?flSeq=140637059` (HWPX) / `flSeq=140637063` (PDF) |
 | 확인 날짜 | 2026-10-04 |
-| .orca 원본 경로 | `.orca/capsules/task_889fe5b87a19/external/khs/khs_yongyeok_2024-05-17.hwpx`, 추출문 `.../khs/khs_yongyeok_2024-05-17.txt`, 교차확인 PDF `.../khs/khs_yongyeok_2024-05-17_pdf.txt` |
+| .orca 원본 경로 | `data/sources/qualification/files/khs/a5ce754158f1_khs_yongyeok_2024-05-17.hwpx`, 추출문 `.../khs/khs_yongyeok_2024-05-17.txt`, 교차확인 PDF `.../khs/khs_yongyeok_2024-05-17_pdf.txt` |
 | 등급 | 확인 |
 
 국가유산청(옛 문화재청)의 자체 적격심사 고시입니다. 제1조(`khs_yongyeok_2024-05-17.txt:7`)는 근거를 `기획재정부 계약예규 적격심사기준`에 두고, 제3조는 적용대상을 매장유산 조사용역(지표조사·발굴조사)으로 정합니다. 따라서 이 산식은 **매장유산 조사용역 전용**이며, 국가유산청의 다른 일반용역에 대한 자체 B-k 산식은 국가법령정보센터 검색(`q=적격심사`, 기관코드 1833100, 8건)에서 확인되지 않았습니다.
@@ -169,7 +169,7 @@
 | 출처 URL | `https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000270570` |
 | 원본 내려받기 | `https://www.law.go.kr/LSW/flDownload.do?flSeq=161052893` (개정본문 HWPX) |
 | 확인 날짜 | 2026-10-04 |
-| .orca 원본 경로 | `.orca/capsules/task_889fe5b87a19/external/me/me_techyongyeok_2025-11-11.hwpx`, 본문 추출문 `.../me/me_techyongyeok_2025-11-11_body.txt` |
+| .orca 원본 경로 | `data/sources/qualification/files/me/cc4fc5622cf4_me_techyongyeok_2025-11-11.hwpx`, 본문 추출문 `.../me/me_techyongyeok_2025-11-11_body.txt` |
 | 등급 | 확인(기술용역 별표 1, 2026-10-05 정정) |
 
 환경부는 현 조직상 기후에너지환경부로 조회됩니다. 이 훈령 제2조(적용범위)는 `기본계획용역, 설계용역, 감리용역, 건설사업관리용역, 정밀안전점검(진단)용역, 지도제작용역` 등 **기술용역**을 대상으로 하며, 일반용역 자체 산식은 이 문서 범위에 없습니다.
@@ -181,7 +181,7 @@
 
 ### 6.3 별표 1 입찰가격 산식 (2026-10-05 확보)
 
-처음 수집은 별표 1 을 이미지 PDF 뷰어로만 보고 미확인으로 두었습니다. 같은 별표 페이지에 한글 원본(HWPX, `https://www.law.go.kr/LSW/flDownload.do?flSeq=161053045`)과 페이지 이미지 2장(`flSeq=161053047`, `161053049`)이 함께 걸려 있었고, 코디네이터가 HWPX 를 받아 표를 텍스트로 확인했습니다. 원본 `.orca/capsules/task_889fe5b87a19/external/me/me_byl1_161053045.hwpx`, 추출문 `.../me/me_byl1_text.txt`, 페이지 이미지 `.../me/me_byl1_page1.gif`, `me_byl1_page2.gif`.
+처음 수집은 별표 1 을 이미지 PDF 뷰어로만 보고 미확인으로 두었습니다. 같은 별표 페이지에 한글 원본(HWPX, `https://www.law.go.kr/LSW/flDownload.do?flSeq=161053045`)과 페이지 이미지 2장(`flSeq=161053047`, `161053049`)이 함께 걸려 있었고, 코디네이터가 HWPX 를 받아 표를 텍스트로 확인했습니다. 원본 `data/sources/qualification/files/me/73cfff6bc37e_me_byl1_161053045.hwpx`, 추출문 `.../me/me_byl1_text.txt`, 페이지 이미지 `.../me/me_byl1_page1.gif`, `me_byl1_page2.gif`.
 
 | 구간 | B | k | 기준 | 평탄 구간(원문 인쇄 점수) | 대입 검산 | 원문 |
 | --- | ---: | ---: | ---: | --- | --- | --- |
@@ -208,7 +208,7 @@
 | 출처 URL | `https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000285258` |
 | 원본 내려받기 | `https://www.law.go.kr/LSW/flDownload.do?flSeq=169541375` (HWPX) / `flSeq=169541379` (PDF) |
 | 확인 날짜 | 2026-10-04 |
-| .orca 원본 경로 | `.orca/capsules/task_889fe5b87a19/external/dapa/dapa_yongyeok_2026-09-21.hwpx`, 추출문 `.../dapa/dapa_yongyeok_2026-09-21.txt`, 수식 계수 보존 재추출문 `.../dapa/dapa_yongyeok_2026-09-21_hwpx_ordered.txt`, 교차확인 PDF `.../dapa/dapa_yongyeok_2026-09-21_pdf.txt` |
+| .orca 원본 경로 | `data/sources/qualification/files/dapa/4ff9dba09f75_dapa_yongyeok_2026-09-21.hwpx`, 추출문 `.../dapa/dapa_yongyeok_2026-09-21.txt`, 수식 계수 보존 재추출문 `.../dapa/dapa_yongyeok_2026-09-21_hwpx_ordered.txt`, 교차확인 PDF `.../dapa/dapa_yongyeok_2026-09-21_pdf.txt` |
 | 등급 | 확인(10억 이상 구간은 부분) |
 
 제2조(`dapa_yongyeok_2026-09-21.txt:24`)는 적용대상을 `방위사업청에서 집행하는 용역입찰(국제운송용역 제외 및 장비정비용역 제외)`로 정합니다. 입찰가격 산식은 `【별표 1】` 의 규모별 `(나)입찰가격` 칸에 **HWP 수식(HancomEQN)** 으로 들어 있습니다.
@@ -254,7 +254,7 @@
 | 실패 형태 | 행 클릭으로 열리는 상세/첨부 다운로드가 세션·보안모듈(SecuKitNx/SecuKitNXS) 을 요구해 원문 파일 확보 실패 |
 | 출처 URL | `https://ebid.lh.or.kr/` |
 | 확인 날짜 | 2026-10-04 |
-| .orca 원본 경로 | 원본 미확보. 시도 흔적 `.orca/capsules/task_889fe5b87a19/external/lh/lh_dataroom_list.html` |
+| .orca 원본 경로 | 원본 미확보. 시도 흔적 `data/sources/qualification/files/lh/f2975696a9f1_lh_dataroom_list.html` |
 | 등급 | 미확인 |
 
 목록에 문서가 존재한다는 사실만 확인했고, 입찰가격 산식 수치는 확보하지 못했습니다. 로그인·보안모듈이 필요하다는 사실만 적으며, 문서 부재로 단정하지 않습니다(규칙 9). 상업 사이트 제목에 `[특별] 용역적격심사 세부기준 한시적 운영방안(공지 2023-09-25~2024-09-30)` 단서가 있으나 계수 전재는 하지 않았습니다.
@@ -271,7 +271,7 @@
 | 상업 제목 단서(전재 안 함) | `기술용역적격심사세부기준(개정 22.1.24)`, `계약업무처리세부기준 낙찰하한율 2%p 상향 2026-07-06 시행` |
 | 출처 URL | `https://ebid.korail.com/board/ruleList.do` |
 | 확인 날짜 | 2026-10-04 |
-| .orca 원본 경로 | 원본 미확보. 시도 흔적 `.orca/capsules/task_889fe5b87a19/external/korail/korail_ruleList.html`, `.../korail/korail_ruleList_search.html` |
+| .orca 원본 경로 | 원본 미확보. 시도 흔적 `data/sources/qualification/files/korail/1f6eea24d567_korail_ruleList.html`, `.../korail/korail_ruleList_search.html` |
 | 등급 | 미확인 |
 
 접속은 되나 규정 목록을 특정하지 못했습니다. 접속 성공을 문서 존재로, 목록 미출력을 문서 부재로 단정하지 않습니다(규칙 9).
@@ -288,7 +288,7 @@
 | 상업 제목 단서(전재 안 함) | `한국농어촌공사 일반용역 적격심사 세부기준(2025.10.1 시행)`, `2026.6.24 이후 공고분 적용` |
 | 출처 URL | `https://www.ekr.or.kr/` |
 | 확인 날짜 | 2026-10-04 |
-| .orca 원본 경로 | 원본 미확보. 시도 흔적 `.orca/capsules/task_889fe5b87a19/external/krc/krc_home.html` |
+| .orca 원본 경로 | 원본 미확보. 시도 흔적 `data/sources/qualification/files/krc/0e3321a8216a_krc_home.html` |
 | 등급 | 미확인 |
 
 DNS 실패는 문서가 없다는 증거가 아닙니다(규칙 9). 올바른 전자조달 호스트와 자료실 경로는 다음 세션에서 다시 확인해야 합니다.
@@ -304,7 +304,7 @@ DNS 실패는 문서가 없다는 증거가 아닙니다(규칙 9). 올바른 �
 | 출처 URL | `https://ebid.ex.co.kr/` (전자조달 자료실). 이번 세션에서 개별 문서 URL 미확보 |
 | 선행 근거 | 선행 재계산 문서 `docs/analysis/20260930_servc_formula_recalc_kwater_koex.md` 4절이 위 원문 HWP 를 인용 |
 | 확인 날짜 | 2026-10-04 (선행 문서는 2026-09-30) |
-| .orca 원본 경로 | 원본 미확보. 선행 세션이 인용한 `/tmp/qual-formulas/hermes-servc/koex/` 는 재부팅으로 소멸. 시도 흔적 `.orca/capsules/task_889fe5b87a19/external/koex/koex_ebid_default.html` |
+| .orca 원본 경로 | 원본 미확보. 선행 세션이 인용한 `/tmp/qual-formulas/hermes-servc/koex/` 는 재부팅으로 소멸. 시도 흔적 `data/sources/qualification/files/koex/1ef3f6b37a5d_koex_ebid_default.html` |
 | 등급 | 부분 |
 
 선행 문서가 인용한 값(이번 세션에서 원문 파일을 다시 열지 못했으므로 아래는 선행 문서의 인용을 그대로 옮긴 것):
@@ -332,7 +332,7 @@ DNS 실패는 문서가 없다는 증거가 아닙니다(규칙 9). 올바른 �
 | 출처 URL | `https://bid.kogas.or.kr:9443/supplier/contents/rule/rule_provision_list.jsp` (전자조달 규정실) |
 | 원본 내려받기 | `https://bid.kogas.or.kr:9443/supplier/contents/rule/cnts_download_rule_proc.jsp?ruleSeq=7&rule_no=LSD0000017` (ZIP: 본문 + 별표 5종 HWP) |
 | 확인 날짜 | 2026-10-04 |
-| .orca 원본 경로 | `.orca/capsules/task_889fe5b87a19/external/kogas/kogas_yongyeok_jongsim_2024-09-09.bin`(ZIP), 내부 HWP `.../kogas/unzipped/01_*.hwp`, `02_[별표 01]…hwp`, 추출문 `.../kogas/kogas_02_*.txt` |
+| .orca 원본 경로 | `data/sources/qualification/files/kogas/5fed2addfe7a_kogas_yongyeok_jongsim_2024-09-09.bin`(ZIP), 내부 HWP `.../kogas/unzipped/01_*.hwp`, `02_[별표 01]…hwp`, 추출문 `.../kogas/kogas_02_*.txt` |
 | 등급 | 확인 |
 
 ### 12.2 판정 — 일반 적격 B-k 가 아님

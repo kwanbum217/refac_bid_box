@@ -73,7 +73,7 @@ DB 조회는 `uv run python scripts/db_readonly_query.py --sql "<질의>"` 형�
 | 통과점수 | 제10조① 종합평점 85점. 단 여객 육상운송용역은 88점 (`iia_17529_full.txt:114`) |
 | 출처 URL | `https://www.g2b.go.kr/pn/pnp/pnpe/UntyAtchFile/downloadFile.do?bidPbancNo=R25BK01060561&bidPbancOrd=000&fileType=&fileSeq=3&prcmBsneSeCd=03` (공고 R25BK01060561 첨부 칸3) |
 | 확인 날짜 | 2026-10-05 |
-| .orca 원본 경로 | `.orca/capsules/task_afb66751579d/external/iia/iia_reawu17529_defense.hwp`, 추출 `.../extracted/iia_17529_full.txt`(표·수식 보존), `.../extracted/iia_17529.txt`(hwp5txt 1차) |
+| .orca 원본 경로 | `data/sources/qualification/files/iia/fea458acba6d_iia_reawu17529_defense.hwp`, 추출 `.../extracted/iia_17529_full.txt`(표·수식 보존), `.../extracted/iia_17529.txt`(hwp5txt 1차) |
 | 등급 | 확인 |
 
 이 파일은 나라장터 공고 R25BK01060561(2025-09-16 소방시설 법정점검 용역)과 R25BK01054180(2025-09-11 드론탐지장비 수리용역)에 첨부된 문서로, 머리말 첫 줄이 `일반용역 적격심사 세부기준`(`iia_17529_full.txt:1`)이고 제1조가 주체를 `인천국제공항공사`로 명시하므로 그 기관 규정 원문이다(규칙 2). 직전 세션이 문서번호(재무처-17529호, 2024-12-23 제정, 2025-01-01 시행)로 적어 둔 문서와 동일하다.
@@ -147,7 +147,7 @@ DB 조회는 `uv run python scripts/db_readonly_query.py --sql "<질의>"` 형�
 | 통과점수 | 제10조② 일반용역·기타용역 종합평점 85점(정보통신·운송의 중소기업자간 경쟁대상은 88점) (`knoc_2026_full.txt:164`) |
 | 출처 URL | `https://www.g2b.go.kr/pn/pnp/pnpe/UntyAtchFile/downloadFile.do?bidPbancNo=R26BK01716376&bidPbancOrd=000&fileType=&fileSeq=6&prcmBsneSeCd=03` (공고 R26BK01716376 첨부 칸6) |
 | 확인 날짜 | 2026-10-05 |
-| .orca 원본 경로 | `.orca/capsules/task_afb66751579d/external/knoc/knoc_r26bk01716376_spec.hwp`, `.../knoc/knoc_r25bk01180260_spec.hwp`, 추출 `.../extracted/knoc_2026_full.txt`·`knoc_2025_full.txt`(표·수식 보존) |
+| .orca 원본 경로 | `data/sources/qualification/files/knoc/08e8f5b7d610_knoc_r26bk01716376_spec.hwp`, `.../knoc/knoc_r25bk01180260_spec.hwp`, 추출 `.../extracted/knoc_2026_full.txt`·`knoc_2025_full.txt`(표·수식 보존) |
 | 등급 | 확인 |
 
 이 파일은 나라장터 공고 R26BK01716376(2026-09-08 시추작업에 따른 동해안 어업생산량 변동 조사 용역) 칸6 `용역 적격심사 세부기준.hwp` 와 R25BK01180260(2025-11-26 보유 토지 감정평가 용역) 칸4 `별첨2_용역 적격심사 세부기준.hwp` 로 내려받은 문서다. 머리말이 `용역 적격심사 세부기준`(`knoc_2026_full.txt:3`)이고 제1조가 주체를 `한국석유공사`로 명시하므로 그 기관 규정 원문이다(규칙 2). 두 공고의 파일 본문은 표제 앞 `건명` 줄만 다르고 규정 본문은 동일하다(`diff` 결과 차이 32행 전부 공고 머리말·여백, `md5` 상이).

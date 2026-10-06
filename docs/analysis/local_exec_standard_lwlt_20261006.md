@@ -5,7 +5,7 @@
 > **범위**: 행안부 「지방자치단체 입찰 및 계약 집행기준」 원문이 일반용역 적격심사의 추정가격 10억원 이상 구간 낙찰하한율을 규정하는지와 그 값, 그리고 인천·제주·강원·경북·경남 세부기준이 이 집행기준을 하한율 근거로 준용하는지의 판정. 코드 무변경
 > **대상 규칙**: `SERVC_LOCAL_INCHEON_20251224_ATTACH_01`, `SERVC_LOCAL_JEJU_20240101_ATTACH_01`, `SERVC_LOCAL_GANGWON_20230611_ATTACH_01`, `SERVC_LOCAL_GB_20260108_ATTACH_04`, `SERVC_LOCAL_GN_20230105_ATTACH_01`
 > **정본 사양**: `.orca/capsules/task_951e37a9b6ba/capsule.yaml`
-> **원문 수집**: 국가법령정보센터 행정규칙이 아니라 행안부 훈령·예규·고시 게시판의 개정전문 HWPX 첨부를 받아 판독했습니다. 수집 파일은 `EXT/mois_exec/` 에만 두고 커밋하지 않습니다(`EXT/` 는 `.git/info/exclude` 로 제외).
+> **원문 수집**: 국가법령정보센터 행정규칙이 아니라 행안부 훈령·예규·고시 게시판의 개정전문 HWPX 첨부를 받아 판독했습니다. 수집 파일은 `data/sources/qualification/files/mois_exec` 에만 두고 커밋하지 않습니다(`EXT/` 는 `.git/info/exclude` 로 제외).
 > **결론**: 집행기준은 일반용역 적격심사 10억원 이상 구간 낙찰하한율을 **규정하지 않습니다**(미규정, 값 없음). 집행기준은 적격심사 자체를 「지방자치단체 입찰시 낙찰자 결정기준」으로 넘기며, 5개 시·도 세부기준의 준용 조항은 어느 것도 낙찰하한율을 지목하지 않습니다. 따라서 이 집행기준은 5개 규칙의 하한율 근거가 **될 수 없습니다**. 판정은 **미확인(집행기준에 해당 규정 부재를 원문 전수 검색으로 확정)** 이며, 코드 값은 무변경(기본값 87.995 유지)입니다.
 
 ---
@@ -32,14 +32,14 @@
 
 ### 2.1 원문 수집 경로
 
-집행기준 개정전문 HWPX를 행안부 훈령·예규·고시 게시판에서 받아 `EXT/mois_exec/` 에 두고, HWPX 내부 `Contents/section*.xml` 을 표준 라이브러리로 텍스트화해 판독했습니다(`pip`·`pyproject.toml`·`uv.lock` 무변경). 대조를 위해 낙찰자 결정기준 HWPX(제373호)도 같은 경로로 받았습니다.
+집행기준 개정전문 HWPX를 행안부 훈령·예규·고시 게시판에서 받아 `data/sources/qualification/files/mois_exec` 에 두고, HWPX 내부 `Contents/section*.xml` 을 표준 라이브러리로 텍스트화해 판독했습니다(`pip`·`pyproject.toml`·`uv.lock` 무변경). 대조를 위해 낙찰자 결정기준 HWPX(제373호)도 같은 경로로 받았습니다.
 
 | 판 | 시행일 | 예규 | 원문 파일 | 출처(행안부 게시글) |
 | --- | --- | --- | --- | --- |
-| 2026 (현행) | 2026-07-01 | 행정안전부 예규 제372호 | `EXT/mois_exec/exec_standard.hwpx` → `exec_standard_body.txt` | `commonSelectBoardArticle.do?bbsId=BBSMSTR_000000000016&nttId=127353` (첨부 fileSn=0) |
-| 2025 (레짐 전환 전) | 2025-07-08 | 행정안전부 예규 제332호 | `EXT/mois_exec/exec_standard_2025.hwpx` → `exec_standard_2025_body.txt` | `commonSelectBoardArticle.do?bbsId=BBSMSTR_000000000061&nttId=124325` (첨부 fileSn=0) |
-| 2024 | 2024-04-01 | 행정안전부 예규 제282호 | `EXT/mois_exec/exec_standard_2024.hwpx` → `exec_standard_2024_body.txt` | `commonSelectBoardArticle.do?bbsId=BBSMSTR_000000000016&nttId=108224` (첨부 fileSn=0) |
-| 대조(낙찰자 결정기준) | 2026-07-01 | 행정안전부 예규 제373호 | `EXT/mois_exec/nakchal_std.hwpx` → `nakchal_std_body.txt` | `nttId=127353` (첨부 fileSn=1) |
+| 2026 (현행) | 2026-07-01 | 행정안전부 예규 제372호 | `data/sources/qualification/files/mois_exec/7bfc9da83db0_exec_standard.hwpx` → `exec_standard_body.txt` | `commonSelectBoardArticle.do?bbsId=BBSMSTR_000000000016&nttId=127353` (첨부 fileSn=0) |
+| 2025 (레짐 전환 전) | 2025-07-08 | 행정안전부 예규 제332호 | `data/sources/qualification/files/mois_exec/ebc0f71a2f86_exec_standard_2025.hwpx` → `exec_standard_2025_body.txt` | `commonSelectBoardArticle.do?bbsId=BBSMSTR_000000000061&nttId=124325` (첨부 fileSn=0) |
+| 2024 | 2024-04-01 | 행정안전부 예규 제282호 | `data/sources/qualification/files/mois_exec/96c1430d9fe2_exec_standard_2024.hwpx` → `exec_standard_2024_body.txt` | `commonSelectBoardArticle.do?bbsId=BBSMSTR_000000000016&nttId=108224` (첨부 fileSn=0) |
+| 대조(낙찰자 결정기준) | 2026-07-01 | 행정안전부 예규 제373호 | `data/sources/qualification/files/mois/ca0fc23fdaf7_mois_373_nakchal.hwpx` → `nakchal_std_body.txt` | `nttId=127353` (첨부 fileSn=1) |
 
 HWPX 머리말로 각 판의 시행일·예규번호를 확인했습니다(예: `exec_standard_body.txt:1` = "[시행 2026. 7. 1.][행정안전부 예규 제372호, 2026. 6. 29. 일부개정]"). 판단 기준 시점은 2026-05-26 낙찰하한율 레짐 전환 전후를 모두 덮도록 2025년 판(전환 전)과 2026년 판(전환 후)을 함께 확보했습니다.
 
@@ -63,16 +63,16 @@ HWPX 머리말로 각 판의 시행일·예규번호를 확인했습니다(예: 
 
 | 확인 항목 | 결과 | 근거 파일:행 |
 | --- | :---: | --- |
-| 2026년 판 "낙찰하한율" 등장 | 0건 | `EXT/mois_exec/exec_standard_body.txt` 전수 검색 |
-| 2026년 판 "낙찰하한" 등장 | 0건 | `EXT/mois_exec/exec_standard_body.txt` 전수 검색 |
-| 2025년 판 "낙찰하한율"·"낙찰하한" | 0건·0건 | `EXT/mois_exec/exec_standard_2025_body.txt` 전수 검색 |
-| 2024년 판 "낙찰하한율"·"낙찰하한" | 0건·0건 | `EXT/mois_exec/exec_standard_2024_body.txt` 전수 검색 |
-| "하한선"·"최저낙찰"·"낙찰하한선" | 0건 | `EXT/mois_exec/exec_standard_body.txt` 전수 검색 |
+| 2026년 판 "낙찰하한율" 등장 | 0건 | `data/sources/qualification/files/mois_exec/d6daf6a85442_exec_standard_body.txt` 전수 검색 |
+| 2026년 판 "낙찰하한" 등장 | 0건 | `data/sources/qualification/files/mois_exec/d6daf6a85442_exec_standard_body.txt` 전수 검색 |
+| 2025년 판 "낙찰하한율"·"낙찰하한" | 0건·0건 | `data/sources/qualification/files/mois_exec/628d54a3e650_exec_standard_2025_body.txt` 전수 검색 |
+| 2024년 판 "낙찰하한율"·"낙찰하한" | 0건·0건 | `data/sources/qualification/files/mois_exec/0a160ad0081b_exec_standard_2024_body.txt` 전수 검색 |
+| "하한선"·"최저낙찰"·"낙찰하한선" | 0건 | `data/sources/qualification/files/mois_exec/d6daf6a85442_exec_standard_body.txt` 전수 검색 |
 | 하한율 값 후보(87.745·86.745·85.495·77.995·72.995·79.995) | 2025·2026년 판 0건 | `exec_standard_2025_body.txt`, `exec_standard_body.txt` 전수 검색 |
 
 ### 3.2 목차에 적격심사 세부기준·낙찰하한율 장이 없음
 
-2026년 판 목차는 12개 장이며 적격심사 세부기준이나 낙찰하한율을 다루는 장이 없습니다(`EXT/mois_exec/exec_standard_body.txt:35-47`).
+2026년 판 목차는 12개 장이며 적격심사 세부기준이나 낙찰하한율을 다루는 장이 없습니다(`data/sources/qualification/files/mois_exec/d6daf6a85442_exec_standard_body.txt:35-47`).
 
 | 순서 | 장 | 근거 행 |
 | ---: | --- | --- |
@@ -127,7 +127,7 @@ HWPX 머리말로 각 판의 시행일·예규번호를 확인했습니다(예: 
 
 | 확인 항목 | 결과 | 근거 파일:행 |
 | --- | :---: | --- |
-| 낙찰자 결정기준 "낙찰하한율" 등장 | 1건(부칙 적용례) | `EXT/mois_exec/nakchal_std_body.txt:23233` |
+| 낙찰자 결정기준 "낙찰하한율" 등장 | 1건(부칙 적용례) | `data/sources/qualification/files/mois_exec/2299809a897a_nakchal_std_body.txt:23233` |
 | 낙찰자 결정기준 "일반용역" 등장 | 1건(협상 계약 단순노무 문구) | `nakchal_std_body.txt` 전수 검색 |
 | 낙찰자 결정기준 "청소용역"·"경비용역" | 0건·0건 | `nakchal_std_body.txt` 전수 검색 |
 
@@ -141,21 +141,21 @@ HWPX 머리말로 각 판의 시행일·예규번호를 확인했습니다(예: 
 
 | rule_id | 시·도 (예규·시행일) | 10~30억 후보(원문) | 30억 이상 후보(원문) | 준용 조항 (파일:행) | 준용 조항이 집행기준을 지목 | 하한율 명시 준용 | 판정 |
 | --- | --- | :---: | :---: | --- | :---: | :---: | :---: |
-| `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | 인천광역시 (예규 제488호, 2025-12-24) | 없음(미인쇄) | 없음(미인쇄) | `EXT/inan/elis_inan_008.txt:171` (제10조①) | 예 | 없음 | 미확인 |
-| `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | 제주특별자치도 (예규 제82호, 2024-01-01) | 없음(미인쇄) | 없음(미인쇄) | `EXT/jeju/elis_jeju_main.txt:140` (제7조) | 아니오(회계예규 등) | 없음 | 미확인 |
-| `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | 강원특별자치도 (예규 제832호, 2023-06-11) | 없음(미인쇄) | 없음(미인쇄) | `EXT/gwd/elis_gwd_main.txt:306` (제11조①) | 예 | 없음 | 미확인 |
-| `SERVC_LOCAL_GB_20260108_ATTACH_04` | 경상북도 (예규 제1571호, 2026-01-08) | 없음(미인쇄) | 없음(미인쇄) | `EXT/gb/elis_gb_body.txt:622` (제13조) | 아니오(낙찰자 결정기준·회계예규) | 없음 | 미확인 |
-| `SERVC_LOCAL_GN_20230105_ATTACH_01` | 경상남도 (공고 제2023-23호, 2023-01-05) | 없음(미인쇄) | 없음(미인쇄) | `EXT/gn/gn_general.hwp.tbl.txt:1` (제7조) | 아니오(행안부 지방계약예규 등) | 없음 | 미확인 |
+| `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | 인천광역시 (예규 제488호, 2025-12-24) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:171` (제10조①) | 예 | 없음 | 미확인 |
+| `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | 제주특별자치도 (예규 제82호, 2024-01-01) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt:140` (제7조) | 아니오(회계예규 등) | 없음 | 미확인 |
+| `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | 강원특별자치도 (예규 제832호, 2023-06-11) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt:306` (제11조①) | 예 | 없음 | 미확인 |
+| `SERVC_LOCAL_GB_20260108_ATTACH_04` | 경상북도 (예규 제1571호, 2026-01-08) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/gb/17af2d266b97_elis_gb_body.txt:622` (제13조) | 아니오(낙찰자 결정기준·회계예규) | 없음 | 미확인 |
+| `SERVC_LOCAL_GN_20230105_ATTACH_01` | 경상남도 (공고 제2023-23호, 2023-01-05) | 없음(미인쇄) | 없음(미인쇄) | `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt:1` (제7조) | 아니오(행안부 지방계약예규 등) | 없음 | 미확인 |
 
 ### 4.1 준용 조항 원문 (5곳)
 
 | 시·도 | 조항 | 원문 (해당 행) |
 | --- | --- | --- |
-| 인천 | 제10조(준용규정)① | "이 세부기준에서 정하지 아니한 사항은 관련 법령 및 「지방자치단체를 당사자로 하는 계약에 관한 법률」, 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등의 예규에서 정한 바에 따른다." (`EXT/inan/elis_inan_008.txt:171`) |
-| 제주 | 제7조(준용규정) | "이 세부기준에 정하지 아니한 사항은 관련 회계예규 등을 준용하며, 이 세부기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 내용에 대하여는 입찰공고 등에 별도로 반영하여 시행할 수 있다." (`EXT/jeju/elis_jeju_main.txt:140`) |
-| 강원 | 제11조(그 밖의 사항)① | "이 세부기준에서 정하지 아니한 사항은 관련 법령 및 「지방계약법」, 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등에서 정한 바에 따른다." (`EXT/gwd/elis_gwd_main.txt:306`) |
-| 경북 | 제13조(기타사항) | "이 세부기준에 정하지 아니한 사항은 「지방자치단체 입찰시 낙찰자 결정기준 및 관련 회계예규」 등에 따르며, 이 기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 경우에는 입찰공고 등에 별도로 반영하여 집행할 수 있다." (`EXT/gb/elis_gb_body.txt:622`) |
-| 경남 | 제7조(그 밖의 사항) | "이 세부기준에 정하지 아니한 사항은 관련 행정안전부 지방계약예규 등을 준용하며, 청소용역·폐기물처리용역·헬기임차용역 등 다른 적격심사 세부기준이 있을 때에는 그 기준에 따르고, 이 기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 경우에는 입찰공고 등에 별도로 반영하여 집행할 수 있다." (`EXT/gn/gn_general.hwp.tbl.txt:1`) |
+| 인천 | 제10조(준용규정)① | "이 세부기준에서 정하지 아니한 사항은 관련 법령 및 「지방자치단체를 당사자로 하는 계약에 관한 법률」, 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등의 예규에서 정한 바에 따른다." (`data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt:171`) |
+| 제주 | 제7조(준용규정) | "이 세부기준에 정하지 아니한 사항은 관련 회계예규 등을 준용하며, 이 세부기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 내용에 대하여는 입찰공고 등에 별도로 반영하여 시행할 수 있다." (`data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt:140`) |
+| 강원 | 제11조(그 밖의 사항)① | "이 세부기준에서 정하지 아니한 사항은 관련 법령 및 「지방계약법」, 「지방자치단체 입찰시 낙찰자 결정기준」 및 「지방자치단체 입찰 및 계약 집행기준」 등에서 정한 바에 따른다." (`data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt:306`) |
+| 경북 | 제13조(기타사항) | "이 세부기준에 정하지 아니한 사항은 「지방자치단체 입찰시 낙찰자 결정기준 및 관련 회계예규」 등에 따르며, 이 기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 경우에는 입찰공고 등에 별도로 반영하여 집행할 수 있다." (`data/sources/qualification/files/gb/17af2d266b97_elis_gb_body.txt:622`) |
+| 경남 | 제7조(그 밖의 사항) | "이 세부기준에 정하지 아니한 사항은 관련 행정안전부 지방계약예규 등을 준용하며, 청소용역·폐기물처리용역·헬기임차용역 등 다른 적격심사 세부기준이 있을 때에는 그 기준에 따르고, 이 기준을 적용할 경우 사실상 평가가 곤란하다고 인정되는 경우에는 입찰공고 등에 별도로 반영하여 집행할 수 있다." (`data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt:1`) |
 
 직전 조사(`local_10eok_lwlt_sources_20261006.md` 3.1절)는 5곳 모두가 집행기준을 명시하는 포괄 준용이라고 적었으나, 원문 대조 결과 제주·경북·경남의 준용 조항은 집행기준을 명시하지 않습니다. 이번 조사는 그 부분을 정정합니다.
 
@@ -163,7 +163,7 @@ HWPX 머리말로 각 판의 시행일·예규번호를 확인했습니다(예: 
 
 | 확인 항목 | 결과 | 근거 |
 | --- | :---: | --- |
-| 5개 시·도 수집분 "하한" 문자열 | 0건 | `EXT/inan`, `EXT/jeju`, `EXT/gwd`, `EXT/gb`, `EXT/gn` 전수 검색 |
+| 5개 시·도 수집분 "하한" 문자열 | 0건 | `data/sources/qualification/files/inan`, `data/sources/qualification/files/jeju`, `data/sources/qualification/files/gwd`, `data/sources/qualification/files/gb`, `data/sources/qualification/files/gn` 전수 검색 |
 | 5개 시·도 수집분 "낙찰하한율" 문자열 | 0건 | 위 5개 디렉터리 전수 검색 |
 | 5개 시·도 수집분 하한율 값 후보(87.745·79.995 등) | 0건 | 위 5개 디렉터리 전수 검색 |
 
@@ -207,15 +207,15 @@ HWPX 머리말로 각 판의 시행일·예규번호를 확인했습니다(예: 
 
 | 구분 | 파일 | 용도 |
 | --- | --- | --- |
-| 집행기준 2026년 판 (제372호, 시행 2026-07-01) | `EXT/mois_exec/exec_standard.hwpx`, `exec_standard_body.txt` | 낙찰하한율 부재, 목차, 적격심사 위임 조항, 하한 5건 |
-| 집행기준 2025년 판 (제332호, 시행 2025-07-08) | `EXT/mois_exec/exec_standard_2025.hwpx`, `exec_standard_2025_body.txt` | 레짐 전환 전 판 대조(낙찰하한율 0건) |
-| 집행기준 2024년 판 (제282호, 시행 2024-04-01) | `EXT/mois_exec/exec_standard_2024.hwpx`, `exec_standard_2024_body.txt` | 구판 대조(낙찰하한율 0건), 수의계약 하한 87.745% 확인 |
-| 낙찰자 결정기준 (제373호, 시행 2026-07-01) | `EXT/mois_exec/nakchal_std.hwpx`, `nakchal_std_body.txt` | 낙찰하한율 소재 대조, 일반용역 하한율 표 부재 |
-| 인천 | `EXT/inan/elis_inan_008.txt` | 제10조 준용(`:171`), 일반용역 정의(`:135`) |
-| 제주 | `EXT/jeju/elis_jeju_main.txt` | 제7조 준용(`:140`) |
-| 강원 | `EXT/gwd/elis_gwd_main.txt` | 제11조 준용(`:306`), 일반용역 정의(`:254`) |
-| 경북 | `EXT/gb/elis_gb_body.txt` | 제13조 준용(`:622`), 일반용역 정의(`:553`) |
-| 경남 | `EXT/gn/gn_general.hwp.tbl.txt` | 제7조 준용(`:1`) |
+| 집행기준 2026년 판 (제372호, 시행 2026-07-01) | `data/sources/qualification/files/mois_exec/7bfc9da83db0_exec_standard.hwpx`, `exec_standard_body.txt` | 낙찰하한율 부재, 목차, 적격심사 위임 조항, 하한 5건 |
+| 집행기준 2025년 판 (제332호, 시행 2025-07-08) | `data/sources/qualification/files/mois_exec/ebc0f71a2f86_exec_standard_2025.hwpx`, `exec_standard_2025_body.txt` | 레짐 전환 전 판 대조(낙찰하한율 0건) |
+| 집행기준 2024년 판 (제282호, 시행 2024-04-01) | `data/sources/qualification/files/mois_exec/96c1430d9fe2_exec_standard_2024.hwpx`, `exec_standard_2024_body.txt` | 구판 대조(낙찰하한율 0건), 수의계약 하한 87.745% 확인 |
+| 낙찰자 결정기준 (제373호, 시행 2026-07-01) | `data/sources/qualification/files/mois/ca0fc23fdaf7_mois_373_nakchal.hwpx`, `nakchal_std_body.txt` | 낙찰하한율 소재 대조, 일반용역 하한율 표 부재 |
+| 인천 | `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt` | 제10조 준용(`:171`), 일반용역 정의(`:135`) |
+| 제주 | `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt` | 제7조 준용(`:140`) |
+| 강원 | `data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt` | 제11조 준용(`:306`), 일반용역 정의(`:254`) |
+| 경북 | `data/sources/qualification/files/gb/17af2d266b97_elis_gb_body.txt` | 제13조 준용(`:622`), 일반용역 정의(`:553`) |
+| 경남 | `data/sources/qualification/files/gn/5d8b1c6b8c83_gn_general.hwp.tbl.txt` | 제7조 준용(`:1`) |
 | 코드 | `src/app/services/evaluation_rules.py` | 규칙 정의·구간값·기본값 주입 |
 | 선행 문서 | `docs/analysis/local_10eok_lwlt_sources_20261006.md`, `local_lwlt_announcement_measure_20261005.md` | 준용·미인쇄·공고 실측 선행 판정 |
 
@@ -229,4 +229,4 @@ HWPX 머리말로 각 판의 시행일·예규번호를 확인했습니다(예: 
 | HWPX 추출 누락 가능성 | 별표의 하한율 열이 추출 과정에서 누락됐을 가능성은 낮습니다. 같은 추출본에서 배점한도·단서·% 값은 정상 추출됐고, "낙찰하한율" 문자열 자체가 0건입니다. 다만 HWPX 원본 표 구조를 직접 열람하지는 않았습니다. |
 | 판본 범위 | 2024·2025·2026년 판 3개만 확인했습니다. 그 이전 판까지 전수 확인하지는 않았습니다. |
 | 공고 실측과 원문 불일치 | 5곳 모두 공고 실측이 혼재해, 원문이 확보되기 전에는 단일 후보를 확정할 수 없습니다. |
-| 수집 파일 미커밋 | `EXT/mois_exec/` 는 `.git/info/exclude` 로 제외되어 저장소에 남지 않습니다. 재현하려면 2.1절 출처의 행안부 게시글 첨부를 다시 받아야 합니다. |
+| 수집 파일 미커밋 | `data/sources/qualification/files/mois_exec` 는 `.git/info/exclude` 로 제외되어 저장소에 남지 않습니다. 재현하려면 2.1절 출처의 행안부 게시글 첨부를 다시 받아야 합니다. |

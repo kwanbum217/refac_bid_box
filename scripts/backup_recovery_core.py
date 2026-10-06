@@ -430,3 +430,20 @@ def cleanup_drill_target_dir(target_dir: Path, project_root: Path | None = None)
             raise ValueError(f"격리되지 않은 경로는 정리할 수 없습니다: {target}")
     if target.is_dir():
         shutil.rmtree(target, ignore_errors=True)
+
+
+def build_qualification_sources_component(
+    project_root: Path | None = None, target_dir: Path | None = None
+) -> tuple[dict[str, Any] | None, str]:
+    """적격심사 근거 원문 폴더를 선택 백업 자산으로 묶습니다. 없으면 경고만 합니다."""
+    root = project_root or PROJECT_ROOT
+    source = root / "data" / "sources" / "qualification" / "files"
+    state = get_asset_state(source)
+    if state != "available" or target_dir is None:
+        print(f"[경고] 선택 백업 자산 원문 폴더 없음: data/sources/qualification/files ({state})")
+        return None, state
+    archive = target_dir / "qualification_sources.tar.gz"
+    create_tar_archive([source], archive, base_dir=root)
+    size, sha = validate_backup_output(archive, "qualification_sources")
+    count = sum(1 for item in source.rglob("*") if item.is_file())
+    return {"path": archive.name, "size_bytes": size, "sha256": sha, "file_count": count}, state
