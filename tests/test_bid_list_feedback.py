@@ -8,7 +8,8 @@
 - 목록 화면의 발주처 지역·참가가능지역 표시
 - SQL 경로와 Meilisearch 문서 판정의 동등성
 
-업종 한정은 서비스가 아니라 라우트 계층에서 lic 기본값을 합집합으로 넘겨 적용합니다.
+업종 한정은 서비스가 아니라 SSR 목록 라우트에서 lic 기본값을 합집합으로 넘겨 적용합니다.
+API 목록(/api/v1/bids)은 React 대시보드가 쓰므로 lic 미지정 시 업종 제한이 없습니다.
 home 대시보드 목록은 이 개정 범위가 아닙니다.
 """
 
@@ -185,6 +186,20 @@ def test_route_defaults_to_four_industries(monkeypatch, isolated_db):
     assert titles["job"] in html
     assert titles["livestock"] not in html
     assert titles["unlimited"] not in html
+
+
+def test_api_list_is_not_industry_limited_by_default(monkeypatch, isolated_db):
+    """업종 한정은 SSR 공고보기 화면 전용이다. React 대시보드가 쓰는 API 목록은 lic 를
+    지정하지 않으면 업종 제한 없이 돌려주고, 지정하면 그 코드로만 좁힌다."""
+    monkeypatch.setattr(settings, "MEILI_ENABLED", False, raising=False)
+    rows = _seed_industry_rows(isolated_db)
+    client = _logged_in_client(isolated_db)
+
+    default_ids = {item["id"] for item in client.get("/api/v1/bids").json()["bids"]}
+    assert {rows["unlimited"].id, rows["livestock"].id, rows["parsed"].id} <= default_ids
+
+    narrowed = client.get("/api/v1/bids", params={"lic": "7740"}).json()["bids"]
+    assert {item["id"] for item in narrowed} == {rows["livestock"].id}
 
 
 def test_route_narrows_within_union(monkeypatch, isolated_db):
