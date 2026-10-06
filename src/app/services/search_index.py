@@ -77,13 +77,16 @@ def _iso(value: datetime | None) -> str | None:
 
 
 def announcement_document(
-    row: BidAnnouncement, license_codes: list[str] | None = None
+    row: BidAnnouncement,
+    license_codes: list[str] | None = None,
+    participation_region_names: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     # 판정 정본은 bid_queries 에 있고, 이 모듈은 bid_queries 를 지연 import 합니다
     # (bid_queries 가 이 모듈을 함수 안에서 import 하므로 최상단 import 는 순환입니다).
     from src.app.services.bid_queries import is_qualification_analyzable
 
     region_codes = _region_codes(row.dminstt_nm, row.ntce_instt_nm)
+    participation_region_codes = _region_codes(*(participation_region_names or []))
     return {
         # 차수가 새로 수집돼도 기존 문서를 교체해야 하므로 DB PK가 아니라 공고의
         # 업무구분+번호를 읽기 모델의 안정 ID로 씁니다.
@@ -97,6 +100,9 @@ def announcement_document(
         "category": row.category,
         "qualification_analyzable": is_qualification_analyzable(row),
         "region_codes": region_codes,
+        # 발주처 지역(region_codes)과 달리 실제 참가가능지역 제한입니다. 지역 제한
+        # 필터는 이 필드를 기준으로 걸어 SQL 경로와 같은 결과를 냅니다.
+        "participation_region_codes": participation_region_codes,
         "region_rank": _region_rank(region_codes),
         "license_codes": sorted(set(license_codes)) if license_codes else [],
         "bid_ntce_dt": _iso(row.bid_ntce_dt),
@@ -177,6 +183,7 @@ class MeiliSearchClient:
                     "category",
                     "qualification_analyzable",
                     "region_codes",
+                    "participation_region_codes",
                     "license_codes",
                     "sucsf_bid_rate",
                 ],
@@ -216,7 +223,12 @@ class MeiliSearchClient:
         if category:
             filters.append(f"category = {json.dumps(category, ensure_ascii=False)}")
         if region:
-            filters.append(f"region_codes = {json.dumps(region, ensure_ascii=False)}")
+            # 공고의 지역 제한은 참가가능지역 기준입니다. 낙찰 결과에는 참가가능지역이
+            # 없으므로 기관명 기반 region_codes 를 그대로 씁니다.
+            region_field = (
+                "participation_region_codes" if dataset == "announcement" else "region_codes"
+            )
+            filters.append(f"{region_field} = {json.dumps(region, ensure_ascii=False)}")
         # 코드 하나면 기존과 같은 등호 필터를, 둘 이상이면 하나라도 해당하면 통과하는
         # IN 필터를 만듭니다.
         if license_codes:
@@ -297,7 +309,10 @@ def _latest_announcements(db: Session, collected_since: datetime | None):
 def _build_announcement_batch(db: Session, rows: list[BidAnnouncement]) -> list[dict[str, Any]]:
     from sqlalchemy import tuple_
 
-    from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
+    from src.app.models.bid_restrictions import (
+        BidAnnouncementLicenseLimit,
+        BidAnnouncementParticipationRegion,
+    )
 
     if not rows:
         return []
@@ -315,6 +330,18 @@ def _build_announcement_batch(db: Session, rows: list[BidAnnouncement]) -> list[
         .scalars()
         .all()
     )
+    region_rows = (
+        db.execute(
+            select(BidAnnouncementParticipationRegion).where(
+                tuple_(
+                    BidAnnouncementParticipationRegion.bid_ntce_no,
+                    BidAnnouncementParticipationRegion.bid_ntce_ord,
+                ).in_(pairs)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     limits_by_key: dict[tuple[str, str], list[str]] = {}
     for limit in limits:
@@ -323,11 +350,24 @@ def _build_announcement_batch(db: Session, rows: list[BidAnnouncement]) -> list[
             key = (limit.bid_ntce_no, limit.bid_ntce_ord)
             limits_by_key.setdefault(key, []).extend(codes)
 
+    regions_by_key: dict[tuple[str, str], list[str]] = {}
+    for region in region_rows:
+        if not region.prtcpt_psbl_rgn_nm:
+            continue
+        key = (region.bid_ntce_no, region.bid_ntce_ord)
+        regions_by_key.setdefault(key, []).append(region.prtcpt_psbl_rgn_nm)
+
     batch_docs: list[dict[str, Any]] = []
     for row in rows:
         key = (row.bid_ntce_no, row.bid_ntce_ord or "000")
         codes = sorted(set(limits_by_key.get(key, [])))
-        batch_docs.append(announcement_document(row, license_codes=codes))
+        batch_docs.append(
+            announcement_document(
+                row,
+                license_codes=codes,
+                participation_region_names=regions_by_key.get(key, []),
+            )
+        )
     return batch_docs
 
 

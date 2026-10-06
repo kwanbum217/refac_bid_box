@@ -128,7 +128,7 @@ def test_meili_search_sends_dataset_filters_and_sort(monkeypatch):
     assert page == SearchPage(ids=[7], has_next=True)
     assert request.call_args.args[:2] == ("POST", f"http://search/indexes/{INDEX_UID}/search")
     assert request.call_args.kwargs["json"]["filter"] == (
-        'dataset = "announcement" AND category = "Servc" AND region_codes = "seoul"'
+        'dataset = "announcement" AND category = "Servc" AND participation_region_codes = "seoul"'
     )
 
 
@@ -242,6 +242,8 @@ def test_configure_index_supports_full_dataset_pagination_and_rate_filter(monkey
     assert INDEX_MAX_TOTAL_HITS >= 10_000_000
     assert "sucsf_bid_rate" in settings_payload["filterableAttributes"]
     assert "license_codes" in settings_payload["filterableAttributes"]
+    # 공고 지역 제한(참가가능지역) 필터 필드가 등록되어야 한다.
+    assert "participation_region_codes" in settings_payload["filterableAttributes"]
 
 
 def test_configure_index_registers_qualification_analyzable_filter(monkeypatch):

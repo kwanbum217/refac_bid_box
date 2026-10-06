@@ -171,7 +171,7 @@ def bid_list(
     cat: str = Query(""),
     region: str = Query(""),
     sort: str = Query(""),
-    lic: str = Query(""),
+    lic: list[str] = Query(default=[]),
     qual: str = Query(""),
     page: int = Query(1),
     db: Session = Depends(get_db),
@@ -179,7 +179,8 @@ def bid_list(
 ):
     if user is None:
         return _login_redirect(request)
-    normalized_lic = ",".join(bid_queries.normalize_license_codes(lic))
+    industry_codes = bid_queries.industry_filter_codes(",".join(lic))
+    normalized_lic = ",".join(industry_codes)
     qualification_only = qual == "1"
     try:
         page_obj = bid_queries.list_announcements(
@@ -198,7 +199,7 @@ def bid_list(
             status_code=503,
             detail="공고 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
         ) from exc
-    industry_choices = bid_queries.get_top_industry_choices(db)
+    bid_queries.load_announcement_region_display(db, page_obj.object_list)
     context = {
         "bids": page_obj.object_list,
         "qualification_ids": bid_queries.qualification_analyzable_ids(page_obj.object_list),
@@ -211,7 +212,7 @@ def bid_list(
         "region": bid_queries.normalize_region_code(region),
         "lic": normalized_lic,
         "qual": "1" if qualification_only else "",
-        "industry_choices": industry_choices,
+        "industry_groups": bid_queries.industry_groups_payload(industry_codes),
         "region_groups": bid_queries.region_groups_payload(),
     }
     return _render(request, "bids/list.html", context, user, "bids")

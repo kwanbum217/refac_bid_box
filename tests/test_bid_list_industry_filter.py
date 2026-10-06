@@ -227,7 +227,7 @@ def test_meili_search_includes_license_codes_filter_when_present(monkeypatch):
     assert 'license_codes = "0036"' in filter_str
     assert 'dataset = "announcement"' in filter_str
     assert 'category = "Servc"' in filter_str
-    assert 'region_codes = "seoul"' in filter_str
+    assert 'participation_region_codes = "seoul"' in filter_str
 
 
 def test_meili_search_omits_license_codes_filter_when_absent(monkeypatch):
@@ -255,7 +255,7 @@ def test_meili_search_omits_license_codes_filter_when_absent(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# (e) /bids/?lic=0036 이 search 에 코드를 넘기고 잘못된 lic 는 무시
+# (e) /bids/?lic=1164 가 search 에 코드를 넘기고 합집합 밖 lic 는 전체 업종이 된다
 # --------------------------------------------------------------------------- #
 
 
@@ -264,9 +264,9 @@ def test_bids_route_passes_valid_lic_to_search(monkeypatch, logged_in_client):
     monkeypatch.setattr(settings, "MEILI_ENABLED", True, raising=False)
     monkeypatch.setattr("src.app.services.search_index.MeiliSearchClient.search", search_mock)
 
-    response = logged_in_client.get("/bids/", params={"lic": "0036"})
+    response = logged_in_client.get("/bids/", params={"lic": "1164"})
     assert response.status_code == 200
-    assert search_mock.call_args.kwargs["license_code"] == "0036"
+    assert search_mock.call_args.kwargs["license_code"] == "1164"
 
 
 @pytest.mark.parametrize("invalid_lic", ["123", "12345", "abcd", "00 36", "drop table"])
@@ -277,13 +277,16 @@ def test_bids_route_ignores_invalid_lic_in_search(monkeypatch, logged_in_client,
 
     response = logged_in_client.get("/bids/", params={"lic": invalid_lic})
     assert response.status_code == 200
-    # 잘못된 형식은 무시되어 None 으로 전달
+    # 잘못된 형식은 무시되어 4개 업종 전체 합집합으로 전달된다.
     assert search_mock.call_args.kwargs.get("license_code") is None
+    assert search_mock.call_args.kwargs["license_codes"] == list(bid_queries.BID_INDUSTRY_CODES)
 
 
 # --------------------------------------------------------------------------- #
 # (f) 페이지 링크에 lic 보존 및 안내 문구 렌더링, 업종 선택지 캐싱
 # --------------------------------------------------------------------------- #
+
+SECURITY_CODES_CSV = "1164,1167,1165,1168,2775"
 
 
 def test_bids_page_preserves_lic_in_pagination_and_form(monkeypatch, logged_in_client, isolated_db):
@@ -303,16 +306,16 @@ def test_bids_page_preserves_lic_in_pagination_and_form(monkeypatch, logged_in_c
     monkeypatch.setattr(settings, "MEILI_ENABLED", True, raising=False)
     monkeypatch.setattr("src.app.services.search_index.MeiliSearchClient.search", search_mock)
 
-    response = logged_in_client.get("/bids/", params={"lic": "0036", "page": 1})
+    response = logged_in_client.get("/bids/", params={"lic": SECURITY_CODES_CSV, "page": 1})
     assert response.status_code == 200
     html = response.text
 
-    # 1. 폼 input에 lic 값 유지
+    # 1. 업종 선택 체크박스에 경비업 그룹 값 유지
     assert 'name="lic"' in html
-    assert 'value="0036"' in html
+    assert f'value="{SECURITY_CODES_CSV}"' in html
 
-    # 2. 다음 페이지 링크에 lic=0036 보존
-    assert "lic=0036" in html
+    # 2. 다음 페이지 링크에 업종 코드 보존
+    assert "lic=1164%2C1167%2C1165%2C1168%2C2775" in html
     assert "page=2" in html
 
     # 3. 계약 안내 문구 노출
@@ -404,11 +407,14 @@ def test_normalize_license_codes_returns_empty_for_blank(raw):
     assert bid_queries.normalize_license_codes(raw) == []
 
 
-def test_normalize_license_codes_caps_at_ten_codes():
-    raw = ",".join(f"100{i}" for i in range(11))
+def test_normalize_license_codes_caps_at_configured_limit():
+    limit = bid_queries.MAX_LICENSE_FILTER_CODES
+    # 4개 업종 합집합을 모두 넘길 수 있어야 하므로 상한은 합집합 크기 이상이다.
+    assert limit >= len(bid_queries.BID_INDUSTRY_CODES)
+    raw = ",".join(f"{1000 + index:04d}" for index in range(limit + 1))
     codes = bid_queries.normalize_license_codes(raw)
-    assert codes == [f"100{i}" for i in range(10)]
-    assert len(codes) == bid_queries.MAX_LICENSE_FILTER_CODES
+    assert codes == [f"{1000 + index:04d}" for index in range(limit)]
+    assert len(codes) == limit
 
 
 # --------------------------------------------------------------------------- #
@@ -597,7 +603,7 @@ def test_bids_page_preserves_multiple_lic_codes_in_pagination(
     assert response.status_code == 200
     html = response.text
 
-    assert 'value="1164,1167"' in html
+    assert 'name="lic"' in html
     assert "lic=1164%2C1167" in html
     assert "page=2" in html
     assert search_mock.call_args.kwargs["license_codes"] == ["1164", "1167"]

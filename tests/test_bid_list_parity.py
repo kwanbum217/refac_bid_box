@@ -21,7 +21,10 @@ from datetime import timedelta
 import pytest
 
 from src.app.core.timeutil import utcnow
-from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
+from src.app.models.bid_restrictions import (
+    BidAnnouncementLicenseLimit,
+    BidAnnouncementParticipationRegion,
+)
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import bid_queries
 
@@ -153,7 +156,11 @@ def test_bid_list_unknown_sort_falls_back_to_default(isolated_db, sort_key):
 
 
 def test_bid_list_region_filter_and_sort(isolated_db):
-    """지역 필터는 해당 지역만 남기고, 지역 정렬은 정해진 순위를 따른다."""
+    """지역 제한은 참가가능지역 기준으로 거르고, 지역 정렬은 발주처 지역 순위를 따른다.
+
+    2026-10-06 개정(D-W2): 지역 필터는 수요기관명 부분 문자열이 아니라
+    참가가능지역 테이블을 기준으로 합니다. 정렬은 발주처 지역 기준을 유지합니다.
+    """
     now = utcnow()
     seoul = _add_announcement(
         isolated_db,
@@ -185,12 +192,72 @@ def test_bid_list_region_filter_and_sort(isolated_db):
         presmpt_prce=2900000,
         bid_ntce_dt=now + timedelta(hours=1),
     )
+    isolated_db.add_all(
+        [
+            BidAnnouncementParticipationRegion(
+                bid_ntce_no="ANN-REGION-SEOUL",
+                bid_ntce_ord="000",
+                lmt_sno="1",
+                prtcpt_psbl_rgn_nm="서울특별시",
+                collected_at=now,
+            ),
+            BidAnnouncementParticipationRegion(
+                bid_ntce_no="ANN-REGION-BUSAN",
+                bid_ntce_ord="000",
+                lmt_sno="1",
+                prtcpt_psbl_rgn_nm="부산광역시",
+                collected_at=now,
+            ),
+            BidAnnouncementParticipationRegion(
+                bid_ntce_no="ANN-REGION-DAEGU",
+                bid_ntce_ord="000",
+                lmt_sno="1",
+                prtcpt_psbl_rgn_nm="대구광역시",
+                collected_at=now,
+            ),
+        ]
+    )
+    isolated_db.commit()
 
     filtered = bid_queries.list_announcements(isolated_db, sort="region", region="seoul")
     assert [row.id for row in filtered.object_list] == [seoul.id]
 
     ordered = bid_queries.list_announcements(isolated_db, sort="region")
     assert [row.id for row in ordered.object_list[:3]] == [seoul.id, busan.id, daegu.id]
+
+
+def test_bid_list_region_filter_excludes_announcement_without_region_rows(isolated_db):
+    """참가가능지역 행이 없는 공고는 지역을 고르면 목록에서 빠진다."""
+    now = utcnow()
+    with_region = _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-REGION-ONLY",
+        bid_ntce_nm="참가가능지역 있는 공고",
+        dminstt_nm="서울특별시 강남구",
+        bid_ntce_dt=now,
+    )
+    without_region = _add_announcement(
+        isolated_db,
+        bid_ntce_no="ANN-REGION-EMPTY",
+        bid_ntce_nm="참가가능지역 없는 공고",
+        dminstt_nm="서울특별시 송파구",
+        bid_ntce_dt=now,
+    )
+    isolated_db.add(
+        BidAnnouncementParticipationRegion(
+            bid_ntce_no="ANN-REGION-ONLY",
+            bid_ntce_ord="000",
+            lmt_sno="1",
+            prtcpt_psbl_rgn_nm="서울특별시",
+            collected_at=now,
+        )
+    )
+    isolated_db.commit()
+
+    filtered = bid_queries.list_announcements(isolated_db, region="seoul")
+    ids = {row.id for row in filtered.object_list}
+    assert with_region.id in ids
+    assert without_region.id not in ids
 
 
 def test_unknown_region_code_is_ignored(isolated_db):

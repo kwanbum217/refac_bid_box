@@ -18,6 +18,7 @@ from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_pass
 from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement
 from src.app.services import bid_queries
 from src.app.services.bid_queries import qualification_analyzable_ids
@@ -107,6 +108,18 @@ def seeded_qualification_bid(isolated_db):
     )
     isolated_db.add(bid)
     isolated_db.commit()
+    # 목록 기본 조건이 4개 업종 합집합이므로 위생관리용역업 면허제한 행을 심는다.
+    isolated_db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no="BADGE-SSR-001",
+            bid_ntce_ord="000",
+            lmt_grp_no="1",
+            lmt_sno="1",
+            lcns_lmt_nm="건물위생관리업/1162",
+            collected_at=now,
+        )
+    )
+    isolated_db.commit()
     isolated_db.refresh(bid)
     return bid
 
@@ -166,6 +179,16 @@ def test_bid_list_qual_filter_returns_only_qualification_bids(
                 bid_ntce_dt=now - timedelta(days=index + 1),
                 collected_at=now,
                 raw_data={"sucsfbidMthdNm": "협상에의한계약"},
+            )
+        )
+        isolated_db.add(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=f"QUAL-SKIP-{index}",
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                lcns_lmt_nm="건물위생관리업/1162",
+                collected_at=now,
             )
         )
     isolated_db.commit()

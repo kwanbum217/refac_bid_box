@@ -18,6 +18,10 @@ from playwright.async_api import Page, expect
 from sqlalchemy.orm import Session
 
 from src.app.core.timeutil import utcnow
+from src.app.models.bid_restrictions import (
+    BidAnnouncementLicenseLimit,
+    BidAnnouncementParticipationRegion,
+)
 from src.app.models.bids import BidAnnouncement
 
 
@@ -121,12 +125,44 @@ def seeded_announcements(e2e_db_session: Session) -> list[BidAnnouncement]:
         )
         if existing:
             e2e_db_session.delete(existing)
+        # 세션 스코프 격리 DB 라 이전 시험의 제한 행이 남아 유니크 충돌이 날 수 있다.
+        e2e_db_session.query(BidAnnouncementLicenseLimit).filter_by(
+            bid_ntce_no=item.bid_ntce_no, bid_ntce_ord=item.bid_ntce_ord
+        ).delete()
+        e2e_db_session.query(BidAnnouncementParticipationRegion).filter_by(
+            bid_ntce_no=item.bid_ntce_no, bid_ntce_ord=item.bid_ntce_ord
+        ).delete()
     e2e_db_session.commit()
 
     e2e_db_session.add_all(items)
     e2e_db_session.commit()
     for item in items:
         e2e_db_session.refresh(item)
+
+    # 목록 기본 조건이 4개 업종 합집합이므로 시드 공고에 면허제한 행을 심는다.
+    for item in items:
+        e2e_db_session.add(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=item.bid_ntce_no,
+                bid_ntce_ord=item.bid_ntce_ord,
+                lmt_grp_no="1",
+                lmt_sno="1",
+                lcns_lmt_nm="근로자파견사업/1172",
+                collected_at=now,
+            )
+        )
+    # 지역 제한 시험: 서울 공고에만 참가가능지역 행을 심고, 나머지는 행이 없어
+    # 지역을 고르면 결과에서 빠진다.
+    e2e_db_session.add(
+        BidAnnouncementParticipationRegion(
+            bid_ntce_no="20260901-CNST-01",
+            bid_ntce_ord="00",
+            lmt_sno="1",
+            prtcpt_psbl_rgn_nm="서울특별시",
+            collected_at=now,
+        )
+    )
+    e2e_db_session.commit()
     return items
 
 
@@ -183,13 +219,17 @@ async def test_ssr_bids_list_sort_and_region(
     live_server_url: str,
     seeded_announcements: list[BidAnnouncement],
 ) -> None:
-    """정렬(sort) 및 지역(region) 파라미터가 적용된 공고 조회를 검증합니다."""
+    """정렬(sort) 및 지역 제한(region) 파라미터가 적용된 공고 조회를 검증합니다."""
     await authenticated_page.goto(f"{live_server_url}/bids/?sort=amount&region=seoul")
     await authenticated_page.wait_for_load_state("networkidle")
 
-    # 서울 소재 공고 표시 확인
+    # 참가가능지역에 서울이 포함된 공고 표시 확인
     await expect(authenticated_page.locator("body")).to_contain_text(
         "서울 도심 도로 포장 개선 공사"
+    )
+    # 참가가능지역 행이 없는 공고는 지역을 고르면 빠진다.
+    await expect(authenticated_page.locator("body")).not_to_contain_text(
+        "페이지네이션 테스트용 시설관리 공고 01호"
     )
 
 

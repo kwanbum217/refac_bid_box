@@ -18,6 +18,7 @@ from src.app.core.templating import TEMPLATE_DIR, templates
 from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import bid_queries
 from src.app.services.search_index import SearchBackendUnavailable
@@ -94,6 +95,18 @@ def seeded_bid(isolated_db):
         collected_at=now,
     )
     isolated_db.add_all([bid, result])
+    # 목록 기본 조건이 4개 업종 합집합이므로, 픽스처 공고에 파견 업종 면허제한 행을
+    # 심어 목록 노출 단언(행 렌더링·검색 필터)이 성립하게 한다.
+    isolated_db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no="20260801-TEST",
+            bid_ntce_ord="00",
+            lmt_grp_no="1",
+            lmt_sno="1",
+            lcns_lmt_nm="근로자파견사업/1172",
+            collected_at=now,
+        )
+    )
     isolated_db.commit()
     isolated_db.refresh(bid)
     isolated_db.refresh(result)

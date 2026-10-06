@@ -42,21 +42,19 @@
                         class="search-input w-64 bg-white border border-slate-200 rounded-md pl-9 pr-3 py-2 text-sm outline-hidden transition-all"
                     >
                 </div>
-                <div class="relative group">
-                    <input
-                        type="text"
-                        name="lic"
-                        id="lic-input"
-                        list="industry-list"
-                        value="{{ lic }}"
-                        placeholder="업종 코드 (쉼표로 여러 개)"
-                        class="search-input w-36 bg-white border border-slate-200 rounded-md px-3 py-2 text-sm outline-hidden transition-all"
-                    >
-                    <datalist id="industry-list">
-                        {% for choice in industry_choices %}
-                        <option value="{{ choice.code }}">{{ choice.name }} ({{ choice.count }}건)</option>
-                        {% endfor %}
-                    </datalist>
+                <div class="flex flex-wrap items-center gap-3" title="4개 업종 안에서 좁힙니다. 모두 해제하면 전체 업종입니다.">
+                    {% for group in industry_groups %}
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            name="lic"
+                            value="{{ group.codes_csv }}"
+                            class="w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                            {% if group.selected %}checked{% endif %}
+                        >
+                        <span class="text-sm font-medium text-slate-700">{{ group.label }}</span>
+                    </label>
+                    {% endfor %}
                 </div>
                 <label class="flex items-center gap-2 cursor-pointer">
                     <input
@@ -68,29 +66,25 @@
                     >
                     <span class="text-sm font-medium text-slate-700">적격심사 분석 공고만</span>
                 </label>
-                <select name="cat" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
-                    <option value="">전체 분야</option>
-                    <option value="Thng" {% if cat == 'Thng' %}selected{% endif %}>물품</option>
-                    <option value="Cnstwk" {% if cat == 'Cnstwk' %}selected{% endif %}>건설</option>
-                    <option value="Servc" {% if cat == 'Servc' %}selected{% endif %}>용역</option>
-                    <option value="Frgcpt" {% if cat == 'Frgcpt' %}selected{% endif %}>외자</option>
-                </select>
                 <select name="sort" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
                     <option value="notice" {% if sort == 'notice' %}selected{% endif %}>공고일</option>
                     <option value="deadline" {% if sort == 'deadline' %}selected{% endif %}>마감일</option>
                     <option value="amount" {% if sort == 'amount' %}selected{% endif %}>금액별</option>
                     <option value="region" {% if sort == 'region' %}selected{% endif %}>지역별</option>
                 </select>
-                <select name="region" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
-                    <option value="">전체 지역</option>
-                    {% for group in region_groups %}
-                    <optgroup label="{{ group.label }}">
-                        {% for item in group['items'] %}
-                        <option value="{{ item.code }}" {% if region == item.code %}selected{% endif %}>{{ item.label }}</option>
+                <label class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-slate-700">지역 제한</span>
+                    <select name="region" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
+                        <option value="">전체</option>
+                        {% for group in region_groups %}
+                        <optgroup label="{{ group.label }}">
+                            {% for item in group['items'] %}
+                            <option value="{{ item.code }}" {% if region == item.code %}selected{% endif %}>{{ item.label }}</option>
+                            {% endfor %}
+                        </optgroup>
                         {% endfor %}
-                    </optgroup>
-                    {% endfor %}
-                </select>
+                    </select>
+                </label>
                 <button type="submit" class="h-btn h-btn-primary py-2 px-4">검색</button>
                 <a href="{{ url('bids:result_list') }}" class="h-btn h-btn-secondary py-2 px-4">
                     <i class="fas fa-trophy mr-2 text-[12px]"></i>
@@ -110,6 +104,7 @@
                             <th class="w-24">분류</th>
                             <th>공고 정보</th>
                             <th>수요기관</th>
+                            <th>지역</th>
                             <th>기초금액</th>
                             <th>공고일시</th>
                             <th class="text-right">마감일정</th>
@@ -139,6 +134,18 @@
                                 </div>
                             </td>
                             <td>
+                                <div class="flex flex-col text-xs">
+                                    <span class="text-[11px] text-slate-400">발주처</span>
+                                    <span class="font-medium text-slate-700">{{ bid.institution_region or '-' }}</span>
+                                    <span class="text-[11px] text-slate-400 mt-1">참가가능</span>
+                                    {% if bid.participation_regions %}
+                                    <span class="text-slate-700">{{ bid.participation_regions|join(', ') }}</span>
+                                    {% else %}
+                                    <span class="text-slate-400">참가 지역 제한 정보 없음</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
                                 <div class="text-sm font-medium text-slate-900">
                                     {% if bid.has_base_amount %}
                                     ₩{{ bid.display_base_amount|intcomma }}
@@ -164,7 +171,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="6" class="py-20 text-center">
+                            <td colspan="7" class="py-20 text-center">
                                 <div class="flex flex-col items-center">
                                     <div class="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mb-4">
                                         <i class="fas fa-search text-slate-200"></i>

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Integer, and_, case, func, or_, select
+from sqlalchemy import Integer, and_, case, func, or_, select, tuple_
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased
 
@@ -181,7 +181,46 @@ def normalize_license_code(lic: str | None) -> str:
     return candidate if len(candidate) == 4 and candidate.isdigit() else ""
 
 
-MAX_LICENSE_FILTER_CODES = 10
+# 4개 업종(파견, 경비업, 위생관리용역업, 유료직업소개업)의 확정 면허 코드 매핑입니다.
+# 명칭 부분 문자열로 연결하지 않고 코드 묶음으로만 판정합니다. 7740 가축방역위생관리업은
+# 별개 업종이라 포함하지 않습니다.
+BID_INDUSTRY_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("dispatch", "파견", ("1172",)),
+    ("security", "경비업", ("1164", "1167", "1165", "1168", "2775")),
+    ("sanitation", "위생관리용역업", ("1162",)),
+    ("job_placement", "유료직업소개업", ("5603", "5604", "5601", "5602")),
+)
+BID_INDUSTRY_CODES: tuple[str, ...] = tuple(
+    code for _key, _label, codes in BID_INDUSTRY_GROUPS for code in codes
+)
+BID_INDUSTRY_CODE_SET = frozenset(BID_INDUSTRY_CODES)
+# 4개 업종을 모두 고르면 합집합 전체를 넘겨야 하므로 상한은 합집합 크기 이상입니다.
+MAX_LICENSE_FILTER_CODES = max(10, len(BID_INDUSTRY_CODES))
+
+
+def industry_filter_codes(lic: str | None) -> list[str]:
+    """업종 선택값을 4개 업종 확정 코드 안으로 좁힌 목록으로 돌려줍니다.
+
+    선택이 없거나 모두 4개 업종 밖이면 4개 업종 전체를 돌려줍니다. 이 값이 목록
+    질의의 기본 조건이 되어, 업종 제한 행이 없는 공고는 목록에서 빠집니다.
+    """
+    selected = [code for code in normalize_license_codes(lic) if code in BID_INDUSTRY_CODE_SET]
+    return selected or list(BID_INDUSTRY_CODES)
+
+
+def industry_groups_payload(selected_codes: Iterable[str] | None = None) -> list[dict[str, Any]]:
+    """화면의 업종 선택 위젯이 쓸 그룹 목록입니다."""
+    selected = set(selected_codes) if selected_codes is not None else set(BID_INDUSTRY_CODES)
+    return [
+        {
+            "key": key,
+            "label": label,
+            "codes": list(codes),
+            "codes_csv": ",".join(codes),
+            "selected": set(codes) <= selected,
+        }
+        for key, label, codes in BID_INDUSTRY_GROUPS
+    ]
 
 
 def normalize_license_codes(lic: str | None) -> list[str]:
@@ -269,6 +308,80 @@ def _region_match_clause(aliases) -> Any:
 
 def _result_region_match_clause(aliases) -> Any:
     return or_(*[BidResult.dminstt_nm.contains(alias) for alias in aliases])
+
+
+def _participation_region_match_clause(region_code: str) -> Any:
+    """참가가능지역 행이 선택 지역을 포함하는 공고만 통과시킵니다.
+
+    기존 기관명 기반 지역 필터와 달리 참가가능지역 테이블을 기준으로 봅니다.
+    행이 없는 공고는 어떤 지역을 골라도 통과하지 못합니다.
+    """
+    aliases = BID_REGION_BY_CODE[region_code]["aliases"]
+    like_clauses = [
+        BidAnnouncementParticipationRegion.prtcpt_psbl_rgn_nm.contains(alias) for alias in aliases
+    ]
+    return (
+        select(1)
+        .where(
+            BidAnnouncementParticipationRegion.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+            BidAnnouncementParticipationRegion.bid_ntce_ord == BidAnnouncement.bid_ntce_ord,
+            or_(*like_clauses),
+        )
+        .exists()
+    )
+
+
+def institution_region_label(dminstt_nm: str | None, ntce_instt_nm: str | None) -> str:
+    """수요기관·공고기관명에서 발주처 지역(시·도) 라벨을 찾습니다."""
+    text = f"{dminstt_nm or ''} {ntce_instt_nm or ''}"
+    for item in BID_REGION_CHOICES:
+        if any(alias in text for alias in item["aliases"]):
+            return str(item["label"])
+    return ""
+
+
+def load_announcement_region_display(db: Session, bids: Iterable[BidAnnouncement]) -> None:
+    """목록 행에 발주처 지역과 참가가능지역 표시값을 붙입니다.
+
+    발주처 지역은 기관명 기반(정렬·표시용)이고, 참가가능지역은 참가가능지역
+    테이블에서 읽습니다. 행이 없으면 빈 목록으로 두어 화면이 '참가 지역 제한 정보
+    없음' 을 표시할 수 있게 합니다.
+    """
+    rows = list(bids)
+    for bid in rows:
+        bid.institution_region = institution_region_label(  # type: ignore[attr-defined]
+            bid.dminstt_nm, bid.ntce_instt_nm
+        )
+        bid.participation_regions = []  # type: ignore[attr-defined]
+
+    pairs = {(bid.bid_ntce_no, bid.bid_ntce_ord or "000") for bid in rows}
+    if not pairs:
+        return
+
+    region_rows = (
+        db.execute(
+            select(BidAnnouncementParticipationRegion).where(
+                tuple_(
+                    BidAnnouncementParticipationRegion.bid_ntce_no,
+                    BidAnnouncementParticipationRegion.bid_ntce_ord,
+                ).in_(pairs)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    names_by_key: dict[tuple[str, str], list[str]] = {}
+    for row in region_rows:
+        if not row.prtcpt_psbl_rgn_nm:
+            continue
+        names_by_key.setdefault((row.bid_ntce_no, row.bid_ntce_ord), []).append(
+            row.prtcpt_psbl_rgn_nm
+        )
+
+    for bid in rows:
+        names = names_by_key.get((bid.bid_ntce_no, bid.bid_ntce_ord or "000"))
+        if names:
+            bid.participation_regions = list(dict.fromkeys(names))  # type: ignore[attr-defined]
 
 
 def _region_sort_rank():
@@ -617,7 +730,7 @@ def list_announcements(
         stmt = stmt.where(BidAnnouncement.category == cat)
 
     if region_code:
-        stmt = stmt.where(_region_match_clause(BID_REGION_BY_CODE[region_code]["aliases"]))
+        stmt = stmt.where(_participation_region_match_clause(region_code))
 
     if license_codes:
         # 여러 코드는 각 코드의 LIKE 조건을 OR 로 묶어, 하나라도 참가자격이면 통과시킵니다.
