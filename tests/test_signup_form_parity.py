@@ -77,6 +77,80 @@ def test_signup_page_renders_updated_fields():
     assert "여" in body
 
 
+def test_signup_page_renders_company_and_qualification_fields():
+    """가입 화면이 D-W4 회사·담당자·정량 원자료 입력란을 노출한다."""
+    client = TestClient(app)
+
+    body = client.get(SIGNUP_URL).text
+
+    for name in (
+        "company_name",
+        "contact_name",
+        "contact_email",
+        "credit_grade",
+        "credit_evaluated_on",
+        "reputation_items",
+        "non_price_quant_score",
+    ):
+        assert f'name="{name}"' in body, f"{name} 입력란이 없습니다."
+
+
+def test_both_signup_paths_store_new_fields_identically(isolated_db):
+    """API 가입과 SSR 가입이 같은 회사·정량 원자료를 같은 값으로 저장한다."""
+    from src.app.models.company_profiles import (
+        AccountCompanyProfile,
+        AccountQualificationFact,
+    )
+
+    api_client = TestClient(app, follow_redirects=False)
+    api_response = api_client.post(
+        "/api/v1/accounts/signup",
+        json={
+            "username": "parity-api",
+            "password1": "StrongPass123!!",
+            "password2": "StrongPass123!!",
+            "nickname": "동등성",
+            "email": "parity-api@example.com",
+            "birth_date": "1990-01-01",
+            "gender": "M",
+            "agree_terms": True,
+            "agree_privacy": True,
+            "company": {"company_name": "동등성 회사"},
+            "qualification": {
+                "credit_grade": "BBB0",
+                "reputation_items": ["sme_support"],
+                "non_price_quant_score": "40.00",
+            },
+        },
+    )
+    assert api_response.status_code == 200, api_response.text
+
+    ssr_client = TestClient(app, follow_redirects=False)
+    ssr_response = ssr_client.post(
+        SIGNUP_URL,
+        data=csrf_form(
+            ssr_client,
+            SIGNUP_URL,
+            _signup_payload(
+                username="parity-ssr",
+                company_name="동등성 회사",
+                credit_grade="BBB0",
+                reputation_items=["sme_support"],
+                non_price_quant_score="40.00",
+            ),
+        ),
+    )
+    assert ssr_response.status_code == 303, ssr_response.text
+
+    for username in ("parity-api", "parity-ssr"):
+        user = isolated_db.query(CustomUser).filter_by(username=username).one()
+        company = isolated_db.query(AccountCompanyProfile).filter_by(user_id=user.id).one()
+        facts = isolated_db.query(AccountQualificationFact).filter_by(user_id=user.id).one()
+        assert company.company_name == "동등성 회사"
+        assert facts.credit_grade == "BBB0"
+        assert facts.reputation_items == ["sme_support"]
+
+
 def test_signup_rejects_mismatched_password_without_creating_user(isolated_db):
     """비밀번호가 어긋나면 폼을 다시 그리고 계정은 만들지 않는다.
 

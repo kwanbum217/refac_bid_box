@@ -1,6 +1,206 @@
 {
   "version": "1.0.0",
   "tables": {
+    "account_company_profiles": {
+      "name": "account_company_profiles",
+      "columns": [
+        {
+          "name": "address",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "company_name",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "contact_department",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "contact_email",
+          "type": "VARCHAR(254) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "contact_name",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "contact_phone",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "contact_position",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "email",
+          "type": "VARCHAR(254) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "fax",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "phone",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "representative_name",
+          "type": "VARCHAR(100) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "fk_account_company_profiles_user_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "uq_account_company_profiles_user_id",
+          "column_names": [
+            "user_id"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "0d51ff07bdd4dfff28f9e4c4267bda5581f9ce53ed67e602ca7e2b3800328a9a"
+    },
+    "account_consent_events": {
+      "name": "account_consent_events",
+      "columns": [
+        {
+          "name": "consent_kind",
+          "type": "VARCHAR(30) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "consented_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "terms_version",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "fk_account_consent_events_user_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_account_consent_events_user_id",
+          "column_names": [
+            "user_id"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "b4932704c09d780c144043f84800528f51a57b302125c31560af0df2ded77298"
+    },
     "account_emailaddress": {
       "name": "account_emailaddress",
       "columns": [
@@ -145,6 +345,99 @@
         }
       ],
       "hash": "ab604eec0106ffd9f6d39ae3ae515ebd118da93e4abf630fe0e1db064491fbab"
+    },
+    "account_qualification_facts": {
+      "name": "account_qualification_facts",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "credit_evaluated_on",
+          "type": "DATE",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "credit_grade",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "non_price_quant_score",
+          "type": "DECIMAL(5, 2)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "reputation_items",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "version",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "fk_account_qualification_facts_user_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "uq_account_qualification_facts_user_id",
+          "column_names": [
+            "user_id"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "d9b99ad29ab31af99f381e676fb43d162296c49a9de00e4550de3efca1d53dc8"
     },
     "accounts_customuser": {
       "name": "accounts_customuser",
@@ -3685,8 +3978,11 @@
     }
   },
   "table_hashes": {
+    "account_company_profiles": "0d51ff07bdd4dfff28f9e4c4267bda5581f9ce53ed67e602ca7e2b3800328a9a",
+    "account_consent_events": "b4932704c09d780c144043f84800528f51a57b302125c31560af0df2ded77298",
     "account_emailaddress": "74a58b4a27cffcb5f5ba91a4a27cbda1f498108f2c3fe66d06bee66d79a58123",
     "account_emailconfirmation": "ab604eec0106ffd9f6d39ae3ae515ebd118da93e4abf630fe0e1db064491fbab",
+    "account_qualification_facts": "d9b99ad29ab31af99f381e676fb43d162296c49a9de00e4550de3efca1d53dc8",
     "accounts_customuser": "fb4de17f0132decd4c707042d6d7abbd44aca92da0306ee2fc99e83e0337032f",
     "accounts_customuser_groups": "112e0b43ac0939f40ef8b98f28d1215a980054e2288f7a6e68ceb6ee2f3b83e3",
     "accounts_customuser_user_permissions": "ca52ca0f666c4bc1bfb9f397b25df4d935ef2ced25b978be1dcc730a94b02d22",
@@ -3724,8 +4020,11 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "1cab023019072bfadd4c41dd6a56faaae01dfd89b4c769ee99f04bdb763ad853",
+  "overall_hash": "e72915c9bfbc1e9cb1b68592f3c2884bd43b65500dcac92d892cf35bdf1b63e6",
   "orm_tables": [
+    "account_company_profiles",
+    "account_consent_events",
+    "account_qualification_facts",
     "accounts_customuser",
     "automation_requests",
     "automation_subscriptions",
@@ -3748,8 +4047,11 @@
     "retrain_logs"
   ],
   "database_tables": [
+    "account_company_profiles",
+    "account_consent_events",
     "account_emailaddress",
     "account_emailconfirmation",
+    "account_qualification_facts",
     "accounts_customuser",
     "accounts_customuser_groups",
     "accounts_customuser_user_permissions",
@@ -3788,10 +4090,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-10-02T14:46:58.829165+00:00",
+    "generated_at": "2026-10-06T08:02:37.175141+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "b52abf8dad1c8892123afe450801b1b96b5e8ba1"
+    "git_head": "25697b63d54e8b531cfa692bd93ee7c34166ed7c"
   }
 }

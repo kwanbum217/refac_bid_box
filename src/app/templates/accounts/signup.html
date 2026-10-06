@@ -28,9 +28,13 @@
                 </div>
                 {% endif %}
 
+                {% set section_fields = ['agree_terms', 'agree_privacy', 'birth_y', 'birth_m', 'birth_d',
+                    'company_name', 'representative_name', 'address', 'phone', 'fax', 'company_email',
+                    'contact_name', 'contact_position', 'contact_department', 'contact_phone', 'contact_email',
+                    'credit_grade', 'credit_evaluated_on', 'reputation_items', 'non_price_quant_score'] %}
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     {% for field in form %}
-                    {% if field.name == 'agree_terms' or field.name == 'agree_privacy' or field.name == 'birth_y' or field.name == 'birth_m' or field.name == 'birth_d' %}
+                    {% if field.name in section_fields %}
                     <!-- Skip these fields here -->
                     {% elif field.name == 'birth_date' %}
                     <div class="space-y-1.5">
@@ -97,6 +101,117 @@
                 {{ form.birth_y }}
                 {{ form.birth_m }}
                 {{ form.birth_d }}
+
+                <!-- Company & Qualification Section (optional, D-W4) -->
+                <div class="pt-6 mt-6 border-t border-slate-100 space-y-5">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700">회사 정보 <span class="text-slate-400">(선택)</span></h2>
+                        <p class="text-xs text-slate-400 mt-1">입력하지 않아도 가입할 수 있습니다. 공고 조회 때 정량평가에 활용됩니다.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1.5">
+                            <label for="{{ form.company_name.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.company_name.label }}</label>
+                            <input type="text" name="company_name" id="{{ form.company_name.id_for_label }}" value="{{ form.company_name.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="회사명">
+                            {% if form.company_name.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.company_name.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="{{ form.representative_name.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.representative_name.label }}</label>
+                            <input type="text" name="representative_name" id="{{ form.representative_name.id_for_label }}" value="{{ form.representative_name.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="대표자 성명">
+                            {% if form.representative_name.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.representative_name.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <label for="{{ form.address.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.address.label }}</label>
+                            <input type="text" name="address" id="{{ form.address.id_for_label }}" value="{{ form.address.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="회사 주소">
+                            {% if form.address.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.address.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="{{ form.phone.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.phone.label }}</label>
+                            <input type="text" name="phone" id="{{ form.phone.id_for_label }}" value="{{ form.phone.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="회사 전화">
+                            {% if form.phone.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.phone.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="{{ form.fax.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.fax.label }}</label>
+                            <input type="text" name="fax" id="{{ form.fax.id_for_label }}" value="{{ form.fax.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="팩스">
+                            {% if form.fax.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.fax.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <label for="{{ form.company_email.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.company_email.label }}</label>
+                            <input type="email" name="company_email" id="{{ form.company_email.id_for_label }}" value="{{ form.company_email.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="회사 이메일">
+                            {% if form.company_email.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.company_email.errors.0 }}</p>{% endif %}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700 pt-4 border-t border-slate-100">담당자 정보</h2>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1.5">
+                            <label for="{{ form.contact_name.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.contact_name.label }}</label>
+                            <input type="text" name="contact_name" id="{{ form.contact_name.id_for_label }}" value="{{ form.contact_name.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="담당자 성명">
+                            {% if form.contact_name.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.contact_name.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="{{ form.contact_position.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.contact_position.label }}</label>
+                            <input type="text" name="contact_position" id="{{ form.contact_position.id_for_label }}" value="{{ form.contact_position.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="직책">
+                            {% if form.contact_position.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.contact_position.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="{{ form.contact_department.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.contact_department.label }}</label>
+                            <input type="text" name="contact_department" id="{{ form.contact_department.id_for_label }}" value="{{ form.contact_department.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="부서">
+                            {% if form.contact_department.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.contact_department.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="{{ form.contact_phone.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.contact_phone.label }}</label>
+                            <input type="text" name="contact_phone" id="{{ form.contact_phone.id_for_label }}" value="{{ form.contact_phone.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="담당자 전화">
+                            {% if form.contact_phone.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.contact_phone.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <label for="{{ form.contact_email.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.contact_email.label }}</label>
+                            <input type="email" name="contact_email" id="{{ form.contact_email.id_for_label }}" value="{{ form.contact_email.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="담당자 이메일">
+                            {% if form.contact_email.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.contact_email.errors.0 }}</p>{% endif %}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700 pt-4 border-t border-slate-100">정량평가 원자료 <span class="text-slate-400">(선택)</span></h2>
+                        <p class="text-xs text-slate-400 mt-1">점수는 가입 때 계산하지 않고, 공고 조회 때 정량평가 엔진이 환산합니다.</p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1.5">
+                            <label for="{{ form.credit_grade.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.credit_grade.label }} (경영상태)</label>
+                            <select name="credit_grade" id="{{ form.credit_grade.id_for_label }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
+                                <option value="">선택 안 함</option>
+                                {% for choice in form.credit_grade %}
+                                <option value="{{ choice.value }}" {% if choice.checked %}selected{% endif %}>{{ choice.value }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if form.credit_grade.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.credit_grade.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="{{ form.credit_evaluated_on.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.credit_evaluated_on.label }}</label>
+                            <input type="date" name="credit_evaluated_on" id="{{ form.credit_evaluated_on.id_for_label }}" value="{{ form.credit_evaluated_on.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
+                            {% if form.credit_evaluated_on.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.credit_evaluated_on.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <span class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.reputation_items.label }} (신인도)</span>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-1">
+                                {% for choice in form.reputation_items %}
+                                <label for="{{ choice.id_for_label }}" class="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 transition-all hover:border-primary/40 hover:bg-slate-50 cursor-pointer">
+                                    <input type="checkbox" name="reputation_items" value="{{ choice.value }}" id="{{ choice.id_for_label }}" class="mt-0.5 w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer" {% if form.reputation_items.value and choice.value in form.reputation_items.value %}checked{% endif %}>
+                                    <span>{{ choice.choice_label }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                            {% if form.reputation_items.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.reputation_items.errors.0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="{{ form.non_price_quant_score.id_for_label }}" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">{{ form.non_price_quant_score.label }}</label>
+                            <input type="number" step="0.01" min="0" max="100" name="non_price_quant_score" id="{{ form.non_price_quant_score.id_for_label }}" value="{{ form.non_price_quant_score.value|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="0 ~ 100">
+                            {% if form.non_price_quant_score.errors %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ form.non_price_quant_score.errors.0 }}</p>{% endif %}
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Agreement Section -->
                 <div class="pt-6 mt-6 border-t border-slate-100 space-y-4">
@@ -278,6 +393,7 @@
         signupForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             const fd = new FormData(this);
+            const reputationItems = fd.getAll('reputation_items');
             const payload = {
                 username: fd.get('username'),
                 password1: fd.get('password1'),
@@ -288,6 +404,25 @@
                 gender: fd.get('gender'),
                 agree_terms: fd.has('agree_terms'),
                 agree_privacy: fd.has('agree_privacy'),
+                company: {
+                    company_name: fd.get('company_name'),
+                    representative_name: fd.get('representative_name'),
+                    address: fd.get('address'),
+                    phone: fd.get('phone'),
+                    fax: fd.get('fax'),
+                    email: fd.get('company_email'),
+                    contact_name: fd.get('contact_name'),
+                    contact_position: fd.get('contact_position'),
+                    contact_department: fd.get('contact_department'),
+                    contact_phone: fd.get('contact_phone'),
+                    contact_email: fd.get('contact_email'),
+                },
+                qualification: {
+                    credit_grade: fd.get('credit_grade'),
+                    credit_evaluated_on: fd.get('credit_evaluated_on'),
+                    reputation_items: reputationItems.length > 0 ? reputationItems : null,
+                    non_price_quant_score: fd.get('non_price_quant_score'),
+                },
             };
             try {
                 const resp = await fetch('/api/v1/accounts/signup', {

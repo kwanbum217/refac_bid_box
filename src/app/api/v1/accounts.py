@@ -17,6 +17,8 @@ src/app/api/v1/accounts.py
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -41,6 +43,17 @@ from src.app.core.security import (
 )
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
+from src.app.models.company_profiles import (
+    CONSENT_KIND_PRIVACY,
+    CONSENT_KIND_TERMS,
+    CONSENT_PRIVACY_VERSION,
+    CONSENT_TERMS_VERSION,
+    QUALIFICATION_FACTS_VERSION,
+    AccountCompanyProfile,
+    AccountConsentEvent,
+    AccountQualificationFact,
+)
+from src.app.services.evaluation_rules import REPUTATION_ITEMS_BY_CODE, find_credit_grade
 
 router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
@@ -56,6 +69,88 @@ def _session_store_unavailable() -> HTTPException:
     return HTTPException(status_code=503, detail=SESSION_STORE_UNAVAILABLE_DETAIL)
 
 
+class CompanyProfileRequest(BaseModel):
+    """가입 화면의 회사·담당자 정보 섹션. 전 항목 선택 입력입니다."""
+
+    company_name: str | None = Field(default=None, max_length=255, description="회사명")
+    representative_name: str | None = Field(default=None, max_length=100, description="대표자 성명")
+    address: str | None = Field(default=None, max_length=500, description="회사 주소")
+    phone: str | None = Field(default=None, max_length=50, description="회사 전화")
+    fax: str | None = Field(default=None, max_length=50, description="회사 팩스")
+    email: EmailStr | None = Field(default=None, description="회사 이메일")
+    contact_name: str | None = Field(default=None, max_length=100, description="담당자 성명")
+    contact_position: str | None = Field(default=None, max_length=100, description="담당자 직책")
+    contact_department: str | None = Field(default=None, max_length=100, description="담당자 부서")
+    contact_phone: str | None = Field(default=None, max_length=50, description="담당자 전화")
+    contact_email: EmailStr | None = Field(default=None, description="담당자 이메일")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _blank_to_none(cls, value: object) -> object:
+        """폼의 빈 문자열을 None 으로 접습니다. 빈 선택 항목이 422 를 내지 않게 합니다."""
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+
+class QualificationFactsRequest(BaseModel):
+    """가입 화면의 정량평가 원자료 섹션. 점수는 계산하지 않고 원자료만 받습니다."""
+
+    credit_grade: str | None = Field(
+        default=None, max_length=50, description="경영상태 신용평가등급 표기(별표 10)"
+    )
+    credit_evaluated_on: date | None = Field(default=None, description="신용평가등급 평가일")
+    reputation_items: list[str] | None = Field(
+        default=None, description="신인도 해당 항목 코드 목록(별표 11)"
+    )
+    non_price_quant_score: Decimal | None = Field(
+        default=None,
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="기관 원문 미반영 공고용 비가격 정량점수 기본값",
+    )
+
+    @field_validator("credit_grade", "credit_evaluated_on", "non_price_quant_score", mode="before")
+    @classmethod
+    def _blank_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("reputation_items", mode="before")
+    @classmethod
+    def _clean_reputation_items(cls, value: Any) -> list[str] | None:
+        """빈 값과 공백·중복을 정리합니다. 유효 항목이 없으면 None 으로 접습니다."""
+        if value is None:
+            return None
+        items = [value] if isinstance(value, str) else list(value)
+        cleaned: list[str] = []
+        for item in items:
+            code = str(item).strip() if item is not None else ""
+            if code and code not in cleaned:
+                cleaned.append(code)
+        return cleaned or None
+
+    @field_validator("credit_grade")
+    @classmethod
+    def _validate_credit_grade(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if find_credit_grade(value) is None:
+            raise ValueError("신용평가등급 표기를 확인해 주세요.")
+        return value
+
+    @field_validator("reputation_items")
+    @classmethod
+    def _validate_reputation_items(cls, value: list[str] | None) -> list[str] | None:
+        if not value:
+            return value
+        unknown = sorted(code for code in value if code not in REPUTATION_ITEMS_BY_CODE)
+        if unknown:
+            raise ValueError(f"신인도 항목 코드를 확인해 주세요: {', '.join(unknown)}")
+        return value
+
+
 class SignUpRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=150)
     password1: str = Field(..., min_length=8)
@@ -66,6 +161,12 @@ class SignUpRequest(BaseModel):
     gender: str = Field(..., description="성별 (M/F)")
     agree_terms: bool = Field(..., description="이용약관 동의")
     agree_privacy: bool = Field(..., description="개인정보처리방침 동의")
+    company: CompanyProfileRequest | None = Field(
+        default=None, description="회사·담당자 정보 (선택)"
+    )
+    qualification: QualificationFactsRequest | None = Field(
+        default=None, description="정량평가 원자료 (선택)"
+    )
 
     @field_validator("gender")
     @classmethod
@@ -105,6 +206,68 @@ def _serialize(user: CustomUser) -> UserResponse:
         is_superuser=bool(user.is_superuser),
         is_staff=bool(user.is_staff),
     )
+
+
+class CompanyProfileResponse(BaseModel):
+    company_name: str | None = None
+    representative_name: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    fax: str | None = None
+    email: str | None = None
+    contact_name: str | None = None
+    contact_position: str | None = None
+    contact_department: str | None = None
+    contact_phone: str | None = None
+    contact_email: str | None = None
+
+
+class QualificationFactsResponse(BaseModel):
+    credit_grade: str | None = None
+    credit_evaluated_on: date | None = None
+    reputation_items: list[str] = Field(default_factory=list)
+    non_price_quant_score: float | None = None
+    version: str = QUALIFICATION_FACTS_VERSION
+
+
+class ProfileResponse(BaseModel):
+    company: CompanyProfileResponse | None = None
+    qualification: QualificationFactsResponse | None = None
+
+
+def _serialize_profile(
+    company: AccountCompanyProfile | None,
+    facts: AccountQualificationFact | None,
+) -> ProfileResponse:
+    company_payload = None
+    if company is not None:
+        company_payload = CompanyProfileResponse(
+            company_name=company.company_name,
+            representative_name=company.representative_name,
+            address=company.address,
+            phone=company.phone,
+            fax=company.fax,
+            email=company.email,
+            contact_name=company.contact_name,
+            contact_position=company.contact_position,
+            contact_department=company.contact_department,
+            contact_phone=company.contact_phone,
+            contact_email=company.contact_email,
+        )
+    qualification_payload = None
+    if facts is not None:
+        qualification_payload = QualificationFactsResponse(
+            credit_grade=facts.credit_grade,
+            credit_evaluated_on=facts.credit_evaluated_on,
+            reputation_items=list(facts.reputation_items or []),
+            non_price_quant_score=(
+                float(facts.non_price_quant_score)
+                if facts.non_price_quant_score is not None
+                else None
+            ),
+            version=facts.version,
+        )
+    return ProfileResponse(company=company_payload, qualification=qualification_payload)
 
 
 def get_current_user(
@@ -165,6 +328,44 @@ def _issue_session(response: Response, user: CustomUser) -> None:
     )
 
 
+def _persist_signup_relations(db: Session, user_id: int, payload: SignUpRequest) -> None:
+    """계정과 함께 저장할 회사·원자료·동의 행을 같은 트랜잭션에 추가합니다.
+
+    선택 섹션을 비워 보내면 빈 행을 만들지 않습니다.
+    """
+    if payload.company is not None:
+        company_values = payload.company.model_dump()
+        if any(value is not None for value in company_values.values()):
+            db.add(AccountCompanyProfile(user_id=user_id, **company_values))
+    if payload.qualification is not None:
+        facts_values = payload.qualification.model_dump()
+        if any(value is not None for value in facts_values.values()):
+            db.add(
+                AccountQualificationFact(
+                    user_id=user_id,
+                    version=QUALIFICATION_FACTS_VERSION,
+                    **facts_values,
+                )
+            )
+    consented_at = utcnow()
+    db.add_all(
+        [
+            AccountConsentEvent(
+                user_id=user_id,
+                consent_kind=CONSENT_KIND_TERMS,
+                terms_version=CONSENT_TERMS_VERSION,
+                consented_at=consented_at,
+            ),
+            AccountConsentEvent(
+                user_id=user_id,
+                consent_kind=CONSENT_KIND_PRIVACY,
+                terms_version=CONSENT_PRIVACY_VERSION,
+                consented_at=consented_at,
+            ),
+        ]
+    )
+
+
 def register_user(payload: SignUpRequest, response: Response, db: Session) -> UserResponse:
     if payload.password1 != payload.password2:
         raise HTTPException(status_code=400, detail="비밀번호가 일치하지 않습니다.")
@@ -186,8 +387,16 @@ def register_user(payload: SignUpRequest, response: Response, db: Session) -> Us
         gender=payload.gender,
         date_joined=utcnow(),
     )
+    # 계정·회사·원자료·동의를 한 커밋으로 저장합니다. 중간 실패 시 롤백해
+    # 계정만 남는 상태를 만들지 않습니다.
     db.add(user)
-    db.commit()
+    try:
+        db.flush()
+        _persist_signup_relations(db, user.id, payload)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     db.refresh(user)
 
     # 원본 SignUpView 는 가입 직후 자동 로그인합니다.
@@ -265,3 +474,25 @@ def logout(
 @router.get("/me", response_model=UserResponse, summary="현재 로그인 사용자")
 def me(user: CustomUser = Depends(require_current_user)):
     return _serialize(user)
+
+
+@router.get(
+    "/me/profile",
+    response_model=ProfileResponse,
+    summary="현재 로그인 사용자 회사·정량 원자료",
+)
+def me_profile(
+    user: CustomUser = Depends(require_current_user),
+    db: Session = Depends(get_db),
+):
+    """로그인 사용자의 회사·담당자 정보와 정량평가 원자료를 돌려줍니다.
+
+    아직 입력하지 않은 섹션은 null 로 돌려줍니다.
+    """
+    company = db.execute(
+        select(AccountCompanyProfile).where(AccountCompanyProfile.user_id == user.id)
+    ).scalar_one_or_none()
+    facts = db.execute(
+        select(AccountQualificationFact).where(AccountQualificationFact.user_id == user.id)
+    ).scalar_one_or_none()
+    return _serialize_profile(company, facts)

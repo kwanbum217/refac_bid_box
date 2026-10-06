@@ -408,7 +408,7 @@ async def signup_submit(request: Request):
     def value(name: str) -> str:
         return (form_data.get(name) or [""])[0]
 
-    payload = {
+    payload: dict[str, Any] = {
         "username": value("username"),
         "password1": value("password1"),
         "password2": value("password2"),
@@ -418,6 +418,25 @@ async def signup_submit(request: Request):
         "gender": value("gender"),
         "agree_terms": "agree_terms" in form_data,
         "agree_privacy": "agree_privacy" in form_data,
+        "company": {
+            "company_name": value("company_name"),
+            "representative_name": value("representative_name"),
+            "address": value("address"),
+            "phone": value("phone"),
+            "fax": value("fax"),
+            "email": value("company_email"),
+            "contact_name": value("contact_name"),
+            "contact_position": value("contact_position"),
+            "contact_department": value("contact_department"),
+            "contact_phone": value("contact_phone"),
+            "contact_email": value("contact_email"),
+        },
+        "qualification": {
+            "credit_grade": value("credit_grade"),
+            "credit_evaluated_on": value("credit_evaluated_on"),
+            "reputation_items": form_data.get("reputation_items") or None,
+            "non_price_quant_score": value("non_price_quant_score") or None,
+        },
     }
 
     ip = resolve_client_ip(
@@ -436,7 +455,9 @@ async def signup_submit(request: Request):
     except ValidationError as exc:
         errors: dict[str, list[str]] = {}
         for item in exc.errors():
-            field_name = str(item.get("loc", ("__all__",))[0])
+            # 중첩 입력(company/qualification)의 오류는 마지막 위치 조각이 필드명입니다.
+            loc = item.get("loc") or ("__all__",)
+            field_name = str(loc[-1]) if loc else "__all__"
             errors.setdefault(field_name, []).append(str(item.get("msg", "입력값을 확인해주세요.")))
         status_code = 422
         non_field_errors = errors.get("__all__", [])
@@ -450,13 +471,27 @@ async def signup_submit(request: Request):
             non_field_errors = [str(exc.detail)]
         status_code = exc.status_code
 
+    # 오류 재렌더 시 제출값을 되돌려 주기 위해 중첩 섹션을 평탄화합니다.
+    company_input = payload["company"]
+    qualification_input = payload["qualification"]
+    render_form_data: dict[str, Any] = {
+        key: val for key, val in payload.items() if key not in ("company", "qualification")
+    }
+    render_form_data.update(company_input)
+    render_form_data["company_email"] = company_input["email"]
+    render_form_data["contact_email"] = company_input["contact_email"]
+    render_form_data.update(
+        {key: val for key, val in qualification_input.items() if key != "reputation_items"}
+    )
+    render_form_data["reputation_items"] = qualification_input["reputation_items"] or []
+
     render_response = _render(
         request,
         "accounts/signup.html",
         {
             "hide_sidebar": True,
             "form": signup_form(
-                data=payload,
+                data=render_form_data,
                 errors=errors,
                 non_field_errors=non_field_errors or None,
             ),

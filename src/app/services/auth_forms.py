@@ -16,6 +16,8 @@ from typing import Any
 
 from markupsafe import Markup, escape
 
+from src.app.services.evaluation_rules import CREDIT_GRADE_SCORES, REPUTATION_ITEMS
+
 
 @dataclass
 class Choice:
@@ -97,7 +99,17 @@ class BoundField:
     __html__ = __str__
 
 
-# 원본 SignUpForm 의 필드 정의와 순서를 그대로 따릅니다.
+# 신용평가등급 선택지와 신인도 항목 선택지는 정량평가 엔진 레지스트리에서 그대로
+# 가져옵니다. 화면과 엔진이 어긋나지 않게 하기 위함입니다.
+CREDIT_GRADE_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    (code, code) for grade in CREDIT_GRADE_SCORES for code in grade.grade_codes
+)
+REPUTATION_ITEM_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    (item.item_code, item.item_name) for item in REPUTATION_ITEMS
+)
+
+# 원본 SignUpForm 의 필드 정의와 순서를 그대로 따릅니다. 회사·담당자·정량 원자료
+# 필드는 D-W4 로 추가된 선택 섹션입니다.
 SIGNUP_FIELDS: tuple[dict[str, Any], ...] = (
     {"name": "username", "label": "사용자 아이디", "input_type": "text"},
     {"name": "password1", "label": "비밀번호", "input_type": "password"},
@@ -115,6 +127,26 @@ SIGNUP_FIELDS: tuple[dict[str, Any], ...] = (
     },
     {"name": "agree_terms", "label": "이용약관 동의", "input_type": "checkbox"},
     {"name": "agree_privacy", "label": "개인정보처리방침 동의", "input_type": "checkbox"},
+    {"name": "company_name", "label": "회사명", "input_type": "text"},
+    {"name": "representative_name", "label": "대표자", "input_type": "text"},
+    {"name": "address", "label": "회사 주소", "input_type": "text"},
+    {"name": "phone", "label": "회사 전화", "input_type": "text"},
+    {"name": "fax", "label": "팩스", "input_type": "text"},
+    {"name": "company_email", "label": "회사 이메일", "input_type": "email"},
+    {"name": "contact_name", "label": "담당자 성명", "input_type": "text"},
+    {"name": "contact_position", "label": "담당자 직책", "input_type": "text"},
+    {"name": "contact_department", "label": "담당자 부서", "input_type": "text"},
+    {"name": "contact_phone", "label": "담당자 전화", "input_type": "text"},
+    {"name": "contact_email", "label": "담당자 이메일", "input_type": "email"},
+    {"name": "credit_grade", "label": "신용평가등급", "choices": CREDIT_GRADE_CHOICES},
+    {"name": "credit_evaluated_on", "label": "평가일", "input_type": "date"},
+    {
+        "name": "reputation_items",
+        "label": "신인도 해당 항목",
+        "input_type": "checkbox",
+        "choices": REPUTATION_ITEM_CHOICES,
+    },
+    {"name": "non_price_quant_score", "label": "비가격 정량점수 기본값", "input_type": "number"},
 )
 
 
