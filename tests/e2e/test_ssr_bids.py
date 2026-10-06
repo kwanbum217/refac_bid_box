@@ -23,6 +23,7 @@ from src.app.models.bid_restrictions import (
     BidAnnouncementParticipationRegion,
 )
 from src.app.models.bids import BidAnnouncement
+from src.app.models.company_profiles import AccountQualificationFact
 
 
 @pytest.fixture
@@ -255,68 +256,84 @@ async def test_ssr_bids_list_pagination(
     await expect(authenticated_page.locator("body")).to_contain_text("2 페이지")
 
 
+def _seed_recommend_bid(session: Session) -> BidAnnouncement:
+    """조달청 시설분야용역 적격심사 공고. 상세 진입만으로 세 금액이 계산된다."""
+    bid = BidAnnouncement(
+        bid_ntce_no="E2E-RECOMMEND-001",
+        bid_ntce_ord="00",
+        bid_ntce_nm="E2E 투찰가 추천 시험 공고",
+        dminstt_nm="테스트 수요기관",
+        ntce_instt_nm="테스트 공고기관",
+        category="Servc",
+        presmpt_prce=400_000_000,
+        base_amount=400_000_000,
+        bid_ntce_dt=utcnow(),
+        bid_clse_dt=utcnow() + timedelta(days=7),
+        openg_dt=utcnow() + timedelta(days=7, hours=1),
+        collected_at=utcnow(),
+        raw_data={
+            "prearngPrceDcsnMthdNm": "복수예가",
+            "sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 미만",
+            "sucsfbidLwltRate": "89.995",
+            "srvceDivNm": "일반용역",
+            "totPrdprcNum": "12",
+            "drwtPrdprcNum": "3",
+        },
+    )
+    session.add(bid)
+    session.commit()
+    session.refresh(bid)
+    return bid
+
+
 @pytest.mark.e2e
-async def test_ssr_bid_detail_ai_prediction(
+async def test_ssr_bid_detail_three_amounts_autofilled(
+    authenticated_page: Page,
+    live_server_url: str,
+    e2e_db_session: Session,
+    e2e_test_user: dict,
+) -> None:
+    """상세 진입 시 회원 정량 원자료가 반영된 최저가·AI 예측가·최상가가 자동 계산됨을 검증합니다."""
+    bid = _seed_recommend_bid(e2e_db_session)
+    facts = (
+        e2e_db_session.query(AccountQualificationFact)
+        .filter_by(user_id=e2e_test_user["id"])
+        .first()
+    )
+    if facts is None:
+        facts = AccountQualificationFact(user_id=e2e_test_user["id"])
+        e2e_db_session.add(facts)
+    facts.credit_grade = "BBB+"
+    e2e_db_session.commit()
+
+    await authenticated_page.goto(f"{live_server_url}/bids/{bid.id}/")
+
+    # 진입만으로 추천 계산이 끝나 세 금액 카드가 채워진다. 별도 실행 버튼은 없다.
+    await expect(authenticated_page.locator("#btn-predict")).to_have_count(0)
+    await expect(authenticated_page.locator("#prediction-result")).to_be_visible(timeout=10000)
+
+    for element_id in ("#res-min-price", "#res-optimal-price", "#res-max-price"):
+        amount = authenticated_page.locator(element_id)
+        await expect(amount).to_be_visible()
+        text = (await amount.text_content()) or ""
+        assert "₩" in text, f"{element_id} 금액이 채워지지 않음: {text}"
+
+
+@pytest.mark.e2e
+async def test_ssr_bid_detail_no_amount_shows_blocked_guidance(
     authenticated_page: Page,
     live_server_url: str,
     seeded_announcements: list[BidAnnouncement],
 ) -> None:
-    """공고 상세 화면에서 투찰가를 입력하고 AI 예측을 실행하여 결과 카드가 렌더링됨을 검증합니다."""
-    # 기초금액이 있는 물품 공고 선택 (b3)
-    target_bid = next(b for b in seeded_announcements if b.category == "Thng")
-
-    await authenticated_page.goto(f"{live_server_url}/bids/{target_bid.id}/")
-    await authenticated_page.wait_for_load_state("networkidle")
-
-    # 상세 화면 헤더 및 제원 표시 확인
-    await expect(authenticated_page.locator("h1")).to_contain_text(target_bid.bid_ntce_nm)
-
-    # 투찰가 입력 필드에 금액 입력
-    user_price_input = authenticated_page.locator("#user-price")
-    await expect(user_price_input).to_be_visible()
-    await user_price_input.fill("84000000")
-
-    # 분석 실행 버튼 클릭
-    predict_btn = authenticated_page.locator("#btn-predict")
-    await expect(predict_btn).to_be_enabled()
-    await predict_btn.click()
-
-    # 비동기 AJAX 응답 후 예측 결과 영역 노출 대기
-    result_box = authenticated_page.locator("#prediction-result")
-    await expect(result_box).to_be_visible(timeout=10000)
-
-    # 추천 최적 투찰가 및 예상 낙찰률 렌더링 검증
-    optimal_price_el = authenticated_page.locator("#res-optimal-price")
-    prediction_rate_el = authenticated_page.locator("#res-prediction-rate")
-    await expect(optimal_price_el).to_be_visible()
-    await expect(prediction_rate_el).to_be_visible()
-
-    optimal_price_text = await optimal_price_el.text_content()
-    prediction_rate_text = await prediction_rate_el.text_content()
-
-    assert "₩" in (optimal_price_text or "")
-    assert "%" in (prediction_rate_text or "")
-
-
-@pytest.mark.e2e
-async def test_ssr_bid_detail_no_reference_amount_disabled(
-    authenticated_page: Page,
-    live_server_url: str,
-    seeded_announcements: list[BidAnnouncement],
-) -> None:
-    """기초금액/예정가격이 모두 없는 공고는 예측 버튼이 비활성화되고 안내 문구가 표시됨을 검증합니다."""
+    """기초금액/예정가격이 모두 없는 공고는 계산이 차단되고 사유가 표시됨을 검증합니다."""
     no_amt_bid = next(
         b for b in seeded_announcements if b.base_amount is None and b.presmpt_prce is None
     )
 
     await authenticated_page.goto(f"{live_server_url}/bids/{no_amt_bid.id}/")
-    await authenticated_page.wait_for_load_state("networkidle")
 
-    # 예측 버튼 비활성화 확인
-    predict_btn = authenticated_page.locator("#btn-predict")
-    await expect(predict_btn).to_be_disabled()
-
-    # 안내 문구 노출 확인
-    unavailable_msg = authenticated_page.locator("#prediction-unavailable")
-    await expect(unavailable_msg).to_be_visible()
-    await expect(unavailable_msg).to_contain_text("기초금액과 예정가격이 모두 공개되지 않은 공고")
+    blocked = authenticated_page.locator("#recommend-blocked")
+    await expect(blocked).to_be_visible(timeout=10000)
+    await expect(authenticated_page.locator("#recommend-blocked-reason")).to_contain_text(
+        "예정가격"
+    )

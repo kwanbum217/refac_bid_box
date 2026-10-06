@@ -312,12 +312,10 @@ class TestDetailTemplateElements:
         with open("src/app/templates/bids/detail.html", encoding="utf-8") as f:
             content = f.read()
 
-        # HTML 요소 확인
+        # HTML 요소 확인. 예측 구간 배지는 제거되고 세 금액 카드에 하한 부재 안내가 남았다.
         assert 'id="res-lwlt-missing"' in content
         assert 'id="res-lwlt-reason"' in content
-        assert 'id="res-wide-interval"' in content
         assert "근거 데이터 부족 (낙찰하한율 부재)" in content
 
-        # JS 연동 확인
-        assert "data.lwlt_missing" in content
-        assert "data.wide_interval_warning" in content
+        # JS 연동 확인. 추천 응답의 낙찰하한율 결측을 안내로 연결한다.
+        assert "data.lower_bound_rate == null" in content
