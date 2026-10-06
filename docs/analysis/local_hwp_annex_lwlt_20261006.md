@@ -74,7 +74,7 @@
 
 | 지역 | 규칙 ID | 원본 파일 | 별표·판본 | 판독 방법 | 10억 이상 하한율 | 인용 위치(원본) | 판정 |
 | --- | --- | --- | --- | --- | --- | --- | :---: |
-| 인천광역시 | `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | `EXT/inan/att008/[별표 1] 일반용역 적격심사 세부기준.hwp` | 별표 1, 개정 2025.12.8(시행 2025.12.24) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 행 배점한도 30, 단서 "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
+| 인천광역시 | `SERVC_LOCAL_INCHEON_20251224_ATTACH_01` | `data/sources/qualification/files/inan/4ae4aff8b521_[별표 1] 일반용역 적격심사 세부기준.hwp` | 별표 1, 개정 2025.12.8(시행 2025.12.24) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 행 배점한도 30, 단서 "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
 | 제주특별자치도 | `SERVC_LOCAL_JEJU_20240101_ATTACH_01` | `data/sources/qualification/files/jeju/35eb99d49807_[별표 1] 일반용역 적격심사 심사항목 및 배점기준.hwp` | 별표 1, 개정 2023.12.13(시행 2024.01.01) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 표 열 `구분\|심사분야\|심사항목\|배점한도\|비고`, 10억 이상 입찰가격 30점, "평점 = 30-&#124;(88/100-입찰가격/예정가격)×100&#124;", "최저평점은 2점" | 부재 확인 |
 | 강원특별자치도 | `SERVC_LOCAL_GANGWON_20230611_ATTACH_01` | `data/sources/qualification/files/gwd/cc7a84631971_[별표1] 일반용역 적격심사.hwp` | 별표 1(시행 2023.06.11) | hwp5html 표 복원·전문 검색 | 없음(미인쇄) | 10억 이상 "-1" 단순노무 외 입찰가격 30, "평점 = 30-&#124;(…)×100&#124;", "100분의 98 이상 … 20점", "최저평점은 2점" | 부재 확인 |
 | 경상북도 | `SERVC_LOCAL_GB_20260108_ATTACH_04` | `data/sources/qualification/files/gb/ca623d40a627_gb_byp004.hwp` | 별표 4(기타 일반용역), 개정 2026.1.8 | hwp5html 표 복원·전문 검색 | 없음(10억 이상 구간 자체 없음) | 표 열 `배점한도` 가 `추정가격 5억원이상\|5억원미만` 2열, "Ⅲ.입찰가격 … 50&#124;70", 산식 단서 "투찰률이 89.25% 이상 … 45점", "88.25% 이상 … 65점" | 부재 확인 |
@@ -193,8 +193,8 @@
 
 | 구분 | 파일 | 판독 방식 | 용도 |
 | --- | --- | --- | --- |
-| 인천 원본 | `EXT/inan/att008/[별표 1] 일반용역 적격심사 세부기준.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
-| 인천 구판 | `EXT/inan/att/[별표 1] 일반용역 적격심사 세부기준.hwp` | hwp5html | 구판 대조(동일 결과) |
+| 인천 원본 | `data/sources/qualification/files/inan/4ae4aff8b521_[별표 1] 일반용역 적격심사 세부기준.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
+| 인천 구판 | `data/sources/qualification/files/inan/3b8da01de037_[별표 1] 일반용역 적격심사 세부기준.hwp` | hwp5html | 구판 대조(동일 결과) |
 | 인천 추출본 | `data/sources/qualification/files/inan/f036c240a76f_tbl1_008.txt`, `data/sources/qualification/files/inan/4e46dc57c1b0_elis_inan_008.txt` | 대조 | 교차 참조·준용 조항 |
 | 제주 원본 | `data/sources/qualification/files/jeju/35eb99d49807_[별표 1] 일반용역 적격심사 심사항목 및 배점기준.hwp` | hwp5html | 별표 1 10억 이상 표 전문 |
 | 제주 추출본 | `data/sources/qualification/files/jeju/9dd3512e42de_tbl1_jeju.txt`, `data/sources/qualification/files/jeju/79a8f851701b_elis_jeju_main.txt` | 대조 | 교차 참조·준용 조항 |
