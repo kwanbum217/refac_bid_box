@@ -26,13 +26,13 @@
 | 상시 감시기 | PID 6814 |
 | 범위 | `SERVC_RULE_META_SCOPE_NOTE`·독스트링(`src/app/api/v1/evaluations.py`)과 `tests/test_evaluation_rules_meta_api.py` 만. LOCAL 규칙을 목록에 노출할지는 사용자 결정으로 남겨 범위 밖 |
 
-이 문서 작성 시점의 상태는 Dispatch 직후다. 완료 여부는 `python3 scripts/orca_taskctl.py status --run-id run_68464f7d6967` 로 확인한다.
+빌더는 2026-10-07 00:28 에 worker_done(succeeded, 커밋 `4ae8aa5f`, 보고 `.orca/capsules/task_7c8f6e65c67b/worker_done.json`)을 보냈고 코디네이터가 확인(ack)했다. 빌더 보고 수치는 전량 시험 6,751건 통과, mypy 성공, 규칙 검증 21/21 이며 코디네이터는 재실행하지 않았다. 코디네이터가 diff 를 직접 확인한 결과 변경은 허용 파일 2개뿐이고 `src/` 변경은 상수 문구·주석·독스트링뿐이다. 빌더 터미널과 그 터미널의 승인 감시기는 회수했다. 저장소 단위 상시 감시기(PID 6814, `--respawn`)는 남겨 두었다.
 
 ---
 
 ## 2. 다음 세션 순서
 
-1. worker_done 확인 후 Level 1 게이트(`--verify` 포함, `--strict`)를 워커 워크트리에서 실행하고 증거를 기록한다.
+1. (worker_done 은 확인 완료) Level 1 게이트(`--verify` 포함, `--strict`)를 워커 워크트리에서 실행하고 증거를 기록한다.
 2. 리뷰 Intent(`role: reviewer`, `builder_provider: "cmd"`, `report_path` 명시, checklist id 는 빌더 Intent 와 동일)를 만들고 opencode 런처 터미널로 리뷰어를 띄운다: `orca terminal create --worktree "path:<워크트리>" --command 'uv run python scripts/orca_opencode_launch.py --model opencode/muse-spark-1.3-contributor-free --role reviewer'` 후 `dispatch --launcher scripts/orca_opencode_launch.py --repo <주 저장소> --worktree path:<워크트리> --agent opencode --model opencode/muse-spark-1.3-contributor-free`.
 3. 리뷰 통과 시 `git merge --no-ff`, `docker compose restart app` 후 `GET /api/v1/evaluations/rules` 의 `scope_note` 를 HTTP 로 확인, CI 확인, 워커 터미널·감시기 회수.
 4. 남은 과제는 직전 인수인계 0장 표 그대로다(9, 11, 13, 10, 12, 15, 16, 17). 15번은 K8 리뷰 보고서를 워커 워크트리 잔존물이나 Orca 메시지에서 먼저 찾는다.
