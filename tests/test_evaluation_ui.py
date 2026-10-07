@@ -442,6 +442,9 @@ class TestEvaluationUIScoreTableDeclaration:
         assert "scoreTable.missing_fields" in template_content
         assert "scoreTable.override_fields" in template_content
         assert "scoreTable.source" in template_content
+        assert 'id="score-table-modal"' in template_content
+        assert "function openScoreTableModal" in template_content
+        assert ".text(scoreTable.source" not in template_content
 
     def test_autofill_does_not_overwrite_user_input(self, template_content):
         """규칙 선언값은 비어 있는 입력란에만 채워 사용자가 넣은 값을 덮지 않는다."""
