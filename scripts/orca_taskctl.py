@@ -37,6 +37,8 @@ try:
         CAP_BACKEND_MYPY,
         CAP_BACKEND_PYTEST,
         CAP_COMPOSE_CONFIG,
+        CAP_CSS_BUILD,
+        CAP_CSS_DIFF,
         CAP_DOCKER_BUILD,
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
@@ -55,6 +57,8 @@ except (ModuleNotFoundError, ImportError):
         CAP_BACKEND_MYPY,
         CAP_BACKEND_PYTEST,
         CAP_COMPOSE_CONFIG,
+        CAP_CSS_BUILD,
+        CAP_CSS_DIFF,
         CAP_DOCKER_BUILD,
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
@@ -194,6 +198,14 @@ RULES_VERIFICATION_COMMAND = "python3 scripts/validate_agent_rules.py --quiet"
 BACKEND_VERIFICATION_COMMAND = "uv run pytest tests/ -q -m 'not data_assets'"
 MYPY_VERIFICATION_COMMAND = "uv run mypy src"
 DEFAULT_VERIFICATION_COMMANDS = [BACKEND_VERIFICATION_COMMAND, RULES_VERIFICATION_COMMAND]
+
+# 화면 템플릿이나 컴파일된 Tailwind CSS 를 고치는 Task 의 CSS 검증입니다. 재빌드가
+# 먼저, 커밋본과의 일치 확인이 다음입니다. 재빌드만 하고 결과를 커밋하지 않으면
+# CI 재현성 검사가 실패하므로 두 명령을 항상 함께 붙입니다. CI 의
+# 'Verify Tailwind CSS Reproducibility' 스텝과 같은 명령을 씁니다.
+CSS_BUILD_VERIFICATION_COMMAND = "npm run build:css"
+CSS_DIFF_VERIFICATION_COMMAND = "git diff --exit-code -- src/app/static/css/tailwind.css"
+CSS_VERIFICATION_COMMANDS = [CSS_BUILD_VERIFICATION_COMMAND, CSS_DIFF_VERIFICATION_COMMAND]
 
 # 검증 능력과 그것을 덮는 명령의 대응. 순서가 Capsule 에 적히는 순서입니다.
 # docker_build 는 빌드 컨텍스트별로 갈리므로 여기 두지 않고 따로 만듭니다.
@@ -706,6 +718,10 @@ def resolve_verification_commands(
         for capability in sorted(needed)
         if capability.startswith(f"{CAP_DOCKER_BUILD}:")
     ]
+    # 재빌드와 diff 확인은 한 쌍입니다. 하나만 붙으면 게이트 3 이 나머지 능력을
+    # 미검증으로 보아 Capsule 이 통과하지 못합니다.
+    if needed & {CAP_CSS_BUILD, CAP_CSS_DIFF}:
+        commands += CSS_VERIFICATION_COMMANDS
     commands.append(RULES_VERIFICATION_COMMAND)
     return list(dict.fromkeys(commands))
 

@@ -214,8 +214,16 @@ CAP_FRONTEND_BUILD = "frontend_build"
 CAP_DOCKER_BUILD = "docker_build"
 CAP_COMPOSE_CONFIG = "compose_config"
 CAP_WORKFLOW_LINT = "workflow_lint"
+# 화면 템플릿과 컴파일된 Tailwind CSS. 재빌드와 diff 확인은 서로 다른 실패를
+# 잡습니다(빌드 자체 실패, 커밋본과의 불일치). 한 능력으로 묶으면 둘 중 하나만
+# 붙은 Capsule 도 덮인 것으로 보이므로 나눠 둡니다.
+CAP_CSS_BUILD = "css_build"
+CAP_CSS_DIFF = "css_diff"
 
 FRONTEND_PATH_PREFIXES = ("frontend/",)
+TEMPLATE_PATH_PREFIX = "src/app/templates/"
+CSS_STATIC_DIR = "src/app/static/css/"
+CSS_SOURCE_PATH = f"{CSS_STATIC_DIR}tailwind.css"
 WORKFLOW_PATH_PREFIX = ".github/workflows/"
 COMPOSE_NAME_RE = re.compile(r"^(?:docker-)?compose[.\w-]*\.ya?ml$", re.IGNORECASE)
 
@@ -258,6 +266,11 @@ def _path_capabilities(path: str) -> set[str]:
         return {CAP_COMPOSE_CONFIG}
     if cleaned.startswith(FRONTEND_PATH_PREFIXES):
         return {CAP_FRONTEND_TEST, CAP_FRONTEND_BUILD}
+    # 템플릿에 Tailwind 유틸리티를 새로 쓰면 커밋된 tailwind.css 가 낡습니다.
+    # 템플릿만 바꾸고 재빌드를 빼면 CI 재현성 검사가 실패하므로 두 능력을 함께
+    # 요구합니다. 파이썬이 아니어도 템플릿 렌더링은 pytest 가 덮으므로 유지합니다.
+    if cleaned.startswith(TEMPLATE_PATH_PREFIX) or cleaned == CSS_SOURCE_PATH:
+        return {CAP_BACKEND_PYTEST, CAP_CSS_BUILD, CAP_CSS_DIFF}
     if cleaned.startswith("src/") and (
         Path(cleaned).suffix.lower() == ".py"
         or cleaned.endswith("/...")
@@ -1035,6 +1048,12 @@ NPM_SCRIPT_CAPABILITIES = {
     "build": frozenset({CAP_FRONTEND_BUILD}),
 }
 
+# 루트 package.json 의 스크립트입니다. 컴파일된 CSS 산출물을 만들므로 별도
+# 능력에 대응합니다. `--prefix` 없이 부르는 형태가 정본입니다.
+NPM_ROOT_SCRIPT_CAPABILITIES = {
+    "build:css": frozenset({CAP_CSS_BUILD}),
+}
+
 
 @dataclass
 class VerificationCommand:
@@ -1077,8 +1096,13 @@ def _parse_npm_command(source: str, tokens: list[str]) -> VerificationCommand:
         # 설치는 검증이 아니므로 어느 능력도 덮지 않습니다.
         return VerificationCommand(source, ["npm", "ci"], prefix, frozenset(), "npm")
     if len(rest) == 2 and rest[0] == "run" and NPM_SCRIPT_RE.match(rest[1]):
-        in_frontend = prefix is not None and prefix.startswith("frontend")
-        provides = NPM_SCRIPT_CAPABILITIES.get(rest[1], frozenset()) if in_frontend else frozenset()
+        if prefix is None:
+            # 루트 package.json 의 스크립트. 프런트엔드 빌드와 능력을 섞지 않습니다.
+            provides = NPM_ROOT_SCRIPT_CAPABILITIES.get(rest[1], frozenset())
+        elif prefix.startswith("frontend"):
+            provides = NPM_SCRIPT_CAPABILITIES.get(rest[1], frozenset())
+        else:
+            provides = frozenset()
         return VerificationCommand(source, ["npm", "run", rest[1]], prefix, provides, "npm")
     raise ValueError("허용되는 npm 명령은 'npm ci' 와 'npm run <script>' 뿐입니다")
 
@@ -1199,6 +1223,33 @@ def _parse_docker_command(source: str, tokens: list[str]) -> VerificationCommand
     raise ValueError("허용되는 docker 명령은 'docker build' 와 'docker compose config' 뿐입니다")
 
 
+def _parse_git_command(source: str, tokens: list[str]) -> VerificationCommand:
+    """`git diff --exit-code -- <컴파일된 CSS>` 형태만 검증 명령으로 허용합니다.
+
+    재빌드한 tailwind.css 가 커밋본과 같은지 확인하는 용도 하나만 엽니다.
+    그 밖의 git 하위 명령은 저장소 상태를 바꾸거나(`commit`, `checkout`) 검증과
+    무관하므로 거부합니다. 경로도 컴파일 대상 디렉터리 안으로 제한해, 무관한
+    파일의 diff 를 CSS 검증으로 위장하지 못하게 합니다.
+
+    diff 가 있으면 종료 코드 1 이므로 게이트 3 이 실패로 판정합니다.
+    """
+    if tokens[1:3] != ["diff", "--exit-code"]:
+        raise ValueError("허용되는 git 명령은 'git diff --exit-code' 뿐입니다")
+    rest = tokens[3:]
+    if rest[:1] != ["--"]:
+        raise ValueError("'git diff --exit-code' 뒤에는 '--' 와 경로가 필요합니다")
+    paths = rest[1:]
+    if not paths:
+        raise ValueError("'git diff --exit-code --' 뒤에 경로가 없습니다")
+    for raw in paths:
+        path = PurePosixPath(raw)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("git diff 경로는 저장소 안의 상대 경로여야 합니다")
+        if not path.as_posix().startswith(CSS_STATIC_DIR):
+            raise ValueError(f"git diff 경로는 {CSS_STATIC_DIR} 안이어야 합니다")
+    return VerificationCommand(source, list(tokens), None, frozenset({CAP_CSS_DIFF}), "raw")
+
+
 def parse_verification_command(command: str) -> VerificationCommand:
     """Capsule 의 검증 명령 문자열을 허용 목록에 대조해 실행 사양으로 바꿉니다.
 
@@ -1238,6 +1289,8 @@ def parse_verification_command(command: str) -> VerificationCommand:
         return _parse_npm_command(command, tokens)
     if head == "docker":
         return _parse_docker_command(command, tokens)
+    if head == "git":
+        return _parse_git_command(command, tokens)
     if head == "actionlint":
         return VerificationCommand(
             command, ["uv", "run", "actionlint", *tokens[1:]], None, frozenset({CAP_WORKFLOW_LINT})
