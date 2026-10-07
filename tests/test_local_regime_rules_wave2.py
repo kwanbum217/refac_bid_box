@@ -454,7 +454,9 @@ EXISTING_RULE_IDS = (
 #   uv run python -c "import hashlib,json; from src.app.services.evaluation_rules import LOCAL_RULES; ..."
 # 2026-10-06: 인천·제주·강원·경남 GENERAL 의 10억원 이상 30억원 분할과 인천·제주·강원
 # 단순노무 대표값(87.745) 반영으로 재생성했습니다.
-EXISTING_RULES_DIGEST = "3188998291115a3a9b489f1c09098c10ac9252abb50bbde4185f69cfa01b5974"
+# 2026-10-07: 경북 단순노무(GB ATTACH_01) 대표값을 원문 산식 역산값 87.745 로 정정하며
+# 재생성했습니다(서울 단순노무는 이 스냅샷 범위 밖입니다).
+EXISTING_RULES_DIGEST = "c35b64538285f2fe7e8e27ffa8a2c4bc03a652b0276de217e70d0c78066cdd78"
 
 
 def _rule_signature(rule: EvaluationRule) -> dict[str, object]:
