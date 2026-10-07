@@ -3333,6 +3333,75 @@ def test_expand_intent_writes_frontend_verification_into_capsule():
     assert "npm --prefix frontend run build" in commands
 
 
+def test_template_and_tailwind_scope_gets_css_verification_commands():
+    """화면 템플릿이나 컴파일된 CSS 를 고치면 재빌드와 diff 확인이 함께 붙어야 합니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    for scope in (
+        "src/app/templates/bids/detail.html",
+        "src/app/static/css/tailwind.css",
+    ):
+        commands = resolve_verification_commands({}, [scope])
+        assert "npm run build:css" in commands
+        assert "git diff --exit-code -- src/app/static/css/tailwind.css" in commands
+        # 재빌드가 커밋본 대조보다 먼저 와야 합니다.
+        assert commands.index("npm run build:css") < commands.index(
+            "git diff --exit-code -- src/app/static/css/tailwind.css"
+        )
+
+
+def test_docs_only_scope_gets_no_css_verification_commands():
+    """문서만 바꾼 Task 에는 CSS 검증 명령을 붙이지 않습니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    commands = resolve_verification_commands({}, ["docs/note.md"])
+    assert "npm run build:css" not in commands
+    assert "git diff --exit-code -- src/app/static/css/tailwind.css" not in commands
+
+
+def test_expand_intent_writes_css_verification_into_capsule():
+    """Capsule 본문에 CSS 검증 명령이 실제로 실려야 합니다."""
+    capsule = expand_intent_to_capsule(
+        {"objective": "화면 수정", "scope": ["src/app/templates/bids/detail.html"]},
+        task_id="task_css",
+    )
+    commands = parse_capsule_list(capsule, "verification_commands")
+    assert "npm run build:css" in commands
+    assert "git diff --exit-code -- src/app/static/css/tailwind.css" in commands
+
+
+def test_declared_verification_commands_still_get_css_commands_for_css_scope():
+    """Intent 가 검증을 선언해도 CSS 재빌드·diff 확인은 빠지면 안 됩니다.
+
+    선언 목록을 그대로 둔 채 뒤에 재빌드 다음 diff 순으로 붙습니다.
+    """
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    declared = {"verification_commands": ["uv run pytest tests/test_x.py -q"]}
+    for scope in (
+        "src/app/templates/bids/detail.html",
+        "src/app/static/css/tailwind.css",
+    ):
+        assert resolve_verification_commands(declared, [scope]) == [
+            "uv run pytest tests/test_x.py -q",
+            "npm run build:css",
+            "git diff --exit-code -- src/app/static/css/tailwind.css",
+        ]
+
+
+def test_declared_verification_commands_without_css_scope_are_untouched():
+    """CSS 능력이 없는 범위의 선언 명령은 그대로입니다."""
+    from scripts.orca_taskctl import resolve_verification_commands
+
+    declared = {"verification_commands": ["uv run pytest tests/test_x.py -q"]}
+    assert resolve_verification_commands(declared, ["src/x.py"]) == [
+        "uv run pytest tests/test_x.py -q"
+    ]
+    assert resolve_verification_commands(declared, ["docs/note.md"]) == [
+        "uv run pytest tests/test_x.py -q"
+    ]
+
+
 def test_finalize_strict_without_reviewer_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

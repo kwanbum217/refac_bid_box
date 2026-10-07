@@ -727,6 +727,49 @@ def test_required_capabilities_separates_change_kinds():
     }
 
 
+def test_template_and_tailwind_css_require_build_and_diff_capabilities():
+    """화면 템플릿만 바꾸고 CSS 재빌드를 빠뜨린 CI 실패를 게이트가 잡아야 합니다.
+
+    재빌드(css_build)와 커밋본 대조(css_diff)를 한 능력으로 묶으면 둘 중 하나만
+    붙은 Capsule 도 덮인 것으로 보입니다.
+    """
+    css_caps = {"backend_pytest", "css_build", "css_diff"}
+    assert required_capabilities(["src/app/templates/bids/detail.html"]) == css_caps
+    assert required_capabilities(["src/app/templates/base.html"]) == css_caps
+    assert required_capabilities(["src/app/static/css/tailwind.css"]) == css_caps
+
+    # 컴파일 대상이 아닌 정적 파일과 문서는 종전 판정을 유지합니다.
+    assert required_capabilities(["src/app/static/css/other.css"]) == {"backend_pytest"}
+    assert required_capabilities(["src/app/static/js/app.js"]) == {"backend_pytest"}
+    assert required_capabilities(["docs/note.md"]) == set()
+
+
+def test_parse_verification_command_allows_css_build_and_diff():
+    """CSS 검증 두 명령이 허용 목록에 있어야 게이트 3 이 Capsule 을 거부하지 않습니다."""
+    build = parse_verification_command("npm run build:css")
+    assert build.argv == ["npm", "run", "build:css"]
+    assert build.cwd is None
+    assert build.provides == frozenset({"css_build"})
+
+    diff = parse_verification_command("git diff --exit-code -- src/app/static/css/tailwind.css")
+    assert diff.kind == "raw"
+    assert diff.provides == frozenset({"css_diff"})
+
+    # CSS 검증으로 위장할 수 있는 다른 git 명령과 경로는 거부합니다.
+    for rejected in (
+        "git status",
+        "git diff --stat",
+        "git diff --exit-code src/app/static/css/tailwind.css",
+        "git diff --exit-code --",
+        "git diff --exit-code -- ../outside.css",
+        "git diff --exit-code -- /abs/tailwind.css",
+        "git diff --exit-code -- src/app/static/css/tailwind.css src/app/other.css",
+        "git checkout -- src/app/static/css/tailwind.css",
+    ):
+        with pytest.raises(ValueError):
+            parse_verification_command(rejected)
+
+
 def test_parse_verification_command_allows_only_known_runners():
     """Capsule 문자열을 셸에 넘기면 임의 명령 실행 통로가 됩니다."""
     pytest_cmd = parse_verification_command("uv run pytest tests/test_x.py -q")
@@ -887,6 +930,61 @@ def test_root_docker_build_does_not_cover_frontend_dockerfile():
         )
 
     assert g_ok.status == "pass"
+
+
+def test_gate3_blocks_template_change_without_css_commands():
+    """템플릿 변경을 pytest 만으로 덮으면 안 됩니다. CSS 재빌드와 diff 확인이 필요합니다."""
+    required = required_capabilities(["src/app/templates/bids/detail.html"])
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "5 passed in 1s", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["uv run pytest tests/ -q"],
+            capabilities=required,
+        )
+
+    assert g.status == "skipped"
+    assert g.required is True
+    assert set(g.raw_data["uncovered_capabilities"]) == {"css_build", "css_diff"}
+
+
+def test_gate3_passes_when_css_build_and_diff_cover_css_capabilities(tmp_path: Path):
+    """재빌드와 diff 확인이 함께 있으면 두 CSS 능력이 모두 덮입니다."""
+    (tmp_path / "src" / "app" / "static" / "css").mkdir(parents=True)
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "ok", "", False)
+        g = run_gate3_tests(
+            [],
+            tmp_path,
+            commands=[
+                "npm run build:css",
+                "git diff --exit-code -- src/app/static/css/tailwind.css",
+            ],
+            capabilities={"css_build", "css_diff"},
+        )
+
+    assert g.status == "pass"
+    assert g.raw_data["uncovered_capabilities"] == []
+    assert [r["target"] for r in g.raw_data["results"]] == [
+        "npm run build:css",
+        "git diff --exit-code -- src/app/static/css/tailwind.css",
+    ]
+
+
+def test_gate3_build_css_alone_is_not_enough():
+    """재빌드만 있고 커밋본 대조가 없으면 css_diff 가 미검증으로 남습니다."""
+    with patch("scripts.orca_level1_gate.run_command_safe") as mock_cmd:
+        mock_cmd.return_value = (0, "ok", "", False)
+        g = run_gate3_tests(
+            [],
+            Path("."),
+            commands=["npm run build:css"],
+            capabilities={"css_build", "css_diff"},
+        )
+
+    assert g.status == "skipped"
+    assert g.raw_data["uncovered_capabilities"] == ["css_diff"]
 
 
 # ---------------------------------------------------------------------------

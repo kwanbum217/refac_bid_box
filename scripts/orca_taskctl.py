@@ -37,6 +37,8 @@ try:
         CAP_BACKEND_MYPY,
         CAP_BACKEND_PYTEST,
         CAP_COMPOSE_CONFIG,
+        CAP_CSS_BUILD,
+        CAP_CSS_DIFF,
         CAP_DOCKER_BUILD,
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
@@ -55,6 +57,8 @@ except (ModuleNotFoundError, ImportError):
         CAP_BACKEND_MYPY,
         CAP_BACKEND_PYTEST,
         CAP_COMPOSE_CONFIG,
+        CAP_CSS_BUILD,
+        CAP_CSS_DIFF,
         CAP_DOCKER_BUILD,
         CAP_FRONTEND_BUILD,
         CAP_FRONTEND_TEST,
@@ -194,6 +198,14 @@ RULES_VERIFICATION_COMMAND = "python3 scripts/validate_agent_rules.py --quiet"
 BACKEND_VERIFICATION_COMMAND = "uv run pytest tests/ -q -m 'not data_assets'"
 MYPY_VERIFICATION_COMMAND = "uv run mypy src"
 DEFAULT_VERIFICATION_COMMANDS = [BACKEND_VERIFICATION_COMMAND, RULES_VERIFICATION_COMMAND]
+
+# 화면 템플릿이나 컴파일된 Tailwind CSS 를 고치는 Task 의 CSS 검증입니다. 재빌드가
+# 먼저, 커밋본과의 일치 확인이 다음입니다. 재빌드만 하고 결과를 커밋하지 않으면
+# CI 재현성 검사가 실패하므로 두 명령을 항상 함께 붙입니다. CI 의
+# 'Verify Tailwind CSS Reproducibility' 스텝과 같은 명령을 씁니다.
+CSS_BUILD_VERIFICATION_COMMAND = "npm run build:css"
+CSS_DIFF_VERIFICATION_COMMAND = "git diff --exit-code -- src/app/static/css/tailwind.css"
+CSS_VERIFICATION_COMMANDS = [CSS_BUILD_VERIFICATION_COMMAND, CSS_DIFF_VERIFICATION_COMMAND]
 
 # 검증 능력과 그것을 덮는 명령의 대응. 순서가 Capsule 에 적히는 순서입니다.
 # docker_build 는 빌드 컨텍스트별로 갈리므로 여기 두지 않고 따로 만듭니다.
@@ -690,22 +702,34 @@ def resolve_verification_commands(
     Intent 가 명시하면 전량 pytest 명령의 data_assets 제외 마커를 보정/검증한 뒤
     보존합니다. 명시가 없으면 쓰기 범위가 요구하는 검증 능력(src/ 변경 시 mypy 포함)을
     게이트와 같은 함수로 구해 그 능력을 덮는 명령 목록을 계산하여 반환합니다.
+    어느 경로든 쓰기 범위가 CSS 재빌드·diff 능력을 요구하면 두 명령을 선언/계산된
+    목록 뒤에 재빌드 다음 diff 순으로 덧붙입니다. Intent 가 이미 선언했으면 중복되지
+    않습니다.
     """
     declared = [
         str(item).strip() for item in intent.get("verification_commands", []) if str(item).strip()
     ]
-    if declared:
-        normalized = [_normalize_declared_pytest_command(cmd) for cmd in declared]
-        return list(dict.fromkeys(item for item in normalized if item))
-
     paths = [str(path).strip() for path in write_files if str(path).strip()]
     needed = required_capabilities(paths)
+    # 재빌드와 diff 확인은 한 쌍입니다. 하나만 붙으면 게이트 3 이 나머지 능력을
+    # 미검증으로 보아 Capsule 이 통과하지 못합니다.
+    css_needed = bool(needed & {CAP_CSS_BUILD, CAP_CSS_DIFF})
+
+    if declared:
+        normalized = [_normalize_declared_pytest_command(cmd) for cmd in declared]
+        commands = list(dict.fromkeys(item for item in normalized if item))
+        if css_needed:
+            commands += CSS_VERIFICATION_COMMANDS
+        return list(dict.fromkeys(commands))
+
     commands = [command for capability, command in CAPABILITY_COMMANDS if capability in needed]
     commands += [
         _docker_build_command(capability)
         for capability in sorted(needed)
         if capability.startswith(f"{CAP_DOCKER_BUILD}:")
     ]
+    if css_needed:
+        commands += CSS_VERIFICATION_COMMANDS
     commands.append(RULES_VERIFICATION_COMMAND)
     return list(dict.fromkeys(commands))
 
