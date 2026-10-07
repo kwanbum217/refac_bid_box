@@ -702,25 +702,33 @@ def resolve_verification_commands(
     Intent 가 명시하면 전량 pytest 명령의 data_assets 제외 마커를 보정/검증한 뒤
     보존합니다. 명시가 없으면 쓰기 범위가 요구하는 검증 능력(src/ 변경 시 mypy 포함)을
     게이트와 같은 함수로 구해 그 능력을 덮는 명령 목록을 계산하여 반환합니다.
+    어느 경로든 쓰기 범위가 CSS 재빌드·diff 능력을 요구하면 두 명령을 선언/계산된
+    목록 뒤에 재빌드 다음 diff 순으로 덧붙입니다. Intent 가 이미 선언했으면 중복되지
+    않습니다.
     """
     declared = [
         str(item).strip() for item in intent.get("verification_commands", []) if str(item).strip()
     ]
-    if declared:
-        normalized = [_normalize_declared_pytest_command(cmd) for cmd in declared]
-        return list(dict.fromkeys(item for item in normalized if item))
-
     paths = [str(path).strip() for path in write_files if str(path).strip()]
     needed = required_capabilities(paths)
+    # 재빌드와 diff 확인은 한 쌍입니다. 하나만 붙으면 게이트 3 이 나머지 능력을
+    # 미검증으로 보아 Capsule 이 통과하지 못합니다.
+    css_needed = bool(needed & {CAP_CSS_BUILD, CAP_CSS_DIFF})
+
+    if declared:
+        normalized = [_normalize_declared_pytest_command(cmd) for cmd in declared]
+        commands = list(dict.fromkeys(item for item in normalized if item))
+        if css_needed:
+            commands += CSS_VERIFICATION_COMMANDS
+        return list(dict.fromkeys(commands))
+
     commands = [command for capability, command in CAPABILITY_COMMANDS if capability in needed]
     commands += [
         _docker_build_command(capability)
         for capability in sorted(needed)
         if capability.startswith(f"{CAP_DOCKER_BUILD}:")
     ]
-    # 재빌드와 diff 확인은 한 쌍입니다. 하나만 붙으면 게이트 3 이 나머지 능력을
-    # 미검증으로 보아 Capsule 이 통과하지 못합니다.
-    if needed & {CAP_CSS_BUILD, CAP_CSS_DIFF}:
+    if css_needed:
         commands += CSS_VERIFICATION_COMMANDS
     commands.append(RULES_VERIFICATION_COMMAND)
     return list(dict.fromkeys(commands))
