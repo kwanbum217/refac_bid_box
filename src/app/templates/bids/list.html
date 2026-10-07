@@ -98,10 +98,19 @@
     <div class="h-content-padding">
         <div class="h-card">
             <div class="overflow-x-auto">
-                <table class="h-table">
+                <table class="h-table list-table">
+                    <colgroup>
+                        <col style="width:7.5rem">
+                        <col>
+                        <col style="width:10rem">
+                        <col style="width:10.5rem">
+                        <col style="width:8.75rem">
+                        <col style="width:8.5rem">
+                        <col style="width:5.75rem">
+                    </colgroup>
                     <thead>
                         <tr>
-                            <th class="w-24">분류</th>
+                            <th>분류</th>
                             <th>공고 정보</th>
                             <th>수요기관</th>
                             <th>지역</th>
@@ -119,34 +128,34 @@
                                 <span class="badge badge-indigo mt-1" title="공고 상세에서 적격심사 점수와 입찰가격 보완을 계산할 수 있는 공고입니다">적격심사 분석</span>
                                 {% endif %}
                             </td>
-                            <td class="max-w-md">
-                                <div class="bid-title font-semibold text-slate-900 truncate">
+                            <td>
+                                <div class="bid-title list-clip font-semibold text-slate-900" title="{{ bid.bid_ntce_nm }}">
                                     {{ bid.bid_ntce_nm }}
                                 </div>
-                                <div class="text-[11px] text-slate-400 mt-0.5">
+                                <div class="list-clip text-[11px] text-slate-400 mt-0.5">
                                     {{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}
                                 </div>
                             </td>
                             <td>
-                                <div class="flex items-center text-sm text-slate-600">
-                                    <i class="far fa-building mr-2 text-slate-300"></i>
+                                <div class="list-clip text-sm text-slate-600" title="{{ bid.dminstt_nm }}">
+                                    <i class="far fa-building mr-1 text-slate-300"></i>
                                     {{ bid.dminstt_nm|truncatechars(18) }}
                                 </div>
                             </td>
                             <td>
-                                <div class="flex flex-col text-xs">
-                                    <span class="text-[11px] text-slate-400">발주처</span>
-                                    <span class="font-medium text-slate-700">{{ bid.institution_region or '-' }}</span>
-                                    <span class="text-[11px] text-slate-400 mt-1">참가가능</span>
+                                <div class="text-xs">
+                                    <span class="list-clip text-[11px] text-slate-400">발주처</span>
+                                    <span class="list-clip font-medium text-slate-700" title="{{ bid.institution_region or '-' }}">{{ bid.institution_region or '-' }}</span>
+                                    <span class="list-clip text-[11px] text-slate-400 mt-1">참가가능</span>
                                     {% if bid.participation_regions %}
-                                    <span class="text-slate-700">{{ bid.participation_regions|join(', ') }}</span>
+                                    <span class="list-clip text-slate-700" title="{{ bid.participation_regions|join(', ') }}">{{ bid.participation_region_preview }}</span>
                                     {% else %}
-                                    <span class="text-slate-400">참가 지역 제한 정보 없음</span>
+                                    <span class="list-clip text-slate-400" title="참가 지역 제한 정보 없음">참가 지역 제한 정보 없음</span>
                                     {% endif %}
                                 </div>
                             </td>
                             <td>
-                                <div class="text-sm font-medium text-slate-900">
+                                <div class="list-clip text-sm font-medium text-slate-900">
                                     {% if bid.has_base_amount %}
                                     ₩{{ bid.display_base_amount|intcomma }}
                                     {% else %}
@@ -155,9 +164,9 @@
                                 </div>
                             </td>
                             <td>
-                                <div class="flex flex-col text-sm">
-                                    <span class="text-[11px] text-slate-400 mb-1">공고</span>
-                                    <span class="font-semibold text-slate-700">{{ bid.bid_ntce_dt|date("Y.m.d H:i")|default("-", true) }}</span>
+                                <div class="text-sm">
+                                    <span class="list-clip text-[11px] text-slate-400 mb-1">공고</span>
+                                    <span class="list-clip font-semibold text-slate-700">{{ bid.bid_ntce_dt|date("Y.m.d H:i")|default("-", true) }}</span>
                                 </div>
                             </td>
                             <td class="text-right">

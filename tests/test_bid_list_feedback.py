@@ -284,11 +284,49 @@ def test_list_displays_region_and_participation_region(monkeypatch, isolated_db)
 
     html = client.get("/bids/").text
 
+    assert 'class="h-table list-table"' in html
+    assert "list-clip" in html
     assert "발주처" in html
     assert "참가가능" in html
     assert "서울특별시" in html
     assert "부산광역시" in html
     assert "참가 지역 제한 정보 없음" in html
+
+
+def test_participation_region_preview_keeps_one_line():
+    assert bid_queries.participation_region_preview(["서울특별시"]) == "서울특별시"
+    assert (
+        bid_queries.participation_region_preview(["서울특별시", "경기도"]) == "서울특별시, 경기도"
+    )
+    assert (
+        bid_queries.participation_region_preview(
+            ["서울특별시", "경기도", "인천광역시", "부산광역시"]
+        )
+        == "서울특별시, 경기도..."
+    )
+    assert bid_queries.participation_region_preview(["서울특별시", "서울특별시", "경기도"]) == (
+        "서울특별시, 경기도"
+    )
+    assert (
+        bid_queries.participation_region_preview(
+            ["전남광주통합특별시 목포시", "전남광주통합특별시 보성군"]
+        )
+        == "전남광주통합특별시 목포시..."
+    )
+
+
+def test_list_clips_many_participation_regions(monkeypatch, isolated_db):
+    monkeypatch.setattr(settings, "MEILI_ENABLED", False, raising=False)
+    _add_announcement(isolated_db, "FB-RGN-MANY", dminstt_nm="서울특별시 강남구")
+    _add_license(isolated_db, "FB-RGN-MANY", "1162")
+    for sno, name in enumerate(["서울특별시", "경기도", "인천광역시", "부산광역시"], start=1):
+        _add_region(isolated_db, "FB-RGN-MANY", name, sno=str(sno))
+    client = _logged_in_client(isolated_db)
+
+    html = client.get("/bids/").text
+
+    assert 'title="서울특별시, 경기도, 인천광역시, 부산광역시">서울특별시, 경기도...</span>' in html
+    assert ">서울특별시, 경기도, 인천광역시, 부산광역시</span>" not in html
 
 
 def test_region_display_helper_attaches_values(isolated_db):

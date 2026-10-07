@@ -340,6 +340,31 @@ def institution_region_label(dminstt_nm: str | None, ntce_instt_nm: str | None) 
     return ""
 
 
+# 목록 지역 칸의 참가가능 한 줄에 들어가는 글자 수다. 이 안에 끝나는 지역명만
+# 그대로 두고, 나머지가 있으면 말줄임을 붙여 행이 아래로 늘지 않게 한다.
+PARTICIPATION_REGION_PREVIEW_CHARS = 12
+
+
+def participation_region_preview(names: Iterable[str]) -> str:
+    """참가가능지역을 목록 한 줄용 문자열로 줄입니다."""
+    cleaned = list(dict.fromkeys(name.strip() for name in names if name and name.strip()))
+    if not cleaned:
+        return ""
+    shown: list[str] = []
+    used = 0
+    for name in cleaned:
+        extra = len(name) if not shown else len(name) + 2
+        if shown and used + extra > PARTICIPATION_REGION_PREVIEW_CHARS:
+            break
+        shown.append(name)
+        used += extra
+    if len(shown) == len(cleaned):
+        return ", ".join(shown)
+    if not shown:
+        shown = [cleaned[0]]
+    return f"{', '.join(shown)}..."
+
+
 def load_announcement_region_display(db: Session, bids: Iterable[BidAnnouncement]) -> None:
     """목록 행에 발주처 지역과 참가가능지역 표시값을 붙입니다.
 
@@ -353,6 +378,7 @@ def load_announcement_region_display(db: Session, bids: Iterable[BidAnnouncement
             bid.dminstt_nm, bid.ntce_instt_nm
         )
         bid.participation_regions = []  # type: ignore[attr-defined]
+        bid.participation_region_preview = ""  # type: ignore[attr-defined]
 
     pairs = {(bid.bid_ntce_no, bid.bid_ntce_ord or "000") for bid in rows}
     if not pairs:
@@ -370,8 +396,13 @@ def load_announcement_region_display(db: Session, bids: Iterable[BidAnnouncement
         .scalars()
         .all()
     )
+
+    def _region_order(row: BidAnnouncementParticipationRegion) -> tuple[int, str, int]:
+        sno = row.lmt_sno or ""
+        return (int(sno) if sno.isdigit() else 10**9, sno, row.id)
+
     names_by_key: dict[tuple[str, str], list[str]] = {}
-    for row in region_rows:
+    for row in sorted(region_rows, key=_region_order):
         if not row.prtcpt_psbl_rgn_nm:
             continue
         names_by_key.setdefault((row.bid_ntce_no, row.bid_ntce_ord), []).append(
@@ -381,7 +412,9 @@ def load_announcement_region_display(db: Session, bids: Iterable[BidAnnouncement
     for bid in rows:
         names = names_by_key.get((bid.bid_ntce_no, bid.bid_ntce_ord or "000"))
         if names:
-            bid.participation_regions = list(dict.fromkeys(names))  # type: ignore[attr-defined]
+            regions = list(dict.fromkeys(names))
+            bid.participation_regions = regions  # type: ignore[attr-defined]
+            bid.participation_region_preview = participation_region_preview(regions)  # type: ignore[attr-defined]
 
 
 def _region_sort_rank():

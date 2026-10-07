@@ -123,10 +123,10 @@ class TestEvaluationUITemplate:
         assert 'id="warnings-list"' in template_content
         assert "경고 및 안내" in template_content
 
-    def test_model_fallback_warning(self, template_content):
-        """모델 대체 경고 영역이 있다."""
-        assert 'id="evaluation-fallback"' in template_content
-        assert 'id="evaluation-fallback-msg"' in template_content
+    def test_model_fallback_warning_is_hidden(self, template_content):
+        """모델 대체와 예외 원문은 공고 화면에 띄우지 않는다."""
+        assert 'id="evaluation-fallback"' not in template_content
+        assert "요청 모델(" not in template_content
 
     def test_lower_bound_warnings(self, template_content):
         """하한율 기본값 사용/불일치 경고 영역이 있다."""
@@ -167,7 +167,7 @@ class TestEvaluationUITemplate:
         assert 'id="res-optimal-price"' in template_content
         assert 'id="res-max-price"' in template_content
         assert 'id="res-prediction-rate"' in template_content
-        assert 'id="res-fallback"' in template_content
+        assert 'id="res-fallback"' not in template_content
         # 예측 구간·입력 투찰가 근접도는 제거됐다.
         assert 'id="res-interval"' not in template_content
         assert 'id="res-similarity"' not in template_content
@@ -281,7 +281,6 @@ class TestEvaluationUISchemaAlignment:
             ("rule_basis", 'id="rule-basis"'),
             ("blocked", 'id="evaluation-blocked"'),
             ("blocked_reason", 'id="blocked-reason"'),
-            ("fallback_used", 'id="evaluation-fallback"'),
             ("warnings", 'id="warnings-list"'),
             ("lower_bound_rate", 'id="lower-bound-default-value"'),
         ]

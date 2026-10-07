@@ -63,10 +63,8 @@ def test_template_no_longer_reads_similarity_field(markup: str):
     assert 'id="res-similarity"' not in markup
 
 
-def test_template_surfaces_prediction_fallback(markup: str):
-    """모델 대체가 일어난 사실을 화면에서도 감추지 않습니다."""
-    assert "prediction.fallback_used" in markup
-    assert "prediction.requested_model" in markup
-    assert 'id="res-fallback"' in markup
-    assert "$('#res-fallback').removeClass('hidden')" in markup
-    assert "$('#res-fallback').addClass('hidden')" in markup
+def test_template_hides_prediction_fallback(markup: str):
+    """모델 대체 사유와 예외 원문은 공고 화면에 띄우지 않습니다."""
+    assert "prediction.fallback_used" not in markup
+    assert "요청 모델(" not in markup
+    assert 'id="res-fallback"' not in markup

@@ -30,6 +30,32 @@
         font-weight: 600;
         color: var(--h-text-primary);
     }
+    .price-result-wrap {
+        container-type: inline-size;
+    }
+    .price-result-grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(0, 1fr);
+    }
+    @container (min-width: 30rem) {
+        .price-result-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+    .price-result-cell {
+        container-type: inline-size;
+        min-width: 0;
+    }
+    .price-amount {
+        max-width: 100%;
+        font-size: clamp(0.75rem, 12cqi, 1.5rem);
+        line-height: 1.25;
+        font-weight: 900;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+    }
 </style>
 {% endblock %}
 
@@ -247,40 +273,43 @@
 
                         <!-- Prediction Result -->
                         <div id="prediction-result" class="hidden">
-                            <div class="p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-xs relative overflow-hidden">
-                                <div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+                            <div class="p-3 sm:p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-xs relative">
+                                <div class="absolute inset-0 overflow-hidden rounded-xl pointer-events-none" aria-hidden="true">
+                                    <div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
+                                </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10">
-                                    <div id="res-min-price-cell" class="p-4 bg-white/60 backdrop-blur-xs border border-slate-100 rounded-lg">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <i class="fas fa-arrow-down-wide-short text-primary text-[10px]"></i>
-                                            <div class="detail-label text-primary mb-0">최저가</div>
-                                        </div>
-                                        <div id="res-min-price" class="text-2xl font-black text-slate-900 tracking-tight">-</div>
-                                    </div>
-                                    <div class="p-4 bg-white/60 backdrop-blur-xs border border-primary/20 rounded-lg">
-                                        <div class="flex items-center justify-between mb-1">
-                                            <div class="flex items-center gap-2">
-                                                <i class="fas fa-wand-magic-sparkles text-primary text-[10px]"></i>
-                                                <div class="detail-label text-primary mb-0">AI 예측가</div>
+                                <div class="price-result-wrap relative z-10">
+                                    <div class="price-result-grid">
+                                        <button type="button" id="res-min-price-cell" data-price-help="min" class="price-result-cell p-4 bg-white border border-slate-100 rounded-lg text-left cursor-pointer hover:border-primary/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-haspopup="dialog">
+                                            <div class="flex items-center gap-2 mb-1 min-w-0">
+                                                <i class="fas fa-arrow-down-wide-short text-primary text-[10px] shrink-0" aria-hidden="true"></i>
+                                                <div class="detail-label text-primary mb-0 whitespace-nowrap">최저가</div>
+                                                <i class="fas fa-circle-info text-slate-300 text-[10px] shrink-0" aria-hidden="true"></i>
                                             </div>
-                                            <span id="res-prediction-rate" class="text-sm font-black text-primary tracking-tighter">-</span>
-                                        </div>
-                                        <div id="res-optimal-price" class="text-2xl font-black text-slate-900 tracking-tight">-</div>
-                                    </div>
-                                    <div id="res-max-price-cell" class="p-4 bg-white/60 backdrop-blur-xs border border-slate-100 rounded-lg">
-                                        <div class="flex items-center gap-2 mb-1">
-                                            <i class="fas fa-arrow-up-wide-short text-primary text-[10px]"></i>
-                                            <div class="detail-label text-primary mb-0">최상가</div>
-                                        </div>
-                                        <div id="res-max-price" class="text-2xl font-black text-slate-900 tracking-tight">-</div>
+                                            <div id="res-min-price" class="price-amount text-slate-900">-</div>
+                                        </button>
+                                        <button type="button" id="res-optimal-price-cell" data-price-help="optimal" class="price-result-cell p-4 bg-white border border-primary/20 rounded-lg text-left cursor-pointer hover:border-primary/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-haspopup="dialog">
+                                            <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 mb-1 min-w-0">
+                                                <div class="flex items-center gap-2 min-w-0">
+                                                    <i class="fas fa-wand-magic-sparkles text-primary text-[10px] shrink-0" aria-hidden="true"></i>
+                                                    <div class="detail-label text-primary mb-0 whitespace-nowrap">AI 예측가</div>
+                                                    <i class="fas fa-circle-info text-slate-300 text-[10px] shrink-0" aria-hidden="true"></i>
+                                                </div>
+                                                <span id="res-prediction-rate" class="shrink-0 whitespace-nowrap text-sm font-black text-primary tracking-tighter">-</span>
+                                            </div>
+                                            <div id="res-optimal-price" class="price-amount text-slate-900">-</div>
+                                        </button>
+                                        <button type="button" id="res-max-price-cell" data-price-help="max" class="price-result-cell p-4 bg-white border border-slate-100 rounded-lg text-left cursor-pointer hover:border-primary/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-haspopup="dialog">
+                                            <div class="flex items-center gap-2 mb-1 min-w-0">
+                                                <i class="fas fa-arrow-up-wide-short text-primary text-[10px] shrink-0" aria-hidden="true"></i>
+                                                <div class="detail-label text-primary mb-0 whitespace-nowrap">최상가</div>
+                                                <i class="fas fa-circle-info text-slate-300 text-[10px] shrink-0" aria-hidden="true"></i>
+                                            </div>
+                                            <div id="res-max-price" class="price-amount text-slate-900">-</div>
+                                        </button>
                                     </div>
                                 </div>
 
-                                <div id="res-fallback" class="hidden mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] font-bold text-amber-700 flex items-start gap-2">
-                                    <i class="fas fa-triangle-exclamation mt-0.5"></i>
-                                    <span id="res-fallback-msg"></span>
-                                </div>
                                 <div id="res-rate-notice" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] font-bold text-amber-700 flex items-start gap-2">
                                     <i class="fas fa-circle-exclamation mt-0.5"></i>
                                     <span id="res-rate-notice-msg"></span>
@@ -484,7 +513,10 @@
                                 <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest">신인도 가점·감점 (별표 11)</h4>
                                 <span id="reputation-cap-note" class="text-[10px] font-semibold text-slate-500"></span>
                             </div>
-                            <div id="reputation-rows" class="space-y-1"></div>
+                            <p id="reputation-applied-note" class="text-xs font-semibold text-slate-600"></p>
+                            <div id="reputation-applied" class="space-y-1"></div>
+                            <div id="reputation-rows" class="hidden space-y-1"></div>
+                            <button type="button" id="reputation-edit" class="hidden text-[10px] font-semibold text-primary hover:underline">이 공고만 수정</button>
                             <div class="text-xs font-semibold text-slate-600">선택 합계(상한 적용 전): <span id="reputation-total" class="tabular-nums">0</span></div>
                         </div>
                         <!-- 지방계약(LOCAL) 차단 해제 입력. 차단 코드에 따라 필요한 입력만 노출한다. -->
@@ -523,12 +555,6 @@
                     <div id="evaluation-warnings" class="hidden space-y-2 border-t border-slate-200 pt-4">
                         <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">경고 및 안내</h3>
                         <div id="warnings-list" class="space-y-2"></div>
-                    </div>
-
-                    <!-- 모델 대체 경고 -->
-                    <div id="evaluation-fallback" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold text-amber-700 flex items-start gap-2">
-                        <i class="fas fa-triangle-exclamation mt-0.5 shrink-0"></i>
-                        <span id="evaluation-fallback-msg"></span>
                     </div>
 
                     <!-- 하한율 경고 -->
@@ -619,6 +645,20 @@
             <button type="button" id="score-table-modal-close" class="shrink-0 text-sm font-semibold text-slate-500 hover:text-slate-800">닫기</button>
         </div>
         <div id="score-table-modal-body" class="flex-1 px-5 py-4 overflow-y-auto text-sm text-slate-700" style="min-height:0;"></div>
+    </div>
+</div>
+<div id="price-help-modal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40" role="dialog" aria-modal="true" aria-labelledby="price-help-title">
+    <button type="button" id="price-help-backdrop" class="absolute inset-0 cursor-default" aria-label="설명 닫기"></button>
+    <div class="relative bg-white w-full sm:max-w-lg overflow-hidden rounded-t-xl sm:rounded-xl shadow-xl flex flex-col" style="max-height:92vh; min-height:0;">
+        <div class="flex shrink-0 items-start justify-between gap-4 px-5 py-4 border-b border-slate-200">
+            <div class="min-w-0">
+                <h3 id="price-help-title" class="text-lg font-bold text-slate-900">금액 설명</h3>
+                <p id="price-help-amount" class="mt-1 text-2xl font-black tracking-tight text-slate-900 tabular-nums break-all"></p>
+                <p id="price-help-rate" class="hidden mt-1 text-sm font-black text-primary"></p>
+            </div>
+            <button type="button" id="price-help-close" class="shrink-0 text-sm font-semibold text-slate-500 hover:text-slate-800">닫기</button>
+        </div>
+        <div id="price-help-body" class="flex-1 px-5 py-4 overflow-y-auto text-sm leading-relaxed text-slate-700 space-y-3" style="min-height:0;"></div>
     </div>
 </div>
 {% endblock %}
@@ -839,7 +879,7 @@ $(document).ready(function() {
             'LWLT_RATE_UNRESOLVED': '추정가격을 입력하면 해당 구간 하한율로 계산합니다.',
             'LOCAL_QUANT_REQUIRED': '입력한 정량점수는 서버가 검증하지 않습니다.',
             'MISSING_SCORE_TABLE': '배점표를 입력한 뒤 다시 실행하십시오.',
-            'PRICE_BOUNDS_UNRESOLVED': '가격배점한도·평점계수·통과점수는 이미 이 공고 별표로 적용되어 있습니다. 정량평가(이행실적, 경영상태, 신인도)가 비어 있으면 필요한 가격점수가 배점한도를 넘습니다. 그 점수를 반영하면 다시 계산합니다.'
+            'PRICE_BOUNDS_UNRESOLVED': '가격배점한도·평점계수·통과점수는 이미 이 공고 별표로 적용되어 있습니다. 경영상태와 신인도는 회원가입 때 저장한 원자료를 그대로 씁니다. 배점표의 나머지 정량 항목은 공고마다 입력하며, 그 점수가 비어 필요한 가격점수가 배점한도를 넘으면 통과 금액을 계산하지 않습니다.'
         };
         const rawReason = String(code || '');
         const codePrefix = rawReason.match(/^([A-Z][A-Z_]*)\s*:/);
@@ -1023,6 +1063,60 @@ $(document).ready(function() {
         $('#score-table-modal').addClass('hidden');
     }
 
+    const priceHelpCopy = {
+        min: {
+            title: '최저가',
+            summary: '적격심사를 통과하는 데 필요한 가격점수를 만족하는 구간에서, 사정률 하한에 맞춰 계산한 투찰금액입니다.'
+        },
+        optimal: {
+            title: 'AI 예측가',
+            summary: '선택한 예측 모델이 이 공고에 대해 산출한 투찰금액입니다. 함께 표시된 비율은 예측 낙찰률입니다.'
+        },
+        max: {
+            title: '최상가',
+            summary: '같은 통과 조건을 만족하는 구간에서, 사정률 상한에 맞춰 계산한 투찰금액입니다.'
+        }
+    };
+
+    function closePriceHelp() {
+        $('#price-help-modal').addClass('hidden');
+    }
+
+    function visibleText(selector) {
+        const node = $(selector);
+        if (!node.length || node.hasClass('hidden')) return '';
+        return node.text().replace(/\s+/g, ' ').trim();
+    }
+
+    function openPriceHelp(kind) {
+        const copy = priceHelpCopy[kind];
+        if (!copy) return;
+        const amountSelector = kind === 'min'
+            ? '#res-min-price'
+            : (kind === 'max' ? '#res-max-price' : '#res-optimal-price');
+        const reasonSelector = kind === 'min'
+            ? '#res-min-reason'
+            : (kind === 'max' ? '#res-max-reason' : '#res-ai-reason');
+        const rate = kind === 'optimal' ? $('#res-prediction-rate').text().trim() : '';
+        $('#price-help-title').text(copy.title);
+        $('#price-help-amount').text($(amountSelector).text());
+        $('#price-help-rate').text(rate && rate !== '-' ? rate : '').toggleClass('hidden', !(rate && rate !== '-'));
+        const blocks = ['<p>' + escapeHtml(copy.summary) + '</p>'];
+        const reason = $(reasonSelector).text().replace(/\s+/g, ' ').trim();
+        if (reason) blocks.push('<p>' + escapeHtml(reason) + '</p>');
+        if (kind !== 'optimal') {
+            const notice = visibleText('#res-rate-notice');
+            if (notice) blocks.push('<p>' + escapeHtml(notice) + '</p>');
+            const missing = visibleText('#res-lwlt-missing');
+            if (missing) blocks.push('<p>' + escapeHtml(missing) + '</p>');
+        }
+        const common = $('#res-common-reason').text().replace(/\s+/g, ' ').trim();
+        if (common) blocks.push('<p class="text-slate-500">' + escapeHtml(common) + '</p>');
+        $('#price-help-body').html(blocks.join(''));
+        $('#price-help-modal').removeClass('hidden');
+        $('#price-help-close').trigger('focus');
+    }
+
     function buildAppendixHtml(table, score) {
         if (!table || !Array.isArray(table.bands) || table.bands.length === 0) {
             return '<p class="text-slate-600">이 공고에서 렌더링할 별표 배점표를 확정하지 못했습니다.</p>';
@@ -1150,12 +1244,15 @@ $(document).ready(function() {
             + options + '</select>';
     }
 
-    function quantRow(item, table) {
+    function quantRow(item, table, appliedReputation) {
         let inputCell;
         if (item.limit_kind === 'credit_grade') {
             inputCell = quantManagementCell(item, table);
         } else if (item.limit_kind === 'reputation') {
-            inputCell = '<span class="text-xs font-semibold text-slate-500">아래 신인도 항목에서 선택</span>';
+            const applied = appliedReputation && Object.keys(appliedReputation).length > 0;
+            inputCell = applied
+                ? '<span class="text-xs font-semibold text-slate-700">회원정보 적용</span>'
+                : '<span class="text-xs font-semibold text-slate-500">아래 신인도 항목에서 선택</span>';
         } else {
             inputCell = quantScoreCell(item);
         }
@@ -1168,16 +1265,19 @@ $(document).ready(function() {
             + '</tr>';
     }
 
-    function reputationControl(item) {
+    function reputationControl(item, appliedValue) {
         const options = Array.isArray(item.options) ? item.options : [];
+        const selected = appliedValue == null || appliedValue === '' ? '' : String(appliedValue);
         if (item.option_kind === 'range' && options.length === 2) {
+            const value = selected !== '' ? selected : '0';
             return '<input type="number" data-reputation-item="' + escapeHtml(item.item_code) + '" step="0.01"'
-                + ' min="' + escapeHtml(options[0]) + '" max="' + escapeHtml(options[1]) + '" value="0"'
+                + ' min="' + escapeHtml(options[0]) + '" max="' + escapeHtml(options[1]) + '" value="' + escapeHtml(value) + '"'
                 + ' class="w-24 bg-white border border-slate-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">';
         }
-        let selectOptions = '<option value="0">미해당</option>';
+        let selectOptions = '<option value="0"' + (selected === '' ? ' selected' : '') + '>미해당</option>';
         options.forEach(function(value) {
-            selectOptions += '<option value="' + escapeHtml(value) + '">' + escapeHtml(value) + '점</option>';
+            const picked = String(value) === selected ? ' selected' : '';
+            selectOptions += '<option value="' + escapeHtml(value) + '"' + picked + '>' + escapeHtml(value) + '점</option>';
         });
         return '<select data-reputation-item="' + escapeHtml(item.item_code) + '"'
             + ' class="w-32 bg-white border border-slate-200 rounded-sm px-2 py-1 text-sm font-semibold focus:border-primary outline-hidden">'
@@ -1202,20 +1302,46 @@ $(document).ready(function() {
         $('#reputation-total').text(total.toFixed(2));
     }
 
-    function renderReputationSection(table, requiredItems) {
+    let reputationEditing = false;
+
+    function appliedReputationTotal(applied) {
+        let total = 0;
+        Object.keys(applied || {}).forEach(function(code) {
+            const value = parseFloat(applied[code]);
+            if (Number.isFinite(value)) total += value;
+        });
+        return total;
+    }
+
+    function renderReputationSection(table, requiredItems, appliedItems) {
         const $section = $('#reputation-section');
         const items = table && Array.isArray(table.reputation_items) ? table.reputation_items : [];
         const required = Array.isArray(requiredItems) ? requiredItems : [];
+        const applied = appliedItems && typeof appliedItems === 'object' ? appliedItems : {};
+        const appliedCodes = Object.keys(applied);
         const $rows = $('#reputation-rows');
+        const $applied = $('#reputation-applied');
         $rows.empty();
+        $applied.empty();
         if (items.length === 0) {
-            $section.toggleClass('hidden', required.length === 0);
+            $section.toggleClass('hidden', required.length === 0 && appliedCodes.length === 0);
+            $('#reputation-edit').addClass('hidden');
             if (required.length > 0) {
-                $rows.html('<div class="text-xs font-semibold text-amber-700">평점 선택이 필요한 신인도 항목: '
+                $rows.removeClass('hidden').html('<div class="text-xs font-semibold text-amber-700">평점 선택이 필요한 신인도 항목: '
                     + required.map(escapeHtml).join(', ') + '</div>');
             }
             return;
         }
+        const byCode = {};
+        items.forEach(function(item) { byCode[item.item_code] = item; });
+        appliedCodes.forEach(function(code) {
+            const item = byCode[code];
+            const name = item ? item.item_name : code;
+            $applied.append('<div class="flex items-center justify-between gap-2">'
+                + '<span class="text-xs text-slate-700">' + escapeHtml(name) + '</span>'
+                + '<span class="text-xs font-semibold text-slate-800 tabular-nums">' + escapeHtml(String(applied[code])) + '점</span>'
+                + '</div>');
+        });
         items.forEach(function(item) {
             const needsGrade = required.indexOf(item.item_code) !== -1;
             const rowClass = needsGrade
@@ -1225,11 +1351,21 @@ $(document).ready(function() {
                 + (needsGrade ? ' <span class="text-[10px] font-bold text-amber-700">평점 선택 필요</span>' : '');
             $rows.append('<div class="' + rowClass + '">'
                 + '<span class="text-xs text-slate-600">' + label + '</span>'
-                + reputationControl(item) + '</div>');
+                + reputationControl(item, applied[item.item_code]) + '</div>');
         });
+        const showEditor = reputationEditing || appliedCodes.length === 0 || required.length > 0;
+        $rows.toggleClass('hidden', !showEditor);
+        $('#reputation-edit').toggleClass('hidden', showEditor || appliedCodes.length === 0);
+        $('#reputation-applied-note').text(appliedCodes.length > 0
+            ? '회원가입 때 저장한 신인도를 이 공고에 적용했습니다.'
+            : '저장된 신인도가 없습니다. 해당 항목만 선택하십시오.');
         $('#reputation-cap-note').text('가점 상한 ' + table.reputation_max_bonus + ' · 감점 상한 ' + table.reputation_max_penalty);
         $section.removeClass('hidden');
-        updateReputationTotal();
+        if (showEditor) {
+            updateReputationTotal();
+        } else {
+            $('#reputation-total').text(appliedReputationTotal(applied).toFixed(2));
+        }
     }
 
     // 수행실적 입력란 아래에 그 공고 규칙의 수행실적 산정 기준을 표시한다.
@@ -1247,7 +1383,11 @@ $(document).ready(function() {
         $basis.text('수행실적 산정 기준은 공고문 적격심사 배점표를 확인하십시오.');
     }
 
-    function renderQuantInputs(table, requiredItems) {
+    function renderQuantInputs(data) {
+        const table = data && data.quant_score_table ? data.quant_score_table : null;
+        const requiredItems = data && data.reputation_grade_required;
+        const appliedReputation = data && data.applied_reputation_items ? data.applied_reputation_items : {};
+        const appliedGrade = data && data.applied_management_grade ? data.applied_management_grade : '';
         quantScoreTable = table || null;
         const $tbody = $('#qualification-tbody');
         const $bandNote = $('#quant-band-note');
@@ -1257,7 +1397,7 @@ $(document).ready(function() {
             $('#quant-attachment').text('적용 별표 배점표 미확인');
             $bandNote.addClass('hidden').text('');
             renderPerformanceBasis(null);
-            renderReputationSection(null, requiredItems);
+            renderReputationSection(null, requiredItems, appliedReputation);
             renderEstimatedPriceRow(null);
             updateAppendixButton();
             return;
@@ -1269,7 +1409,7 @@ $(document).ready(function() {
         renderPerformanceBasis(table);
         if (!band) {
             $bandNote.removeClass('hidden').text(table.band_note || '적용 구간을 확정하지 못했습니다.');
-            renderReputationSection(table, requiredItems);
+            renderReputationSection(table, requiredItems, appliedReputation);
             renderEstimatedPriceRow(table);
             updateAppendixButton();
             return;
@@ -1277,12 +1417,13 @@ $(document).ready(function() {
         const rows = [];
         band.items.forEach(function(item) {
             if (item.limit_kind === 'price' || item.limit_kind === 'disqualification') return;
-            rows.push(quantRow(item, table));
+            rows.push(quantRow(item, table, appliedReputation));
         });
         $tbody.html(rows.join(''));
+        if (appliedGrade) $('#input-management-grade').val(appliedGrade);
         $bandNote.toggleClass('hidden', !table.band_note);
         if (table.band_note) $bandNote.text(table.band_note);
-        renderReputationSection(table, requiredItems);
+        renderReputationSection(table, requiredItems, appliedReputation);
         renderEstimatedPriceRow(table);
         updateAppendixButton();
     }
@@ -1343,7 +1484,14 @@ $(document).ready(function() {
     }
 
     // 신인도 선택 합계는 입력값 표시용이며, 상한 적용과 점수 확정은 서버가 한다.
+    // 회원정보에 저장된 항목은 요약만 보여주고, 이 공고만 바꿀 때 입력란을 연다.
     $(document).on('change input', '#reputation-rows [data-reputation-item]', updateReputationTotal);
+    $('#reputation-edit').on('click', function() {
+        reputationEditing = true;
+        $('#reputation-rows').removeClass('hidden');
+        $('#reputation-edit').addClass('hidden');
+        updateReputationTotal();
+    });
 
     function setEvaluationScopeBadge(data) {
         const defaultText = '일반용역 적격심사만 지원 (약 6%)';
@@ -1369,13 +1517,6 @@ $(document).ready(function() {
         $('#negotiation-price-rate').text(formatRate(data.negotiation_price_eval_rate));
         renderNegotiationDistribution(data);
         return true;
-    }
-
-    function usesFallbackModel(data) {
-        return Boolean(
-            data.fallback_used
-            || (data.requested_model && data.actual_model && data.requested_model !== data.actual_model)
-        );
     }
 
     function renderLowerBoundWarnings(warnings, lowerBoundRate) {
@@ -1570,16 +1711,6 @@ $(document).ready(function() {
         $('#res-max-reason').text(boundsReady ? boundReasonText(data, 'max') : '').toggleClass('hidden', !boundsReady);
         $('#res-common-reason').text(commonReasonText(data));
 
-        if (prediction.fallback_used) {
-            $('#res-fallback-msg').text(
-                '요청 모델(' + (prediction.requested_model || '-') + ')을 쓸 수 없어 '
-                + (prediction.actual_model || '-') + ' 으로 예측했습니다. 사유: ' + (prediction.fallback_reason || '-')
-            );
-            $('#res-fallback').removeClass('hidden');
-        } else {
-            $('#res-fallback').addClass('hidden');
-        }
-
         if (data.rate_notice) {
             $('#res-rate-notice-msg').text(data.rate_notice);
             $('#res-rate-notice').removeClass('hidden');
@@ -1649,7 +1780,7 @@ $(document).ready(function() {
                 $('#evaluation-loading').addClass('hidden');
                 renderRuleScoreTable(data.score_table);
                 renderLocalInputs(data);
-                renderQuantInputs(data.quant_score_table, data.reputation_grade_required);
+                renderQuantInputs(data);
                 renderLowerBoundWarnings(data.warnings, data.lower_bound_rate);
                 renderNegotiation(data);
                 renderEvaluationWarnings(data.warnings);
@@ -1684,17 +1815,6 @@ $(document).ready(function() {
                     $('#blocked-guidance').text(getBlockedGuidanceText(data.blocked_reason));
                 }
 
-                if (usesFallbackModel(data.prediction || {})) {
-                    $('#evaluation-fallback-msg').text(
-                        '요청 모델(' + (data.prediction.requested_model || '-') + ')을 쓸 수 없어 '
-                        + (data.prediction.actual_model || '-') + ' 이 적용되었습니다. 사유: '
-                        + (data.prediction.fallback_reason || '-')
-                    );
-                    $('#evaluation-fallback').removeClass('hidden');
-                } else {
-                    $('#evaluation-fallback').addClass('hidden');
-                }
-
                 renderRecommendAmounts(data);
             },
             error: function(xhr) {
@@ -1726,8 +1846,17 @@ $(document).ready(function() {
     $('#evaluation-card').on('input change', 'input, select', scheduleRecommend);
     $('#score-table-source').on('click', openScoreTableModal);
     $('#score-table-modal-close, #score-table-modal-backdrop').on('click', closeScoreTableModal);
+    $('#prediction-result').on('click', '[data-price-help]', function() {
+        openPriceHelp($(this).attr('data-price-help'));
+    });
+    $('#price-help-close, #price-help-backdrop').on('click', closePriceHelp);
     $(document).on('keydown', function(event) {
-        if (event.key === 'Escape') closeScoreTableModal();
+        if (event.key !== 'Escape') return;
+        if (!$('#price-help-modal').hasClass('hidden')) {
+            closePriceHelp();
+            return;
+        }
+        closeScoreTableModal();
     });
     $('#score-table-edit').on('click', function() {
         ['input-max-price-score', 'input-multiplier', 'input-pass-threshold'].forEach(function(id) {

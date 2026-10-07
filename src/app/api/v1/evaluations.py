@@ -143,6 +143,7 @@ from src.app.services.evaluation_rules import (
     credit_score_for_grade,
     demand_agency_credit_deduction,
     extract_contract_regime,
+    find_credit_grade,
     find_reputation_item,
     method_name_500m_side,
     quant_score_table_for_rule,
@@ -2352,6 +2353,20 @@ def _recommend_price_bounds(
     )
 
 
+def _applied_member_quant(qualification: QualificationInput) -> dict[str, Any]:
+    """화면에 되돌릴 경영상태·신인도. 계산에 쓴 회원 원자료와 공고 수정값의 합입니다."""
+    grade = find_credit_grade(qualification.management_grade)
+    applied_items: dict[str, str] = {}
+    for code, raw in (qualification.reputation_items or {}).items():
+        applied_items[str(code)] = format_decimal_plain(Decimal(str(raw)))
+    return {
+        "applied_management_grade": (
+            grade.grade_group if grade is not None else qualification.management_grade
+        ),
+        "applied_reputation_items": applied_items,
+    }
+
+
 @router.post(
     "/recommend",
     response_model=EvaluationRecommendResponse,
@@ -2425,6 +2440,7 @@ def recommend_evaluation(
             prediction=prediction,
             participant_stats=participant_stats,
             warnings=[*warnings, *(rule_result.warnings if rule_result is not None else [])],
+            **_applied_member_quant(qualification),
         )
 
     assert inputs.rule is not None
@@ -2477,6 +2493,7 @@ def recommend_evaluation(
         required_price_score=format_decimal_plain(required_price_score),
         non_price_items=_non_price_score_items(breakdown),
         reputation_grade_required=built.reputation_grade_required,
+        **_applied_member_quant(qualification),
         quant_source=inputs.quant_source,
         quant_notice=inputs.quant_notice,
         score_table=_rule_score_table_payload(
