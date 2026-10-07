@@ -98,6 +98,7 @@ from src.app.services.evaluation_flat_zones import (
     pps_flat_zone_for,
 )
 from src.app.services.evaluation_recommendation import (
+    RATE_SOURCE_MEASURED,
     RATE_SOURCE_THEORETICAL,
     THEORETICAL_RATE_NOTICE,
     NonPriceBreakdown,
@@ -161,6 +162,13 @@ from src.app.services.evaluation_scoring import (
     resolve_price_compensation,
 )
 from src.app.services.negotiation_stats import get_negotiation_stats
+from src.app.services.sajeong_rate_stats import (
+    SCOPE_CATEGORY,
+    SCOPE_INSTITUTION,
+    SCOPE_NONE,
+    SCOPE_REGION,
+    lookup_sajeong_rate_range,
+)
 from src.ml.institution_history import lookup_institution_stats
 
 logger = logging.getLogger(__name__)
@@ -2243,26 +2251,76 @@ def _non_price_score_items(breakdown: NonPriceBreakdown) -> list[NonPriceScoreIt
     ]
 
 
+# 사정률 실측 범위의 대체 scope 를 근거 문장에 쓸 명칭으로 옮깁니다.
+SAJEONG_SCOPE_LABELS: dict[str, str] = {
+    SCOPE_INSTITUTION: "발주처",
+    SCOPE_REGION: "시·도",
+    SCOPE_CATEGORY: "업종",
+}
+
+
+@dataclass(frozen=True)
+class _MeasuredRateRange:
+    """사정률 실측 (최저, 최고) 예정가격 배수와 근거 문장."""
+
+    rate_low: Decimal
+    rate_high: Decimal
+    notice: str
+
+
+def _measured_rate_range(db: Session, bid: BidAnnouncement) -> _MeasuredRateRange | None:
+    """사정률 실측 최솟값·최댓값을 예정가격 배수로 바꿔 돌려줍니다.
+
+    `institution_sajeong_rate_stats` 를 발주처 -> 시·도 -> 업종 순으로 조회해 선택된 scope 의
+    min_rate/max_rate 를 씁니다. 표본이 없거나 비율이 0 이하 또는 100 초과이거나 최솟값이
+    최댓값보다 크면 None 을 돌려주어 호출자가 이론 범위를 유지하게 합니다. 저장값은 퍼센트
+    포인트이므로 100 으로 나눠 compute_price_bounds 가 받는 예정가격 배수로 맞춥니다.
+    """
+    stats = lookup_sajeong_rate_range(bid.dminstt_nm, bid.category, session=db)
+    scope = str(stats.get("scope") or SCOPE_NONE)
+    min_rate = stats.get("min_rate")
+    max_rate = stats.get("max_rate")
+    if scope == SCOPE_NONE or min_rate is None or max_rate is None:
+        return None
+    try:
+        low_pct = Decimal(str(min_rate))
+        high_pct = Decimal(str(max_rate))
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    if low_pct <= 0 or high_pct <= 0 or low_pct > 100 or high_pct > 100 or high_pct < low_pct:
+        return None
+
+    sample_count = int(stats.get("sample_count") or 0)
+    scope_label = SAJEONG_SCOPE_LABELS.get(scope, "업종")
+    scope_name = str(stats.get("institution_name") or "").strip()
+    subject = f"{scope_label} '{scope_name}'" if scope_name else scope_label
+    notice = (
+        f"과거 실측 사정률입니다. {subject} 기준 표본 {sample_count}건의 "
+        f"예정가격/기초금액 최저 {format_decimal_plain(low_pct)}%·"
+        f"최고 {format_decimal_plain(high_pct)}%를 적용했습니다."
+    )
+    return _MeasuredRateRange(
+        rate_low=low_pct / Decimal("100"),
+        rate_high=high_pct / Decimal("100"),
+        notice=notice,
+    )
+
+
 def _recommend_price_bounds(
-    bid: BidAnnouncement,
     inputs: _EvaluationInputs,
     breakdown: NonPriceBreakdown,
-    institution_regime: str | None,
-) -> tuple[RecommendationPriceBounds, Decimal]:
-    """이론 사정률 범위로 최저가·최상가를 확정합니다.
+    rate_low: Decimal,
+    rate_high: Decimal,
+) -> RecommendationPriceBounds:
+    """사정률 범위로 최저가·최상가를 확정합니다. 범위 산출은 호출자가 정합니다.
 
-    사정률 범위는 아직 과거 실측이 없어 기초금액 ±2%/±3%(generate_pred_price_scenarios)를
-    씁니다. 범위를 인자로 받는 순수 함수 compute_price_bounds 에 위임하며, 실측 분포
-    (min_rate/max_rate)가 확보되면 이 함수의 범위 산출만 바꾸면 됩니다.
+    실측 범위가 있으면 그 값을, 없으면 이론 범위(기초금액 ±2%/±3%)를 호출자가 넘깁니다.
+    범위를 인자로 받는 순수 함수 compute_price_bounds 에 금액 계산을 위임하며, 그 산식은
+    바꾸지 않습니다.
     """
     assert inputs.table is not None
     assert inputs.effective_lwlt is not None
     assert inputs.pred_price is not None
-    theoretical = generate_pred_price_scenarios(
-        inputs.pred_price,
-        is_local_contract=_is_local_contract(bid, institution_regime),
-    )
-    rate_low, rate_high = theoretical_rate_range(theoretical.range_rate)
     bounds = compute_price_bounds(
         base_amount=inputs.pred_price,
         rate_low=rate_low,
@@ -2276,32 +2334,21 @@ def _recommend_price_bounds(
         flat_ratio=inputs.table.flat_ratio,
         flat_score=inputs.table.flat_score,
     )
-    return (
-        RecommendationPriceBounds(
-            status=bounds.status,
-            min_bid_amount=(
-                int(bounds.min_bid_amount) if bounds.min_bid_amount is not None else None
-            ),
-            max_bid_amount=(
-                int(bounds.max_bid_amount) if bounds.max_bid_amount is not None else None
-            ),
-            min_pred_price=(
-                int(bounds.min_pred_price) if bounds.min_pred_price is not None else None
-            ),
-            max_pred_price=(
-                int(bounds.max_pred_price) if bounds.max_pred_price is not None else None
-            ),
-            ratio_low=(
-                format_decimal_plain(bounds.ratio_low) if bounds.ratio_low is not None else None
-            ),
-            ratio_high=(
-                format_decimal_plain(bounds.ratio_high) if bounds.ratio_high is not None else None
-            ),
-            rate_low_percent=format_decimal_plain(rate_low * Decimal("100")),
-            rate_high_percent=format_decimal_plain(rate_high * Decimal("100")),
-            reasons=list(bounds.reasons),
+    return RecommendationPriceBounds(
+        status=bounds.status,
+        min_bid_amount=(int(bounds.min_bid_amount) if bounds.min_bid_amount is not None else None),
+        max_bid_amount=(int(bounds.max_bid_amount) if bounds.max_bid_amount is not None else None),
+        min_pred_price=(int(bounds.min_pred_price) if bounds.min_pred_price is not None else None),
+        max_pred_price=(int(bounds.max_pred_price) if bounds.max_pred_price is not None else None),
+        ratio_low=(
+            format_decimal_plain(bounds.ratio_low) if bounds.ratio_low is not None else None
         ),
-        rate_low,
+        ratio_high=(
+            format_decimal_plain(bounds.ratio_high) if bounds.ratio_high is not None else None
+        ),
+        rate_low_percent=format_decimal_plain(rate_low * Decimal("100")),
+        rate_high_percent=format_decimal_plain(rate_high * Decimal("100")),
+        reasons=list(bounds.reasons),
     )
 
 
@@ -2319,8 +2366,9 @@ def recommend_evaluation(
     """로그인 회원의 정량 원자료를 자동 기입해 AI 예측가·최저가·최상가 근거 재료를 계산합니다.
 
     저장하지 않습니다(무상태). 규칙 판별·정량 환산·통과 구간 역산은 /analyze 와 같은 함수를
-    재사용하며, 결격 입력을 생략하면 '미확인'으로 계산합니다. 사정률 범위는 아직 과거 실측이
-    없어 이론 범위(기초금액 ±2%/±3%)를 쓰고, 그 사실을 rate_source·rate_notice 로 알립니다.
+    재사용하며, 결격 입력을 생략하면 '미확인'으로 계산합니다. 사정률 범위는 발주처 -> 시·도
+    -> 업종 순으로 조회한 과거 실측 최솟값·최댓값을 쓰고, 표본이 없으면 이론 범위(기초금액
+    ±2%/±3%)로 물러납니다. 어느 쪽을 썼는지 rate_source·rate_notice 로 알립니다.
     """
     bid = _resolve_recommend_bid(db, payload)
     facts = _member_qualification_facts(db, user.id)
@@ -2338,6 +2386,9 @@ def recommend_evaluation(
 
     prediction = _recommend_prediction(bid, payload.selected_model, request, db, user)
     participant_stats = _participant_count_stats(db, bid)
+    measured_rate = _measured_rate_range(db, bid)
+    rate_source = RATE_SOURCE_MEASURED if measured_rate is not None else RATE_SOURCE_THEORETICAL
+    rate_notice = measured_rate.notice if measured_rate is not None else THEORETICAL_RATE_NOTICE
 
     inputs = _resolve_evaluation_inputs(
         bid=bid,
@@ -2365,8 +2416,8 @@ def recommend_evaluation(
             rule_basis=_rule_basis(bid, rule_result) if rule_result is not None else None,
             contract_regime=ContractRegimeDescription(**contract_regime),
             disqualification_status=disqualification_status(qualification.disqualification),
-            rate_source=RATE_SOURCE_THEORETICAL,
-            rate_notice=THEORETICAL_RATE_NOTICE,
+            rate_source=rate_source,
+            rate_notice=rate_notice,
             base_rate=(_as_percent(inputs.rule.base_rate) if inputs.rule is not None else None),
             lower_bound_rate=(
                 float(inputs.effective_lwlt) if inputs.effective_lwlt is not None else None
@@ -2391,7 +2442,16 @@ def recommend_evaluation(
     )
     non_price_score = breakdown.total
     required_price_score = inputs.table.pass_threshold - non_price_score
-    price_bounds, _rate_low = _recommend_price_bounds(bid, inputs, breakdown, institution_regime)
+    if measured_rate is not None:
+        rate_low = measured_rate.rate_low
+        rate_high = measured_rate.rate_high
+    else:
+        theoretical = generate_pred_price_scenarios(
+            inputs.pred_price,
+            is_local_contract=_is_local_contract(bid, institution_regime),
+        )
+        rate_low, rate_high = theoretical_rate_range(theoretical.range_rate)
+    price_bounds = _recommend_price_bounds(inputs, breakdown, rate_low, rate_high)
     bounds_blocked = price_bounds.status != "ok"
 
     return EvaluationRecommendResponse(
@@ -2407,8 +2467,8 @@ def recommend_evaluation(
         rule_basis=_rule_basis(bid, inputs.rule_result),
         contract_regime=ContractRegimeDescription(**contract_regime),
         disqualification_status=disqualification_status(qualification.disqualification),
-        rate_source=RATE_SOURCE_THEORETICAL,
-        rate_notice=THEORETICAL_RATE_NOTICE,
+        rate_source=rate_source,
+        rate_notice=rate_notice,
         base_rate=_as_percent(inputs.table.base_rate),
         lower_bound_rate=float(inputs.effective_lwlt),
         max_price_score=format_decimal_plain(inputs.table.max_price_score),

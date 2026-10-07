@@ -14,6 +14,7 @@ docs/design/web_feedback_redesign_20261006.md 5.1~5.4.
 from __future__ import annotations
 
 from datetime import timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -27,7 +28,9 @@ from src.app.main import app
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement
 from src.app.models.company_profiles import AccountQualificationFact
+from src.app.models.prearng_prices import BidPrearngPrice
 from src.app.schemas.predictions import PredictPriceResponse
+from src.app.services.sajeong_rate_stats import rebuild_institution_sajeong_rate_stats
 
 RECOMMEND_URL = "/api/v1/evaluations/recommend"
 PPS_METHOD = "시설분야용역 적격심사 추정가격 5억원 미만"
@@ -224,8 +227,8 @@ def test_detail_member_and_blocked_guidance(auth_client, isolated_db):
     assert 'id="recommend-blocked"' in body
     assert 'id="recommend-blocked-reason"' in body
 
-    assert "rate_source === 'theoretical'" in body
     assert "data.rate_notice" in body
+    assert "data.rate_source === 'measured'" in body
     assert "reputation_grade_required" in body
 
 
@@ -278,3 +281,45 @@ def test_recommend_reports_unresolved_bounds_without_member_data(client, isolate
     assert body["blocked"] is True
     assert "PRICE_BOUNDS_UNRESOLVED" in body["blocked_reason"]
     assert body["prediction"]["optimal_price"] == 440_000_000
+
+
+def _seed_institution_sajeong_stats(db, institution_name: str, category: str = "Servc") -> None:
+    """발주처 사정률 실측 표본 30건을 심고 기관 분포를 재집계한다(격리 시험 DB 전용)."""
+    for index in range(30):
+        rate = Decimal("89.0") + Decimal(index) / Decimal("10")
+        db.add(
+            BidPrearngPrice(
+                bid_ntce_no=f"R25BK9{index:05d}",
+                bid_ntce_ord="000",
+                bid_clsfc_no="0",
+                rbid_no="000",
+                category=category,
+                dminstt_nm=institution_name,
+                bssamt=1000,
+                plnprc=int(rate * 10),
+                sajeong_rate=rate,
+                rl_openg_dt=utcnow(),
+            )
+        )
+    db.commit()
+    rebuild_institution_sajeong_rate_stats(db)
+
+
+def test_recommend_uses_measured_sajeong_range(client, isolated_db, as_user):
+    """발주처 실측 표본이 있으면 최솟값·최댓값을 예정가격 배수로 삼아 최저가·최상가를 낸다."""
+    as_user(10)
+    isolated_db.add(AccountQualificationFact(user_id=10, credit_grade="BBB+"))
+    isolated_db.commit()
+    bid = _create_pps_bid(isolated_db)
+    _seed_institution_sajeong_stats(isolated_db, "테스트 수요기관")
+
+    body = client.post(RECOMMEND_URL, json={"bid_id": bid.id, "overrides": {}}).json()
+
+    assert body["blocked"] is False, body.get("blocked_reason")
+    assert body["rate_source"] == "measured"
+    assert "발주처" in body["rate_notice"]
+    assert "표본 30건" in body["rate_notice"]
+    assert float(body["price_bounds"]["rate_low_percent"]) == 89.0
+    assert float(body["price_bounds"]["rate_high_percent"]) == 91.9
+    assert body["price_bounds"]["min_bid_amount"] is not None
+    assert body["price_bounds"]["max_bid_amount"] is not None
