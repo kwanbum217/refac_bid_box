@@ -2,8 +2,8 @@
 
 규칙 값의 유일한 정본은 src/app/services/evaluation_rules.py 이며, 본 테스트는
 GET /api/v1/evaluations/rules 가 그 상수를 값을 만들지 않고 문자열로 직렬화하는지,
-범위 안내(scope_note)가 기관별·지역별 산식 부재를 밝히는지, 공고 식별자를 주면
-매칭된 별표를 matched_rule 로 돌려주는지를 확인합니다.
+범위 안내(scope_note)가 14종 범위와 지방계약 규칙의 목록 제외, 기관별 산식 부재를 밝히는지,
+공고 식별자를 주면 매칭된 별표를 matched_rule 로 돌려주는지를 확인합니다.
 
 실물 DB 는 쓰지 않고 conftest 의 isolated_db (SQLite 인메모리) 위에서 동작합니다.
 규칙은 공개 정보라 이 엔드포인트는 인증을 요구하지 않습니다.
@@ -11,7 +11,7 @@ GET /api/v1/evaluations/rules 가 그 상수를 값을 만들지 않고 문자�
 
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
-from src.app.services.evaluation_rules import POST_20260727_RULES
+from src.app.services.evaluation_rules import LOCAL_RULES, POST_20260727_RULES
 from src.app.services.evaluation_scoring import format_decimal_plain
 
 RULES_URL = "/api/v1/evaluations/rules"
@@ -191,13 +191,20 @@ def test_matched_rule_carries_declared_score_table(client, isolated_db):
     assert matched["score_table_source"] is not None
 
 
-def test_scope_note_states_agency_and_region_formula_absent(client):
-    """scope_note 가 기관별·지역별 산식 부재와 14종 범위를 명시한다."""
+def test_scope_note_states_local_rules_excluded_and_agency_formula_absent(client):
+    """scope_note 가 14종 범위, 지방계약 규칙의 목록 제외, 기관별 산식 부재를 밝힌다."""
     note = client.get(RULES_URL).json()["scope_note"]
 
     assert isinstance(note, str)
-    for token in ("기관별", "지역별", "없습니다", "14종"):
-        assert token in note, (token, note)
+    # 지방계약 시·도 규칙은 실제로 코드에 있고, 이 목록에서만 빠져 있다.
+    assert LOCAL_RULES, "지방계약 시·도 규칙이 코드에 있어야 이 안내가 성립한다"
+    assert "지방계약" in note, note
+    assert "시·도" in note, note
+    # 이 목록은 조달청 별표 14종만 담는다.
+    assert "14종" in note, note
+    # 공기업 등 기관별 자체 산식은 코드에 없다.
+    assert "기관별" in note, note
+    assert "없습니다" in note, note
 
 
 def test_bid_id_returns_matched_rule(client, isolated_db):
