@@ -37,9 +37,17 @@ from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.observability import traced_worker_task
 from src.app.core.timeutil import utcnow
+from src.app.models.bids import BidAnnouncement
 from src.app.models.chatbot import PipelineExecution
+from src.app.models.prearng_prices import BidPrearngPrice
 from src.app.models.predictions import RetrainLog
+from src.app.services.api_collector import (
+    RangeCollectionError,
+    mask_credentials,
+    stream_servc_prearng_by_notices,
+)
 from src.app.services.automation_orchestrator import STATUS_RUNNING
+from src.app.services.collector_service import _bulk_insert
 from src.ml.dataset import build_training_dataset
 from src.ml.drift_verdict import DRIFT_EVALUATION_WINDOW_DAYS
 from src.ml.features import (
@@ -2284,3 +2292,121 @@ async def _run_schedule_catchup(ctx: dict[str, Any]) -> dict[str, Any]:
         }
     finally:
         await asyncio.to_thread(record_catchup_attempt, ledger=ledger)
+
+
+# --------------------------------------------------------------------------- #
+# 용역 예비가격 일일 증분 수집
+#
+# 핸드오프 17번의 연결만 담당합니다. stream_servc_prearng_by_notices 는 구현만
+# 되어 있고 수집 파이프라인에 연결되지 않았습니다. 최근 개찰한 용역 공고 중
+# 예비가격 행이 아직 없는 공고번호만 단건(inqryDiv=2)으로 조회합니다.
+# 과거 기간 소급(stream_servc_prearng_range)과 dminstt_nm 대량 갱신은 하지
+# 않습니다.
+# --------------------------------------------------------------------------- #
+
+PREARNG_DAILY_SCHEDULE_NAME = "prearng_daily"
+PREARNG_DAILY_JOB_TIMEOUT_SECONDS = 3600
+
+# 매일 도는 증분이라 최근 개찰분만 봅니다. 개찰 직후에는 예비가격이 없을 수
+# 있어 며칠 되돌아보고, 이미 적재된 공고번호는 제외해 재수집하지 않습니다.
+PREARNG_DAILY_LOOKBACK_DAYS = 14
+
+# 하루 신규 공고가 이 수를 넘으면 다음 날 이어서 수집합니다. 나라장터 동시
+# 요청 상한(MAX_CONCURRENT) 안에서 한 번에 감당할 양으로 자릅니다.
+PREARNG_DAILY_MAX_NOTICES = 500
+
+# 야간 수집(02:00)과 결과 커버리지 감시(월요일 05:00) 뒤에 둡니다.
+PREARNG_DAILY_HOUR = 6
+PREARNG_DAILY_MINUTE = 0
+
+
+def select_new_servc_notices(
+    db: Session,
+    *,
+    now: datetime | None = None,
+    lookback_days: int = PREARNG_DAILY_LOOKBACK_DAYS,
+    limit: int = PREARNG_DAILY_MAX_NOTICES,
+) -> list[str]:
+    """최근 개찰한 용역 공고 중 예비가격이 아직 없는 공고번호만 고릅니다.
+
+    과거 기간 소급이 아니라 일일 증분이므로 개찰일이 lookback_days 이내인
+    공고만 봅니다. bid_prearng_prices 에 같은 업무구분(Servc) 행이 있는
+    공고번호는 제외해 INSERT IGNORE 멱등 적재와 함께 재수집을 막습니다.
+    """
+    from sqlalchemy import select
+
+    reference = now or utcnow()
+    since = reference - timedelta(days=lookback_days)
+    already_collected = select(BidPrearngPrice.bid_ntce_no).where(
+        BidPrearngPrice.category == "Servc"
+    )
+    stmt = (
+        select(BidAnnouncement.bid_ntce_no)
+        .where(
+            BidAnnouncement.category == "Servc",
+            BidAnnouncement.openg_dt.is_not(None),
+            BidAnnouncement.openg_dt >= since,
+            BidAnnouncement.bid_ntce_no.not_in(already_collected),
+        )
+        .distinct()
+        .order_by(BidAnnouncement.bid_ntce_no)
+        .limit(limit)
+    )
+    return [row[0] for row in db.execute(stmt).all() if row[0]]
+
+
+def _select_new_servc_notices_thread() -> list[str]:
+    """신규 용역 공고 선택을 스레드 전용 세션에서 수행합니다.
+
+    SQLAlchemy Session 은 생성 스레드 밖으로 나가면 안 되므로, 이벤트 루프에서
+    만든 세션을 asyncio.to_thread 인자로 넘기지 않고 이 함수 안에서 만들고 닫습니다.
+    """
+    session = SessionLocal()
+    try:
+        return select_new_servc_notices(session)
+    finally:
+        session.close()
+
+
+def _persist_prearng_rows(rows: list[dict[str, Any]]) -> int:
+    """예비가격 행을 스레드 전용 세션에서 적재하고 닫습니다.
+
+    stream_servc_prearng_by_notices 가 sink 를 asyncio.to_thread 로 실행하므로
+    바깥 세션을 클로저로 잡지 않고, 호출마다 실행 스레드 안에서 세션을 만듭니다.
+    """
+    session = SessionLocal()
+    try:
+        return _bulk_insert(session, BidPrearngPrice, rows)
+    finally:
+        session.close()
+
+
+@traced_worker_task
+@_record_schedule(PREARNG_DAILY_SCHEDULE_NAME)
+async def prearng_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """최근 개찰한 신규 용역 공고의 예비가격 상세를 매일 증분 수집합니다.
+
+    나라장터를 공고번호 단건(inqryDiv=2)으로만 호출하며, 과거 기간 소급이나
+    수요기관명 대량 갱신은 하지 않습니다. 실패 공고는 RangeCollectionError 의
+    failed_ranges 로 남겨 수동 재수집 근거로 삼습니다.
+
+    조회와 적재에 쓰는 Session 은 스레드 경계를 넘기지 않고 각 실행 스레드
+    안에서 SessionLocal 로 만들고 닫습니다.
+    """
+    notices = await asyncio.to_thread(_select_new_servc_notices_thread)
+    if not notices:
+        logger.info("예비가격 일일 증분: 신규 용역 공고가 없어 건너뜁니다.")
+        return {"status": "skipped", "reason": "no_new_notices", "notice_count": 0}
+
+    logger.info("예비가격 일일 증분 수집 시작 (신규 용역 공고 %d건)", len(notices))
+    try:
+        saved = await stream_servc_prearng_by_notices(notices, _persist_prearng_rows)
+    except RangeCollectionError as exc:
+        logger.error("예비가격 일일 증분 부분 실패: %s", mask_credentials(exc))
+        return {
+            "status": "partial_failure",
+            "notice_count": len(notices),
+            "saved": exc.saved,
+            "failed_notices": [notice for notice, _ in exc.failed_ranges],
+        }
+    return {"status": "success", "notice_count": len(notices), "saved": saved}

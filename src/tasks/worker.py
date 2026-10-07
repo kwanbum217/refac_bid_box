@@ -49,6 +49,9 @@ from src.tasks.retrain_task import run_retrain_pipeline_task
 from src.tasks.scheduled_tasks import (
     DRIFT_MONITOR_CATCHUP_JOB_NAME,
     DRIFT_MONITOR_JOB_TIMEOUT_SECONDS,
+    PREARNG_DAILY_HOUR,
+    PREARNG_DAILY_JOB_TIMEOUT_SECONDS,
+    PREARNG_DAILY_MINUTE,
     RESULT_COVERAGE_CATCHUP_JOB_NAME,
     RESULT_COVERAGE_JOB_TIMEOUT_SECONDS,
     WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
@@ -57,6 +60,7 @@ from src.tasks.scheduled_tasks import (
     development_data_refresh_task,
     drift_monitor_task,
     nightly_schedule_task,
+    prearng_daily_task,
     run_drift_monitor_catchup_task,
     run_result_coverage_catchup_task,
     run_schedule_catchup_task,
@@ -474,6 +478,15 @@ class WorkerSettings:
             minute=30,
             run_at_startup=False,
             timeout=10800,
+        ),
+        # 신규 용역 공고 예비가격 일일 증분. 야간 수집(02:00) 뒤에 돌려 당일
+        # 적재분을 본다. 과거 소급은 하지 않고 최근 개찰분만 단건 조회한다.
+        cron(
+            cast(Any, prearng_daily_task),
+            hour=PREARNG_DAILY_HOUR,
+            minute=PREARNG_DAILY_MINUTE,
+            run_at_startup=False,
+            timeout=PREARNG_DAILY_JOB_TIMEOUT_SECONDS,
         ),
     ]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
