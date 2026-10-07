@@ -290,8 +290,9 @@ GB_SW_ID = "SERVC_LOCAL_GB_20260108_ATTACH_02"
 GG_INSURANCE_ID = "SERVC_LOCAL_GG_20250808_ATTACH_1_5"
 
 # (rule_id, 지역코드, 지역명, 낙찰방법명, 규칙 대표값). 모두 구간 하한율이 없어야 한다.
+# 서울 단순노무는 2026-10-07 원문 산식 대조로 대표값이 87.745% 로 정정됐다(구간 하한율은 없음).
 UNCHANGED_CASES = (
-    (SEOUL_SIMPLE_ID, "11", "서울특별시", SIMPLE_LABOR_METHOD, "87.995"),
+    (SEOUL_SIMPLE_ID, "11", "서울특별시", SIMPLE_LABOR_METHOD, "87.745"),
     (GB_SW_ID, "47", "경상북도", SW_METHOD, "87.995"),
     (GG_INSURANCE_ID, "41", "경기도", INSURANCE_METHOD, "47.995"),
 )

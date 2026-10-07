@@ -313,10 +313,10 @@ def test_seoul_general_has_five_bands_with_30eok_split() -> None:
         assert any("별표 구간 하한율" in warning for warning in result.warnings)
 
 
-def test_seoul_simple_labor_rate_unchanged() -> None:
-    """서울 단순노무 별표 대표값은 이번 변경 대상이 아니어서 87.995% 그대로다."""
+def test_seoul_simple_labor_rate_is_87_745() -> None:
+    """서울 단순노무도 원문 산식(k 20·기준 88·통과 95)이 인천·제주·강원과 같아 87.745% 다."""
     rule = _rule(SEOUL_SIMPLE_ID)
-    assert rule.lwlt_rate == Decimal("87.995")
+    assert rule.lwlt_rate == Decimal("87.745")
 
 
 # --------------------------------------------------------------------------- #

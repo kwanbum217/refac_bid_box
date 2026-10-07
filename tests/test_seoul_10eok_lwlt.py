@@ -235,12 +235,13 @@ def test_seoul_announcement_rate_still_wins() -> None:
     assert not any("구간 하한율" in warning for warning in result.warnings)
 
 
-def test_seoul_simple_labor_unchanged() -> None:
-    """서울 단순노무 규칙은 이번 분할 밖이라 4구간·대표값 87.995% 그대로다."""
+def test_seoul_simple_labor_is_87_745() -> None:
+    """서울 단순노무는 4구간·구간 하한율 없이 대표값 87.745% 를 쓴다(인천·제주·강원과 같은 산식)."""
     rule = _rule(SEOUL_SIMPLE_ID)
     assert rule.price_bands is not None
     assert len(rule.price_bands) == 4
     assert all(band.lwlt_rate is None for band in rule.price_bands)
+    assert rule.lwlt_rate == Decimal("87.745")
     result = _resolve(
         region_code="11",
         region_name="서울특별시",
@@ -249,7 +250,7 @@ def test_seoul_simple_labor_unchanged() -> None:
     )
     assert result.rule is not None
     assert result.rule.rule_id == SEOUL_SIMPLE_ID
-    assert result.effective_lwlt_rate == Decimal("87.995")
+    assert result.effective_lwlt_rate == Decimal("87.745")
     assert result.rate_source == "RULE_DEFAULT"
 
 
@@ -259,8 +260,9 @@ def test_seoul_simple_labor_unchanged() -> None:
 
 # main 기준 스냅샷 해시. 서울 GENERAL 만 분할 대상이라 이 목록에서 제외한다.
 # 2026-10-06: 인천·제주·강원·경남·경북 04 정정으로 서울 외 LOCAL 규칙 값이 바뀌어 재생성했다.
+# 2026-10-07: 서울 단순노무·경북 단순노무 대표값을 원문 산식 역산값 87.745 로 정정하며 재생성했다.
 LOCAL_RULES_EXCLUDING_SEOUL_DIGEST = (
-    "8994d3da08bb4c9a0eb52f666a843ca76b51cba05b8f8da211c2f8aa302dfccd"
+    "d4bf004e28be73fdb59c614d6a419547edc64da63e9dab8040bd12439c233372"
 )
 NATIONAL_RULES_DIGEST = "3436d7f5bfa896ec4b4d4f95e1367add414424ab746143fcae364005f8e00e3f"
 

@@ -320,19 +320,18 @@ def test_band_rate_not_guessed_when_price_missing() -> None:
 # --------------------------------------------------------------------------- #
 
 # 정정 대상이 아닌 규칙의 동작 필드 스냅샷 해시. main 기준 값이며, 규칙 값을 의도적으로
-# 바꾸면 위 _signature 로 재생성해 교체합니다. 2026-10-06 인천·제주·강원·경남·경북 04 는
-# 이번 정정 대상이라 아래 목록에서 제외했습니다.
+# 바꾸면 위 _signature 로 재생성해 교체합니다. 2026-10-06 인천·제주·강원·경남·경북 04 와
+# 2026-10-07 경북 단순노무(GB ATTACH_01)는 정정 대상이라 아래 목록에서 제외했습니다.
 UNCHANGED_RULE_IDS = (
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_03",
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_03_SME",
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_05",
     "SERVC_LOCAL_SEJONG_20251201_ATTACH_05_SME",
-    "SERVC_LOCAL_GB_20260108_ATTACH_01",
     "SERVC_LOCAL_GB_20260108_ATTACH_02",
     "SERVC_LOCAL_GB_20260108_ATTACH_03",
     "SERVC_LOCAL_GG_20250808_ATTACH_1_5",
 )
-UNCHANGED_RULES_DIGEST = "ebddc2e99e2533b4ac884d51676fadbfa06c70737c4f705fbb10df0d4feb05fe"
+UNCHANGED_RULES_DIGEST = "94645fa387214e1d80c7289b086a98591a953dc2b2ad153db946c17b9fa123cb"
 
 
 def test_uncorrected_rules_keep_behavior_fields() -> None:

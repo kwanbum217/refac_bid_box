@@ -459,6 +459,56 @@ def test_local_rule_representative_values(
 
 
 # --------------------------------------------------------------------------- #
+# 4-1. 시·도 단순노무 대표 낙찰하한율 원문 대조
+# --------------------------------------------------------------------------- #
+
+# 원문 별표 단순노무 행의 산식이 전 구간 평점계수 20·기준비율 88 이고 통과점수가 95 인
+# 지역은 필요 투찰률이 87.75% 라 낙찰하한율 87.745% 다(인천·제주·강원·서울·부산·대전·
+# 전북·울산·충북·경북).
+SIMPLE_LABOR_87_745_RULE_IDS = (
+    "SERVC_LOCAL_INCHEON_20251224_SIMPLE_LABOR",
+    "SERVC_LOCAL_JEJU_20240101_SIMPLE_LABOR",
+    "SERVC_LOCAL_GANGWON_20230611_SIMPLE_LABOR",
+    "SERVC_LOCAL_ULSAN_20220810_SIMPLE_LABOR",
+    "SERVC_LOCAL_CB_20231020_SIMPLE_LABOR",
+    "SERVC_LOCAL_GB_20260108_ATTACH_01",
+    "SERVC_LOCAL_SEOUL_20240812_SIMPLE_LABOR",
+    "SERVC_LOCAL_BUSAN_20250626_SIMPLE_LABOR",
+    "SERVC_LOCAL_DAEJEON_20260101_SIMPLE_LABOR",
+    "SERVC_LOCAL_JEONBUK_20240118_SIMPLE_LABOR",
+)
+
+
+@pytest.mark.parametrize("rule_id", SIMPLE_LABOR_87_745_RULE_IDS)
+def test_simple_labor_rules_use_87_745(rule_id: str) -> None:
+    """원문 단순노무 산식(k 20·기준 88·통과 95) 지역의 대표 하한율은 87.745% 다."""
+    rule = _rule(rule_id)
+    assert rule.service_type == "SIMPLE_LABOR", rule_id
+    assert rule.lwlt_rate == Decimal("87.745"), rule_id
+    assert resolve_score_params(rule, Decimal("300000000"), None, None).pass_threshold == Decimal(
+        "95"
+    ), rule_id
+
+
+def test_daegu_simple_labor_prints_87_745() -> None:
+    """대구 단순노무는 원문이 87.745% 를 직접 인쇄해 같은 값을 쓰며 통과점수는 85 다."""
+    rule = _rule("SERVC_LOCAL_DAEGU_20260511_ATTACH_01")
+    assert rule.service_type == "SIMPLE_LABOR"
+    assert rule.lwlt_rate == Decimal("87.745")
+    assert resolve_score_params(rule, Decimal("300000000"), None, None).pass_threshold == Decimal(
+        "85"
+    )
+
+
+def test_unverified_simple_labor_regions_have_no_rule() -> None:
+    """경기·세종·경남·전남광주·충남은 단순노무 원문 산식이 미확인이라 87.745 규칙이 없다."""
+    for code in ("41", "36", "48", "12", "44"):
+        assert not any(
+            rule.region_code == code and rule.service_type == "SIMPLE_LABOR" for rule in LOCAL_RULES
+        ), code
+
+
+# --------------------------------------------------------------------------- #
 # 5. 전남광주 별표 6 분리와 세종·대구 통과점수 조건
 # --------------------------------------------------------------------------- #
 
