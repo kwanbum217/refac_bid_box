@@ -137,3 +137,22 @@ async def good_handler(user_id: int, payload: dict):
 """
     violations = find_session_thread_violations(good_code, filename="good.py")
     assert violations == []
+
+
+def test_checker_allows_session_created_inside_to_thread_target():
+    """to_thread 대상 함수 안에서 세션을 만들고 닫는 정상 패턴은 위반이 아님을 검증."""
+    good_code = """
+import asyncio
+
+def _select_new_servc_notices_thread():
+    session = SessionLocal()
+    try:
+        return select_new_servc_notices(session)
+    finally:
+        session.close()
+
+async def prearng_daily_task(ctx):
+    return await asyncio.to_thread(_select_new_servc_notices_thread)
+"""
+    violations = find_session_thread_violations(good_code, filename="fixed_pattern.py")
+    assert violations == []

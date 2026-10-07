@@ -2355,6 +2355,32 @@ def select_new_servc_notices(
     return [row[0] for row in db.execute(stmt).all() if row[0]]
 
 
+def _select_new_servc_notices_thread() -> list[str]:
+    """신규 용역 공고 선택을 스레드 전용 세션에서 수행합니다.
+
+    SQLAlchemy Session 은 생성 스레드 밖으로 나가면 안 되므로, 이벤트 루프에서
+    만든 세션을 asyncio.to_thread 인자로 넘기지 않고 이 함수 안에서 만들고 닫습니다.
+    """
+    session = SessionLocal()
+    try:
+        return select_new_servc_notices(session)
+    finally:
+        session.close()
+
+
+def _persist_prearng_rows(rows: list[dict[str, Any]]) -> int:
+    """예비가격 행을 스레드 전용 세션에서 적재하고 닫습니다.
+
+    stream_servc_prearng_by_notices 가 sink 를 asyncio.to_thread 로 실행하므로
+    바깥 세션을 클로저로 잡지 않고, 호출마다 실행 스레드 안에서 세션을 만듭니다.
+    """
+    session = SessionLocal()
+    try:
+        return _bulk_insert(session, BidPrearngPrice, rows)
+    finally:
+        session.close()
+
+
 @traced_worker_task
 @_record_schedule(PREARNG_DAILY_SCHEDULE_NAME)
 async def prearng_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -2363,28 +2389,24 @@ async def prearng_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:
     나라장터를 공고번호 단건(inqryDiv=2)으로만 호출하며, 과거 기간 소급이나
     수요기관명 대량 갱신은 하지 않습니다. 실패 공고는 RangeCollectionError 의
     failed_ranges 로 남겨 수동 재수집 근거로 삼습니다.
-    """
-    session = SessionLocal()
-    try:
-        notices = await asyncio.to_thread(select_new_servc_notices, session)
-        if not notices:
-            logger.info("예비가격 일일 증분: 신규 용역 공고가 없어 건너뜁니다.")
-            return {"status": "skipped", "reason": "no_new_notices", "notice_count": 0}
 
-        logger.info("예비가격 일일 증분 수집 시작 (신규 용역 공고 %d건)", len(notices))
-        try:
-            saved = await stream_servc_prearng_by_notices(
-                notices,
-                lambda rows: _bulk_insert(session, BidPrearngPrice, rows),
-            )
-        except RangeCollectionError as exc:
-            logger.error("예비가격 일일 증분 부분 실패: %s", mask_credentials(exc))
-            return {
-                "status": "partial_failure",
-                "notice_count": len(notices),
-                "saved": exc.saved,
-                "failed_notices": [notice for notice, _ in exc.failed_ranges],
-            }
-        return {"status": "success", "notice_count": len(notices), "saved": saved}
-    finally:
-        session.close()
+    조회와 적재에 쓰는 Session 은 스레드 경계를 넘기지 않고 각 실행 스레드
+    안에서 SessionLocal 로 만들고 닫습니다.
+    """
+    notices = await asyncio.to_thread(_select_new_servc_notices_thread)
+    if not notices:
+        logger.info("예비가격 일일 증분: 신규 용역 공고가 없어 건너뜁니다.")
+        return {"status": "skipped", "reason": "no_new_notices", "notice_count": 0}
+
+    logger.info("예비가격 일일 증분 수집 시작 (신규 용역 공고 %d건)", len(notices))
+    try:
+        saved = await stream_servc_prearng_by_notices(notices, _persist_prearng_rows)
+    except RangeCollectionError as exc:
+        logger.error("예비가격 일일 증분 부분 실패: %s", mask_credentials(exc))
+        return {
+            "status": "partial_failure",
+            "notice_count": len(notices),
+            "saved": exc.saved,
+            "failed_notices": [notice for notice, _ in exc.failed_ranges],
+        }
+    return {"status": "success", "notice_count": len(notices), "saved": saved}

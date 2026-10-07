@@ -14,6 +14,8 @@ tests/test_prearng_daily_schedule.py
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from datetime import timedelta
 from typing import Any
 
@@ -182,6 +184,38 @@ async def test_daily_task_forwards_selected_notices_and_persists(monkeypatch, fa
     assert session.closed is True
     assert recorded["records"][0][0] == PREARNG_DAILY_SCHEDULE_NAME
     assert recorded["records"][0][2] is True
+
+
+@pytest.mark.asyncio
+async def test_daily_task_creates_sessions_inside_worker_threads(monkeypatch) -> None:
+    """조회·적재 세션이 이벤트 루프가 아니라 to_thread 작업 스레드에서 만들어지는지 검증한다."""
+    loop_thread = threading.get_ident()
+    created_in: list[int] = []
+
+    class _Session:
+        def close(self) -> None:
+            pass
+
+    def _session_factory():
+        created_in.append(threading.get_ident())
+        return _Session()
+
+    monkeypatch.setattr(scheduled_tasks, "SessionLocal", _session_factory)
+    monkeypatch.setattr(scheduled_tasks, "select_new_servc_notices", lambda db: ["R1"])
+    monkeypatch.setattr(scheduled_tasks, "_bulk_insert", lambda db, model, rows: len(rows))
+    monkeypatch.setattr("src.tasks.worker.record_schedule_result", lambda *args, **kwargs: None)
+
+    async def _fake_stream(notice_list, sink, num_of_rows=500):
+        rows = [{"bid_ntce_no": "R1", "category": "Servc"}]
+        return await asyncio.to_thread(sink, rows)
+
+    monkeypatch.setattr(scheduled_tasks, "stream_servc_prearng_by_notices", _fake_stream)
+
+    outcome = await prearng_daily_task({})
+
+    assert outcome == {"status": "success", "notice_count": 1, "saved": 1}
+    assert len(created_in) == 2
+    assert all(thread_id != loop_thread for thread_id in created_in)
 
 
 @pytest.mark.asyncio
