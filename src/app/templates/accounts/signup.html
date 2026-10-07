@@ -446,7 +446,7 @@
                 qualification: {
                     credit_grade: fd.get('credit_grade'),
                     credit_evaluated_on: fd.get('credit_evaluated_on'),
-                    reputation_items: reputationItems.length > 0 ? reputationItems : null,
+                    reputation_items: Object.keys(reputationItems).length > 0 ? reputationItems : null,
                     non_price_quant_score: fd.get('non_price_quant_score'),
                 },
             };

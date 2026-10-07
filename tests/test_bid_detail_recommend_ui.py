@@ -185,6 +185,14 @@ def test_detail_shows_three_amounts_and_labels(auth_client, isolated_db):
     assert "bounds.min_bid_amount" in body
     assert "bounds.max_bid_amount" in body
     assert "prediction.optimal_price" in body
+    assert 'id="price-help-modal"' in body
+    assert 'data-price-help="min"' in body
+    assert 'data-price-help="optimal"' in body
+    assert 'data-price-help="max"' in body
+    assert "function openPriceHelp" in body
+    assert "사정률 하한에 맞춰 계산한 투찰금액입니다." in body
+    assert "선택한 예측 모델이 이 공고에 대해 산출한 투찰금액입니다." in body
+    assert "사정률 상한에 맞춰 계산한 투찰금액입니다." in body
 
 
 def test_detail_reason_sentence_templates(auth_client, isolated_db):
@@ -230,6 +238,9 @@ def test_detail_member_and_blocked_guidance(auth_client, isolated_db):
     assert "data.rate_notice" in body
     assert "data.rate_source === 'measured'" in body
     assert "reputation_grade_required" in body
+    assert "applied_reputation_items" in body
+    assert "회원가입 때 저장한 신인도를 이 공고에 적용했습니다." in body
+    assert "경영상태와 신인도는 회원가입 때 저장한 원자료를 그대로 씁니다." in body
 
 
 def test_detail_shows_performance_basis(auth_client, isolated_db):

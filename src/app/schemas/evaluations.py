@@ -789,6 +789,14 @@ class EvaluationRecommendResponse(BaseModel):
         default_factory=list,
         description="회원 원자료만으로 평점을 정할 수 없어 선택이 필요한 신인도 항목 코드",
     )
+    applied_management_grade: str | None = Field(
+        None,
+        description="계산에 적용한 신용평가등급. 회원 원자료와 이 공고 수정값을 합친 별표 10 등급군",
+    )
+    applied_reputation_items: dict[str, str] = Field(
+        default_factory=dict,
+        description="계산에 적용한 신인도 항목별 평점. 회원 원자료와 이 공고 수정값을 합친 값",
+    )
     quant_source: Literal["REGISTRY_TABLE", "USER_INPUT_UNVERIFIED", "NONE"] | None = Field(
         None, description="정량점수 출처"
     )

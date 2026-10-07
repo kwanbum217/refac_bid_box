@@ -110,6 +110,33 @@ body {
     background-color: var(--h-bg-secondary);
 }
 
+/* 공고·낙찰 목록. 자동 표 너비는 줄바꿈 없는 공고명에 밀려 지역·수요기관이
+   한 글자 폭으로 줄어듭니다. 열 너비를 고정하고 한글은 어절 단위로만 끊습니다. */
+.list-table {
+    width: 100%;
+    min-width: 62rem;
+    table-layout: fixed;
+}
+
+.list-table th,
+.list-table td {
+    padding: 0.7rem 0.65rem;
+    overflow: hidden;
+    vertical-align: top;
+    word-break: keep-all;
+    overflow-wrap: normal;
+}
+
+.list-table .list-clip {
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    word-break: keep-all;
+}
+
 /* Layout Utilities */
 .h-page-header {
     padding: 1.5rem 2rem;

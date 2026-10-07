@@ -26,7 +26,7 @@ def test_negotiation_template_uses_unique_distribution_id() -> None:
 def test_negotiation_branch_renders_distribution_before_return() -> None:
     template = _detail_template()
     branch_start = template.index("function renderNegotiation(data)")
-    branch_end = template.index("function usesFallbackModel", branch_start)
+    branch_end = template.index("function renderLowerBoundWarnings", branch_start)
     branch = template[branch_start:branch_end]
 
     assert "renderNegotiationDistribution(data);" in branch

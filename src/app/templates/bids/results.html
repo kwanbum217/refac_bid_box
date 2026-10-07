@@ -162,10 +162,19 @@
                 </div>
             </div>
             <div class="results-table-wrap overflow-x-auto">
-                <table class="h-table">
+                <table class="h-table list-table">
+                    <colgroup>
+                        <col style="width:6.5rem">
+                        <col>
+                        <col style="width:10rem">
+                        <col style="width:10rem">
+                        <col style="width:8.75rem">
+                        <col style="width:6rem">
+                        <col style="width:8.5rem">
+                    </colgroup>
                     <thead>
                         <tr>
-                            <th class="w-24">분류</th>
+                            <th>분류</th>
                             <th>공고 정보</th>
                             <th>수요기관</th>
                             <th>낙찰 업체</th>
@@ -180,8 +189,8 @@
                             <td>
                                 <span class="badge badge-gray">{{ result.category_label }}</span>
                             </td>
-                            <td class="max-w-md">
-                                <div class="result-title font-semibold text-slate-900 truncate">
+                            <td>
+                                <div class="result-title list-clip font-semibold text-slate-900" title="{{ result.display_bid_ntce_nm }}">
                                     {{ result.display_bid_ntce_nm }}
                                 </div>
                                 <div class="mt-0.5 text-[11px] text-slate-400">
@@ -192,16 +201,16 @@
                                 </div>
                             </td>
                             <td>
-                                <div class="flex items-center text-sm text-slate-600">
-                                    <i class="far fa-building mr-2 text-slate-300"></i>
+                                <div class="list-clip text-sm text-slate-600" title="{{ result.display_dminstt_nm }}">
+                                    <i class="far fa-building mr-1 text-slate-300"></i>
                                     {{ result.display_dminstt_nm|truncatechars(18) }}
                                 </div>
                             </td>
                             <td>
-                                <span class="text-sm font-semibold text-slate-700">{{ result.display_bidwinnr_nm|truncatechars(20) }}</span>
+                                <span class="list-clip text-sm font-semibold text-slate-700" title="{{ result.display_bidwinnr_nm }}">{{ result.display_bidwinnr_nm|truncatechars(20) }}</span>
                             </td>
                             <td>
-                                <span class="text-sm font-bold text-slate-900">₩{{ result.sucsf_bid_amt|default(0, true)|intcomma }}</span>
+                                <span class="list-clip text-sm font-bold text-slate-900">₩{{ result.sucsf_bid_amt|default(0, true)|intcomma }}</span>
                             </td>
                             <td>
                                 {% if result.sucsf_bid_rate is not none %}

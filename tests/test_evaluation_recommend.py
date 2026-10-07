@@ -290,6 +290,8 @@ def test_member_reputation_ratings_are_autofilled(client, isolated_db, as_user):
     # 수행능력 20 + 경영상태 10 + 근로조건 10 + 신인도(1.5 + 2.0) = 43.5
     assert items["reputation"] == "3.5"
     assert payload["non_price_score"] == "43.5"
+    assert payload["applied_management_grade"] == MEMBER_CREDIT_GRADE
+    assert payload["applied_reputation_items"] == {"sme_consortium": "1.5", "job_creation": "2"}
     assert not any("평점 선택이 필요한" in warning for warning in payload["warnings"])
 
 
