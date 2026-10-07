@@ -1498,8 +1498,10 @@ $(document).ready(function() {
             + (breakdown ? '(' + breakdown + ')' : '')
             + '으로 가격점수는 ' + (required == null ? '미확인' : required + '점') + ' 이상이어야 합니다.';
         const tail = bound === 'min'
-            ? '사정률 하한(' + rate + '%) 기준 예정가격에서 이를 충족하는 최저 투찰금액입니다.'
-            : '사정률 상한(' + rate + '%) 기준 예정가격에서 이를 충족하는 최고 투찰금액입니다.';
+            ? (data.rate_source === 'measured' ? '과거 사정률 최저(' : '사정률 하한(')
+                + rate + '%) 기준 예정가격에서 이를 충족하는 최저 투찰금액입니다.'
+            : (data.rate_source === 'measured' ? '과거 사정률 최고(' : '사정률 상한(')
+                + rate + '%) 기준 예정가격에서 이를 충족하는 최고 투찰금액입니다.';
         return head + ' ' + score + ' ' + tail;
     }
 
@@ -1578,7 +1580,7 @@ $(document).ready(function() {
             $('#res-fallback').addClass('hidden');
         }
 
-        if (data.rate_source === 'theoretical' && data.rate_notice) {
+        if (data.rate_notice) {
             $('#res-rate-notice-msg').text(data.rate_notice);
             $('#res-rate-notice').removeClass('hidden');
         } else {
