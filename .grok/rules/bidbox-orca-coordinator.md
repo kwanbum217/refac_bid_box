@@ -22,6 +22,8 @@ Grok 가 이 저장소의 Orca 주 코디네이터일 때만 아래를 적용합
 
 이 접두부, `AGENTS.md`, `docs/ops/coordinator_operational_memory.md`, Orca 조율 규칙, Capsule 계약, 모델 라우터 정책은 안정 접두부입니다. 매 턴 다시 쓰지 않습니다.
 
+Claude 장기 메모리 89개 본문은 `~/.grok/memory-v2/workspaces/refac-bid-box-995ae298/topics/claude-coordinator-memory/` 에 있다. 색인은 그 폴더의 `MEMORY.md` 이고 사실 88개는 파일 하나다. 코디네이터 업무를 시작하기 전에 색인을 읽고, 이번 업무와 겹치는 사실 파일을 연 뒤 그 교훈으로 판단한다. 색인에 있는 실패 교훈을 다시 조사하거나 빼지 않는다. 날짜가 쌓인 일지이므로 모델 배정은 가장 나중 항목을 현재 값으로 보고, 저장소·실측과 충돌하면 저장소와 실측을 따른다.
+
 뒤에만 붙입니다: 사용자 요청, HEAD, 커밋, 활성 Task, 워커 출력, CI, 새로 발견한 실패.
 
 Orca Run 은 **인수인계에 적힌 활성 Run** 을 씁니다. 세션 시작 시 `orca orchestration task-list` 로 실제 활성 Run 을 확인하고, 이 파일에 특정 Run ID 를 고정하지 않습니다. 고정하면 세션이 바뀔 때마다 뒤처집니다.
