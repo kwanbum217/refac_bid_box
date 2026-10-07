@@ -28,6 +28,12 @@ NON_TAILWIND_EXACT = frozenset(
         "select",
         "select-bordered",
         "select-sm",
+        "list-clip",
+        "list-table",
+        "price-amount",
+        "price-result-cell",
+        "price-result-grid",
+        "price-result-wrap",
     }
 )
 

@@ -33,6 +33,8 @@
 | 공고 상세 | 모델 폴백 알림 문구를 상세 화면에서 제거했다. 예측이 폴백하는 동작은 그대로다 | `src/app/templates/bids/detail.html` |
 | 공고 상세 | 최저가, AI 예측가, 최상가 금액이 칸 너비에 맞춰 줄지 않고 끝까지 보인다. 칸을 누르면 그 금액의 설명 모달이 열린다 | `src/app/templates/bids/detail.html` |
 | 공고 목록 | 표 열 너비를 고정했다. 참가가능 지역은 12자 예산 안에서 한 줄만 보이고 나머지는 `...` 이다. 전체 이름은 `title` 에 있다 | `src/app/services/bid_queries.py`, `src/app/templates/bids/list.html`, `src/app/static/css/harness.css` |
+
+템플릿이 새로 쓰는 Tailwind 유틸리티는 `src/app/static/css/tailwind.css` 를 다시 만들어 커밋했다. `list-table`, `list-clip`, `price-result-*`, `price-amount` 는 컴포넌트 클래스라 그 산출물에 없고, 빌드 검사도 그 이름만 제외한다.
 | 회원가입 | 신인도 입력은 객체라 길이 판단을 `Object.keys` 로 고쳤다 | `src/app/templates/accounts/signup.html` |
 
 금액 설명은 화면이 이미 계산한 근거 문장을 그대로 연다. 최저가·최상가는 사정률 하한·상한과, 보일 때는 이론 범위 안내를 붙인다. AI 예측가는 선택 모델의 투찰금액과 예측 낙찰률이다. 이론 범위 문장을 AI 예측의 근거로 붙이지 않는다.
