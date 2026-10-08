@@ -1221,13 +1221,20 @@ $(document).ready(function() {
         return table.bands.find(function(band) { return band.band_key === key; }) || null;
     }
 
-    function quantScoreCell(item) {
+    function quantScoreCell(item, drafts) {
         if (item.limit_kind === 'absent' || item.limit == null) {
             return '<span class="text-xs font-semibold text-slate-400">배점표 없음</span>';
         }
         const min = item.limit_min != null ? item.limit_min : 0;
+        const draft = drafts && Object.prototype.hasOwnProperty.call(drafts, item.item_key)
+            ? drafts[item.item_key]
+            : '';
+        const valueAttr = draft !== '' && draft != null
+            ? ' value="' + escapeHtml(String(draft)) + '"'
+            : '';
         return '<input type="number" data-quant-item="' + escapeHtml(item.item_key) + '" step="0.01"'
             + ' min="' + escapeHtml(String(min)) + '" max="' + escapeHtml(String(item.limit)) + '"'
+            + valueAttr
             + ' class="w-24 bg-white border border-slate-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">';
     }
 
@@ -1244,7 +1251,7 @@ $(document).ready(function() {
             + options + '</select>';
     }
 
-    function quantRow(item, table, appliedReputation) {
+    function quantRow(item, table, appliedReputation, drafts) {
         let inputCell;
         if (item.limit_kind === 'credit_grade') {
             inputCell = quantManagementCell(item, table);
@@ -1254,7 +1261,7 @@ $(document).ready(function() {
                 ? '<span class="text-xs font-semibold text-slate-700">회원정보 적용</span>'
                 : '<span class="text-xs font-semibold text-slate-500">아래 신인도 항목에서 선택</span>';
         } else {
-            inputCell = quantScoreCell(item);
+            inputCell = quantScoreCell(item, drafts);
         }
         return '<tr>'
             + '<td class="py-2 pr-4 text-xs font-semibold text-slate-500">' + escapeHtml(item.section_no) + '</td>'
@@ -1383,17 +1390,71 @@ $(document).ready(function() {
         $basis.text('수행실적 산정 기준은 공고문 적격심사 배점표를 확인하십시오.');
     }
 
+    // 추천 응답마다 입력표를 비우면 키 입력 직후 점수가 사라진다. 같은 배점 구간이면
+    // 칸을 그대로 두고, 구간이 바뀔 때만 다시 그리면서 적어 둔 값을 되돌린다.
+    let renderedQuantSignature = '';
+
+    function quantBandSignature(table) {
+        const band = activeQuantBand(table);
+        if (!table || !band) return '';
+        const rows = band.items.filter(function(item) {
+            return item.limit_kind !== 'price' && item.limit_kind !== 'disqualification';
+        }).map(function(item) {
+            return [item.item_key, item.limit_kind, item.limit, item.section_no].join(':');
+        });
+        return [table.attachment || '', band.band_key, rows.join('|')].join('~');
+    }
+
+    function readQuantDrafts() {
+        const drafts = {};
+        $('#qualification-tbody').find('[data-quant-item]').each(function() {
+            drafts[$(this).attr('data-quant-item')] = $(this).val();
+        });
+        return drafts;
+    }
+
+    function readManagementDraft() {
+        const grade = $('#input-management-grade');
+        return grade.length ? grade.val() : '';
+    }
+
+    function focusedQuantField() {
+        const active = document.activeElement;
+        if (!active || !active.getAttribute) return null;
+        const key = active.getAttribute('data-quant-item');
+        if (!key) return null;
+        return { key: key, caret: active.selectionStart };
+    }
+
+    function restoreQuantFocus(focus) {
+        if (!focus) return;
+        const next = $('#qualification-tbody').find('[data-quant-item]').filter(function() {
+            return $(this).attr('data-quant-item') === focus.key;
+        }).get(0);
+        if (!next) return;
+        next.focus();
+        if (typeof focus.caret === 'number' && next.setSelectionRange) {
+            const pos = Math.min(focus.caret, String(next.value || '').length);
+            next.setSelectionRange(pos, pos);
+        }
+    }
+
     function renderQuantInputs(data) {
         const table = data && data.quant_score_table ? data.quant_score_table : null;
         const requiredItems = data && data.reputation_grade_required;
         const appliedReputation = data && data.applied_reputation_items ? data.applied_reputation_items : {};
         const appliedGrade = data && data.applied_management_grade ? data.applied_management_grade : '';
+        const drafts = readQuantDrafts();
+        const managementDraft = readManagementDraft();
+        const focus = focusedQuantField();
+        const signature = quantBandSignature(table);
         quantScoreTable = table || null;
         const $tbody = $('#qualification-tbody');
         const $bandNote = $('#quant-band-note');
-        $tbody.empty();
         $('#reputation-section').addClass('hidden');
         if (!table) {
+            renderedQuantSignature = '';
+            $tbody.empty();
             $('#quant-attachment').text('적용 별표 배점표 미확인');
             $bandNote.addClass('hidden').text('');
             renderPerformanceBasis(null);
@@ -1408,7 +1469,21 @@ $(document).ready(function() {
         );
         renderPerformanceBasis(table);
         if (!band) {
+            renderedQuantSignature = '';
+            $tbody.empty();
             $bandNote.removeClass('hidden').text(table.band_note || '적용 구간을 확정하지 못했습니다.');
+            renderReputationSection(table, requiredItems, appliedReputation);
+            renderEstimatedPriceRow(table);
+            updateAppendixButton();
+            return;
+        }
+        if (
+            signature
+            && signature === renderedQuantSignature
+            && $tbody.find('[data-quant-item], #input-management-grade').length
+        ) {
+            $bandNote.toggleClass('hidden', !table.band_note);
+            if (table.band_note) $bandNote.text(table.band_note);
             renderReputationSection(table, requiredItems, appliedReputation);
             renderEstimatedPriceRow(table);
             updateAppendixButton();
@@ -1417,15 +1492,18 @@ $(document).ready(function() {
         const rows = [];
         band.items.forEach(function(item) {
             if (item.limit_kind === 'price' || item.limit_kind === 'disqualification') return;
-            rows.push(quantRow(item, table, appliedReputation));
+            rows.push(quantRow(item, table, appliedReputation, drafts));
         });
         $tbody.html(rows.join(''));
-        if (appliedGrade) $('#input-management-grade').val(appliedGrade);
+        const grade = managementDraft || appliedGrade;
+        if (grade) $('#input-management-grade').val(grade);
+        renderedQuantSignature = signature;
         $bandNote.toggleClass('hidden', !table.band_note);
         if (table.band_note) $bandNote.text(table.band_note);
         renderReputationSection(table, requiredItems, appliedReputation);
         renderEstimatedPriceRow(table);
         updateAppendixButton();
+        restoreQuantFocus(focus);
     }
 
     // 공고에 추정가격이 있으면 구간은 이미 정해져 있으므로 입력란 대신 적용 값을 보여 준다.
@@ -1459,7 +1537,7 @@ $(document).ready(function() {
         $('#qualification-tbody').find('[data-quant-item]').each(function() {
             const value = parseFloat($(this).val());
             if (Number.isFinite(value) && value !== 0) {
-                items[$(this).data('quant-item')] = value;
+                items[$(this).attr('data-quant-item')] = value;
             }
         });
         return items;

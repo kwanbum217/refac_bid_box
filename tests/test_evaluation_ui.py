@@ -93,6 +93,13 @@ class TestEvaluationUITemplate:
         assert "data-quant-item" in template_content
         assert "단순노무용역" in template_content
 
+    def test_quant_redraw_keeps_typed_scores(self, template_content):
+        """추천 응답이 다시 와도 같은 배점 구간의 입력 점수는 비우지 않는다."""
+        assert "readQuantDrafts" in template_content
+        assert "quantBandSignature" in template_content
+        assert "renderedQuantSignature" in template_content
+        assert "signature === renderedQuantSignature" in template_content
+
     def test_disqualification_checkbox_removed(self, template_content):
         """결격사유 체크박스는 제거됐다. 서버가 '미확인'으로 계산한다."""
         assert 'id="input-disqualification"' not in template_content
