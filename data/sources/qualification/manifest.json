@@ -391,18 +391,20 @@
       "first_seen": "capsules/task_4bc835ecb826/cb/cb_search.html"
     },
     {
-      "sha256": "0bd17599b789df91a5e5eba459f88bbde1cd62b47fad29b8d19c3d4eac8ea9d2",
-      "path": "files/chungnam/0bd17599b789_chungnam_2026_1235.hwpx",
-      "original_filename": "chungnam_2026_1235.hwpx",
+      "sha256": "11c48edac4f7e4233ab5cc0939d59992691d62ba4ec3c86ead1447e70cae368e",
+      "path": "files/chungnam/11c48edac4f7_충청남도 일반용역 적격심사 세부기준(신구대비표).hwpx",
+      "original_filename": "충청남도 일반용역 적격심사 세부기준(신구대비표).hwpx",
       "institution": "충청남도",
-      "doc_title": null,
-      "doc_number": null,
-      "effective_date": null,
+      "doc_title": "충청남도 일반용역 적격심사 세부기준 신·구 대비표",
+      "doc_number": "제2026-1235호",
+      "effective_date": "2026-07-13",
       "source_url": null,
-      "source_kind": "elis",
+      "source_kind": "user_download",
       "derived_from": null,
-      "cited_by": [],
-      "first_seen": "capsules/task_809e97534b72/chungnam/chungnam_2026_1235.hwpx"
+      "cited_by": [
+        "docs/analysis/qual_chungnam_2026_1235_hwpx_20261008.md"
+      ],
+      "first_seen": "downloads/적격심사_미수집_항목원문들/충청남도 일반용역 적격심사 세부기준(신구대비표).hwpx"
     },
     {
       "sha256": "679905cdbce5ba01afaf86f8cd8ec6d34e25fe0a429ac06a801d96b925549f44",
