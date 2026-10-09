@@ -19,7 +19,13 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.app.api.v1.accounts import SignUpRequest, get_current_user, register_user
+from src.app.api.v1.accounts import (
+    SignUpRequest,
+    _serialize,
+    get_current_user,
+    me_profile,
+    register_user,
+)
 from src.app.core.config import settings
 from src.app.core.db import get_db, open_thread_session
 from src.app.core.security import (
@@ -389,6 +395,49 @@ def signup_page(request: Request, user: CustomUser | None = Depends(get_current_
         return RedirectResponse(url="/", status_code=303)
     context = {"hide_sidebar": True, "form": signup_form()}
     return _render(request, "accounts/signup.html", context, None)
+
+
+def _reputation_rows(
+    items: dict[str, float] | list[str] | None,
+) -> list[dict[str, Any]]:
+    """신인도 원자료를 항목명·평점 표시 행으로 바꿉니다.
+
+    저장 형식(dict 평점 / 구형 list 코드)만 맞추고 조회·직렬화는 accounts 의
+    me_profile 결과를 그대로 씁니다. 항목 코드의 사람이 읽는 이름은
+    정량평가 레지스트리에서 가져옵니다.
+    """
+    if not items:
+        return []
+    entries: list[tuple[str, float | None]] = (
+        list(items.items()) if isinstance(items, dict) else [(code, None) for code in items]
+    )
+    rows: list[dict[str, Any]] = []
+    for code, score in entries:
+        item = find_reputation_item(code)
+        rows.append({"label": item.item_name if item is not None else code, "score": score})
+    return rows
+
+
+@router.get("/accounts/mypage/")
+def mypage(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    """로그인 회원이 자기 회원정보를 조회 전용으로 확인합니다."""
+    if user is None:
+        return _login_redirect(request)
+    profile = me_profile(user=user, db=db)
+    qualification = profile.qualification
+    context = {
+        "account": _serialize(user),
+        "company": profile.company,
+        "qualification": qualification,
+        "reputation_rows": _reputation_rows(
+            qualification.reputation_items if qualification is not None else None
+        ),
+    }
+    return _render(request, "accounts/mypage.html", context, user, "mypage")
 
 
 def _register_user_sync(payload: SignUpRequest, response: Response) -> None:

@@ -128,6 +128,7 @@ PRODUCTION_INDEX_NAMES = {
         "ix_bid_ann_category_collected_dt",
         "ix_bid_ann_collected_dt",
         "ix_bid_ann_dt_cat",
+        "ix_bid_ann_inst_cat_dt",
         "ix_bid_ann_inst_cat_ntce",
     },
     "bid_dataset_summaries": {"bid_dataset_summaries_rebuilt_at_8d77f9db"},
@@ -143,6 +144,7 @@ PRODUCTION_INDEX_NAMES = {
         "ix_bid_results_cat_dt_stats",
         "ix_bid_results_dt_cat",
         "ix_bid_results_inst_cat_stats",
+        "ix_bid_results_inst_dt",
         "ix_bid_results_rate_id",
     },
     "chat_session_states": {
@@ -291,6 +293,7 @@ BIDS_TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
                 "sucsf_bid_rate",
                 "sucsf_bid_amt",
             ),
+            "ix_bid_results_inst_dt": ("dminstt_nm", "rl_openg_dt"),
             "bid_results_dminstt_nm_1b809760": ("dminstt_nm",),
             "bid_results_category_981358ae": ("category",),
             "bid_results_collected_at_25a564b9": ("collected_at",),
@@ -419,6 +422,7 @@ BIDS_TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
             "ix_bid_ann_collected": ("collected_at",),
             "ix_bid_ann_category_collected_dt": ("category", "collected_at", "bid_ntce_dt", "id"),
             "ix_bid_ann_collected_dt": ("collected_at", "bid_ntce_dt", "id"),
+            "ix_bid_ann_inst_cat_dt": ("dminstt_nm", "category", "bid_ntce_dt"),
             "ix_bid_ann_inst_cat_ntce": ("dminstt_nm", "category", "bid_ntce_nm"),
         },
         "columns": {

@@ -118,7 +118,7 @@ def test_all_templates_compile():
     names = sorted(
         path.relative_to(TEMPLATE_DIR).as_posix() for path in TEMPLATE_DIR.rglob("*.html")
     )
-    assert len(names) == 12, names
+    assert len(names) == 13, names
     for name in names:
         try:
             templates.env.get_template(name)
