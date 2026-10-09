@@ -888,6 +888,12 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
             BidAnnouncement.dminstt_nm == bid.dminstt_nm,
         )
     ).where(BidAnnouncement.id != bid.id)
+    # 최신 공고순 정렬. (dminstt_nm, category, bid_ntce_dt) 인덱스가 이 정렬을 받칩니다
+    # (migrations/versions/f5a6b7c8d9e0).
+    similar_stmt = similar_stmt.order_by(
+        BidAnnouncement.bid_ntce_dt.desc(),
+        BidAnnouncement.id.desc(),
+    )
     similar_bids = db.execute(similar_stmt.limit(5)).scalars().all()
 
     past_results = (
