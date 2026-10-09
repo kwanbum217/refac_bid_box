@@ -2597,6 +2597,14 @@
           "unique": false
         },
         {
+          "name": "ix_bid_results_inst_dt",
+          "column_names": [
+            "dminstt_nm",
+            "rl_openg_dt"
+          ],
+          "unique": false
+        },
+        {
           "name": "ix_bid_results_rate_id",
           "column_names": [
             "sucsf_bid_rate",
@@ -2605,7 +2613,7 @@
           "unique": false
         }
       ],
-      "hash": "6802c1cceecaef0222f9760ad45dc059a2d84da459bb4ae0b17e71237bb95ade"
+      "hash": "ce949ae90d0f0965c7f16848c9dfb0b5c82ace192024b7cd41b6ce15a3dd56ed"
     },
     "chat_session_states": {
       "name": "chat_session_states",
@@ -4311,7 +4319,7 @@
     "bid_evaluation_snapshots": "d3545ead57491842655c4a62129b36e428bcdcd9cd85ecad9aff13d8141e409a",
     "bid_prearng_prices": "e9cfe16810593327143a3d9e03dc2306063dedc08eb66f698c0e0668c008b5b0",
     "bid_ranking_snapshots": "dd386a5dee7f4abf08926b8978dbad4244f5d69cfbf0d062bdf7b827c1ec5dca",
-    "bid_results": "6802c1cceecaef0222f9760ad45dc059a2d84da459bb4ae0b17e71237bb95ade",
+    "bid_results": "ce949ae90d0f0965c7f16848c9dfb0b5c82ace192024b7cd41b6ce15a3dd56ed",
     "chat_session_states": "77a97c60bb532b4a5c02ff6b6a50ca7f032e67d42487ee9bb475a653a49cb326",
     "django_admin_log": "2af8eb99ab2beab36069c77b804fb4084d6bafb85c53b828ccddf1d90faac476",
     "django_content_type": "611afda7f77ff97e19b403c350392a3f4c33e75824f71b45b09d2188b582e57b",
@@ -4331,7 +4339,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "78b061043b0b0cb8677c5d40479127ab81f2c5609dda00131cab79b104830d45",
+  "overall_hash": "0e93f5c3dc7532fe9243795a666d204f3320fe0e687060b60351a8aba56744a2",
   "orm_tables": [
     "account_company_profiles",
     "account_consent_events",
@@ -4405,10 +4413,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-10-06T10:06:01.148762+00:00",
+    "generated_at": "2026-10-09T13:00:48.892875+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "d0f25040dcbe88816ea78310444f6154506a3ea9"
+    "git_head": "7b203314a207e05b1bdc3f40610f5c448903419c"
   }
 }
