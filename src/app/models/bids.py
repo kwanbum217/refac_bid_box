@@ -204,6 +204,9 @@ class BidResult(Base):
             "sucsf_bid_rate",
             "sucsf_bid_amt",
         ),
+        # 공고 상세의 기관 과거 낙찰 5건 조회(기관 등치 + 개찰일시 정렬)가 기관 전체 행을
+        # 읽고 filesort 하지 않게 합니다 (migrations/versions/e4f5a6b7c8d9).
+        Index("ix_bid_results_inst_dt", "dminstt_nm", "rl_openg_dt"),
     )
 
     id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
