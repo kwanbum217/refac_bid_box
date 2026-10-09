@@ -337,6 +337,9 @@ class BidAnnouncement(Base):
         # RAG 정형 검색의 기관명 조건 COUNT 와 기관별·공고명별 집계가 본문을 읽지 않게 합니다
         # (migrations/versions/afc72b545c6a).
         Index("ix_bid_ann_inst_cat_ntce", "dminstt_nm", "category", "bid_ntce_nm"),
+        # 공고 상세의 유사 공고 5건을 기관·분야 등치 조건 뒤 최신 공고일시 내림차순으로
+        # 정렬 비용 없이 읽게 합니다 (migrations/versions/f5a6b7c8d9e0).
+        Index("ix_bid_ann_inst_cat_dt", "dminstt_nm", "category", "bid_ntce_dt"),
     )
 
     id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)

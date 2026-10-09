@@ -1652,6 +1652,15 @@
           "unique": false
         },
         {
+          "name": "ix_bid_ann_inst_cat_dt",
+          "column_names": [
+            "dminstt_nm",
+            "category",
+            "bid_ntce_dt"
+          ],
+          "unique": false
+        },
+        {
           "name": "ix_bid_ann_inst_cat_ntce",
           "column_names": [
             "dminstt_nm",
@@ -1661,7 +1670,7 @@
           "unique": false
         }
       ],
-      "hash": "e573d572930a7e4329f1bc106ae05b6ddc1e79f49d776373f5bc2cad3ccc7324"
+      "hash": "88f4d9c9400043f8eac5da3afcfeb705ceddb95358f51b3bd7184532e3f26db9"
     },
     "bid_compare_stats_snapshots": {
       "name": "bid_compare_stats_snapshots",
@@ -4311,7 +4320,7 @@
     "automation_subscriptions": "643c95f2fa8501dc2375cedd58248611a366ffe9cfd049e0f1f234318335686b",
     "bid_announcement_license_limits": "a0871740bfc21f95c53509ddb5948275e2a07242da67acc0d845bc3effe258b5",
     "bid_announcement_participation_regions": "5c661943772b6baf82ed0492577310ead3eed005d697e44fac910fea3ec2389b",
-    "bid_announcements": "e573d572930a7e4329f1bc106ae05b6ddc1e79f49d776373f5bc2cad3ccc7324",
+    "bid_announcements": "88f4d9c9400043f8eac5da3afcfeb705ceddb95358f51b3bd7184532e3f26db9",
     "bid_compare_stats_snapshots": "d9e0fe67e1318a2cdf02ff0b2fc15dd89716a4495bde95d916749105311dac60",
     "bid_dataset_summaries": "db63132629b7fd7a107d4ef8dd88e3b75db7645da6e724d0df92115af9288501",
     "bid_evaluation_evidence": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a",
@@ -4339,7 +4348,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "0e93f5c3dc7532fe9243795a666d204f3320fe0e687060b60351a8aba56744a2",
+  "overall_hash": "defd52d6ac8bf9515c29e5a640d6fa2528aa1619f6f42329e039a9e457fc8b18",
   "orm_tables": [
     "account_company_profiles",
     "account_consent_events",
@@ -4413,10 +4422,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-10-09T13:00:48.892875+00:00",
+    "generated_at": "2026-10-09T13:34:16.287216+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "7b203314a207e05b1bdc3f40610f5c448903419c"
+    "git_head": "fecb444ac8b72f7e5cb1f59dfddf5946fbe8fdd7"
   }
 }
