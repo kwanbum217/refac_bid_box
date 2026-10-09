@@ -209,8 +209,8 @@ def test_template_tailwind_utilities_exist_in_build_css():
     assert not missing, f"Tailwind utilities missing from build CSS: {missing[:20]}"
 
 
-def test_all_twelve_templates_are_scanned():
-    assert len(TEMPLATE_HTML_FILES) == 12
+def test_all_thirteen_templates_are_scanned():
+    assert len(TEMPLATE_HTML_FILES) == 13
 
 
 def test_tailwind_config_values_match_inline_spec():
