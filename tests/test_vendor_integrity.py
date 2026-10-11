@@ -23,7 +23,6 @@ LIBRARY_DIRS = (
     "fonts",
     "jquery",
     "marked",
-    "tailwindcss",
 )
 
 
