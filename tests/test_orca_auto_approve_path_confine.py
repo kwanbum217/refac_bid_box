@@ -3,6 +3,10 @@
 2026-10-12 에 리뷰어가 `find ~` 와 `find /` 로 작업 트리 밖을 뒤졌는데도 감시기가
 승인했습니다. 판정 범위를 워커 작업 트리 안으로 좁혀, 작업 트리 밖 경로를 인자로
 받는 명령은 사람 승인으로 돌립니다. 시스템 임시 디렉터리는 예외입니다.
+
+경로 인자의 셸 변수 확장(`cat $HOME/.netrc`)도 정적으로 작업 트리 안팎을 가릴 수
+없으므로 보류합니다. 다만 루프 변수는 루프가 값을 정하므로 본문에서 보류하지
+않고, grep 패턴의 정규식 앵커($)도 확장이 아니므로 승인을 유지합니다.
 """
 
 from __future__ import annotations
@@ -94,6 +98,70 @@ class TestOutsidePathsAreHeld:
         verdict, reason = classify_command("/bin/cat /etc/hosts", workspace_root=worktree)
         assert verdict == "hold"
         assert "작업 트리 밖 경로" in reason
+
+
+class TestVariableExpansionInPathArguments:
+    """경로 인자의 셸 변수 확장은 정적으로 해석할 수 없으므로 보류합니다.
+
+    이전 시도에서 `cat $HOME/.netrc` 같은 명령이 작업 트리 안 상대 경로로
+    해석되어 승인되었습니다. 변수는 실행 시점에 정해지므로 작업 트리 밖을
+    가리킬 수 있어 사람 승인으로 돌립니다. 옵션 플래그가 아닌 비경로 인자
+    (grep 패턴의 정규식 앵커)의 $ 는 확장이 아니므로 승인을 유지합니다.
+    """
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "cat $HOME/.netrc",
+            "cat ${HOME}/.netrc",
+            'cat "$HOME"/x',
+            "cat $PWD/../x",
+            "ls $TMPDIR",
+            "cat ./$X",
+        ],
+    )
+    def test_expanded_path_arguments_are_held(self, cmd: str, worktree: Path) -> None:
+        verdict, reason = classify_command(cmd, workspace_root=worktree)
+        assert verdict == "hold", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+        assert "경로 인자에 변수 확장" in reason
+
+    @pytest.mark.parametrize(
+        "cmd",
+        [
+            "cat $HOME/.netrc",
+            "cat ${HOME}/.netrc",
+            'cat "$HOME"/x',
+            "cat $PWD/../x",
+            "ls $TMPDIR",
+            "cat ./$X",
+        ],
+    )
+    def test_expanded_path_arguments_are_held_without_workspace_root(self, cmd: str) -> None:
+        verdict, reason = classify_command(cmd)
+        assert verdict == "hold", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+        assert "경로 인자에 변수 확장" in reason
+
+    def test_regex_anchor_dollar_is_not_expansion(self, worktree: Path) -> None:
+        """grep 패턴의 $ 는 정규식 앵커이므로 확장으로 보지 않습니다."""
+        verdict, reason = classify_command("grep -n 'foo$' README.md", workspace_root=worktree)
+        assert verdict == "approve", f"판정이 {verdict}입니다: {reason}"
+
+    def test_loop_variable_path_arguments_are_approved(self, worktree: Path) -> None:
+        """루프 변수는 루프가 값을 정하므로 본문에서 보류하지 않습니다."""
+        for cmd in (
+            "for f in src/*.py; do cat $f; done",
+            "while read h; do git show --stat $h; done",
+        ):
+            verdict, reason = classify_command(cmd, workspace_root=worktree)
+            assert verdict == "approve", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+
+    def test_unbound_variable_inside_loop_is_held(self, worktree: Path) -> None:
+        """루프가 묶지 않은 변수는 루프 안에서도 해석 불가이므로 보류합니다."""
+        verdict, reason = classify_command(
+            "for f in src/*.py; do cat $HOME/.netrc; done", workspace_root=worktree
+        )
+        assert verdict == "hold", f"판정이 {verdict}입니다: {reason}"
+        assert "경로 인자에 변수 확장" in reason
 
 
 class TestInsidePathsAreApproved:

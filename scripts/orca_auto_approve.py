@@ -826,19 +826,92 @@ def has_parent_reference(arg: str) -> bool:
     return ".." in re.split(r"[\\/]", arg)
 
 
-def check_path_argument(arg: str, workspace_root: Path | None) -> str | None:
+# 경로 인자의 셸 변수 확장. $VAR 와 ${VAR} 는 실행 시점에 값이 정해져 작업 트리
+# 안팎을 정적으로 가릴 수 없으므로 보류합니다. 토큰 끝의 $ 는 grep 패턴의 정규식
+# 앵커일 뿐 확장이 아니므로 이 패턴에 잡히지 않습니다.
+SHELL_VARIABLE_EXPANSION = re.compile(
+    r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))"
+)
+
+# 루프 변수는 루프가 값을 정하므로 본문에서는 확장이라도 작업 트리 밖이라고
+# 단정할 수 없습니다. `for f in src/*.py; do cat $f; done` 처럼 루프 변수를 경로로
+# 쓰는 정상 명령을 변수 확장이라는 이유로 보류하면 워커가 매번 멈춥니다.
+FOR_LOOP_HEADER = re.compile(r"\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\b")
+WHILE_READ_HEADER = re.compile(r"\bwhile\s+read\b([^;&|\n]*)")
+
+
+def extract_loop_bound_vars(cmd: str) -> frozenset[str]:
+    """명령 안 for/while read 루프가 묶는 변수 이름을 모읍니다."""
+    names: set[str] = set()
+    for match in FOR_LOOP_HEADER.finditer(cmd):
+        names.add(match.group(1))
+    for match in WHILE_READ_HEADER.finditer(cmd):
+        try:
+            tokens = shlex.split(match.group(1))
+        except ValueError:
+            continue
+        for token in tokens:
+            if token.startswith("-"):
+                continue
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token):
+                names.add(token)
+                continue
+            break
+    return frozenset(names)
+
+
+def check_variable_expansion(arg: str, bound_vars: frozenset[str]) -> str | None:
+    """경로 인자의 셸 변수 확장이 정적으로 해석 불가하면 보류 사유를 돌려줍니다.
+
+    $VAR, ${VAR} 는 실행 시점에 값이 정해지므로 작업 트리 밖을 가리킬 수 있어
+    보류합니다. 다만 루프 변수(bound_vars)만 참조하고 그 밖에 해석 불가한 $ 가
+    없으면 통과시킵니다. 토큰 끝의 $ 는 정규식 앵커이므로 확장으로 보지 않습니다.
+    """
+    if "$" not in arg:
+        return None
+
+    covered: set[int] = set()
+    names: list[str] = []
+    for match in SHELL_VARIABLE_EXPANSION.finditer(arg):
+        covered.update(range(match.start(), match.end()))
+        name = match.group("braced") or match.group("plain")
+        if name:
+            names.append(name)
+
+    for index, ch in enumerate(arg):
+        if ch != "$" or index in covered:
+            continue
+        # 토큰 끝의 $ (grep 패턴의 정규식 앵커) 는 확장이 아닙니다.
+        if index == len(arg) - 1:
+            continue
+        return f"경로 인자에 변수 확장 ({arg})"
+
+    if names and all(name in bound_vars for name in names):
+        return None
+    if names:
+        return f"경로 인자에 변수 확장 ({arg})"
+    return None
+
+
+def check_path_argument(
+    arg: str, workspace_root: Path | None, bound_vars: frozenset[str] = frozenset()
+) -> str | None:
     """경로로 해석되는 인자가 작업 트리 밖이면 보류 사유를 돌려줍니다.
 
     옵션 플래그(-로 시작)는 건너뜁니다. 나머지 인자를 경로로 보고 판정합니다.
     ~ 로 시작하거나 절대 경로이거나 workspace_root 기준으로 resolve 했을 때
-    작업 트리 밖이면 보류합니다. 시스템 임시 디렉터리는 예외입니다. 작업 트리
-    루트를 알 수 없으면(workspace_root 가 None) fail-closed 로 절대 경로와 ~ 와
-    상위 디렉터리 참조를 보류합니다.
+    작업 트리 밖이면 보류합니다. 셸 변수 확장($VAR, ${VAR})이 있으면 값을 알 수
+    없으므로 보류합니다. 시스템 임시 디렉터리는 예외입니다. 작업 트리 루트를 알
+    수 없으면(workspace_root 가 None) fail-closed 로 절대 경로와 ~ 와 상위 디렉터리
+    참조를 보류합니다.
     """
     if not arg or arg == "-":
         return None
     if arg.startswith("-"):
         return None
+    expansion_reason = check_variable_expansion(arg, bound_vars)
+    if expansion_reason:
+        return expansion_reason
     if arg.startswith("~"):
         return f"작업 트리 밖 경로 ({arg})"
 
@@ -868,14 +941,16 @@ def check_path_argument(arg: str, workspace_root: Path | None) -> str | None:
     return f"작업 트리 밖 경로 ({arg})"
 
 
-def check_segment_paths(cmd: str, workspace_root: Path | None) -> str | None:
+def check_segment_paths(
+    cmd: str, workspace_root: Path | None, bound_vars: frozenset[str] = frozenset()
+) -> str | None:
     """승인 후보 구간의 경로 인자를 검사해 작업 트리 밖이면 보류 사유를 돌려줍니다."""
     try:
         argv = shlex.split(cmd)
     except ValueError:
         return None
     for arg in argv[1:]:
-        reason = check_path_argument(arg, workspace_root)
+        reason = check_path_argument(arg, workspace_root, bound_vars)
         if reason:
             return reason
     return None
@@ -1094,7 +1169,10 @@ def check_loop_structure_balance(segments: list[str]) -> str | None:
 
 
 def classify_command(
-    cmd: str, depth: int = 0, workspace_root: Path | None = None
+    cmd: str,
+    depth: int = 0,
+    workspace_root: Path | None = None,
+    bound_vars: frozenset[str] = frozenset(),
 ) -> tuple[str, str]:
     """명령을 파이프라인 구간으로 나눠 각각을 판정합니다.
 
@@ -1108,8 +1186,11 @@ def classify_command(
     보류합니다.
 
     workspace_root 는 워커 작업 트리 루트입니다. 승인 후보 구간이라도 인자가
-    작업 트리 밖을 가리키면 보류합니다. 재귀 호출과 명령 치환 안쪽에도 그대로
-    전달합니다.
+    작업 트리 밖을 가리키거나 셸 변수를 확장하면 보류합니다. 재귀 호출과 명령
+    치환 안쪽에도 그대로 전달합니다.
+
+    bound_vars 는 둘러싼 루프가 묶는 변수 이름입니다. 루프 본문에서는 값이 루프가
+    정하는 변수를 경로로 쓸 수 있으므로 그 이름만은 확장이라도 보류하지 않습니다.
     """
     if not cmd or not cmd.strip():
         return "hold", "빈 명령"
@@ -1131,11 +1212,15 @@ def classify_command(
             return "hold", subst_err
         for inner in inner_cmds:
             inner_verdict, inner_reason = classify_command(
-                inner, depth=depth + 1, workspace_root=workspace_root
+                inner, depth=depth + 1, workspace_root=workspace_root, bound_vars=bound_vars
             )
             if inner_verdict != "approve":
                 return inner_verdict, inner_reason
         cmd = modified_cmd
+
+    # 이 명령 안 루프가 묶는 변수를 모아 둡니다. 루프 본문을 되짚을 때도 그대로
+    # 들고 가야 `cat $f` 같은 정상 명령을 변수 확장으로 보류하지 않습니다.
+    bound_vars = bound_vars | extract_loop_bound_vars(cmd)
 
     segments = split_pipeline(cmd)
     if segments is None:
@@ -1152,23 +1237,31 @@ def classify_command(
             return "hold", redirect_reason
         if not stripped:
             continue
-        verdict, reason = classify_segment(stripped, depth=depth, workspace_root=workspace_root)
+        verdict, reason = classify_segment(
+            stripped, depth=depth, workspace_root=workspace_root, bound_vars=bound_vars
+        )
         if verdict != "approve":
             return verdict, reason
-        # 승인 후보라도 인자가 작업 트리 밖을 가리키면 보류합니다.
-        confine_reason = check_segment_paths(stripped, workspace_root)
+        # 승인 후보라도 인자가 작업 트리 밖을 가리키거나 변수 확장이면 보류합니다.
+        confine_reason = check_segment_paths(stripped, workspace_root, bound_vars)
         if confine_reason:
             return "hold", confine_reason
 
     if len(segments) == 1:
         return classify_segment(
-            strip_redirections(segments[0])[0], depth=depth, workspace_root=workspace_root
+            strip_redirections(segments[0])[0],
+            depth=depth,
+            workspace_root=workspace_root,
+            bound_vars=bound_vars,
         )
     return "approve", f"파이프라인 {len(segments)}개 구간 전부 승인"
 
 
 def classify_segment(
-    cmd: str, depth: int = 0, workspace_root: Path | None = None
+    cmd: str,
+    depth: int = 0,
+    workspace_root: Path | None = None,
+    bound_vars: frozenset[str] = frozenset(),
 ) -> tuple[str, str]:
     """파이프라인 한 구간을 판정합니다. 종전 classify_command 의 본체입니다."""
     if not cmd or not cmd.strip():
@@ -1226,7 +1319,7 @@ def classify_segment(
         if not rest:
             return "hold", "while 조건 명령 없음"
         cond_verdict, cond_reason = classify_command(
-            rest, depth=depth, workspace_root=workspace_root
+            rest, depth=depth, workspace_root=workspace_root, bound_vars=bound_vars
         )
         if cond_verdict != "approve":
             return cond_verdict, cond_reason
@@ -1239,7 +1332,7 @@ def classify_segment(
         if not rest:
             return "approve", "안전한 루프 시작 (do)"
         body_verdict, body_reason = classify_command(
-            rest, depth=depth, workspace_root=workspace_root
+            rest, depth=depth, workspace_root=workspace_root, bound_vars=bound_vars
         )
         if body_verdict != "approve":
             return body_verdict, body_reason
