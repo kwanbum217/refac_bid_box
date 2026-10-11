@@ -28,6 +28,7 @@ import joblib
 from src.app.core.config import settings
 from src.app.core.timeutil import utcnow
 from src.ml.features import unservable_features
+from src.ml.model_integrity import write_manifest
 from src.ml.model_registry import (
     GENERATIONS_DIRNAME,
     LIVE_FILENAME,
@@ -473,6 +474,11 @@ def _promote_unlogged(
             raise PromotionRejected(
                 f"{model_name}/{version} staging 가중치가 요구하는 미지원 특징: {staging_blocked}"
             )
+
+        # 서빙 세트를 확정하기 전에 무결성 manifest 를 함께 봉인합니다. 로더는
+        # manifest 와 대조가 맞아야 모델을 열므로, 세대 공개 시점에 manifest 가
+        # 없거나 뒤늦게 쓰이면 운영에서 로드가 거부됩니다.
+        write_manifest(staging)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -736,6 +742,9 @@ def rollback(
     try:
         shutil.copytree(backup, restore_staging)
         staging_created = True
+        # 복원 세트에도 manifest 를 봉인합니다. 레거시 백업에는 manifest 가
+        # 없을 수 있고, 없으면 운영 환경 로더가 복원본을 거부합니다.
+        write_manifest(restore_staging)
         _replace_path(restore_staging, restored_generation)
         staging_created = False
 
