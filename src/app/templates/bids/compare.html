@@ -179,7 +179,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
     document.addEventListener('DOMContentLoaded', loadCompareData);
 
     async function fetchJsonOrThrow(url) {

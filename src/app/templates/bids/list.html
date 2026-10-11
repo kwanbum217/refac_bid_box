@@ -121,7 +121,7 @@
                     </thead>
                     <tbody>
                         {% for bid in bids %}
-                        <tr class="bid-row cursor-pointer" data-url="{{ url('bids:bid_detail', bid.id) }}" onclick="location.href=this.dataset.url;">
+                        <tr class="bid-row cursor-pointer" data-url="{{ url('bids:bid_detail', bid.id) }}">
                             <td>
                                 <span class="badge badge-gray">{{ bid.category_label }}</span>
                                 {% if qualification_ids and bid.id in qualification_ids %}
@@ -230,4 +230,8 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='js/bid-list.js') }}"></script>
 {% endblock %}

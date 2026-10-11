@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
+from starlette.requests import Request
 
 APP_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = APP_DIR / "templates"
@@ -220,8 +221,17 @@ def to_json(value) -> Markup:
     return Markup(encoded)  # nosec B704
 
 
+def csp_nonce_context(request: Request) -> dict[str, str]:
+    """요청 상태에 실린 CSP nonce 를 모든 템플릿 컨텍스트에 넣습니다.
+
+    값은 src/app/core/csp.py 미들웨어가 요청마다 새로 발급합니다. 미들웨어를
+    거치지 않은 렌더(테스트의 직접 렌더 등)에서는 빈 문자열로 떨어집니다.
+    """
+    return {"csp_nonce": str(getattr(request.state, "csp_nonce", ""))}
+
+
 def _build_templates() -> Jinja2Templates:
-    templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+    templates = Jinja2Templates(directory=str(TEMPLATE_DIR), context_processors=[csp_nonce_context])
     env = templates.env
     env.globals["url"] = url
     env.globals["provider_login_url"] = provider_login_url

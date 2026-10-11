@@ -1,0 +1,3 @@
+jquery 3.7.1
+Source: https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js
+SHA-256: fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a

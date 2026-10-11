@@ -1158,6 +1158,10 @@ $(document).ready(function() {
         sendMessage();
     });
 
+    $('[data-welcome-prompt]').click(function() {
+        setAndSend($(this).data('welcome-prompt'));
+    });
+
     $('#btn-new-chat').click(function() {
         const button = $(this);
         button.prop('disabled', true).addClass('opacity-70');
