@@ -168,6 +168,9 @@ PRODUCTION_INDEX_NAMES = {
     "bid_ranking_snapshots": {"uq_bid_ranking_slot", "ix_bid_ranking_lookup"},
     # 원본에 없는 신규 테이블. 리비전 88dd431cb285 가 만듭니다.
     "institution_win_rate_stats": {"uq_inst_win_rate_scope"},
+    # 원본에 없는 신규 테이블. 리비전 b7c8d9e0f1a2 가 만듭니다.
+    # user_id 가 PK 라 외래키 색인 외에 추가 인덱스가 없습니다.
+    "accounts_session_generation": set(),
 }
 
 

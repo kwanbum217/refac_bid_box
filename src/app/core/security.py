@@ -26,9 +26,17 @@ import time
 from typing import Any
 
 from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql.dml import Insert
 
 from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
+from src.app.core.db import SessionLocal
+from src.app.core.timeutil import utcnow
+from src.app.models.accounts import SessionGeneration
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +53,11 @@ SESSION_CACHE_PREFIX = "auth:session:"
 # 사용자별 세대 번호. 세션을 만들 때 그 시점의 세대를 함께 저장하고, 읽을 때
 # 저장된 세대가 현재보다 작으면 그 세션을 파기합니다. 세대를 1 올리면 그
 # 사용자의 모든 세션이 한 번에 무효가 되며, 이것이 전체 로그아웃입니다.
-# 세대 키에는 만료를 두지 않습니다(세션 절대 수명 14일보다 오래 살아야 함).
+# 정본은 accounts_session_generation 테이블이고 Redis 는 캐시입니다. 운영 Redis 는
+# volatile-lru 라 TTL 없는 키는 축출되지 않고 쌓이므로 캐시에는 만료를 둡니다.
+# 만료는 세션 절대 수명(14일)보다 길게 잡아 캐시가 살아 있는 동안 세대가 유지되게 합니다.
 SESSION_GENERATION_PREFIX = "auth:user_epoch:"
+SESSION_GENERATION_TTL_SECONDS = 60 * 60 * 24 * 30
 SESSION_GENERATION_FIELD = "generation"
 CSRF_COOKIE_NAME = "bidbox_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
@@ -228,10 +239,21 @@ class SessionStore:
         return f"{SESSION_GENERATION_PREFIX}{user_id}"
 
     def current_generation(self, user_id: int) -> int:
-        """사용자의 현재 세대 번호. 키가 없으면 0 입니다.
+        """사용자의 현재 세대 번호. 정본은 DB 이고 Redis 는 캐시입니다.
+
+        캐시에 값이 있으면 요청 경로에서 DB 를 조회하지 않습니다. 캐시가 비어
+        있을 때만 DB(정본)에서 읽어 같은 TTL 로 다시 채우므로, Redis 데이터가
+        지워져도 다음 요청에서 세대가 복원되고 이미 무효화한 세션이 되살아나지
+        않습니다. 행이 없는 사용자는 세대 0 이며 그 0 도 캐시합니다.
+
+        캐시를 채울 때는 키가 없을 때만 씁니다. DB 를 읽은 직후 전체 로그아웃이
+        새 세대를 캐시했을 수 있는데, 그때 덮어쓰면 옛 값이 남아 무효화한 세션이
+        되살아납니다. 키가 이미 있으면 그 값을 다시 읽어 최신 세대를 돌려줍니다.
 
         기존 세션(세대 필드 없음)은 세대 0 으로 보므로, 배포 직후에는 현재
-        세대도 0 이라 종전 세션이 일괄 로그아웃되지 않습니다.
+        세대도 0 이라 종전 세션이 일괄 로그아웃되지 않습니다. Redis 를 쓸 수
+        없으면 종전과 같이 fail-closed(개발 환경 로컬 대체)로 0 을 돌려줍니다.
+        DB 조회가 실패하면 경고 로그 후 0 을 돌려주되 캐시에 채우지 않습니다.
         """
         client = self._conn.client()
         if client is None:
@@ -244,18 +266,29 @@ class SessionStore:
             self._conn.invalidate(exc)
             self._fallback(f"세대 조회 실패: {exc}")
             return 0
-        if raw is None:
+        if raw is not None:
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return 0
+        generation = self._read_persisted_generation(user_id)
+        if generation is None:
             return 0
-        try:
-            return int(raw)
-        except (TypeError, ValueError):
-            return 0
+        cached = self._cache_generation(client, user_id, generation)
+        return generation if cached is None else cached
 
     def bump_generation(self, user_id: int) -> int:
         """세대를 1 올리고 새 값을 돌려줍니다. 전체 로그아웃이 이 값을 씁니다.
 
-        Redis 장애 처리는 다른 세션 연산과 같게 맞춥니다(fail-closed, 개발
-        환경에서만 프로세스 로컬 대체). 유휴·절대 만료 동작은 건드리지 않습니다.
+        순서가 중요합니다. 먼저 세대 캐시 키를 지우고(삭제 실패는 Redis 장애로
+        처리하며 DB 를 올리지 않습니다), 다음으로 DB 정본에서 그 사용자의 행을
+        원자적으로 1 올려 커밋하고(행이 없으면 1 로 생성), 마지막으로 새 값을
+        TTL 과 함께 캐시에 씁니다. 캐시 기록이 실패해도 키가 이미 지워져 있어
+        옛 값이 남지 않으므로 다음 읽기가 DB 정본에서 복원합니다. DB 저장에
+        실패하면 무효화를 기록하지 못한 것이므로 SessionStoreUnavailable 로
+        실패시킵니다. Redis 장애 처리는 다른 세션 연산과 같게 맞춥니다
+        (fail-closed, 개발 환경에서만 프로세스 로컬 대체). 유휴·절대 만료
+        동작은 건드리지 않습니다.
         """
         client = self._conn.client()
         if client is None:
@@ -263,11 +296,122 @@ class SessionStore:
             return self._discard_local_sessions(user_id)
         self._degraded_logged = False
         try:
-            return int(client.incr(self._generation_key(user_id)))
+            client.delete(self._generation_key(user_id))
         except Exception as exc:
             self._conn.invalidate(exc)
-            self._fallback(f"세대 증가 실패: {exc}")
+            self._fallback(f"세대 캐시 삭제 실패: {exc}")
             return self._discard_local_sessions(user_id)
+        value = self._bump_persisted_generation(user_id)
+        self._write_generation_cache(client, user_id, value)
+        return value
+
+    @staticmethod
+    def _read_persisted_generation(user_id: int) -> int | None:
+        """DB 정본에서 세대를 읽습니다. 행이 없으면 0, 조회 실패면 None 입니다.
+
+        None 은 값을 모른다는 뜻이라 호출부가 캐시를 채우지 않습니다. 0(행 없음)은
+        정상 값이므로 캐시에 채웁니다.
+        """
+        try:
+            with SessionLocal() as db:
+                generation = db.execute(
+                    select(SessionGeneration.generation).where(SessionGeneration.user_id == user_id)
+                ).scalar_one_or_none()
+        except SQLAlchemyError as exc:
+            logger.warning("세션 세대 DB 조회 실패, 0 으로 처리합니다: %s", exc)
+            return None
+        return 0 if generation is None else int(generation)
+
+    @staticmethod
+    def _bump_persisted_generation(user_id: int) -> int:
+        """DB 정본의 세대를 한 문장으로 원자적으로 1 올리고 새 값을 돌려줍니다.
+
+        MySQL·MariaDB 는 INSERT ... ON DUPLICATE KEY UPDATE, SQLite(시험)는
+        ON CONFLICT DO UPDATE 를 써서 동시 요청에도 증가가 유실되지 않습니다.
+        """
+        try:
+            with SessionLocal() as db:
+                now = utcnow()
+                statement: Insert
+                if db.get_bind().dialect.name in ("mysql", "mariadb"):
+                    statement = mysql_insert(SessionGeneration).values(
+                        user_id=user_id, generation=1, updated_at=now
+                    )
+                    statement = statement.on_duplicate_key_update(
+                        generation=SessionGeneration.generation + 1, updated_at=now
+                    )
+                else:
+                    statement = sqlite_insert(SessionGeneration).values(
+                        user_id=user_id, generation=1, updated_at=now
+                    )
+                    statement = statement.on_conflict_do_update(
+                        index_elements=[SessionGeneration.user_id],
+                        set_={
+                            "generation": SessionGeneration.generation + 1,
+                            "updated_at": now,
+                        },
+                    )
+                db.execute(statement)
+                db.commit()
+                generation = db.execute(
+                    select(SessionGeneration.generation).where(SessionGeneration.user_id == user_id)
+                ).scalar_one()
+        except SQLAlchemyError as exc:
+            logger.error("세션 세대를 DB 에 저장하지 못했습니다: %s", exc)
+            raise SessionStoreUnavailable(f"세대 저장 실패: {exc}") from exc
+        return int(generation)
+
+    def _cache_generation(self, client: Any, user_id: int, generation: int) -> int | None:
+        """DB 정본에서 읽은 세대를 캐시에 채우고 캐시에 있는 값을 돌려줍니다.
+
+        키가 없을 때만 씁니다(nx). 캐시 미스로 DB 를 읽은 사이에 전체 로그아웃이
+        세대를 올리고 새 값을 캐시했을 수 있는데, 그때 덮어쓰면 옛 값이 TTL 동안
+        캐시에 남아 이미 무효화한 세션이 되살아납니다. 키가 이미 있으면 그 값을
+        다시 읽어 돌려주므로 경쟁 중인 요청도 최신 세대를 봅니다.
+
+        캐시 기록·재조회 실패는 삼키고 None 을 돌려줍니다. 호출부는 DB 에서 읽은
+        값을 그대로 쓰고, 다음 요청이 다시 DB 에서 읽어 캐시를 채웁니다.
+        """
+        key = self._generation_key(user_id)
+        try:
+            written = client.set(key, str(generation), ex=SESSION_GENERATION_TTL_SECONDS, nx=True)
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("세대 캐시 기록 중 Redis 오류 발생: %s", exc)
+            return None
+        if written:
+            return generation
+        try:
+            raw = client.get(key)
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("세대 캐시 재조회 중 Redis 오류 발생: %s", exc)
+            return None
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _write_generation_cache(self, client: Any, user_id: int, generation: int) -> None:
+        """bump 로 올린 새 세대를 캐시에 씁니다.
+
+        호출 전에 세대 키를 지우므로 여기서 실패해도 옛 값이 캐시에 남지 않고,
+        다음 current_generation 이 DB 정본에서 값을 복원합니다. 그래서 캐시 기록
+        실패로 전체 로그아웃을 실패시키지 않습니다.
+        """
+        try:
+            client.setex(
+                self._generation_key(user_id),
+                SESSION_GENERATION_TTL_SECONDS,
+                str(generation),
+            )
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning(
+                "세대 캐시 기록 중 Redis 오류 발생, 다음 읽기가 DB 에서 복원합니다: %s", exc
+            )
 
     def _discard_local_sessions(self, user_id: int) -> int:
         """로컬 대체 저장소에서 그 사용자의 세션을 모두 지웁니다.
@@ -365,7 +509,8 @@ def create_session(user_id: int, username: str) -> str:
     """세션을 만들고 그 시점의 사용자 세대를 payload 에 기록합니다.
 
     세대를 세션 값에 남겨 두면 전체 로그아웃 뒤 이전 세션을 읽을 때 현재
-    세대와 대조해 파기할 수 있습니다. 세션 저장소 호출은 create 한 번뿐이라
+    세대와 대조해 파기할 수 있습니다. 현재 세대는 Redis 캐시를 먼저 보고
+    캐시 미스일 때만 DB 정본을 읽습니다. 세션 저장소 호출은 create 한 번뿐이라
     저장소 연산별 장애 처리 계약(invalidate 1회)이 그대로 유지됩니다.
     """
     token = secrets.token_urlsafe(32)
@@ -414,9 +559,10 @@ def destroy_session(token: str | None) -> None:
 def invalidate_all_sessions(user_id: int) -> int:
     """그 사용자의 모든 세션(현재 세션 포함)을 무효로 만듭니다.
 
-    Redis 에서는 세대 번호를 1 올리고, 이전 세대로 만들어진 세션은 읽을 때
-    파기됩니다. Redis 를 쓸 수 없는 개발 환경에서는 그 사용자의 로컬 세션을
-    직접 지웁니다. 돌려주는 값은 새 세대 번호입니다.
+    DB 정본에서 세대 번호를 1 올려 커밋하고 그 값을 Redis 캐시에 TTL 과 함께
+    씁니다. 이전 세대로 만들어진 세션은 읽을 때 파기되므로 Redis 캐시가
+    사라져도 무효화는 유지됩니다. Redis 를 쓸 수 없는 개발 환경에서는 그
+    사용자의 로컬 세션을 직접 지웁니다. 돌려주는 값은 새 세대 번호입니다.
     """
     return session_store.bump_generation(int(user_id))
 

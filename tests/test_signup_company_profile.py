@@ -49,6 +49,7 @@ NEW_TABLES = (
     "account_company_profiles",
     "account_qualification_facts",
     "account_consent_events",
+    "accounts_session_generation",
 )
 
 COMPANY_INPUT = {

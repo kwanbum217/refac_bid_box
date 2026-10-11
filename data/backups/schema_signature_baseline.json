@@ -708,6 +708,49 @@
       ],
       "hash": "ca52ca0f666c4bc1bfb9f397b25df4d935ef2ced25b978be1dcc730a94b02d22"
     },
+    "accounts_session_generation": {
+      "name": "accounts_session_generation",
+      "columns": [
+        {
+          "name": "generation",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": "'0'"
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "user_id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "fk_accounts_session_generation_user_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [],
+      "hash": "2e7f9baef9206bc8f1d88833587dea9b05328f7c58f90f996134056e59dbd425"
+    },
     "alembic_version": {
       "name": "alembic_version",
       "columns": [
@@ -4323,6 +4366,7 @@
     "accounts_customuser": "fb4de17f0132decd4c707042d6d7abbd44aca92da0306ee2fc99e83e0337032f",
     "accounts_customuser_groups": "112e0b43ac0939f40ef8b98f28d1215a980054e2288f7a6e68ceb6ee2f3b83e3",
     "accounts_customuser_user_permissions": "ca52ca0f666c4bc1bfb9f397b25df4d935ef2ced25b978be1dcc730a94b02d22",
+    "accounts_session_generation": "2e7f9baef9206bc8f1d88833587dea9b05328f7c58f90f996134056e59dbd425",
     "alembic_version": "9c9beba307d6bb90fe37f4eb31c06dd99f680a54323b77cce37a4632a7b76307",
     "auth_group": "f0daa81e4856334a02e199665d9db77f27f00d7e49bf00ef1aa2358321504414",
     "auth_group_permissions": "065b0dbc5184396f67340e91392a9a93f1e8d8f2ed407fc083d22fdc79b11f78",
@@ -4359,12 +4403,13 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "100ecd4d7d91e2d95c66b7edd2808b6c919ba033986acb9a94ae1f58e51d9bf8",
+  "overall_hash": "2778157c73cb04f0afebaa145b8b31f87650d9b34adf52b1cf67572bc218388d",
   "orm_tables": [
     "account_company_profiles",
     "account_consent_events",
     "account_qualification_facts",
     "accounts_customuser",
+    "accounts_session_generation",
     "automation_requests",
     "automation_subscriptions",
     "bid_announcement_license_limits",
@@ -4396,6 +4441,7 @@
     "accounts_customuser",
     "accounts_customuser_groups",
     "accounts_customuser_user_permissions",
+    "accounts_session_generation",
     "alembic_version",
     "auth_group",
     "auth_group_permissions",
@@ -4433,10 +4479,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-10-11T04:50:03.733622+00:00",
+    "generated_at": "2026-10-11T23:22:31.055126+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "090159f64a7793401ee5c50935763f82a27fca64"
+    "git_head": "173851f19ff96075858c5e91cdc2bcf06de5cbf5"
   }
 }
