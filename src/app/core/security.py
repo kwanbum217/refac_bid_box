@@ -246,6 +246,10 @@ class SessionStore:
         지워져도 다음 요청에서 세대가 복원되고 이미 무효화한 세션이 되살아나지
         않습니다. 행이 없는 사용자는 세대 0 이며 그 0 도 캐시합니다.
 
+        캐시를 채울 때는 키가 없을 때만 씁니다. DB 를 읽은 직후 전체 로그아웃이
+        새 세대를 캐시했을 수 있는데, 그때 덮어쓰면 옛 값이 남아 무효화한 세션이
+        되살아납니다. 키가 이미 있으면 그 값을 다시 읽어 최신 세대를 돌려줍니다.
+
         기존 세션(세대 필드 없음)은 세대 0 으로 보므로, 배포 직후에는 현재
         세대도 0 이라 종전 세션이 일괄 로그아웃되지 않습니다. Redis 를 쓸 수
         없으면 종전과 같이 fail-closed(개발 환경 로컬 대체)로 0 을 돌려줍니다.
@@ -270,14 +274,17 @@ class SessionStore:
         generation = self._read_persisted_generation(user_id)
         if generation is None:
             return 0
-        self._cache_generation(client, user_id, generation)
-        return generation
+        cached = self._cache_generation(client, user_id, generation)
+        return generation if cached is None else cached
 
     def bump_generation(self, user_id: int) -> int:
         """세대를 1 올리고 새 값을 돌려줍니다. 전체 로그아웃이 이 값을 씁니다.
 
-        DB 정본에서 그 사용자의 행을 원자적으로 1 올려 커밋한 뒤(행이 없으면
-        1 로 생성) 커밋한 값을 Redis 에 TTL 과 함께 캐시합니다. DB 저장에
+        순서가 중요합니다. 먼저 세대 캐시 키를 지우고(삭제 실패는 Redis 장애로
+        처리하며 DB 를 올리지 않습니다), 다음으로 DB 정본에서 그 사용자의 행을
+        원자적으로 1 올려 커밋하고(행이 없으면 1 로 생성), 마지막으로 새 값을
+        TTL 과 함께 캐시에 씁니다. 캐시 기록이 실패해도 키가 이미 지워져 있어
+        옛 값이 남지 않으므로 다음 읽기가 DB 정본에서 복원합니다. DB 저장에
         실패하면 무효화를 기록하지 못한 것이므로 SessionStoreUnavailable 로
         실패시킵니다. Redis 장애 처리는 다른 세션 연산과 같게 맞춥니다
         (fail-closed, 개발 환경에서만 프로세스 로컬 대체). 유휴·절대 만료
@@ -288,13 +295,14 @@ class SessionStore:
             self._fallback("Redis 연결 없음")
             return self._discard_local_sessions(user_id)
         self._degraded_logged = False
-        value = self._bump_persisted_generation(user_id)
         try:
-            client.setex(self._generation_key(user_id), SESSION_GENERATION_TTL_SECONDS, str(value))
+            client.delete(self._generation_key(user_id))
         except Exception as exc:
             self._conn.invalidate(exc)
-            self._fallback(f"세대 캐시 기록 실패: {exc}")
+            self._fallback(f"세대 캐시 삭제 실패: {exc}")
             return self._discard_local_sessions(user_id)
+        value = self._bump_persisted_generation(user_id)
+        self._write_generation_cache(client, user_id, value)
         return value
 
     @staticmethod
@@ -353,11 +361,45 @@ class SessionStore:
             raise SessionStoreUnavailable(f"세대 저장 실패: {exc}") from exc
         return int(generation)
 
-    def _cache_generation(self, client: Any, user_id: int, generation: int) -> None:
-        """DB 정본에서 읽은 세대 값을 TTL 과 함께 캐시합니다.
+    def _cache_generation(self, client: Any, user_id: int, generation: int) -> int | None:
+        """DB 정본에서 읽은 세대를 캐시에 채우고 캐시에 있는 값을 돌려줍니다.
 
-        값은 이미 DB 에서 읽었으므로 캐시 기록 실패로 요청을 실패시키지 않습니다.
-        다음 요청이 다시 DB 에서 읽어 캐시를 채웁니다.
+        키가 없을 때만 씁니다(nx). 캐시 미스로 DB 를 읽은 사이에 전체 로그아웃이
+        세대를 올리고 새 값을 캐시했을 수 있는데, 그때 덮어쓰면 옛 값이 TTL 동안
+        캐시에 남아 이미 무효화한 세션이 되살아납니다. 키가 이미 있으면 그 값을
+        다시 읽어 돌려주므로 경쟁 중인 요청도 최신 세대를 봅니다.
+
+        캐시 기록·재조회 실패는 삼키고 None 을 돌려줍니다. 호출부는 DB 에서 읽은
+        값을 그대로 쓰고, 다음 요청이 다시 DB 에서 읽어 캐시를 채웁니다.
+        """
+        key = self._generation_key(user_id)
+        try:
+            written = client.set(key, str(generation), ex=SESSION_GENERATION_TTL_SECONDS, nx=True)
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("세대 캐시 기록 중 Redis 오류 발생: %s", exc)
+            return None
+        if written:
+            return generation
+        try:
+            raw = client.get(key)
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("세대 캐시 재조회 중 Redis 오류 발생: %s", exc)
+            return None
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _write_generation_cache(self, client: Any, user_id: int, generation: int) -> None:
+        """bump 로 올린 새 세대를 캐시에 씁니다.
+
+        호출 전에 세대 키를 지우므로 여기서 실패해도 옛 값이 캐시에 남지 않고,
+        다음 current_generation 이 DB 정본에서 값을 복원합니다. 그래서 캐시 기록
+        실패로 전체 로그아웃을 실패시키지 않습니다.
         """
         try:
             client.setex(
@@ -367,7 +409,9 @@ class SessionStore:
             )
         except Exception as exc:
             self._conn.invalidate(exc)
-            logger.warning("세대 캐시 기록 중 Redis 오류 발생: %s", exc)
+            logger.warning(
+                "세대 캐시 기록 중 Redis 오류 발생, 다음 읽기가 DB 에서 복원합니다: %s", exc
+            )
 
     def _discard_local_sessions(self, user_id: int) -> int:
         """로컬 대체 저장소에서 그 사용자의 세션을 모두 지웁니다.

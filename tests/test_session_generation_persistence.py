@@ -1,6 +1,7 @@
 """전체 로그아웃 세대의 DB 정본·Redis 캐시 시험.
 
-정본: .orca/capsules/task_8d27e79d61e4/capsule.yaml.
+정본: .orca/capsules/task_8d27e79d61e4/capsule.yaml,
+      .orca/capsules/task_8d27e79d61e4_rework/capsule.yaml.
  - 세대의 정본은 accounts_session_generation 이고 Redis 키
    auth:user_epoch:<user_id> 는 TTL 을 가진 캐시다.
  - Redis 세대 키를 지워도(FLUSH 모사) 이미 무효화한 세션은 되살아나지 않는다.
@@ -8,6 +9,8 @@
  - 행 없는 사용자는 0 이고 그 0 도 캐시한다.
  - 연속 전체 로그아웃은 세대를 1, 2 로 올린다.
  - 사용자가 삭제되면 세대 행도 CASCADE 로 사라진다.
+ - 캐시 미스로 DB 를 읽은 사이에 bump 가 끼어들어도 캐시는 새 세대를 유지한다.
+ - bump 는 캐시 키를 먼저 지우므로 setex 가 실패해도 옛 값이 남지 않는다.
 """
 
 from __future__ import annotations
@@ -38,22 +41,43 @@ def _generation_key(user_id: int) -> str:
     return f"{SESSION_GENERATION_PREFIX}{user_id}"
 
 
+class _FakeRedisError(RuntimeError):
+    """가짜 Redis 에 장애를 주입할 때 쓰는 예외."""
+
+
 class _FakeRedis:
-    """세션·세대 시험이 쓰는 인메모리 Redis 대역. TTL 도 기록합니다."""
+    """세션·세대 시험이 쓰는 인메모리 Redis 대역. TTL 과 nx 를 지원합니다."""
 
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
         self.ttls: dict[str, int] = {}
+        self.fail_setex = False
+        self.fail_delete = False
 
     def get(self, key: str) -> str | None:
         return self.store.get(key)
 
+    def set(self, key: str, value: Any, ex: int | None = None, nx: bool = False) -> bool | None:
+        """redis-py 의 SET(ex=, nx=) 계약. nx 는 키가 없을 때만 쓰고 아니면 None."""
+        if nx and key in self.store:
+            return None
+        self.store[key] = str(value)
+        if ex is None:
+            self.ttls.pop(key, None)
+        else:
+            self.ttls[key] = int(ex)
+        return True
+
     def setex(self, key: str, ttl: int, value: Any) -> bool:
+        if self.fail_setex:
+            raise _FakeRedisError("setex 실패 모사")
         self.store[key] = str(value)
         self.ttls[key] = int(ttl)
         return True
 
     def delete(self, *keys: str) -> int:
+        if self.fail_delete:
+            raise _FakeRedisError("delete 실패 모사")
         deleted = 0
         for key in keys:
             if self.store.pop(key, None) is not None:
@@ -250,3 +274,64 @@ def test_db_write_failure_is_fail_closed(monkeypatch, fake_redis):
 
     with pytest.raises(SessionStoreUnavailable):
         invalidate_all_sessions(777002)
+
+
+def test_cache_miss_race_with_bump_keeps_new_generation(generation_env, fake_redis, monkeypatch):
+    """미스 경로가 DB 를 읽은 직후 전체 로그아웃이 끼어들어도 새 세대가 유지된다.
+
+    반려된 구현은 미스 경로가 옛 값(0)을 setex 로 덮어써 TTL 30일 동안 이미
+    무효화한 세션을 되살렸습니다. 지금은 키가 없을 때만 채우고(nx), 키가 이미
+    있으면 그 값을 다시 읽어 경쟁 중인 요청도 새 세대를 봅니다.
+    """
+    user = _create_user(generation_env.session, "gen_race")
+    token = create_session(user.id, user.username)
+    fake_redis.flush_generation(user.id)
+
+    original = security.SessionStore._read_persisted_generation
+    interleaved = {"done": False}
+
+    def racing_read(self, user_id: int) -> int | None:
+        value = original(user_id)
+        if not interleaved["done"]:
+            interleaved["done"] = True
+            security.invalidate_all_sessions(user_id)
+        return value
+
+    monkeypatch.setattr(security.SessionStore, "_read_persisted_generation", racing_read)
+
+    assert read_session(token) is None
+    assert fake_redis.store[_generation_key(user.id)] == "1"
+    assert security.session_store.current_generation(user.id) == 1
+    assert _stored_generation(generation_env.session, user.id) == 1
+
+
+def test_bump_setex_failure_leaves_no_stale_cache(generation_env, fake_redis):
+    """bump 의 setex 가 실패해도 옛 세대가 캐시에 남지 않고 다음 읽기가 DB 에서 복원한다."""
+    user = _create_user(generation_env.session, "gen_setex_fail")
+    assert security.session_store.current_generation(user.id) == 0
+    assert fake_redis.store[_generation_key(user.id)] == "0"
+
+    fake_redis.fail_setex = True
+    assert invalidate_all_sessions(user.id) == 1
+
+    assert _stored_generation(generation_env.session, user.id) == 1
+    assert _generation_key(user.id) not in fake_redis.store
+    assert security.session_store.current_generation(user.id) == 1
+    assert fake_redis.store[_generation_key(user.id)] == "1"
+
+
+def test_bump_delete_failure_is_fail_closed_without_db_write(
+    generation_env, fake_redis, monkeypatch
+):
+    """세대 캐시 삭제가 실패하면 Redis 장애로 실패시키고 DB 는 올리지 않는다."""
+    user = _create_user(generation_env.session, "gen_delete_fail")
+    assert security.session_store.current_generation(user.id) == 0
+
+    monkeypatch.setattr(security.session_store, "_allow_local_fallback", False)
+    fake_redis.fail_delete = True
+
+    with pytest.raises(SessionStoreUnavailable):
+        invalidate_all_sessions(user.id)
+
+    assert _stored_generation(generation_env.session, user.id) is None
+    assert fake_redis.store[_generation_key(user.id)] == "0"
