@@ -8,12 +8,15 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import importlib
 import json
 import tarfile
 from pathlib import Path
 
 import pytest
+
+from src.ml.model_integrity import MANIFEST_FILENAME, verify_file
 
 sync_model_files = importlib.import_module("scripts.sync_model_files")
 
@@ -164,3 +167,58 @@ def test_import_rejects_corrupted_bundle_before_writing(asset_roots, tmp_path, m
     args = type("Args", (), {"input": bundle, "force": True})()
     assert sync_model_files.cmd_import(args) == 1
     assert not dest.exists()
+
+
+def test_import_reseals_manifest_for_placed_files(asset_roots, tmp_path, monkeypatch):
+    """배치 후 슬롯마다 manifest 를 다시 봉인해 무결성 검증을 통과한다.
+
+    번들에 원본 머신의 틀린 manifest 가 들어 있어도 배치된 파일 기준으로 덮여야
+    production 로더가 해시 불일치로 거부하지 않습니다.
+    """
+    files, _, _ = asset_roots
+    (files / "demo_model" / MANIFEST_FILENAME).write_text(
+        json.dumps(
+            {
+                "schema": "model_artifact_manifest_v1",
+                "files": {"model.bin": {"sha256": "0" * 64, "bytes": 1}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    bundle = _export(tmp_path)
+
+    dest = tmp_path / "restored"
+    monkeypatch.setattr(
+        sync_model_files,
+        "BUNDLE_MEMBERS",
+        (
+            ("model_files", lambda: dest / "model_files"),
+            ("model_backups", lambda: dest / "model_backups"),
+            ("model_metrics", lambda: dest / "model_metrics"),
+        ),
+    )
+    args = type("Args", (), {"input": bundle, "force": False})()
+    assert sync_model_files.cmd_import(args) == 0
+
+    tree = dest / "model_files" / "demo_model"
+    manifest = json.loads((tree / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    for name in ("model.bin", "metadata.json"):
+        assert (
+            manifest["files"][name]["sha256"]
+            == hashlib.sha256((tree / name).read_bytes()).hexdigest()
+        )
+        verify_file(tree, name)
+
+
+def test_import_without_model_files_member_skips_reseal(asset_roots, tmp_path, monkeypatch):
+    """model_files 대상이 없는 번들은 manifest 재봉인을 건너뛰고 완료한다."""
+    bundle = _export(tmp_path)
+    dest = tmp_path / "restored"
+    monkeypatch.setattr(
+        sync_model_files,
+        "BUNDLE_MEMBERS",
+        (("model_backups", lambda: dest / "model_backups"),),
+    )
+    args = type("Args", (), {"input": bundle, "force": False})()
+    assert sync_model_files.cmd_import(args) == 0
+    assert not (dest / "model_files").exists()

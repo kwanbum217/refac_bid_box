@@ -37,6 +37,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts.write_model_manifests import write_manifests_under  # noqa: E402
 from src.app.core.config import settings  # noqa: E402
 
 DEFAULT_BUNDLE = PROJECT_ROOT / "dist" / "model_files_bundle.tar.gz"
@@ -250,6 +251,16 @@ def cmd_import(args: argparse.Namespace) -> int:
     for member, base in targets.items():
         if base.exists():
             print(f"       {member} -> {base}")
+
+    # 번들에는 원본 머신의 artifact_manifest.json 이 들어 있을 수 있습니다.
+    # 배치된 파일 기준으로 다시 봉인해야 로더가 해시 불일치로 거부하지 않습니다.
+    model_files_root = targets.get("model_files")
+    if model_files_root is not None and model_files_root.is_dir():
+        written, total_files, skipped = write_manifests_under(model_files_root)
+        print(
+            f"       model_files manifest: 모델 {written}개 / 파일 {total_files}개, "
+            f"건너뜀 {skipped}개"
+        )
 
     print("[3/3] 배치 후 확인")
     print("       uv run python scripts/verify_migration.py")
