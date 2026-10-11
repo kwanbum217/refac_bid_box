@@ -22,7 +22,7 @@ import os
 import platform
 import shlex
 import statistics
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - git 과 sysctl 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import threading
 import time
@@ -149,7 +149,7 @@ def get_git_status(path: Path | str | None = None) -> tuple[str, bool | None]:
     """
     target_path = Path(path).resolve() if path is not None else PROJECT_ROOT
     try:
-        sha = subprocess.check_output(  # nosec B603 B607
+        sha = subprocess.check_output(  # nosec B603 B607 - git rev-parse 를 shell 없이 고정 인자로 실행합니다
             ["git", "-C", str(target_path), "rev-parse", "HEAD"],
             text=True,
         ).strip()
@@ -157,7 +157,7 @@ def get_git_status(path: Path | str | None = None) -> tuple[str, bool | None]:
         sha = "unknown"
 
     try:
-        status = subprocess.check_output(  # nosec B603 B607
+        status = subprocess.check_output(  # nosec B603 B607 - git status 를 shell 없이 고정 인자로 실행합니다
             ["git", "-C", str(target_path), "status", "--porcelain"],
             text=True,
         ).strip()
@@ -210,7 +210,7 @@ def get_host_memory() -> dict[str, int | None]:
 
     if total_bytes is None and platform.system() == "Darwin":
         with contextlib.suppress(Exception):
-            out = subprocess.check_output(  # nosec B603 B607
+            out = subprocess.check_output(  # nosec B603 B607 - sysctl 을 shell 없이 고정 인자로 실행합니다
                 ["sysctl", "-n", "hw.memsize"],
                 text=True,
             ).strip()
@@ -462,7 +462,7 @@ def _command_output(
     """
     target_cwd = cwd if cwd is not None else PROJECT_ROOT
     try:
-        out = subprocess.check_output(  # nosec B603
+        out = subprocess.check_output(  # nosec B603 - 호출부가 넘긴 고정 인자 목록으로 shell 없이 실행합니다
             command,
             cwd=target_cwd,
             text=True,
@@ -943,7 +943,7 @@ def measure_macos_cpu_utilization(
         if command_runner is not None:
             output = command_runner(cmd)
         else:
-            res = subprocess.run(  # nosec B603
+            res = subprocess.run(  # nosec B603 - 호출부가 넘긴 고정 인자 목록으로 shell 없이 실행합니다
                 cmd,
                 capture_output=True,
                 text=True,

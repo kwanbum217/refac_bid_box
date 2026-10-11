@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - git 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 from pathlib import Path
 
@@ -43,7 +43,7 @@ except (ModuleNotFoundError, ImportError):
 def get_git_config_capsule(repo: Path) -> str | None:
     """Git 설정에서 활성 Capsule 경로를 조회합니다."""
     try:
-        proc = subprocess.run(  # nosec B603 B607
+        proc = subprocess.run(  # nosec B603 B607 - git config 를 shell 없이 고정 인자로 실행합니다
             ["git", "-C", str(repo), "config", "--get", "orca.capsule"],
             capture_output=True,
             text=True,
@@ -51,7 +51,7 @@ def get_git_config_capsule(repo: Path) -> str | None:
         )
         if proc.returncode == 0 and proc.stdout.strip():
             return proc.stdout.strip()
-    except (subprocess.SubprocessError, OSError):  # nosec B110
+    except (subprocess.SubprocessError, OSError):
         pass
     return None
 
@@ -59,7 +59,7 @@ def get_git_config_capsule(repo: Path) -> str | None:
 def get_staged_files(repo: Path) -> list[str]:
     """Git staged 파일 목록을 반환합니다."""
     try:
-        proc = subprocess.run(  # nosec B603 B607
+        proc = subprocess.run(  # nosec B603 B607 - git diff 를 shell 없이 고정 인자로 실행합니다
             ["git", "-C", str(repo), "diff", "--cached", "--name-only"],
             capture_output=True,
             text=True,
@@ -67,7 +67,7 @@ def get_staged_files(repo: Path) -> list[str]:
         )
         if proc.returncode == 0:
             return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
-    except (subprocess.SubprocessError, OSError):  # nosec B110
+    except (subprocess.SubprocessError, OSError):
         pass
     return []
 

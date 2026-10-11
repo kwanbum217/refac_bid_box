@@ -315,7 +315,7 @@ def format_worker_state(s: WorkerState) -> list[str]:
 def _run(args: list[str], timeout: int = 30) -> str:
     try:
         # 호출부가 고정 인자 배열만 넘기고 shell 을 쓰지 않습니다.
-        proc = subprocess.run(  # nosec B603
+        proc = subprocess.run(  # nosec B603 - 호출부가 넘긴 고정 인자 배열로 shell 없이 실행합니다
             args, capture_output=True, text=True, timeout=timeout
         )
         return proc.stdout

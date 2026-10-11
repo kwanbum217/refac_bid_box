@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 내부 복구 드릴 도구 실행용으로만 subprocess 를 가져옵니다
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -59,7 +59,7 @@ def run_drill_g1_verification(
         text=True,
         env=env,
         check=False,
-    )  # nosec B603, B607
+    )  # nosec B603 - 고정 인자 목록으로 외부 명령을 shell 없이 실행합니다
     try:
         rep_data = json.loads(rep.read_text(encoding="utf-8")) if rep.exists() else {}
     except Exception:
@@ -140,7 +140,7 @@ def record_timing(
 def mysql_exec(db_config: dict[str, Any], sql: str) -> str:
     cmd, env = mysql_client_command("mysql", db_config)
     cmd += ["-N", "-e", sql]
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)  # nosec B603
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)  # nosec B603 - 고정 인자 목록으로 mysql 클라이언트를 shell 없이 실행합니다
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "실패").strip()
         raise RuntimeError(f"MySQL 실행 실패 (코드 {proc.returncode}): {err}")

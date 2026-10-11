@@ -240,7 +240,7 @@ def install_pre_commit_hook(worktree: Path, repo: Path) -> tuple[bool, str]:
     last_error = ""
     for cmd in candidates:
         try:
-            res = subprocess.run(  # nosec B603 B607 - 고정 인자로 pre-commit install 실행
+            res = subprocess.run(  # nosec B603 - 고정 인자로 pre-commit install 실행
                 cmd,
                 cwd=str(resolved_repo),
                 capture_output=True,
@@ -281,7 +281,7 @@ def set_worktree_capsule(worktree: Path, capsule_path: Path | str) -> tuple[bool
     cap_str = str(capsule_path)
 
     # 1. extensions.worktreeConfig 활성화 시도
-    subprocess.run(  # nosec B603 B607
+    subprocess.run(  # nosec B603 B607 - git config 를 shell 없이 고정 인자로 실행합니다
         ["git", "-C", str(resolved_wt), "config", "extensions.worktreeConfig", "true"],
         capture_output=True,
         text=True,
@@ -289,14 +289,14 @@ def set_worktree_capsule(worktree: Path, capsule_path: Path | str) -> tuple[bool
     )
 
     # 2. git config --worktree orca.capsule <cap_str> 설정 (실패 시 로컬 config fallback)
-    res = subprocess.run(  # nosec B603 B607
+    res = subprocess.run(  # nosec B603 B607 - git config 를 shell 없이 고정 인자로 실행합니다
         ["git", "-C", str(resolved_wt), "config", "--worktree", "orca.capsule", cap_str],
         capture_output=True,
         text=True,
         check=False,
     )
     if res.returncode != 0:
-        res = subprocess.run(  # nosec B603 B607
+        res = subprocess.run(  # nosec B603 B607 - git config 를 shell 없이 고정 인자로 실행합니다
             ["git", "-C", str(resolved_wt), "config", "orca.capsule", cap_str],
             capture_output=True,
             text=True,
@@ -320,7 +320,7 @@ def check_or_prepare_capsule(
 
     resolved_wt = worktree.resolve()
     try:
-        proc = subprocess.run(  # nosec B603 B607
+        proc = subprocess.run(  # nosec B603 B607 - git config --get 을 shell 없이 고정 인자로 실행합니다
             ["git", "-C", str(resolved_wt), "config", "--get", "orca.capsule"],
             capture_output=True,
             text=True,
@@ -329,7 +329,7 @@ def check_or_prepare_capsule(
         current = proc.stdout.strip() if proc.returncode == 0 else ""
         if current == str(capsule_path):
             return True, f"[Capsule 설정] 이미 준비됨: orca.capsule={current}"
-    except (subprocess.SubprocessError, OSError):  # nosec B110
+    except (subprocess.SubprocessError, OSError):
         pass
 
     if check:

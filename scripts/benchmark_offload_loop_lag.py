@@ -40,7 +40,7 @@ import math
 import os
 import platform
 import statistics
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - sysctl 조회용으로만 subprocess 를 가져옵니다
 import sys
 import threading
 import time
@@ -345,7 +345,7 @@ async def measure_target(
 
 def _read_cpu_count() -> int:
     try:
-        out = subprocess.check_output(  # nosec B603 B607
+        out = subprocess.check_output(  # nosec B603 B607 - sysctl 을 shell 없이 고정 인자로 실행합니다
             ["sysctl", "-n", "hw.ncpu"], text=True
         ).strip()
         return int(out)
@@ -356,7 +356,7 @@ def _read_cpu_count() -> int:
 def _read_system_load_1m() -> float | None:
     """sysctl vm.loadavg 의 1분 값을 읽고 실패하면 os.getloadavg 로 대체합니다."""
     try:
-        out = subprocess.check_output(  # nosec B603 B607
+        out = subprocess.check_output(  # nosec B603 B607 - sysctl 을 shell 없이 고정 인자로 실행합니다
             ["sysctl", "-n", "vm.loadavg"], text=True
         ).strip()
         parts = out.strip("{} \n").split()

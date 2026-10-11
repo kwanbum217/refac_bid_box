@@ -7,7 +7,7 @@ import gzip
 import hashlib
 import os
 import shutil
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 내부 백업 도구 실행용으로만 subprocess 를 가져옵니다
 import sys
 import tarfile
 import tempfile
@@ -72,7 +72,7 @@ def get_head_commit_sha(project_root: Path | None = None) -> str:
             capture_output=True,
             text=True,
             check=False,
-        )  # nosec B603, B607
+        )  # nosec B603 B607 - 고정 인자 목록으로 mysql 클라이언트를 shell 없이 실행합니다
         return res.stdout.strip() if res.returncode == 0 else "unknown"
     except Exception:
         return "unknown"
@@ -141,7 +141,7 @@ def query_db_row_counts(
             for tbl in tables:
                 if tbl in DEFAULT_TABLES:
                     try:
-                        query = text(f"SELECT COUNT(*) FROM `{tbl}`")  # noqa: S608 # nosec B608
+                        query = text(f"SELECT COUNT(*) FROM `{tbl}`")  # noqa: S608 # nosec B608 - 테이블명이 DEFAULT_TABLES 상수로만 정해집니다
                         val = conn.execute(query).scalar()
                         row_counts[tbl] = int(val) if val is not None else 0
                     except Exception:
@@ -224,7 +224,7 @@ def dump_mysql_database(db_config: dict[str, Any], output_gz_path: Path) -> tupl
         "--default-character-set=utf8mb4",
         str(db_config["name"]),
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)  # nosec B603, B607
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)  # nosec B603 - 고정 인자 목록으로 mysql 클라이언트를 shell 없이 실행합니다
     with gzip.open(output_gz_path, "wb") as gz_out:
         if proc.stdout:
             shutil.copyfileobj(proc.stdout, gz_out)
@@ -324,7 +324,7 @@ def restore_mysql_database(
             stdout=subprocess.DEVNULL,
             stderr=err_file,
             env=env,
-        )  # nosec B603, B607
+        )  # nosec B603 - 고정 인자 목록으로 mysql 클라이언트를 shell 없이 실행합니다
         if proc.stdin is None:
             proc.kill()
             raise RuntimeError("mysql 복원 표준입력을 열 수 없습니다.")
@@ -375,15 +375,15 @@ def extract_tar_archive(archive_path: Path, target_base_dir: Path) -> None:
             if is_link and not link.resolve().is_relative_to(root):
                 raise ValueError(f"안전하지 않은 링크 대상 감지: {member.name}")
         if hasattr(tarfile, "data_filter"):
-            tar.extractall(path=target_base_dir, filter="data")  # nosec B202
+            tar.extractall(path=target_base_dir, filter="data")
         else:
-            tar.extractall(path=target_base_dir)  # noqa: S202 # nosec B202
+            tar.extractall(path=target_base_dir)  # noqa: S202 # nosec B202 - 멤버 경로와 링크를 사전 검증한 뒤 추출합니다
 
 
 def _run_mysql_cmd(db_config: dict[str, Any], sql: str, err_prefix: str) -> None:
     cmd, env = mysql_client_command("mysql", db_config)
     cmd += ["-e", sql]
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)  # nosec B603, B607
+    proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)  # nosec B603 - 고정 인자 목록으로 mysql 클라이언트를 shell 없이 실행합니다
     if proc.returncode != 0:
         err = proc.stderr.strip() if proc.stderr else "실패"
         raise RuntimeError(f"{err_prefix} (코드 {proc.returncode}): {err}")

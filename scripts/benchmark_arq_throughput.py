@@ -24,7 +24,7 @@ import logging
 import os
 import platform
 import statistics
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - docker 와 git 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 import uuid
@@ -142,7 +142,7 @@ def get_redis_py_version() -> str:
 def get_docker_version() -> str:
     """Docker 엔진 버전을 반환합니다."""
     try:
-        return subprocess.check_output(  # nosec B603 B607
+        return subprocess.check_output(  # nosec B603 B607 - docker --version 을 shell 없이 고정 인자로 실행합니다
             ["docker", "--version"],
             text=True,
         ).strip()
@@ -384,7 +384,7 @@ class BenchmarkResult:
 
 def get_git_sha() -> str:
     try:
-        return subprocess.check_output(  # nosec B603 B607
+        return subprocess.check_output(  # nosec B603 B607 - git rev-parse 를 shell 없이 고정 인자로 실행합니다
             ["git", "rev-parse", "HEAD"],
             cwd=PROJECT_ROOT,
             text=True,

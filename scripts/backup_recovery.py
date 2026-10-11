@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 내부 백업 도구 실행용으로만 subprocess 를 가져옵니다
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -437,7 +437,7 @@ def run_post_restore_verification(project_root: Path | None = None) -> bool:
     script = root / "scripts" / "verify_migration.py"
     if not script.exists():
         return False
-    return subprocess.run([sys.executable, str(script)], cwd=str(root), check=False).returncode == 0  # nosec B603, B607
+    return subprocess.run([sys.executable, str(script)], cwd=str(root), check=False).returncode == 0  # nosec B603 - sys.executable 로 내부 스크립트를 shell 없이 실행합니다
 
 
 def execute_restore(

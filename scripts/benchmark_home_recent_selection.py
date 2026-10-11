@@ -41,7 +41,7 @@ import json
 import os
 import platform
 import statistics
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 내부 벤치마크 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import threading
 import time
@@ -419,7 +419,7 @@ def run_measurement(
 
 def _command_output(command: list[str]) -> str | None:
     try:
-        output = subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL)  # nosec B603
+        output = subprocess.check_output(command, text=True, stderr=subprocess.DEVNULL)  # nosec B603 - 호출부가 넘긴 고정 인자 목록으로 shell 없이 실행합니다
     except (OSError, subprocess.CalledProcessError):
         return None
     output = output.strip()

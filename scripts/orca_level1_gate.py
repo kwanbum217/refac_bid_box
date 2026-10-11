@@ -651,7 +651,7 @@ COMMAND_REALITY_IGNORE = "command-reality-ignore"
 def _help_text(argv: list[str]) -> str | None:
     """명령의 도움말을 가져옵니다. 실행기가 없으면 None 을 돌려줍니다."""
     try:
-        proc = subprocess.run(  # nosec B603
+        proc = subprocess.run(  # nosec B603 - 실행기 도움말을 shell 없이 고정 인자로 조회합니다
             [*argv, "--help"],
             capture_output=True,
             text=True,

@@ -21,7 +21,7 @@ import concurrent.futures
 import math
 import os
 import statistics
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 컨테이너 재시작 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 from dataclasses import dataclass, field
@@ -543,7 +543,7 @@ def run_ab_benchmark(
         if auto_restart:
             cmd_args = get_restart_command_args("A")
             print(f"컨테이너 재시작 실행: {get_restart_command('A')}")
-            subprocess.run(  # nosec B603
+            subprocess.run(  # nosec B603 - 고정 인자 목록으로 컨테이너 재시작 명령을 shell 없이 실행합니다
                 cmd_args, check=True, env={**os.environ, **get_restart_env("A")}
             )
             wait_until_ready(base_url)
@@ -562,7 +562,7 @@ def run_ab_benchmark(
         if auto_restart:
             cmd_args = get_restart_command_args("B")
             print(f"컨테이너 재시작 실행: {get_restart_command('B')}")
-            subprocess.run(  # nosec B603
+            subprocess.run(  # nosec B603 - 고정 인자 목록으로 컨테이너 재시작 명령을 shell 없이 실행합니다
                 cmd_args, check=True, env={**os.environ, **get_restart_env("B")}
             )
             wait_until_ready(base_url)

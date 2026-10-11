@@ -72,7 +72,7 @@ def _post_callback(callback_url: str, callback_token: str, payload: dict) -> boo
 
 
 # 비밀번호가 아니라 확인 토큰 기본값입니다
-def _report(  # nosec B107
+def _report(  # nosec B107 - 비밀번호가 아니라 확인 토큰 기본값 인자입니다
     db: Session | str | None = None,
     automation_request_id: str = "",
     step: str = "",

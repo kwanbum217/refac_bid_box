@@ -96,7 +96,7 @@ def load_unsupervised_receipts(
                     orig_id = str(data.get("original_task_id") or "").strip()
                     if orig_id and orig_id not in receipts:
                         receipts[orig_id] = data
-            except Exception:  # nosec B112 # noqa: S112
+            except Exception:  # nosec B112 - 깨진 영수증 파일은 건너뛰고 다음 파일로 진행합니다  # noqa: S112
                 continue
     return receipts
 

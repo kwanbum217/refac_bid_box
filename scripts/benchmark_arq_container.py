@@ -26,7 +26,7 @@ import logging
 import os
 import platform
 import statistics
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - docker 와 git 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 import uuid
@@ -203,7 +203,7 @@ def calculate_percentiles(values: list[float]) -> dict[str, float]:
 
 def get_git_sha() -> str:
     try:
-        return subprocess.check_output(  # nosec B603 B607
+        return subprocess.check_output(  # nosec B603 B607 - git rev-parse 를 shell 없이 고정 인자로 실행합니다
             ["git", "rev-parse", "HEAD"],
             cwd=PROJECT_ROOT,
             text=True,
@@ -214,7 +214,7 @@ def get_git_sha() -> str:
 
 def get_docker_version() -> str:
     try:
-        return subprocess.check_output(  # nosec B603 B607
+        return subprocess.check_output(  # nosec B603 B607 - docker --version 을 shell 없이 고정 인자로 실행합니다
             ["docker", "--version"],
             text=True,
         ).strip()
@@ -238,7 +238,7 @@ def inspect_redis_container(
 
 def inspect_image_id(image_name: str) -> str:
     try:
-        inspect_out = subprocess.check_output(  # nosec B603 B607
+        inspect_out = subprocess.check_output(  # nosec B603 B607 - docker inspect 를 shell 없이 고정 인자로 실행합니다
             ["docker", "inspect", "--format", "{{.Id}}", image_name],
             text=True,
         ).strip()
@@ -428,12 +428,12 @@ class DockerWorkerContainerManager:
             "scripts._bench_worker_settings.WorkerSettings",
         ]
         try:
-            cid = subprocess.check_output(cmd, text=True).strip()  # nosec B603 B607
+            cid = subprocess.check_output(cmd, text=True).strip()  # nosec B603 - docker 명령을 shell 없이 인자 목록으로 실행합니다
             self.container_id = cid
             logger.info("워커 컨테이너 기동 완료: %s (%s)", self.container_name, cid[:12])
 
             try:
-                raw_mounts = subprocess.check_output(  # nosec B603 B607
+                raw_mounts = subprocess.check_output(  # nosec B603 B607 - docker inspect 를 shell 없이 인자 목록으로 실행합니다
                     ["docker", "inspect", "-f", "{{json .Mounts}}", cid],
                     text=True,
                 ).strip()
@@ -451,7 +451,7 @@ class DockerWorkerContainerManager:
         t_start = time.perf_counter()
         while time.perf_counter() - t_start < timeout_sec:
             with contextlib.suppress(Exception):
-                logs = subprocess.check_output(  # nosec B603 B607
+                logs = subprocess.check_output(  # nosec B603 B607 - docker logs 를 shell 없이 인자 목록으로 실행합니다
                     ["docker", "logs", "--tail", "20", self.container_name],
                     text=True,
                     stderr=subprocess.STDOUT,
@@ -467,7 +467,7 @@ class DockerWorkerContainerManager:
         """컨테이너를 강제 정지 및 제거합니다."""
         if self.container_name:
             try:
-                subprocess.run(  # nosec B603 B607
+                subprocess.run(  # nosec B603 B607 - docker rm 을 shell 없이 인자 목록으로 실행합니다
                     ["docker", "rm", "-f", self.container_name],
                     check=False,
                     stdout=subprocess.DEVNULL,

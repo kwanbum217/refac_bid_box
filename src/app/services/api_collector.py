@@ -16,7 +16,7 @@ import asyncio
 import logging
 import os
 import re
-import xml.etree.ElementTree as ET  # nosec B405
+import xml.etree.ElementTree as ET  # nosec B405 - 신뢰하는 공공데이터 XML 응답만 파싱합니다
 from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal

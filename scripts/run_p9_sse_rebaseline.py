@@ -11,7 +11,7 @@ import csv
 import json
 import os
 import platform
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - sysctl 조회용으로만 subprocess 를 가져옵니다
 import sys
 import threading
 import time
@@ -42,7 +42,7 @@ class AmbientLoadLogger:
 
         try:
             self.ncpu = int(
-                subprocess.check_output(  # nosec B603 B607
+                subprocess.check_output(  # nosec B603 B607 - sysctl 을 shell 없이 고정 인자로 실행합니다
                     ["sysctl", "-n", "hw.ncpu"], text=True
                 ).strip()
             )
@@ -51,7 +51,7 @@ class AmbientLoadLogger:
 
     def _get_load1(self) -> float:
         try:
-            out = subprocess.check_output(  # nosec B603 B607
+            out = subprocess.check_output(  # nosec B603 B607 - sysctl 을 shell 없이 고정 인자로 실행합니다
                 ["sysctl", "-n", "vm.loadavg"], text=True
             ).strip()
             # format: { 1.83 1.50 1.30 }

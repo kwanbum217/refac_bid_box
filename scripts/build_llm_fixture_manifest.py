@@ -160,7 +160,7 @@ def query_evidence_manifest_from_sqlite(
             f"JOIN segments s ON s.id = e.segment_id "
             f"JOIN collections col ON col.id = s.collection "
             f"JOIN embedding_metadata em ON em.id = e.id AND em.key = ? "
-            f"WHERE col.name = ? AND e.embedding_id IN ({placeholders})"  # nosec B608
+            f"WHERE col.name = ? AND e.embedding_id IN ({placeholders})"  # nosec B608 - placeholders 는 물음표만 반복 생성하며 값은 바인딩합니다
         )
         query_params = [CHROMA_DOCUMENT_KEY, collection_name, *required_ids_list]
         cur.execute(batch_query, query_params)

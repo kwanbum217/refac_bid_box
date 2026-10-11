@@ -20,7 +20,7 @@ import hashlib
 import json
 import re
 import shlex
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - git 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -485,7 +485,7 @@ def _run_git_command(repo: str | Path, args: list[str], timeout: int = 10) -> tu
     """
     repo_path = Path(repo).resolve()
     try:
-        proc = subprocess.run(  # nosec B603 B607
+        proc = subprocess.run(  # nosec B603 B607 - git 명령을 shell 없이 인자 목록으로 실행합니다
             ["git", *args],
             cwd=str(repo_path),
             capture_output=True,
@@ -823,7 +823,7 @@ def verify_verification_truth(
 
         # 화이트리스트 명령: repo 에서 재실행
         try:
-            proc = subprocess.run(  # nosec B603
+            proc = subprocess.run(  # nosec B603 - 화이트리스트 명령을 shell 없이 인자 목록으로 실행합니다
                 argv,
                 cwd=str(repo_path),
                 capture_output=True,

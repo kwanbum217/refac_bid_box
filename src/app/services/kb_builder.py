@@ -129,7 +129,7 @@ def rebuild_knowledge_base(
             try:
                 chroma_client.delete_collection(COLLECTION_NAME)
             # 없는 컬렉션 삭제는 정상 흐름이라 무시합니다
-            except Exception:  # nosec B110
+            except Exception:  # nosec B110 - 없는 컬렉션 삭제 실패는 정상 흐름이라 무시합니다
                 pass
         # 질의 경로(vector_store)와 반드시 같은 임베딩 함수여야 합니다.
         collection = get_collection(chroma_client, COLLECTION_NAME, create=True)
