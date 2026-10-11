@@ -207,6 +207,17 @@ class BidResult(Base):
         # 공고 상세의 기관 과거 낙찰 5건 조회(기관 등치 + 개찰일시 정렬)가 기관 전체 행을
         # 읽고 filesort 하지 않게 합니다 (migrations/versions/e4f5a6b7c8d9).
         Index("ix_bid_results_inst_dt", "dminstt_nm", "rl_openg_dt"),
+        # predict-price 첫 요청의 재발주 이력 조회가 본문을 읽지 않게 합니다
+        # (migrations/versions/a6b7c8d9e0f1). 등치 두 열 뒤에 정렬 키를 두어
+        # filesort 를 없애고, SELECT 하는 공고명·낙찰률·개찰일시까지 담아 커버링합니다.
+        Index(
+            "ix_bid_results_repeat_hist",
+            "dminstt_nm",
+            "category",
+            "rl_openg_dt",
+            "sucsf_bid_rate",
+            "bid_ntce_nm",
+        ),
     )
 
     id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
