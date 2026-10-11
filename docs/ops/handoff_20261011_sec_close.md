@@ -68,7 +68,9 @@
 
 - 비밀번호 최대 4,096자. 옛 반복 수 해시는 다음 로그인 때 자동 재해시된다(점진 전환).
 - 세션은 유휴 7일 또는 절대 14일에 만료된다.
-- 모든 기기 로그아웃(`POST /accounts/mypage/logout-all/`)은 세션 저장소의 사용자별 세대 번호(`auth:user_epoch:<user_id>`)로 동작한다. **Redis 데이터가 지워지면(FLUSH, 볼륨 삭제) 세대가 0 으로 돌아가 이미 무효화한 세션이 되살아날 수 있다.** Redis 는 `SHUTDOWN NOSAVE` 대신 정상 저장 종료를 쓰고, 볼륨을 지우지 않는다.
+- 모든 기기 로그아웃(`POST /accounts/mypage/logout-all/`)은 세션 저장소의 사용자별 세대 번호(`auth:user_epoch:<user_id>`, TTL 없음)로 동작한다. **Redis 데이터가 지워지면(FLUSH, 볼륨 삭제) 세대가 0 으로 돌아가 이미 무효화한 세션이 되살아날 수 있다.** Redis 는 `SHUTDOWN NOSAVE` 대신 정상 저장 종료를 쓰고, 볼륨을 지우지 않는다.
+- 운영 Redis 는 `--maxmemory 512mb` 다. 이전 정책 `allkeys-lru` 에서는 **메모리 압박만으로도** TTL 없는 세대 키가 축출돼 같은 부활이 생길 수 있었다. 2026-10-11 에 `docker-compose.prod.yml` 을 `volatile-lru` 로 바꿨다(사용자 결정). 이제 TTL 없는 키는 축출되지 않는다. 대신 TTL 있는 키(캐시·세션)가 먼저 축출되고, TTL 있는 키가 하나도 없는데 메모리가 차면 쓰기가 OOM 오류로 실패한다. **운영 Redis 는 컨테이너를 다시 만들어야 새 정책이 적용된다**(`docker compose -f docker-compose.prod.yml up -d redis`). 적용 뒤 `redis-cli CONFIG GET maxmemory-policy` 로 확인한다. 개발 `docker-compose.yml` 의 Redis 정책은 바꾸지 않았다.
+- TTL 없는 키를 새로 만드는 기능(예: 업로드 원본 보관)을 추가할 때는 반드시 TTL 을 건다. 그렇지 않으면 축출되지 않고 메모리를 채운다.
 - CSRF 쿠키는 development 외 환경에서 Secure 다. HTTP 로 운영하면 SSR 폼이 403 이 된다(운영은 HTTPS 전제).
 
 ### 1.8 CI 변화 (L12·L13)
