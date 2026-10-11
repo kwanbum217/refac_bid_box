@@ -11,15 +11,15 @@
 
 | 우선 | 과제 | 선행 |
 | --- | --- | --- |
-| 1 | 이 인수인계 병합 커밋과 `fe6126c7` 의 CI 가 원격 `main` 에서 녹색인지 확인 | 없음 |
+| 1 | 마지막 병합(T3) 커밋의 CI 가 원격 `main` 에서 녹색인지 확인. 새 gitleaks 이력 스캔 단계가 처음 도는 실행이다 | 없음 |
 | 2 | 로그인 상태로 마이페이지, 정보 수정(`/accounts/mypage/edit/`), 공고 상세, 챗봇 답변 렌더링을 브라우저에서 확인 | 스택 기동, 계정 비밀번호(사용자) |
-| 3 | 4절 보안 검토 잔여 항목의 처리 여부를 사용자에게 받기 | 사용자 결정 |
+| 3 | 4절 보안 검토 잔여 항목(CSP, M4, M7, L14, 품질 2·3)의 처리 여부를 사용자에게 받기 | 사용자 결정 |
 
 ---
 
 ## 1. 이 세션에서 병합한 것
 
-빌더는 모두 cmd `deepseek/deepseek-v4.1-flash`(effort high), 리뷰어는 모두 opencode `muse-spark-1.3-contributor-free` 이다. 여섯 건 모두 `--no-ff` 병합과 원격 반영을 확인했다.
+빌더는 모두 cmd `deepseek/deepseek-v4.1-flash`(effort high), 리뷰어는 모두 opencode `muse-spark-1.3-contributor-free` 이다. 아홉 건 모두 `--no-ff` 병합과 원격 반영을 확인했다.
 
 | Task | 병합 | 내용 | 검증 |
 | --- | --- | --- | --- |
@@ -29,6 +29,9 @@
 | S3 설정·헬스·검색·CI | `724eb9ca` | staging 검증 강화, `.env` 프로젝트 루트, 헬스 예외 원문 제거, LIKE autoescape, CI 최상위 `permissions` | 리뷰 pass(반례 4종), 전량 6,891 |
 | S2 XSS·인증 경계 | `5c592bf8` | marked renderer 정화(새 의존성 없음), 대시보드·상세 이스케이프, escapejs·to_json, CSRF 쿠키 Secure, next 경로, 더미 해시 | 리뷰 pass(node 반례), 전량 6,932 |
 | S1 채팅 자동화 staff 전용 | `fe6126c7` | 채팅 action·확인 토큰·실행 문구 staff 전용, REST confirm·cancel staff, 로그인 사용자 쿼터 120회/60초 | 리뷰 pass(반례 7종), 전량 6,885 |
+| T2 API 출처 검사 | `0034b9e4` | 세션 쿠키가 있는 `/api/v1` 상태 변경 요청의 Origin/Referer 검사(L4), 콜백 토큰 우선 검증(L10) | 리뷰 pass(반례 12종, Host 위조 불가 확인), 전량 6,971 |
+| T1 인증·세션 | `7873de70` | 로그인 재해시·salt 22자·비밀번호 상한 4096(L2), 세션 유휴 만료 7일(L11, 사용자 결정) | 리뷰 pass(반례 30건), 전량 6,967 |
+| T3 스크립트·CI·XML | 이 문서와 같은 병합 | 백업 tar 경로·DB URL(L7·L8), defusedxml 0.7.1(L9, 사용자 승인), CI gitleaks 전체 이력 스캔(L12), README 고정 안내(L16) | 리뷰 pass(반례 9건), 로컬 gitleaks 2,259커밋 통과 |
 
 병합 후 `main`(`fe6126c7`) 전량은 6,951 통과, 31 skip, mypy 오류 없음이다(주 저장소라 데이터 자산 시험이 더 돈다).
 
@@ -76,7 +79,8 @@
 | CSP 헤더(보고서 H2·품질 7) | 템플릿 인라인 스크립트가 많아 `script-src 'self'` 를 걸면 화면이 깨진다. 인라인 스크립트 정리가 먼저 |
 | M4 모델 pickle·`preprocess.py` 무결성 | 서빙 로드 경로 재설계 필요. 운영 Compose 는 `data` 읽기 전용이라 위험이 줄어 있다 |
 | M7 자동 승인 감시기 샌드박스 | 개발 도구. 미착수 |
-| L2 비밀번호 재해시·최대 길이, L4 JSON API Origin 검사, L7 tar 경로, L8 DB URL 인코딩, L9 defusedxml, L10 콜백 오라클, L11 세션 수명, L12 gitleaks 이력 스캔, L16 vendor 감사 | 미착수. L9 는 새 의존성이라 사전 합의 필요 |
+| L16 vendor JS(jQuery·Bootstrap·marked·Font Awesome) 감사 | npm audit 범위 밖. 미착수 |
+| L11 전체 기기 로그아웃 | 유휴 만료만 구현. 미착수 |
 | L14 공개 저장소의 로컬 경로·Chroma 백업 tar·워커 로그 34건, LICENSE·SECURITY.md 부재 | 저장소 공개 유지 여부와 함께 사용자 결정 |
 | 품질 2(print 8곳), 3(`except Exception` 원문 payload) | 미착수 |
 | 충남 별표 3 두 번째 표(생활폐기물 참고 예시) | 등록하지 않음 |

@@ -85,18 +85,10 @@ def get_db_config() -> dict[str, Any]:
         from src.app.core.config import settings
 
         host, port, name = settings.DB_HOST, settings.DB_PORT, settings.DB_NAME
-        u = (
-            env.get("BACKUP_DB_USER")
-            or getattr(settings, "BACKUP_DB_USER", None)
-            or env.get("DB_USER")
-            or settings.DB_USER
-        )
-        p = (
-            env.get("BACKUP_DB_PASSWORD")
-            or getattr(settings, "BACKUP_DB_PASSWORD", None)
-            or env.get("DB_PASSWORD")
-            or settings.DB_PASSWORD
-        )
+        u = env.get("BACKUP_DB_USER") or getattr(settings, "BACKUP_DB_USER", None)
+        u = u or env.get("DB_USER") or settings.DB_USER
+        p = env.get("BACKUP_DB_PASSWORD") or getattr(settings, "BACKUP_DB_PASSWORD", None)
+        p = p or env.get("DB_PASSWORD") or settings.DB_PASSWORD
     except Exception:
         host, port, name = (
             env.get("DB_HOST", "localhost"),
@@ -139,9 +131,12 @@ def query_db_row_counts(
 ) -> dict[str, int | None]:
     row_counts: dict[str, int | None] = {}
     try:
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import URL, create_engine, text
 
-        url = f"mysql+pymysql://{db_config['user']}:{db_config['password']}@{db_config['host']}:{db_config['port']}/{db_config['name']}"
+        db = db_config
+        url = URL.create(
+            "mysql+pymysql", db["user"], db["password"], db["host"], int(db["port"]), db["name"]
+        )
         with create_engine(url, connect_args={"connect_timeout": 5}).connect() as conn:
             for tbl in tables:
                 if tbl in DEFAULT_TABLES:
@@ -367,11 +362,18 @@ def extract_tar_archive(archive_path: Path, target_base_dir: Path) -> None:
     if not archive_path.exists():
         raise FileNotFoundError(f"복원할 아카이브 없음: {archive_path}")
     target_base_dir.mkdir(parents=True, exist_ok=True)
+    root = target_base_dir.resolve()
     with tarfile.open(archive_path, "r:gz") as tar:
         for member in tar.getmembers():
             member_path = (target_base_dir / member.name).resolve()
-            if not str(member_path).startswith(str(target_base_dir.resolve())):
+            if not member_path.is_relative_to(root):
                 raise ValueError(f"안전하지 않은 아카이브 경로 감지: {member.name}")
+            is_link = member.issym() or member.islnk()
+            link = (
+                member_path.parent / member.linkname if member.issym() else root / member.linkname
+            )
+            if is_link and not link.resolve().is_relative_to(root):
+                raise ValueError(f"안전하지 않은 링크 대상 감지: {member.name}")
         if hasattr(tarfile, "data_filter"):
             tar.extractall(path=target_base_dir, filter="data")  # nosec B202
         else:
