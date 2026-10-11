@@ -146,6 +146,8 @@ PRODUCTION_INDEX_NAMES = {
         "ix_bid_results_inst_cat_stats",
         "ix_bid_results_inst_dt",
         "ix_bid_results_rate_id",
+        # 재발주 이력 조회 커버링 인덱스. 마이그레이션 a6b7c8d9e0f1 로 추가했습니다.
+        "ix_bid_results_repeat_hist",
     },
     "chat_session_states": {
         "chat_session_states_updated_at_44284963",
@@ -294,6 +296,13 @@ BIDS_TABLE_SCHEMAS: dict[str, dict[str, Any]] = {
                 "sucsf_bid_amt",
             ),
             "ix_bid_results_inst_dt": ("dminstt_nm", "rl_openg_dt"),
+            "ix_bid_results_repeat_hist": (
+                "dminstt_nm",
+                "category",
+                "rl_openg_dt",
+                "sucsf_bid_rate",
+                "bid_ntce_nm",
+            ),
             "bid_results_dminstt_nm_1b809760": ("dminstt_nm",),
             "bid_results_category_981358ae": ("category",),
             "bid_results_collected_at_25a564b9": ("collected_at",),
