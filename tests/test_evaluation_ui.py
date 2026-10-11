@@ -214,7 +214,7 @@ class TestEvaluationUITemplate:
     # ---------------------------------------------------------------------
     def test_no_client_side_calculation(self, template_content):
         """브라우저가 세 금액과 점수를 다시 계산하지 않는다."""
-        script_match = re.search(r"<script>(.*?)</script>", template_content, re.DOTALL)
+        script_match = re.search(r"<script[^>]*>(.*?)</script>", template_content, re.DOTALL)
         assert script_match, "평가 스크립트 영역을 찾을 수 없음"
         script = script_match.group(1)
 

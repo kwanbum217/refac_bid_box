@@ -138,7 +138,7 @@
                         class="bg-slate-50 border border-slate-200 rounded-sm pl-9 pr-4 py-1.5 text-xs focus:bg-white focus:ring-4 focus:ring-primary/5 outline-hidden transition-all w-64">
                 </form>
 
-                <button onclick="toggleTheme()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
+                <button type="button" data-toggle-theme class="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
                     <i id="theme-icon" class="fas fa-moon"></i>
                 </button>
 
@@ -246,7 +246,7 @@
 
     <script src="{{ url_for('static', path='vendor/bootstrap/5.3.3/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', path='vendor/jquery/3.7.1/jquery.min.js') }}"></script>
-    <script>
+    <script nonce="{{ csp_nonce }}">
         const APP_SETTINGS_KEY = 'bidbox.app.settings';
         const APP_SETTINGS_DEFAULTS = {
             theme: 'light',
@@ -400,6 +400,11 @@
                         pollIntervalMs: Number(event.target.value) || APP_SETTINGS_DEFAULTS.pollIntervalMs,
                     });
                 });
+            }
+
+            const themeButton = document.querySelector('[data-toggle-theme]');
+            if (themeButton) {
+                themeButton.addEventListener('click', toggleTheme);
             }
 
             document.addEventListener('click', function(event) {

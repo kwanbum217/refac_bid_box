@@ -665,7 +665,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 document.addEventListener('DOMContentLoaded', function() {
     const track = document.querySelector('[data-home-swipe-track]');
     if (!track) {

@@ -248,7 +248,7 @@
                                     이용약관 <span class="text-primary font-bold">(필수)</span>
                                 </label>
                             </div>
-                            <button type="button" onclick="openModal('tos')" class="text-xs font-bold text-slate-400 hover:text-primary transition-colors underline underline-offset-4">전문 보기</button>
+                            <button type="button" data-modal-open="tos" class="text-xs font-bold text-slate-400 hover:text-primary transition-colors underline underline-offset-4">전문 보기</button>
                         </div>
 
                         <div class="flex items-center justify-between">
@@ -259,7 +259,7 @@
                                     개인정보처리방침 <span class="text-primary font-bold">(필수)</span>
                                 </label>
                             </div>
-                            <button type="button" onclick="openModal('privacy')" class="text-xs font-bold text-slate-400 hover:text-primary transition-colors underline underline-offset-4">전문 보기</button>
+                            <button type="button" data-modal-open="privacy" class="text-xs font-bold text-slate-400 hover:text-primary transition-colors underline underline-offset-4">전문 보기</button>
                         </div>
                     </div>
                     {% if form.agree_terms.errors or form.agree_privacy.errors %}
@@ -324,7 +324,7 @@
     <div class="bg-white w-full max-w-2xl max-h-[80vh] flex flex-col rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
         <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
             <h3 id="modal-title" class="text-lg font-bold text-slate-900">약관 내용</h3>
-            <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+            <button data-modal-close class="text-slate-400 hover:text-slate-600 transition-colors">
                 <i class="fas fa-times text-xl"></i>
             </button>
         </div>
@@ -333,12 +333,12 @@
             <div id="modal-dynamic-content"></div>
         </div>
         <div class="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-            <button onclick="closeModal()" class="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-bold transition-all">닫기</button>
+            <button data-modal-close class="px-6 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-sm font-bold transition-all">닫기</button>
         </div>
     </div>
 </div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
     const birthDateInput = document.getElementById('{{ form.birth_date.id_for_label }}');
     const birthYearInput = document.getElementById('{{ form.birth_y.id_for_label }}');
     const birthMonthInput = document.getElementById('{{ form.birth_m.id_for_label }}');
@@ -390,6 +390,16 @@
         document.getElementById('terms-modal').classList.add('hidden');
         document.body.style.overflow = 'auto';
     }
+
+    document.querySelectorAll('[data-modal-open]').forEach(function(button) {
+        button.addEventListener('click', function() {
+            openModal(button.dataset.modalOpen);
+        });
+    });
+
+    document.querySelectorAll('[data-modal-close]').forEach(function(button) {
+        button.addEventListener('click', closeModal);
+    });
 
     // Select All Logic
     const checkAll = document.getElementById('check-all');
