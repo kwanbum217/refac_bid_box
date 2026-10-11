@@ -64,6 +64,7 @@ from src.ml.monitoring import (
 from src.ml.repeat_history import attach_repeat_history
 from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.tasks.automation_tasks import run_automation_pipeline
+from src.tasks.error_payload import safe_error, summarize_error
 from src.tasks.notifier import (
     notify,
     notify_collection_gap,
@@ -197,8 +198,8 @@ async def backup_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         }
     except Exception as exc:
         logger.exception("정기 백업 실패")
-        await notify_task_failure("통합 백업 스케줄", str(exc))
-        return {"status": "failed", "error": str(exc)}
+        await notify_task_failure("통합 백업 스케줄", summarize_error(exc))
+        return {"status": "failed", **safe_error(exc)}
 
 
 def _create_scheduled_execution(
@@ -285,7 +286,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.exception("야간 스케줄 실패")
         await notify_task_failure(
             "야간 수집 스케줄",
-            str(exc),
+            summarize_error(exc),
             detail=f"execution_id {execution_id}. 다음 재학습이 옛 데이터로 돕니다.",
         )
         raise
@@ -369,7 +370,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("개발 데이터 최신화 실패")
         await notify_task_failure(
-            "개발 데이터 최신화", str(exc), detail=f"execution_id {execution_id}"
+            "개발 데이터 최신화", summarize_error(exc), detail=f"execution_id {execution_id}"
         )
         raise
 
@@ -421,7 +422,7 @@ def _rebuild_ranking_snapshots() -> dict[str, Any]:
         return rebuild_ranking_snapshots(db)
     except Exception as exc:
         logger.exception("상위 N 스냅샷 재집계 실패")
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", **safe_error(exc)}
     finally:
         db.close()
 
@@ -435,7 +436,7 @@ def _rebuild_compare_stats_snapshots() -> dict[str, Any]:
         return rebuild_compare_stats_snapshots(db)
     except Exception as exc:
         logger.exception("비교 통계 스냅샷 재집계 실패")
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", **safe_error(exc)}
     finally:
         db.close()
 
@@ -449,7 +450,7 @@ def _rebuild_institution_stats() -> dict[str, Any]:
         return rebuild_institution_stats(db)
     except Exception as exc:
         logger.exception("기관 이력 집계 실패")
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", **safe_error(exc)}
     finally:
         db.close()
 
@@ -480,7 +481,7 @@ def _check_mysql_stats_freshness() -> dict[str, Any]:
         return result
     except Exception as exc:
         logger.exception("MySQL 영속 통계 신선도 점검 실패")
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", **safe_error(exc)}
     finally:
         db.close()
 
@@ -512,7 +513,7 @@ def _check_restore_drill_freshness() -> dict[str, Any]:
         return result
     except Exception as exc:
         logger.exception("복원 드릴 정례화 신선도 점검 실패")
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", **safe_error(exc)}
 
 
 def _check_search_index_parity() -> dict[str, Any]:
@@ -555,7 +556,7 @@ def _check_search_index_parity() -> dict[str, Any]:
         return result
     except Exception as exc:
         logger.exception("Meilisearch 읽기 모델 건수 대조 실패")
-        return {"status": "failed", "error": str(exc)}
+        return {"status": "failed", **safe_error(exc)}
     finally:
         db.close()
 
@@ -629,7 +630,7 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
                 results[category] = {
                     "status": "failed",
                     "category": category,
-                    "error": str(exc),
+                    **safe_error(exc),
                 }
 
         all_succeeded = not has_failure
@@ -990,12 +991,12 @@ async def _run_drift_monitor(
                 results[category] = {
                     "status": "failed",
                     "category": category,
-                    "error": str(cat_exc),
+                    **safe_error(cat_exc),
                 }
 
     except Exception as exc:
         logger.exception("PSI 드리프트 모니터링 스케줄 실패")
-        await notify_task_failure("PSI 드리프트 모니터링", str(exc))
+        await notify_task_failure("PSI 드리프트 모니터링", summarize_error(exc))
         raise
 
     outcome: dict[str, Any] = {
@@ -1205,8 +1206,8 @@ def acquire_schedule_claim(
             owner=owner,
             ttl=ttl,
             token=None,
-            detail=f"Redis claim 명령 실행 중 오류가 발생했습니다: {exc}",
-            error=str(exc),
+            detail=f"Redis claim 명령 실행 중 오류가 발생했습니다: {summarize_error(exc)}",
+            error=summarize_error(exc),
         )
 
     if not acquired:
@@ -2003,7 +2004,7 @@ async def run_weekly_retrain_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]
         return {
             "status": "failed",
             "reason": "execution_failed",
-            "error": str(exc),
+            **safe_error(exc),
             "catchup_details": details,
         }
 
@@ -2109,7 +2110,7 @@ async def run_drift_monitor_catchup_task(ctx: dict[str, Any]) -> dict[str, Any]:
         return {
             "status": "failed",
             "reason": "execution_failed",
-            "error": str(exc),
+            **safe_error(exc),
             "catchup_details": details,
         }
 
@@ -2146,7 +2147,7 @@ async def run_result_coverage_catchup_task(ctx: dict[str, Any]) -> dict[str, Any
         return {
             "status": "failed",
             "reason": "execution_failed",
-            "error": str(exc),
+            **safe_error(exc),
             "catchup_details": details,
         }
 
@@ -2282,12 +2283,12 @@ async def _run_schedule_catchup(ctx: dict[str, Any]) -> dict[str, Any]:
             status="failed",
             reason="execution_failed",
             details=details,
-            failed=[{"name": target_task, "error": str(exc)}],
+            failed=[{"name": target_task, "error": summarize_error(exc)}],
         )
         return {
             "status": "failed",
             "reason": "execution_failed",
-            "error": str(exc),
+            **safe_error(exc),
             "catchup_details": details,
         }
     finally:

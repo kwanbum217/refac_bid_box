@@ -16,6 +16,7 @@ src/app/api/v1/bids.py
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -250,22 +251,29 @@ def get_bid_detail(pk: int, db: Session = Depends(get_db)):
 
 
 @router.post("/collect", summary="G2B 데이터 수집 실행")
-async def collect_bids_api(
+def collect_bids_api(
     start_date: str = Query("", description="수집 시작일 (YYYYMMDD, 미지정 시 어제)"),
     end_date: str = Query("", description="수집 종료일 (YYYYMMDD, 미지정 시 어제)"),
     fetch_type: str = Query("both", description="both/announce/result"),
     db: Session = Depends(get_db),
     user: CustomUser = Depends(require_current_user),
-):
-    """원본 collect_bids 관리 명령 대응. 장시간 수집은 자동화 큐를 사용하십시오."""
+) -> dict[str, Any]:
+    """원본 collect_bids 관리 명령 대응. 장시간 수집은 자동화 큐를 사용하십시오.
+
+    collect_bids 는 동기 Session 으로 DB 를 쓰는 경로(체크포인트 조회, 배치 적재,
+    집계 예열, 실패 롤백)를 가집니다. 동기 엔드포인트로 두어 FastAPI 스레드풀에서
+    실행하고 async 서비스는 전용 이벤트 루프로 구동해 요청 루프를 막지 않습니다.
+    """
     if not (user.is_staff or user.is_superuser):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
 
     from src.app.services.collector_service import collect_bids
 
-    return await collect_bids(
-        db,
-        start_date=start_date or None,
-        end_date=end_date or None,
-        fetch_type=fetch_type,
+    return asyncio.run(
+        collect_bids(
+            db,
+            start_date=start_date or None,
+            end_date=end_date or None,
+            fetch_type=fetch_type,
+        )
     )
