@@ -33,6 +33,16 @@ from src.ml.model_registry import resolve_serving_tree
 from src.ml.model_wrappers import JoblibModelWrapper
 from src.ml.promotion import promote, rollback
 
+
+@pytest.fixture(autouse=True)
+def _no_manifest_signing_key(monkeypatch):
+    """서명 키는 .env 에서 읽히므로 이 시험들은 키 없는 상태로 고정합니다.
+
+    서명 동작은 tests/test_model_manifest_signature.py 가 따로 다룹니다.
+    """
+    monkeypatch.setattr(settings, "MODEL_MANIFEST_SIGNING_KEY", "")
+
+
 MODEL_NAME = "manifest_model"
 PREPROCESS_MARKER = "preprocess_executed.marker"
 
