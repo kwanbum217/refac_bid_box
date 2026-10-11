@@ -79,6 +79,51 @@ $(document).ready(function() {
             .replace(/'/g, '&#39;');
     }
 
+    const CITATION_BADGE_OPEN = /^<span class="citation-badge" title="Source #\d+">$/;
+
+    function isSafeMarkdownUrl(value) {
+        const raw = String(value ?? '').trim();
+        if (!raw || raw.startsWith('//')) {
+            return false;
+        }
+        if (/[\u0000-\u001f\u007f]/.test(raw)) {
+            return false;
+        }
+        return /^(?:https?:|mailto:|[/#])/i.test(raw);
+    }
+
+    // 봇 응답 markdown 에는 외부 데이터가 섞입니다. 원시 HTML 토큰(블록·인라인)은
+    // 항상 이스케이프하고 링크·이미지는 허용 스킴만 통과시켜 스크립트 실행과
+    // javascript:·data: URL 을 막습니다. 인용 배지는 이 화면이 [n] 을 바꿔 넣은
+    // 안전한 마크업이라 여는 태그와 닫는 태그만 예외로 통과시킵니다.
+    marked.use({
+        renderer: {
+            html(token) {
+                const raw = String(token.text ?? '');
+                if (CITATION_BADGE_OPEN.test(raw) || raw === '</span>') {
+                    return raw;
+                }
+                return escapeHtml(raw);
+            },
+            link(token) {
+                const text = this.parser.parseInline(token.tokens);
+                if (!isSafeMarkdownUrl(token.href)) {
+                    return text;
+                }
+                const title = token.title ? ` title="${escapeHtml(token.title)}"` : '';
+                return `<a href="${escapeHtml(token.href)}"${title}>${text}</a>`;
+            },
+            image(token) {
+                if (!isSafeMarkdownUrl(token.href)) {
+                    return escapeHtml(token.text ?? '');
+                }
+                const title = token.title ? ` title="${escapeHtml(token.title)}"` : '';
+                const alt = escapeHtml(token.text ?? '');
+                return `<img src="${escapeHtml(token.href)}" alt="${alt}"${title}>`;
+            },
+        },
+    });
+
     function buildEndpointUrl(template, jobId) {
         return template.replace('__JOB_ID__', encodeURIComponent(jobId));
     }
@@ -326,7 +371,6 @@ $(document).ready(function() {
         const scrollMode = options.scrollMode || (isBot ? 'start' : 'bottom');
 
         if (isBot) {
-            formattedText = formattedText.replace(/```html/gi, '').replace(/```/g, '');
             formattedText = normalizePlainBotMarkdown(formattedText);
             formattedText = formattedText.replace(/\[(\d+)\]/g, '<span class="citation-badge" title="Source #$1">$1</span>');
             formattedText = marked.parse(formattedText);

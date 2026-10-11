@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import (
+    _DUMMY_PASSWORD_HASH,
     MyPageEditRequest,
     SignUpRequest,
     _serialize,
@@ -101,6 +102,10 @@ def _safe_next_path(value: str | None) -> str:
     candidate = (value or "/").strip()
     if not candidate.startswith("/") or candidate.startswith("//"):
         return "/"
+    # 브라우저는 백슬래시를 슬래시로 정규화하므로 /\evil.com 같은 값이 외부
+    # 호스트로 해석됩니다. 제어문자도 같은 이유로 거부합니다.
+    if "\\" in candidate or any(ord(char) < 32 or ord(char) == 127 for char in candidate):
+        return "/"
     return candidate
 
 
@@ -120,7 +125,13 @@ def _render(request: Request, name: str, context: dict, user, active_nav: str = 
     }
     response = templates.TemplateResponse(request, name, payload)
     if not request.cookies.get(CSRF_COOKIE_NAME):
-        response.set_cookie(CSRF_COOKIE_NAME, csrf_token, httponly=False, samesite="lax")
+        response.set_cookie(
+            CSRF_COOKIE_NAME,
+            csrf_token,
+            httponly=False,
+            samesite="lax",
+            secure=settings.ENVIRONMENT != "development",
+        )
     return response
 
 
@@ -769,6 +780,9 @@ def _authenticate_and_update_login(username: str, password: str) -> dict[str, An
             select(CustomUser).where(CustomUser.username == username)
         ).scalar_one_or_none()
         if account is None:
+            # 계정이 없어도 더미 해시로 한 번 검증해 응답 시간으로 아이디 존재
+            # 여부를 알 수 없게 합니다.
+            check_password(password, _DUMMY_PASSWORD_HASH)
             return {"status": "not_found"}
         if not check_password(password, account.password):
             return {"status": "invalid_password"}

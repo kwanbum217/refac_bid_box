@@ -171,16 +171,53 @@ def urlencode_filter(value) -> str:
     return quote(str(value or ""), safe="")
 
 
+# Django escapejs 와 동일한 JS 문맥 이스케이프 표입니다. 작은따옴표 문자열이나
+# script 본문에서 리터럴이 조기 종료되거나 태그가 닫히지 않도록 위험 문자를
+# \uXXXX 로 치환합니다.
+_JS_ESCAPES = {
+    ord("\\"): "\\u005C",
+    ord("'"): "\\u0027",
+    ord('"'): "\\u0022",
+    ord(">"): "\\u003E",
+    ord("<"): "\\u003C",
+    ord("&"): "\\u0026",
+    ord("="): "\\u003D",
+    ord("-"): "\\u002D",
+    ord(";"): "\\u003B",
+    ord("`"): "\\u0060",
+    ord("\u2028"): "\\u2028",
+    ord("\u2029"): "\\u2029",
+}
+_JS_ESCAPES.update((code, f"\\u{code:04X}") for code in range(32))
+
+
 def escapejs(value) -> str:
-    """{{ x|escapejs }} 대응. JS 리터럴 안에 안전하게 삽입합니다."""
-    # json.dumps 결과라 따옴표/제어문자가 이미 이스케이프됩니다
-    return Markup(json.dumps(str(value or ""))[1:-1])  # nosec B704
+    """{{ x|escapejs }} 대응. JS 리터럴 안에 안전하게 삽입합니다.
+
+    json.dumps 는 작은따옴표와 </script> 를 그대로 남겨, 작은따옴표 문자열이나
+    script 본문에서 이스케이프가 깨집니다. Django escapejs 와 같이 위험 문자를
+    \\uXXXX 로 치환합니다.
+    """
+    return Markup(str(value or "").translate(_JS_ESCAPES))  # nosec B704
 
 
 def to_json(value) -> Markup:
-    """script 태그 안에 파이썬 객체를 그대로 실어 보내기 위한 헬퍼입니다."""
-    # json.dumps 결과라 따옴표/제어문자가 이미 이스케이프됩니다
-    return Markup(json.dumps(value, ensure_ascii=False, default=str))  # nosec B704
+    """script 태그 안에 파이썬 객체를 그대로 실어 보내기 위한 헬퍼입니다.
+
+    json.dumps 결과의 <, >, & 는 script 본문에서 태그를 조기에 닫거나 엔티티로
+    해석될 수 있고, U+2028/U+2029 는 JS 문자열을 끊습니다. 모두 \\uXXXX 로
+    치환합니다.
+    """
+    encoded = json.dumps(value, ensure_ascii=False, default=str)
+    for char, replacement in (
+        ("<", "\\u003c"),
+        (">", "\\u003e"),
+        ("&", "\\u0026"),
+        ("\u2028", "\\u2028"),
+        ("\u2029", "\\u2029"),
+    ):
+        encoded = encoded.replace(char, replacement)
+    return Markup(encoded)  # nosec B704
 
 
 def _build_templates() -> Jinja2Templates:
