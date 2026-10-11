@@ -231,6 +231,19 @@ class SignUpRequest(BaseModel):
         return value
 
 
+class MyPageEditRequest(BaseModel):
+    """마이페이지 회원정보 수정 요청. 아이디·비밀번호는 수정 대상이 아닙니다."""
+
+    nickname: str = Field(..., max_length=50, description="닉네임")
+    email: EmailStr = Field(..., description="이메일")
+    company: CompanyProfileRequest | None = Field(
+        default=None, description="회사·담당자 정보 (선택)"
+    )
+    qualification: QualificationFactsRequest | None = Field(
+        default=None, description="정량평가 원자료 (선택)"
+    )
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -383,25 +396,56 @@ def _issue_session(response: Response, user: CustomUser) -> None:
     )
 
 
+def _upsert_company_profile(db: Session, user_id: int, company: CompanyProfileRequest) -> None:
+    """회사·담당자 정보를 user_id 기준 1행으로 맞춥니다.
+
+    행이 없고 값이 하나라도 있으면 만들고, 행이 있으면 받은 값으로 갱신합니다.
+    전부 빈 값이면 신규 행을 만들지 않고, 기존 행은 비웁니다.
+    """
+    values = company.model_dump()
+    existing = db.execute(
+        select(AccountCompanyProfile).where(AccountCompanyProfile.user_id == user_id)
+    ).scalar_one_or_none()
+    if existing is None:
+        if any(value is not None for value in values.values()):
+            db.add(AccountCompanyProfile(user_id=user_id, **values))
+        return
+    for key, value in values.items():
+        setattr(existing, key, value)
+
+
+def _upsert_qualification_facts(
+    db: Session, user_id: int, facts: QualificationFactsRequest
+) -> None:
+    """정량평가 원자료를 user_id 기준 1행으로 맞춥니다. 버전은 현행으로 기록합니다."""
+    values = facts.model_dump()
+    existing = db.execute(
+        select(AccountQualificationFact).where(AccountQualificationFact.user_id == user_id)
+    ).scalar_one_or_none()
+    if existing is None:
+        if any(value is not None for value in values.values()):
+            db.add(
+                AccountQualificationFact(
+                    user_id=user_id,
+                    version=QUALIFICATION_FACTS_VERSION,
+                    **values,
+                )
+            )
+        return
+    for key, value in values.items():
+        setattr(existing, key, value)
+    existing.version = QUALIFICATION_FACTS_VERSION
+
+
 def _persist_signup_relations(db: Session, user_id: int, payload: SignUpRequest) -> None:
     """계정과 함께 저장할 회사·원자료·동의 행을 같은 트랜잭션에 추가합니다.
 
     선택 섹션을 비워 보내면 빈 행을 만들지 않습니다.
     """
     if payload.company is not None:
-        company_values = payload.company.model_dump()
-        if any(value is not None for value in company_values.values()):
-            db.add(AccountCompanyProfile(user_id=user_id, **company_values))
+        _upsert_company_profile(db, user_id, payload.company)
     if payload.qualification is not None:
-        facts_values = payload.qualification.model_dump()
-        if any(value is not None for value in facts_values.values()):
-            db.add(
-                AccountQualificationFact(
-                    user_id=user_id,
-                    version=QUALIFICATION_FACTS_VERSION,
-                    **facts_values,
-                )
-            )
+        _upsert_qualification_facts(db, user_id, payload.qualification)
     consented_at = utcnow()
     db.add_all(
         [
@@ -456,6 +500,25 @@ def register_user(payload: SignUpRequest, response: Response, db: Session) -> Us
 
     # 원본 SignUpView 는 가입 직후 자동 로그인합니다.
     _issue_session(response, user)
+    return _serialize(user)
+
+
+def update_mypage_profile(
+    db: Session, user: CustomUser, payload: MyPageEditRequest
+) -> UserResponse:
+    """로그인 사용자 본인의 닉네임·이메일·회사·정량 원자료를 수정합니다.
+
+    아이디와 비밀번호는 대상이 아니며, 항상 인자로 받은 user.id 행만 갱신합니다.
+    회사·원자료는 같은 트랜잭션에서 한 번 커밋합니다.
+    """
+    user.nickname = payload.nickname
+    user.email = str(payload.email)
+    if payload.company is not None:
+        _upsert_company_profile(db, user.id, payload.company)
+    if payload.qualification is not None:
+        _upsert_qualification_facts(db, user.id, payload.qualification)
+    db.commit()
+    db.refresh(user)
     return _serialize(user)
 
 

@@ -20,11 +20,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import (
+    MyPageEditRequest,
     SignUpRequest,
     _serialize,
     get_current_user,
     me_profile,
     register_user,
+    update_mypage_profile,
 )
 from src.app.core.config import settings
 from src.app.core.db import get_db, open_thread_session
@@ -49,7 +51,12 @@ from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import ChatSessionState
 from src.app.services import bid_queries
-from src.app.services.auth_forms import login_form, signup_form
+from src.app.services.auth_forms import (
+    CREDIT_GRADE_CHOICES,
+    build_reputation_fields,
+    login_form,
+    signup_form,
+)
 from src.app.services.evaluation_rules import find_reputation_item
 from src.app.services.home_context import (
     DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES,
@@ -440,6 +447,155 @@ def mypage(
     return _render(request, "accounts/mypage.html", context, user, "mypage")
 
 
+def _mypage_edit_default_form(user: CustomUser, db: Session) -> dict[str, Any]:
+    """저장된 현재값을 수정 폼 초기값(문자열)으로 만듭니다."""
+    profile = me_profile(user=user, db=db)
+    company = profile.company
+    qualification = profile.qualification
+    evaluated_on = qualification.credit_evaluated_on if qualification is not None else None
+    return {
+        "nickname": user.nickname,
+        "email": user.email,
+        "company_name": company.company_name if company is not None else "",
+        "representative_name": company.representative_name if company is not None else "",
+        "address": company.address if company is not None else "",
+        "phone": company.phone if company is not None else "",
+        "fax": company.fax if company is not None else "",
+        "company_email": company.email if company is not None else "",
+        "contact_name": company.contact_name if company is not None else "",
+        "contact_position": company.contact_position if company is not None else "",
+        "contact_department": company.contact_department if company is not None else "",
+        "contact_phone": company.contact_phone if company is not None else "",
+        "contact_email": company.contact_email if company is not None else "",
+        "credit_grade": qualification.credit_grade if qualification is not None else "",
+        "credit_evaluated_on": evaluated_on.isoformat() if evaluated_on else "",
+        "reputation_items": (qualification.reputation_items if qualification is not None else None),
+        "non_price_quant_score": (
+            qualification.non_price_quant_score
+            if qualification is not None and qualification.non_price_quant_score is not None
+            else ""
+        ),
+    }
+
+
+def _mypage_edit_submitted_form(form_data: dict[str, list[str]]) -> dict[str, Any]:
+    """오류 재렌더용으로 제출값을 폼 필드 이름으로 평탄화합니다."""
+    company = _company_profile_form(form_data)
+    qualification = _qualification_facts_form(form_data)
+    return {
+        "nickname": _form_value(form_data, "nickname"),
+        "email": _form_value(form_data, "email"),
+        "company_name": company["company_name"],
+        "representative_name": company["representative_name"],
+        "address": company["address"],
+        "phone": company["phone"],
+        "fax": company["fax"],
+        "company_email": company["email"],
+        "contact_name": company["contact_name"],
+        "contact_position": company["contact_position"],
+        "contact_department": company["contact_department"],
+        "contact_phone": company["contact_phone"],
+        "contact_email": company["contact_email"],
+        "credit_grade": qualification["credit_grade"],
+        "credit_evaluated_on": qualification["credit_evaluated_on"],
+        "reputation_items": qualification["reputation_items"],
+        "non_price_quant_score": qualification["non_price_quant_score"] or "",
+    }
+
+
+# 회사 이메일은 폼에서 company_email, Pydantic 에서 email 이라 이름을 되돌립니다.
+_COMPANY_FORM_FIELD_ALIASES = {"email": "company_email"}
+
+
+def _mypage_edit_errors(exc: ValidationError) -> dict[str, list[str]]:
+    """Pydantic 오류를 화면 필드 이름으로 매핑합니다."""
+    errors: dict[str, list[str]] = {}
+    for item in exc.errors():
+        loc = item.get("loc") or ()
+        if loc and loc[0] == "company":
+            field_name = _COMPANY_FORM_FIELD_ALIASES.get(str(loc[-1]), str(loc[-1]))
+        elif loc:
+            field_name = str(loc[-1])
+        else:
+            field_name = "__all__"
+        errors.setdefault(field_name, []).append(str(item.get("msg", "입력값을 확인해주세요.")))
+    return errors
+
+
+def _mypage_edit_context(
+    user: CustomUser,
+    db: Session,
+    *,
+    form_values: dict[str, Any] | None = None,
+    errors: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """수정 폼의 렌더 문맥입니다. form_values 가 없으면 저장된 현재값을 씁니다."""
+    if form_values is None:
+        form_values = _mypage_edit_default_form(user, db)
+    errors = errors or {}
+    return {
+        "account": _serialize(user),
+        "form": form_values,
+        "errors": errors,
+        "non_field_errors": errors.get("__all__", []),
+        "credit_grade_choices": CREDIT_GRADE_CHOICES,
+        "reputation_fields": build_reputation_fields(form_values),
+    }
+
+
+@router.get("/accounts/mypage/edit/")
+def mypage_edit(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    """로그인 회원이 자기 회원정보를 수정 폼에서 편집합니다. 아이디는 표시만 합니다."""
+    if user is None:
+        return _login_redirect(request)
+    return _render(
+        request, "accounts/mypage_edit.html", _mypage_edit_context(user, db), user, "mypage"
+    )
+
+
+@router.post("/accounts/mypage/edit/")
+async def mypage_edit_submit(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    """SSR 수정 폼을 처리합니다. 성공하면 마이페이지로 돌려보냅니다."""
+    if user is None:
+        return _login_redirect(request)
+    await _verify_ssr_csrf(request)
+    form_data = parse_qs((await request.body()).decode("utf-8"))
+    payload: dict[str, Any] = {
+        "nickname": _form_value(form_data, "nickname"),
+        "email": _form_value(form_data, "email"),
+        "company": _company_profile_form(form_data),
+        "qualification": _qualification_facts_form(form_data),
+    }
+    try:
+        edit_payload = MyPageEditRequest.model_validate(payload)
+    except ValidationError as exc:
+        # 본문 user_id 류 값은 쓰지 않고 항상 로그인 user 행만 대상으로 합니다.
+        response = _render(
+            request,
+            "accounts/mypage_edit.html",
+            _mypage_edit_context(
+                user,
+                db,
+                form_values=_mypage_edit_submitted_form(form_data),
+                errors=_mypage_edit_errors(exc),
+            ),
+            user,
+            "mypage",
+        )
+        response.status_code = 200
+        return response
+    update_mypage_profile(db, user, edit_payload)
+    return RedirectResponse(url="/accounts/mypage/", status_code=303)
+
+
 def _register_user_sync(payload: SignUpRequest, response: Response) -> None:
     db, should_close = open_thread_session()
     try:
@@ -479,6 +635,41 @@ def _reputation_items_from_form(
     return ratings or None
 
 
+def _form_value(form_data: dict[str, list[str]], name: str) -> str:
+    """SSR 폼 본문에서 단일 값을 꺼냅니다. 없으면 빈 문자열입니다."""
+    return (form_data.get(name) or [""])[0]
+
+
+def _company_profile_form(form_data: dict[str, list[str]]) -> dict[str, str]:
+    """가입·수정 화면이 공유하는 회사·담당자 필드 파싱입니다.
+
+    키는 CompanyProfileRequest 가 받는 이름으로 맞춥니다(회사 이메일은 email).
+    """
+    return {
+        "company_name": _form_value(form_data, "company_name"),
+        "representative_name": _form_value(form_data, "representative_name"),
+        "address": _form_value(form_data, "address"),
+        "phone": _form_value(form_data, "phone"),
+        "fax": _form_value(form_data, "fax"),
+        "email": _form_value(form_data, "company_email"),
+        "contact_name": _form_value(form_data, "contact_name"),
+        "contact_position": _form_value(form_data, "contact_position"),
+        "contact_department": _form_value(form_data, "contact_department"),
+        "contact_phone": _form_value(form_data, "contact_phone"),
+        "contact_email": _form_value(form_data, "contact_email"),
+    }
+
+
+def _qualification_facts_form(form_data: dict[str, list[str]]) -> dict[str, Any]:
+    """가입·수정 화면이 공유하는 정량 원자료 필드 파싱입니다."""
+    return {
+        "credit_grade": _form_value(form_data, "credit_grade"),
+        "credit_evaluated_on": _form_value(form_data, "credit_evaluated_on"),
+        "reputation_items": _reputation_items_from_form(form_data),
+        "non_price_quant_score": _form_value(form_data, "non_price_quant_score") or None,
+    }
+
+
 @router.post("/accounts/signup/")
 async def signup_submit(request: Request):
     """JavaScript 없이도 원본 SSR 회원가입 폼을 처리합니다."""
@@ -498,25 +689,8 @@ async def signup_submit(request: Request):
         "gender": value("gender"),
         "agree_terms": "agree_terms" in form_data,
         "agree_privacy": "agree_privacy" in form_data,
-        "company": {
-            "company_name": value("company_name"),
-            "representative_name": value("representative_name"),
-            "address": value("address"),
-            "phone": value("phone"),
-            "fax": value("fax"),
-            "email": value("company_email"),
-            "contact_name": value("contact_name"),
-            "contact_position": value("contact_position"),
-            "contact_department": value("contact_department"),
-            "contact_phone": value("contact_phone"),
-            "contact_email": value("contact_email"),
-        },
-        "qualification": {
-            "credit_grade": value("credit_grade"),
-            "credit_evaluated_on": value("credit_evaluated_on"),
-            "reputation_items": _reputation_items_from_form(form_data),
-            "non_price_quant_score": value("non_price_quant_score") or None,
-        },
+        "company": _company_profile_form(form_data),
+        "qualification": _qualification_facts_form(form_data),
     }
 
     ip = resolve_client_ip(
