@@ -1,4 +1,8 @@
+import logging
+
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_META_FEATURE_ORDER = [
     "p_v17",
@@ -68,5 +72,5 @@ def predict_v25_logic(lgbm, cat, meta, df):
             return base_avg
         return blended_pred
     except Exception as exc:
-        print(f"[v25_helper] 메타 추론 실패: {exc}")
+        logger.warning("메타 추론 실패: %s", exc)
         return base_avg

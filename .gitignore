@@ -214,6 +214,10 @@ data/sources/qualification/files/
 # 모델 승격 시 직전 서빙본을 옮겨 두는 롤백용 백업입니다(src/ml/promotion.py).
 # 승격마다 덮어써지는 런타임 산출물이며 정본은 data/model_files/ 가 추적합니다.
 data/model_backups/
+# 서빙 모델 무결성 manifest(src/ml/model_integrity.py). model.bin 과 한 세트로
+# 생성·배포되는 머신별 산출물이라 추적하지 않습니다. metadata.json 은 계속 추적합니다.
+data/model_files/*/artifact_manifest.json
+data/model_files/*/generations/*/artifact_manifest.json
 *.arrow
 # Large binaries
 *.exe

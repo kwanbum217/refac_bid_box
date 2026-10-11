@@ -293,7 +293,7 @@ class ModelRegistry:
     def discover_models(cls, registry: dict[str, Any] | None = None):
         registry = cls._models if registry is None else registry
         if os.getenv("SKIP_MODEL_LOAD", "false").lower() == "true":
-            print("[ModelRegistry] SKIP_MODEL_LOAD=true: skipping heavy model loading.")
+            logger.info("SKIP_MODEL_LOAD=true: 무거운 모델 로딩을 건너뜁니다.")
             return
 
         model_root = cls._get_model_root()
@@ -337,7 +337,7 @@ class ModelRegistry:
                     wrapper = JoblibModelWrapper(model_dir, metadata)
                 cls._register(model_id, wrapper, registry=registry)
             except Exception as exc:
-                print(f"[ModelRegistry] 모델 로드 오류 ({model_id}): {exc}")
+                logger.error("모델 로드 오류 (%s): %s", model_id, exc)
 
     @classmethod
     def _register(cls, model_id, wrapper, registry: dict[str, Any] | None = None):
@@ -347,11 +347,12 @@ class ModelRegistry:
         if unservable:
             # 등록 자체는 막지 않습니다. 모델 하나 때문에 서버가 못 뜨면 안 됩니다.
             # 실제 예측은 prepare_input_frame 이 거부하므로 조용히 넘어가지 않습니다.
-            print(
-                f"[ModelRegistry] 배포 불가 경고: {model_id} 가 요구하는 특징을 "
-                f"features.py 가 만들지 못합니다: {unservable}"
+            logger.warning(
+                "배포 불가 경고: %s 가 요구하는 특징을 features.py 가 만들지 못합니다: %s",
+                model_id,
+                unservable,
             )
-        print(f"[ModelRegistry] 규격화 모델 등록됨: {model_id}")
+        logger.info("규격화 모델 등록됨: %s", model_id)
 
     @classmethod
     def verify_servable_features(cls):

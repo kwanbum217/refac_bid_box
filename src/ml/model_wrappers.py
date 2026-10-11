@@ -1,4 +1,5 @@
 import importlib.util
+import logging
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -12,6 +13,9 @@ from src.ml.features import (
     _is_missing,
     apply_categorical_dtypes,
 )
+from src.ml.model_integrity import verify_file
+
+logger = logging.getLogger(__name__)
 
 # 방어적 임포트
 try:
@@ -50,6 +54,8 @@ class BaseModelWrapper(ABC):
         preprocess_path = os.path.join(self.model_dir, "preprocess.py")
         if not os.path.exists(preprocess_path):
             return
+        # exec 은 임의 코드를 실행하므로 manifest 대조를 통과한 파일만 연다.
+        verify_file(self.model_dir, "preprocess.py")
         try:
             spec = importlib.util.spec_from_file_location(
                 "model_preprocess",
@@ -61,9 +67,9 @@ class BaseModelWrapper(ABC):
             spec.loader.exec_module(module)
             if hasattr(module, "preprocess"):
                 self.preprocessor = module.preprocess
-                print(f"[BaseModelWrapper] 커스텀 전처리 스크립트 로드됨: {self.model_dir}")
+                logger.info("커스텀 전처리 스크립트 로드됨: %s", self.model_dir)
         except Exception as exc:
-            print(f"[BaseModelWrapper] 전처리 스크립트 로드 실패 ({self.model_dir}): {exc}")
+            logger.warning("전처리 스크립트 로드 실패 (%s): %s", self.model_dir, exc)
 
     @abstractmethod
     def load(self):
@@ -106,6 +112,7 @@ class JoblibModelWrapper(BaseModelWrapper):
     def load(self):
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
+        verify_file(self.model_dir, os.path.basename(self.model_path))
         self.model = joblib.load(self.model_path)
         _apply_inference_thread_budget(self.model)
 
@@ -119,11 +126,12 @@ class JoblibModelWrapper(BaseModelWrapper):
             for path in sorted(Path(self.model_dir).glob("model_q*.bin")):
                 try:
                     quantile = int(path.stem.split("_q")[1]) / 100.0
+                    verify_file(self.model_dir, path.name)
                     quantile_model = joblib.load(path)
                     _apply_inference_thread_budget(quantile_model)
                     loaded[quantile] = quantile_model
                 except (ValueError, IndexError, OSError) as exc:
-                    print(f"[JoblibModelWrapper] 분위 모델 로드 실패 ({path}): {exc}")
+                    logger.warning("분위 모델 로드 실패 (%s): %s", path, exc)
             self._quantile_models = loaded
         return self._quantile_models
 
@@ -211,6 +219,7 @@ class KerasModelWrapper(BaseModelWrapper):
     def load(self):
         if tf is None:
             raise ImportError("TensorFlow 미설치")
+        verify_file(self.model_dir, os.path.basename(self.model_path))
         self.model = tf.keras.models.load_model(self.model_path)
 
     def predict(self, df):
@@ -226,6 +235,7 @@ class V13HybridWrapper(BaseModelWrapper):
     def load(self):
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
+        verify_file(self.model_dir, os.path.basename(self.model_path))
         self.model = joblib.load(self.model_path)
         required_keys = {
             "s1_tier_clf",
@@ -295,11 +305,14 @@ class EnsembleV25Wrapper(BaseModelWrapper):
     def load(self):
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
+        verify_file(self.model_dir, os.path.basename(self.model_path))
         self.meta = joblib.load(self.model_path)
+        verify_file(self.model_dir, "v25_lgbm_final.joblib")
         self.lgbm = joblib.load(os.path.join(self.model_dir, "v25_lgbm_final.joblib"))
         self.cat = None
         cat_bin = os.path.join(self.model_dir, "v25_cat_final.bin")
         if CatBoostRegressor and os.path.exists(cat_bin):
+            verify_file(self.model_dir, os.path.basename(cat_bin))
             self.cat = CatBoostRegressor()
             self.cat.load_model(cat_bin)
 
@@ -325,6 +338,7 @@ class QuantumLeapRuleWrapper(BaseModelWrapper):
     def load(self):
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
+        verify_file(self.model_dir, os.path.basename(self.model_path))
         self.model = joblib.load(self.model_path)
         if not isinstance(self.model, dict):
             raise ValueError("quantum_leap_v25_pro 번들 형식이 올바르지 않습니다.")
@@ -406,6 +420,7 @@ class HistPremiumEnsembleWrapper(BaseModelWrapper):
     def load(self):
         if not os.path.exists(self.model_path):
             raise FileNotFoundError(f"모델 파일을 찾을 수 없습니다: {self.model_path}")
+        verify_file(self.model_dir, os.path.basename(self.model_path))
         self.model = joblib.load(self.model_path)
         required_keys = {
             "models",

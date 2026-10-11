@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pytest
 
@@ -190,14 +192,16 @@ def test_predict_v25_logic_nonfinite_blend_returns_base_avg():
     assert result == pytest.approx(0.85)
 
 
-def test_predict_v25_logic_ridge_exception_returns_base_avg(capsys):
+def test_predict_v25_logic_ridge_exception_returns_base_avg(caplog):
     df = np.zeros((2, 1), dtype=float)
     meta = {
         "ridge": _ExplodingModel(),
         "mlp": _FixedModel(0.85),
     }
 
-    result = predict_v25_logic(_FixedModel(0.9), _FixedModel(0.8), meta, df)
+    # 실패 경고는 print 가 아니라 모듈 logger 로 남는다(src/ml/predictor_v25_helper.py).
+    with caplog.at_level(logging.WARNING, logger="src.ml.predictor_v25_helper"):
+        result = predict_v25_logic(_FixedModel(0.9), _FixedModel(0.8), meta, df)
 
     assert result == pytest.approx(0.85)
-    assert "메타 추론 실패" in capsys.readouterr().out
+    assert "메타 추론 실패" in caplog.text
