@@ -64,6 +64,8 @@ services:
       - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
       # 등급확인서 PDF 추출 API 토글입니다. 컨테이너는 .env 를 읽지 않으므로 여기서 넘겨야 켜집니다.
       - DOCUMENT_EXTRACTION_ENABLED=${DOCUMENT_EXTRACTION_ENABLED:-false}
+      # 스캔본 OCR 경로 토글입니다. 모델은 빌드 시점에 이미지에 들어가며 런타임에는 내려받지 않습니다.
+      - DOCUMENT_OCR_ENABLED=${DOCUMENT_OCR_ENABLED:-false}
       # 서빙 모델 매니페스트 서명 키입니다. 컨테이너는 .env 를 읽지 않으므로 여기서 넘겨야 합니다.
       - MODEL_MANIFEST_SIGNING_KEY=${MODEL_MANIFEST_SIGNING_KEY:-}
       # 읽기 경로 A/B 실측 전용 스위치입니다. 기본값 true 가 운영 동작입니다.

@@ -27,13 +27,21 @@ RUN uv export --frozen --no-dev --no-emit-project --format requirements.txt -o /
     && rm /tmp/requirements.txt
 
 COPY . /app/
+# OCR 인식 모델은 실행 중에 내려받지 않습니다. 빌드 시점에 고정 URL 에서 받아
+# sha256 을 대조해 이미지에 넣고, 런타임은 이 파일만 읽습니다.
+# /app/data/ocr_models 가 아니라 /opt 에 두는 이유는 compose 가 ./data 를
+# /app/data 로 덮어써서, 컨테이너 안에 구운 모델이 가려지기 때문입니다.
+RUN python3 scripts/fetch_ocr_models.py --dest /opt/ocr_models
 RUN uv pip install --python "$VIRTUAL_ENV/bin/python" --no-deps -e .
 
 FROM python:3.11-slim@sha256:9534e5a8e315485d4061ed659af0fd78a284c015f9b73661b41d6bab25604534 AS runtime
 
+# OCR 인식 모델 위치입니다. compose 가 /app/data 를 덮어써도 모델이 남도록
+# 빌드 단계에서 구운 경로를 씁니다. 개발 장비 기본값은 data/ocr_models 입니다.
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
-    HOME=/tmp
+    HOME=/tmp \
+    DOCUMENT_OCR_MODEL_DIR=/opt/ocr_models
 
 WORKDIR /app
 
@@ -61,6 +69,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app /app
+COPY --from=builder /opt/ocr_models /opt/ocr_models
 
 # 런타임 진입점은 uvicorn 하나이며 컨테이너 안에서 패키지를 설치하지 않습니다.
 # 베이스 이미지의 시스템 python 에 남아 있는 빌드 도구를 제거해 공급망 검사가
@@ -77,9 +86,10 @@ RUN rm -rf /usr/local/lib/python3.11/site-packages/pip \
 
 # 운영 프로세스는 고정 UID의 비-root 계정으로 실행합니다. Compose의 bind
 # mount도 같은 UID를 사용하므로 모델·데이터 읽기 권한이 일관됩니다.
+# /opt/ocr_models 는 빌드 단계에서 root 로 구웠으므로 OCR 읽기 권한을 함께 넘깁니다.
 RUN groupadd --gid 1000 app \
     && useradd --uid 1000 --gid 1000 --create-home --home-dir /home/app --shell /usr/sbin/nologin app \
-    && chown -R 1000:1000 /app /home/app
+    && chown -R 1000:1000 /app /home/app /opt/ocr_models
 
 USER 1000:1000
 
