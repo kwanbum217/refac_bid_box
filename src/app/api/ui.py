@@ -34,6 +34,7 @@ from src.app.core.db import get_db, open_thread_session
 from src.app.core.security import (
     CSRF_COOKIE_NAME,
     CSRF_FORM_FIELD,
+    PASSWORD_MAX_LENGTH,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
     SessionStoreUnavailable,
@@ -43,6 +44,8 @@ from src.app.core.security import (
     destroy_session,
     login_rate_limiter,
     make_csrf_token,
+    needs_rehash,
+    rehash_password,
     resolve_client_ip,
     signup_rate_limiter,
 )
@@ -788,6 +791,8 @@ def _authenticate_and_update_login(username: str, password: str) -> dict[str, An
             return {"status": "invalid_password"}
         if not account.is_active:
             return {"status": "inactive"}
+        if needs_rehash(account.password):
+            account.password = rehash_password(password)
         account.last_login = utcnow()
         db.commit()
         return {
@@ -815,6 +820,20 @@ async def login_submit(
     form_data = parse_qs((await request.body()).decode("utf-8"))
     username = (form_data.get("username") or [""])[0]
     password = (form_data.get("password") or [""])[0]
+    # 상한을 넘는 입력은 PBKDF2 를 계산하기 전에 폼 오류로 끝냅니다. API 의
+    # LoginRequest max_length 와 같은 값이라 두 경로의 판정이 일치합니다.
+    if len(password) > PASSWORD_MAX_LENGTH:
+        context = {
+            "hide_sidebar": True,
+            "form": login_form(
+                data={"username": username},
+                non_field_errors=["비밀번호가 너무 깁니다."],
+            ),
+            "next": _safe_next_path(next),
+        }
+        response = _render(request, "accounts/login.html", context, None)
+        response.status_code = 422
+        return response
     ip = resolve_client_ip(
         request.client.host if request.client and request.client.host else "",
         request.headers.get("x-forwarded-for"),

@@ -34,7 +34,12 @@ logger = logging.getLogger(__name__)
 
 ALGORITHM = "pbkdf2_sha256"
 DEFAULT_ITERATIONS = 600_000
+PASSWORD_SALT_BYTES = 11
+PASSWORD_MAX_LENGTH = 4096
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
+SESSION_IDLE_TIMEOUT_SECONDS = 60 * 60 * 24 * 7
+SESSION_ACTIVITY_REFRESH_SECONDS = 300
+SESSION_ACTIVITY_KEY = "last_activity"
 SESSION_COOKIE_NAME = "bidbox_session"
 SESSION_CACHE_PREFIX = "auth:session:"
 CSRF_COOKIE_NAME = "bidbox_csrf"
@@ -79,10 +84,36 @@ def csrf_tokens_match(cookie_token: str | None, request_token: str | None) -> bo
 def make_password(
     raw_password: str, salt: str | None = None, iterations: int = DEFAULT_ITERATIONS
 ) -> str:
-    salt = salt or secrets.token_hex(6)
+    salt = salt or secrets.token_hex(PASSWORD_SALT_BYTES)
     digest = hashlib.pbkdf2_hmac("sha256", raw_password.encode(), salt.encode(), iterations)
     encoded = base64.b64encode(digest).decode().strip()
     return f"{ALGORITHM}${iterations}${salt}${encoded}"
+
+
+def needs_rehash(encoded: str) -> bool:
+    """저장된 해시가 현재 정책보다 약하면 재해시가 필요하다고 알립니다.
+
+    반복 수가 DEFAULT_ITERATIONS 보다 낮으면 True 입니다. 알고리즘이 다르거나
+    형식이 깨진 값도 True 로 보지만, 그런 해시는 check_password 가 이미 거짓이므로
+    로그인 성공 경로에서는 도달하지 않습니다.
+    """
+    if not encoded or "$" not in encoded:
+        return True
+    try:
+        algorithm, iterations, _salt, _hash = encoded.split("$", 3)
+    except ValueError:
+        return True
+    if algorithm != ALGORITHM:
+        return True
+    try:
+        return int(iterations) < DEFAULT_ITERATIONS
+    except (TypeError, ValueError):
+        return True
+
+
+def rehash_password(raw_password: str) -> str:
+    """현재 정책(DEFAULT_ITERATIONS, 늘어난 salt)으로 비밀번호를 다시 해싱합니다."""
+    return make_password(raw_password)
 
 
 def check_password(raw_password: str, encoded: str) -> bool:
@@ -150,16 +181,18 @@ class SessionStore:
         return self._local
 
     def create(self, token: str, payload: dict[str, Any], ttl: int) -> None:
+        now = time.time()
+        stamped = {**payload, SESSION_ACTIVITY_KEY: now}
         client = self._conn.client()
         if client is None:
-            self._fallback("Redis 연결 없음")[token] = (time.time() + ttl, payload)
+            self._fallback("Redis 연결 없음")[token] = (now + ttl, stamped)
             return
         self._degraded_logged = False
         try:
-            client.setex(self._key(token), ttl, json.dumps(payload, ensure_ascii=False))
+            client.setex(self._key(token), ttl, json.dumps(stamped, ensure_ascii=False))
         except Exception as exc:
             self._conn.invalidate(exc)
-            self._fallback(f"세션 저장 실패: {exc}")[token] = (time.time() + ttl, payload)
+            self._fallback(f"세션 저장 실패: {exc}")[token] = (now + ttl, stamped)
 
     def read(self, token: str) -> dict[str, Any] | None:
         client = self._conn.client()
@@ -178,7 +211,50 @@ class SessionStore:
         except ValueError:
             logger.warning("세션 값 역직렬화 실패")
             return None
-        return payload if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            return None
+        if not self._check_activity(payload, token, client):
+            return None
+        return self._public_payload(payload)
+
+    def _check_activity(self, payload: dict[str, Any], token: str, client: Any) -> bool:
+        """유휴 만료를 검사하고, 필요하면 마지막 활동 시각을 갱신합니다.
+
+        마지막 활동 시각이 없는 기존 세션은 생성 시각을 알 수 없으므로 지금 활동한
+        것으로 보아 배포 직후 전원이 로그아웃되지 않게 합니다.
+        """
+        now = time.time()
+        last = payload.get(SESSION_ACTIVITY_KEY)
+        if not isinstance(last, (int, float)):
+            return True
+        if now - float(last) > SESSION_IDLE_TIMEOUT_SECONDS:
+            self.destroy(token)
+            return False
+        if now - float(last) >= SESSION_ACTIVITY_REFRESH_SECONDS:
+            payload[SESSION_ACTIVITY_KEY] = now
+            self._refresh_activity(client, token, payload)
+        return True
+
+    def _refresh_activity(self, client: Any, token: str, payload: dict[str, Any]) -> None:
+        """절대 만료(남은 TTL)를 유지한 채 활동 시각만 다시 씁니다.
+
+        갱신은 쓰기 부담을 줄이려 일정 간격이 지났을 때만 부르며, 실패해도 이미
+        유효성이 확인된 세션을 로그아웃시키지 않도록 삼킵니다.
+        """
+        key = self._key(token)
+        try:
+            ttl = client.ttl(key)
+            if ttl is None or int(ttl) <= 0:
+                return
+            client.setex(key, int(ttl), json.dumps(payload, ensure_ascii=False))
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning("세션 활동 시각 갱신 중 Redis 오류 발생: %s", exc)
+
+    @staticmethod
+    def _public_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """내부 활동 시각 키를 뺀 사본을 돌려줍니다."""
+        return {key: value for key, value in payload.items() if key != SESSION_ACTIVITY_KEY}
 
     def destroy(self, token: str) -> None:
         client = self._conn.client()
@@ -192,18 +268,25 @@ class SessionStore:
             self._conn.invalidate(exc)
             self._fallback(f"세션 삭제 실패: {exc}").pop(token, None)
 
-    @staticmethod
     def _read_local(
-        store: dict[str, tuple[float, dict[str, Any]]], token: str
+        self, store: dict[str, tuple[float, dict[str, Any]]], token: str
     ) -> dict[str, Any] | None:
         entry = store.get(token)
         if entry is None:
             return None
         expires_at, payload = entry
-        if expires_at < time.time():
+        now = time.time()
+        if expires_at < now:
             store.pop(token, None)
             return None
-        return payload
+        last = payload.get(SESSION_ACTIVITY_KEY)
+        if isinstance(last, (int, float)):
+            if now - float(last) > SESSION_IDLE_TIMEOUT_SECONDS:
+                store.pop(token, None)
+                return None
+            if now - float(last) >= SESSION_ACTIVITY_REFRESH_SECONDS:
+                payload[SESSION_ACTIVITY_KEY] = now
+        return self._public_payload(payload)
 
 
 session_store = SessionStore()
