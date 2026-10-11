@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     MEILI_MASTER_KEY: str = ""
     MEILI_TIMEOUT_SECONDS: float = 5.0
 
+    # 신용평가등급확인서 텍스트 PDF 에서 등급·평가일을 추출하는 API 활성화 여부입니다.
+    # 기본값은 비활성(False)이며, 켜야 POST /api/v1/documents/extract 가 열립니다.
+    DOCUMENT_EXTRACTION_ENABLED: bool = False
+
     # LLM & RAG
     # 생성 LLM 백엔드: "ollama"(기본, 로컬 gemma4:e2b) 또는 "gemini"(원본 경로)
     LLM_PROVIDER: str = "ollama"

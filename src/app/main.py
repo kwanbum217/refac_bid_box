@@ -16,6 +16,7 @@ from src.app.api.v1.accounts import router as accounts_router
 from src.app.api.v1.automation import router as automation_router
 from src.app.api.v1.bids import router as bids_router
 from src.app.api.v1.chatbot import router as chatbot_router
+from src.app.api.v1.documents import router as documents_router
 from src.app.api.v1.evaluations import router as evaluations_router
 from src.app.api.v1.health import _safe_failure_detail, warmup_state
 from src.app.api.v1.health import router as health_router
@@ -395,6 +396,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     app.include_router(chatbot_router, prefix="/api/v1")
     app.include_router(automation_router, prefix="/api/v1")
     app.include_router(accounts_router, prefix="/api/v1")
+    app.include_router(documents_router, prefix="/api/v1")
 
     # SSR 화면은 원본 Django 경로를 그대로 사용하므로 prefix 없이 마지막에 포함합니다.
     app.include_router(ui_router)
