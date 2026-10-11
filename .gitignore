@@ -205,6 +205,8 @@ data/backups/snapshots/
 *.parquet
 # 데이터셋 캐시 산출물(src/ml/dataset.py). parquet 외 조사 결과 CSV 도 재생성 대상입니다.
 data/feature_store/
+# OCR 인식 모델(scripts/fetch_ocr_models.py 로 재생성). 수십 MB 이진 파일이라 추적하지 않습니다.
+data/ocr_models/
 # 측정 산출물(잔차 parquet, 키 조사 CSV). 스크립트로 재생성되며 정본은 docs/design/ 입니다.
 data/analysis/
 # 적격심사 근거 원문 사본. 용량·재배포 문제로 커밋하지 않고 manifest.json 과

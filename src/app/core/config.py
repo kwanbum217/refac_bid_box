@@ -47,6 +47,7 @@ _PROJECT_PATH_FIELDS = (
     "MODEL_METRICS_DIR",
     "MODEL_REGISTRY_DIR",
     "FEATURE_STORE_DIR",
+    "DOCUMENT_OCR_MODEL_DIR",
 )
 
 
@@ -192,6 +193,12 @@ class Settings(BaseSettings):
     # 신용평가등급확인서 텍스트 PDF 에서 등급·평가일을 추출하는 API 활성화 여부입니다.
     # 기본값은 비활성(False)이며, 켜야 POST /api/v1/documents/extract 가 열립니다.
     DOCUMENT_EXTRACTION_ENABLED: bool = False
+    # 텍스트 추출로 등급을 찾지 못한 스캔본(이미지) PDF 를 로컬 OCR 로 읽을지 여부입니다.
+    # OCR 인식 모델이 DOCUMENT_OCR_MODEL_DIR 에 없거나 해시가 다르면 켜져 있어도 건너뜁니다.
+    DOCUMENT_OCR_ENABLED: bool = False
+    # OCR 인식 모델 파일 위치입니다. scripts/fetch_ocr_models.py 로 미리 받아 두며,
+    # 실행 중에는 이 디렉터리만 읽고 인터넷에서 내려받지 않습니다.
+    DOCUMENT_OCR_MODEL_DIR: str = str(PROJECT_ROOT / "data" / "ocr_models")
 
     # LLM & RAG
     # 생성 LLM 백엔드: "ollama"(기본, 로컬 gemma4:e2b) 또는 "gemini"(원본 경로)

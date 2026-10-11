@@ -1,11 +1,13 @@
 """
 src/app/api/v1/documents.py
 
-신용평가등급확인서 텍스트 PDF 에서 등급·평가일을 추출하는 API 입니다.
+신용평가등급확인서 PDF 에서 등급·평가일을 추출하는 API 입니다.
 
-업로드 원본은 요청 안에서만 메모리로 처리하고 디스크·Redis·DB·로그 어디에도
-저장하지 않습니다. 추출은 스레드로 넘기되 10초 제한을 두며, 제한 시간을 넘기면
-422 로 끝냅니다. 오류 응답에는 예외 원문을 담지 않고 한국어 문구만 담습니다.
+텍스트 PDF 는 pdfplumber 로 바로 읽고, 등급을 찾지 못한 스캔본은
+DOCUMENT_OCR_ENABLED 가 켜져 있을 때만 로컬 OCR 로 한 번 더 읽습니다. 업로드
+원본은 요청 안에서만 메모리로 처리하고 디스크·Redis·DB·로그 어디에도 저장하지
+않습니다. 추출은 스레드로 넘기되 10초 제한을 두며, 제한 시간을 넘기면 422 로
+끝냅니다. 오류 응답에는 예외 원문을 담지 않고 한국어 문구만 담습니다.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from src.app.services.document_extraction import (
     FieldResult,
     PdfValidationError,
     extract_credit_certificate,
+    ocr,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,12 +101,25 @@ def _serialize(result: CreditCertificateResult) -> DocumentExtractionResponse:
     )
 
 
+def _extract(data: bytes) -> CreditCertificateResult:
+    """텍스트 추출을 먼저 쓰고, 등급을 못 찾으면 토글이 켜진 경우에만 OCR 로 더 읽습니다.
+
+    OCR 경로는 근거가 약하므로 신뢰도 상한이 적용되며, 엔진·모델을 쓸 수 없거나
+    읽기에 실패하면 텍스트 추출 결과를 그대로 돌려줍니다.
+    """
+    result = extract_credit_certificate(data)
+    if result.status == "extracted" or not settings.DOCUMENT_OCR_ENABLED:
+        return result
+    scanned = ocr.extract_scanned_certificate(data)
+    return scanned if scanned is not None else result
+
+
 @router.post("/extract", response_model=DocumentExtractionResponse)
 async def extract_document(
     request: Request,
     user: CustomUser = Depends(require_current_user),
 ) -> DocumentExtractionResponse:
-    """로그인 회원의 텍스트 PDF 에서 등급·평가일을 추출해 미리 채우기용으로 돌려줍니다."""
+    """로그인 회원의 PDF 에서 등급·평가일을 추출해 미리 채우기용으로 돌려줍니다."""
     if not settings.DOCUMENT_EXTRACTION_ENABLED:
         raise HTTPException(status_code=404, detail=DOCUMENT_EXTRACTION_DISABLED_DETAIL)
     enforce_document_extraction_quota(request, user)
@@ -114,7 +130,7 @@ async def extract_document(
     data = await request.body()
     try:
         result = await asyncio.wait_for(
-            asyncio.to_thread(extract_credit_certificate, data),
+            asyncio.to_thread(_extract, data),
             timeout=EXTRACTION_TIMEOUT_SECONDS,
         )
     except PdfValidationError as exc:

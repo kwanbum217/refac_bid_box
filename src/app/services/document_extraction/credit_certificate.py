@@ -8,6 +8,9 @@ LLM·외부 API·DB 를 쓰지 않고 표기 규칙만으로 값을 뽑습니다
 인식하며, 회사채·기업어음 등 특정 상품 등급이 일반 신용등급을 덮지 않도록
 구분합니다. 후보가 여러 개면 confidence 를 낮추고, 확신할 수 없는 값은
 만들지 않습니다. 등급 값은 등록된 코드(CREDIT_GRADE_CHOICES)만 돌려줍니다.
+
+업로드 원문이 아니라 OCR 로 읽은 텍스트도 같은 규칙으로 파싱하며, 이때는
+cap_confidence 로 신뢰도 상한을 적용합니다.
 """
 
 from __future__ import annotations
@@ -16,7 +19,7 @@ import re
 import unicodedata
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Literal
 
@@ -28,6 +31,8 @@ MAX_EVIDENCE_LENGTH = 120
 
 Confidence = Literal["high", "medium", "low"]
 ExtractionStatus = Literal["extracted", "unrecognized"]
+
+_CONFIDENCE_ORDER: dict[str, int] = {"high": 2, "medium": 1, "low": 0}
 
 _VALID_GRADE_CODES = frozenset(code for code, _ in CREDIT_GRADE_CHOICES)
 
@@ -341,4 +346,24 @@ def parse_credit_certificate(pages: Sequence[str]) -> CreditCertificateResult:
         document_type=DOCUMENT_TYPE_CREDIT_RATING_CERTIFICATE,
         credit_grade=grade,
         credit_evaluated_on=evaluated_on,
+    )
+
+
+def _cap_field(field: FieldResult | None, ceiling: Confidence) -> FieldResult | None:
+    if field is None or _CONFIDENCE_ORDER[field.confidence] <= _CONFIDENCE_ORDER[ceiling]:
+        return field
+    return replace(field, confidence=ceiling)
+
+
+def cap_confidence(result: CreditCertificateResult, ceiling: Confidence) -> CreditCertificateResult:
+    """결과의 신뢰도를 상한 이하로 낮춥니다. 값·근거는 그대로 둡니다.
+
+    화면에서 원문 대조가 필요한 경로(예: OCR)는 표기 규칙이 직접 읽은 경우보다
+    근거가 약하므로, 후보 판정이 'high' 를 줬더라도 상한을 넘지 못하게 합니다.
+    """
+    return CreditCertificateResult(
+        status=result.status,
+        document_type=result.document_type,
+        credit_grade=_cap_field(result.credit_grade, ceiling),
+        credit_evaluated_on=_cap_field(result.credit_evaluated_on, ceiling),
     )

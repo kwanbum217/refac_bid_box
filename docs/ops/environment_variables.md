@@ -208,6 +208,16 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 
 재학습 시각 자체는 환경 변수가 아니라 `src/tasks/worker.py` 의 `cron_jobs` 에 고정되어 있습니다. 원본 Airflow DAG 의 `schedule_interval='0 3 * * 1'` 을 그대로 옮긴 값이므로, 바꿀 때는 원본과의 차이를 인지하고 변경하십시오.
 
+### 2.10 문서 추출 (Document Extraction)
+
+| 변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `DOCUMENT_EXTRACTION_ENABLED` | 아니오 | `false` | 신용평가등급확인서 PDF 에서 등급·평가일을 추출하는 `POST /api/v1/documents/extract` 활성화 여부. 꺼져 있으면 404 이며 화면의 업로드 블록도 나오지 않습니다 |
+| `DOCUMENT_OCR_ENABLED` | 아니오 | `false` | 텍스트 추출로 등급을 찾지 못한 스캔본(이미지) PDF 를 로컬 OCR 로 한 번 더 읽을지 여부 |
+| `DOCUMENT_OCR_MODEL_DIR` | 아니오 | `data/ocr_models` | OCR 인식 모델 파일 위치. 상대 경로는 프로젝트 루트 기준으로 해석합니다 |
+
+OCR 은 `rapidocr`(onnxruntime)로 로컬에서만 수행합니다. 인식 모델은 실행 중에 내려받지 않으며, `uv run python scripts/fetch_ocr_models.py` 로 고정 URL 에서 미리 받아 해시를 대조합니다(불일치면 실패). Docker 이미지는 빌드 단계에서 이 스크립트를 실행해 모델을 굽고 `DOCUMENT_OCR_MODEL_DIR=/opt/ocr_models` 로 읽습니다. compose 가 `./data` 를 `/app/data` 로 덮어써서 이미지에 구운 `data/ocr_models` 가 가려지기 때문입니다. 모델 파일이 없거나 해시가 다르면 `DOCUMENT_OCR_ENABLED` 가 켜져 있어도 OCR 을 건너뛰고 경고 로그만 남기며, API 는 그대로 `status=unrecognized` 를 돌려줍니다. OCR 로 얻은 값의 `confidence` 는 `medium` 을 넘지 않고, 앞쪽 최대 3쪽만 읽습니다. 업로드 원본·렌더링 이미지·인식 텍스트는 디스크·Redis·DB·로그 어디에도 남기지 않습니다.
+
 ---
 
 ## 3. 기본값 차이 각주
