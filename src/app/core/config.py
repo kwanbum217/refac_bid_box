@@ -238,7 +238,13 @@ class Settings(BaseSettings):
     # 메트릭 내보내기 주기 (밀리초 단위, 기본 60000ms = 60초)
     OTEL_METRIC_EXPORT_INTERVAL_MILLIS: int = 60000
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # env_file 을 실행 위치가 아니라 프로젝트 루트 기준 절대 경로로 고정합니다.
+    # 상대 경로 ".env" 는 프로세스 CWD 를 따라가므로, 다른 디렉터리에서 기동하면
+    # .env 를 못 읽어 기본값으로 조용히 흘러갑니다. 기동 위치와 무관하게 같은
+    # 설정을 읽도록 PROJECT_ROOT 를 기준으로 삼습니다.
+    model_config = SettingsConfigDict(
+        env_file=PROJECT_ROOT / ".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     @property
     def cors_allowed_origins(self) -> list[str]:
@@ -312,27 +318,29 @@ class Settings(BaseSettings):
         if len(secret_key) < 32:
             raise ValueError("SECRET_KEY는 32자 이상의 무작위 값이어야 합니다.")
 
-        if self.ENVIRONMENT == "staging":
-            self._require_explicit_cors_origins("staging")
+        if self.ENVIRONMENT == "development":
             return self
 
-        if self.ENVIRONMENT != "production":
-            return self
+        # staging 과 production 은 같은 fail-closed 검증을 공유합니다. staging 만
+        # 완화해 두면 운영에 가까운 환경에서 예제 키·DEBUG·기본 DB 비밀번호가
+        # 그대로 통과해 배포 사고로 이어집니다. CORS 명시 검사도 두 환경이
+        # 동일하게 수행합니다.
+        label = "운영" if self.ENVIRONMENT == "production" else "staging"
 
         if self.DEBUG:
-            raise ValueError("운영 환경에서는 DEBUG를 활성화할 수 없습니다.")
+            raise ValueError(f"{label} 환경에서는 DEBUG를 활성화할 수 없습니다.")
 
         insecure_secret_keys = {
             "change-this-in-production-to-a-secure-random-key",
             "default-insecure-secret-key-change-me",
         }
         if secret_key in insecure_secret_keys:
-            raise ValueError("운영 환경에서는 예제 SECRET_KEY를 사용할 수 없습니다.")
+            raise ValueError(f"{label} 환경에서는 예제 SECRET_KEY를 사용할 수 없습니다.")
 
         if self.DB_PASSWORD == "rootpassword" or "rootpassword" in self.DATABASE_URL:  # nosec B105 - 기본 비밀번호 사용을 거부하는 검사 문자열입니다
-            raise ValueError("운영 환경에서는 기본 데이터베이스 비밀번호를 사용할 수 없습니다.")
+            raise ValueError(f"{label} 환경에서는 기본 데이터베이스 비밀번호를 사용할 수 없습니다.")
 
-        self._require_explicit_cors_origins("production")
+        self._require_explicit_cors_origins(self.ENVIRONMENT)
 
         return self
 

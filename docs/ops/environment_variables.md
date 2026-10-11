@@ -43,11 +43,13 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 
 `ENVIRONMENT`는 표의 세 값만 허용합니다. 오타나 임의 값은 개발 환경으로 강등하지
 않고 시동을 거부합니다. `SECRET_KEY`가 없거나 32자보다 짧아도 애플리케이션은
-시작하지 않습니다. 또한 `ENVIRONMENT=production`에서는 예제 시크릿,
-`DEBUG=true`, 기본 DB 비밀번호를 거부합니다. `ENVIRONMENT=staging`은
-`CORS_ALLOWED_ORIGINS` 명시만 추가로 요구하며, 위의 운영 전용 검사(예제 시크릿,
-`DEBUG=true`, 기본 DB 비밀번호)는 `production`에만 적용됩니다. Docker Compose도
+시작하지 않습니다. 또한 `ENVIRONMENT=production`과 `ENVIRONMENT=staging`에서는
+예제 시크릿, `DEBUG=true`, 기본 DB 비밀번호를 똑같이 거부하고
+`CORS_ALLOWED_ORIGINS` 명시를 요구합니다. staging 도 외부에 노출될 수 있고
+`SECRET_KEY`가 CSRF·자동화 확인·워커 콜백 토큰 서명에 쓰이기 때문입니다
+(2026-10-11 보안 검토 M3). Docker Compose도
 `.env`에 `SECRET_KEY`가 없으면 구성 단계에서 실패하도록 동일한 계약을 사용합니다.
+애플리케이션은 `.env`를 실행 위치가 아니라 프로젝트 루트에서 읽습니다.
 
 `ENVIRONMENT`에 따라 갈리는 노출 정책은 다음과 같습니다.
 
