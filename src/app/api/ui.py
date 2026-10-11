@@ -42,6 +42,7 @@ from src.app.core.security import (
     create_session,
     csrf_tokens_match,
     destroy_session,
+    invalidate_all_sessions,
     login_rate_limiter,
     make_csrf_token,
     needs_rehash,
@@ -926,6 +927,35 @@ async def logout_submit(
         destroy_session(bidbox_session)
     except SessionStoreUnavailable as exc:
         logger.exception("SSR 로그아웃 세션 삭제 실패")
+        raise HTTPException(
+            status_code=503,
+            detail="세션 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주십시오.",
+        ) from exc
+    response = RedirectResponse(url="/accounts/login/", status_code=303)
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
+
+
+@router.post("/accounts/mypage/logout-all/")
+async def mypage_logout_all(
+    request: Request,
+    user: CustomUser | None = Depends(get_current_user),
+    bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
+):
+    """모든 기기의 세션을 무효화하고 로그인 화면으로 보냅니다.
+
+    세대 번호를 1 올리면 현재 세션을 포함한 그 사용자의 모든 세션이 무효가
+    됩니다. 저장소 장애 시 일부만 로그아웃된 것처럼 보이지 않도록 503 으로
+    차단합니다.
+    """
+    if user is None:
+        return _login_redirect(request)
+    await _verify_ssr_csrf(request)
+    try:
+        invalidate_all_sessions(user.id)
+        destroy_session(bidbox_session)
+    except SessionStoreUnavailable as exc:
+        logger.exception("전체 로그아웃 세션 무효화 실패")
         raise HTTPException(
             status_code=503,
             detail="세션 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주십시오.",

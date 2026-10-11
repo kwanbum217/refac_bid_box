@@ -49,6 +49,7 @@ URL_MAP = {
     "accounts:signup": "/accounts/signup/",
     "accounts:mypage": "/accounts/mypage/",
     "accounts:mypage_edit": "/accounts/mypage/edit/",
+    "accounts:logout_all": "/accounts/mypage/logout-all/",
 }
 
 
