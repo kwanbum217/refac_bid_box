@@ -22,6 +22,7 @@ from src.app.api.v1.health import router as health_router
 from src.app.api.v1.predictions import router as predictions_router
 from src.app.core.config import Settings, get_app_version, settings
 from src.app.core.logging_config import DEFAULT_DATE_FORMAT, DEFAULT_LOG_FORMAT, configure_logging
+from src.app.core.origin_guard import OriginGuardMiddleware
 
 APP_DIR = Path(__file__).resolve().parent
 
@@ -379,6 +380,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         LimitRequestBodySizeMiddleware,
         max_body_size=app_settings.MAX_REQUEST_BODY_SIZE,
     )
+    app.add_middleware(OriginGuardMiddleware)
     app.middleware("http")(collapse_bids_double_slash)
     app.middleware("http")(mark_prediction_dispatch)
 
