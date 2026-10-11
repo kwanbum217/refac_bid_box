@@ -42,6 +42,12 @@ SESSION_ACTIVITY_REFRESH_SECONDS = 300
 SESSION_ACTIVITY_KEY = "last_activity"
 SESSION_COOKIE_NAME = "bidbox_session"
 SESSION_CACHE_PREFIX = "auth:session:"
+# 사용자별 세대 번호. 세션을 만들 때 그 시점의 세대를 함께 저장하고, 읽을 때
+# 저장된 세대가 현재보다 작으면 그 세션을 파기합니다. 세대를 1 올리면 그
+# 사용자의 모든 세션이 한 번에 무효가 되며, 이것이 전체 로그아웃입니다.
+# 세대 키에는 만료를 두지 않습니다(세션 절대 수명 14일보다 오래 살아야 함).
+SESSION_GENERATION_PREFIX = "auth:user_epoch:"
+SESSION_GENERATION_FIELD = "generation"
 CSRF_COOKIE_NAME = "bidbox_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 CSRF_FORM_FIELD = "csrf_token"
@@ -217,6 +223,65 @@ class SessionStore:
             return None
         return self._public_payload(payload)
 
+    @staticmethod
+    def _generation_key(user_id: int) -> str:
+        return f"{SESSION_GENERATION_PREFIX}{user_id}"
+
+    def current_generation(self, user_id: int) -> int:
+        """사용자의 현재 세대 번호. 키가 없으면 0 입니다.
+
+        기존 세션(세대 필드 없음)은 세대 0 으로 보므로, 배포 직후에는 현재
+        세대도 0 이라 종전 세션이 일괄 로그아웃되지 않습니다.
+        """
+        client = self._conn.client()
+        if client is None:
+            self._fallback("Redis 연결 없음")
+            return 0
+        self._degraded_logged = False
+        try:
+            raw = client.get(self._generation_key(user_id))
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            self._fallback(f"세대 조회 실패: {exc}")
+            return 0
+        if raw is None:
+            return 0
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+
+    def bump_generation(self, user_id: int) -> int:
+        """세대를 1 올리고 새 값을 돌려줍니다. 전체 로그아웃이 이 값을 씁니다.
+
+        Redis 장애 처리는 다른 세션 연산과 같게 맞춥니다(fail-closed, 개발
+        환경에서만 프로세스 로컬 대체). 유휴·절대 만료 동작은 건드리지 않습니다.
+        """
+        client = self._conn.client()
+        if client is None:
+            self._fallback("Redis 연결 없음")
+            return self._discard_local_sessions(user_id)
+        self._degraded_logged = False
+        try:
+            return int(client.incr(self._generation_key(user_id)))
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            self._fallback(f"세대 증가 실패: {exc}")
+            return self._discard_local_sessions(user_id)
+
+    def _discard_local_sessions(self, user_id: int) -> int:
+        """로컬 대체 저장소에서 그 사용자의 세션을 모두 지웁니다.
+
+        Redis 를 쓸 수 없는 개발 환경에서는 세대 키 대신 직접 삭제로 같은
+        효과를 냅니다. 돌려주는 값은 세대가 아니라 삭제 결과 표시인 1 입니다.
+        """
+        victims = [
+            key for key, (_, payload) in self._local.items() if payload.get("user_id") == user_id
+        ]
+        for key in victims:
+            self._local.pop(key, None)
+        return 1
+
     def _check_activity(self, payload: dict[str, Any], token: str, client: Any) -> bool:
         """유휴 만료를 검사하고, 필요하면 마지막 활동 시각을 갱신합니다.
 
@@ -253,7 +318,11 @@ class SessionStore:
 
     @staticmethod
     def _public_payload(payload: dict[str, Any]) -> dict[str, Any]:
-        """내부 활동 시각 키를 뺀 사본을 돌려줍니다."""
+        """내부 활동 시각 키를 뺀 사본을 돌려줍니다.
+
+        세대 필드는 여기서 지우지 않습니다. `read_session` 이 저장된 세대와 현재
+        세대를 대조한 뒤 최종 반환에서 제거합니다.
+        """
         return {key: value for key, value in payload.items() if key != SESSION_ACTIVITY_KEY}
 
     def destroy(self, token: str) -> None:
@@ -293,10 +362,20 @@ session_store = SessionStore()
 
 
 def create_session(user_id: int, username: str) -> str:
+    """세션을 만들고 그 시점의 사용자 세대를 payload 에 기록합니다.
+
+    세대를 세션 값에 남겨 두면 전체 로그아웃 뒤 이전 세션을 읽을 때 현재
+    세대와 대조해 파기할 수 있습니다. 세션 저장소 호출은 create 한 번뿐이라
+    저장소 연산별 장애 처리 계약(invalidate 1회)이 그대로 유지됩니다.
+    """
     token = secrets.token_urlsafe(32)
     session_store.create(
         token,
-        {"user_id": int(user_id), "username": username},
+        {
+            "user_id": int(user_id),
+            "username": username,
+            SESSION_GENERATION_FIELD: session_store.current_generation(int(user_id)),
+        },
         SESSION_TTL_SECONDS,
     )
     return token
@@ -305,12 +384,41 @@ def create_session(user_id: int, username: str) -> str:
 def read_session(token: str | None) -> dict[str, Any] | None:
     if not token:
         return None
-    return session_store.read(token)
+    payload = session_store.read(token)
+    if payload is None:
+        return None
+    return _apply_generation(payload, token)
+
+
+def _apply_generation(payload: dict[str, Any], token: str) -> dict[str, Any] | None:
+    """저장된 세대가 현재 세대보다 작으면 세션을 파기하고 None 을 돌려줍니다.
+
+    세대 필드가 없는 배포 이전 세션은 세대 0 으로 봅니다. 최종 반환값에서는
+    세대 필드를 제거해 세션 payload 계약을 바꾸지 않습니다.
+    """
+    user_id = payload.get("user_id")
+    stored = payload.get(SESSION_GENERATION_FIELD, 0)
+    if isinstance(user_id, int) and isinstance(stored, int):
+        current = session_store.current_generation(user_id)
+        if isinstance(current, int) and stored < current:
+            session_store.destroy(token)
+            return None
+    return {key: value for key, value in payload.items() if key != SESSION_GENERATION_FIELD}
 
 
 def destroy_session(token: str | None) -> None:
     if token:
         session_store.destroy(token)
+
+
+def invalidate_all_sessions(user_id: int) -> int:
+    """그 사용자의 모든 세션(현재 세션 포함)을 무효로 만듭니다.
+
+    Redis 에서는 세대 번호를 1 올리고, 이전 세대로 만들어진 세션은 읽을 때
+    파기됩니다. Redis 를 쓸 수 없는 개발 환경에서는 그 사용자의 로컬 세션을
+    직접 지웁니다. 돌려주는 값은 새 세대 번호입니다.
+    """
+    return session_store.bump_generation(int(user_id))
 
 
 RATE_LIMIT_IP_PREFIX = "auth:ratelimit:ip:"
