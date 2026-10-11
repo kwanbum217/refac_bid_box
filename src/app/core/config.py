@@ -235,6 +235,11 @@ class Settings(BaseSettings):
     # ML MLOps Directory
     MODEL_REGISTRY_DIR: str = str(PROJECT_ROOT / "ml_registry")
     FEATURE_STORE_DIR: str = str(PROJECT_ROOT / "data" / "feature_store")
+    # 서빙 모델 무결성 manifest(artifact_manifest.json)의 HMAC-SHA256 서명 키입니다.
+    # 비어 있으면 서명 없이 기록됩니다. staging·production 은 키가 없거나 manifest 에
+    # 서명이 없으면 모델 로드를 거부하므로 배포 시 반드시 주입해야 합니다.
+    # 값을 바꾸면 기존 manifest 는 서명이 어긋나므로 다시 써야 합니다.
+    MODEL_MANIFEST_SIGNING_KEY: str = ""
 
     # OpenTelemetry 관측성 설정
     # 기본값은 비활성(False)이며 플래그 하나로 제어됩니다. 비활성 시 계측 비용이 발생하지 않습니다.
