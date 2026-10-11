@@ -45,6 +45,7 @@ from src.tasks.automation_tasks import (
     validate_model_task,
 )
 from src.tasks.coverage_tasks import result_coverage_monitor_task
+from src.tasks.error_payload import summarize_error
 from src.tasks.retrain_task import run_retrain_pipeline_task
 from src.tasks.scheduled_tasks import (
     DRIFT_MONITOR_CATCHUP_JOB_NAME,
@@ -377,7 +378,7 @@ async def _run_catchup_background(ctx: dict[str, Any]) -> None:
     except Exception as exc:
         # 따라잡기 실패가 워커 프로세스를 종료시켜서는 안 됩니다.
         logger.exception("스케줄 따라잡기 백그라운드 태스크 실행 중 예외 발생")
-        _record_catchup_enqueue_failure(str(exc))
+        _record_catchup_enqueue_failure(summarize_error(exc))
 
 
 async def _on_startup(ctx: dict[str, Any]) -> None:

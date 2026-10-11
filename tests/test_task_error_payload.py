@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy.orm import sessionmaker
 
-from src.tasks import automation_tasks, coverage_tasks, scheduled_tasks
+from src.tasks import automation_tasks, coverage_tasks, retrain_task, scheduled_tasks, worker
 from src.tasks.error_payload import MAX_ERROR_SUMMARY_LENGTH, safe_error, summarize_error
 
 
@@ -88,3 +88,57 @@ async def test_automation_pipeline_error_payload_has_error_type(automation_db):
     assert result["status"] == "failed"
     assert result["error_type"] == "ValueError"
     assert "unknown_mode" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_retrain_failure_notification_masks_service_key_and_path():
+    captured: dict[str, object] = {}
+
+    async def fake_notify(task_name, error, *, detail=""):
+        captured["task_name"] = task_name
+        captured["error"] = error
+        captured["detail"] = detail
+
+    with (
+        patch.object(
+            retrain_task,
+            "_build_training_dataset_thread",
+            side_effect=RuntimeError(
+                "API 오류: https://apis.data.go.kr/x?serviceKey=SECRET1234&type=x /Users/x/y.py"
+            ),
+        ),
+        patch.object(retrain_task, "notify_task_failure", side_effect=fake_notify),
+        pytest.raises(RuntimeError),
+    ):
+        await retrain_task.run_retrain_pipeline_task({}, category_code="Servc")
+
+    assert captured["task_name"] == "재학습 파이프라인"
+    assert "SECRET1234" not in captured["error"]
+    assert "apis.data.go.kr" not in captured["error"]
+    assert "/Users/x/y.py" not in captured["error"]
+
+
+@pytest.mark.asyncio
+async def test_catchup_background_ledger_error_masks_service_key_and_path(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_enqueue(ctx):
+        raise RuntimeError(
+            "API 오류: https://apis.data.go.kr/x?serviceKey=SECRET1234&type=x /Users/x/y.py"
+        )
+
+    def fake_record_catchup_attempt(*args, **kwargs):
+        captured["ledger"] = kwargs["ledger"]
+        return True
+
+    monkeypatch.setattr(worker, "_enqueue_startup_catchup", fake_enqueue)
+    monkeypatch.setattr(scheduled_tasks, "record_catchup_attempt", fake_record_catchup_attempt)
+
+    await worker._run_catchup_background({})
+
+    ledger = captured["ledger"]
+    assert ledger["status"] == "failed"
+    failed_error = ledger["failed"][0]["error"]
+    assert "SECRET1234" not in failed_error
+    assert "apis.data.go.kr" not in failed_error
+    assert "/Users/x/y.py" not in failed_error
