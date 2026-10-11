@@ -1,8 +1,8 @@
 #!/bin/zsh
-REPO=/Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box
-W=/Users/kwanbum/orca/workspaces/refac_bid_box
+REPO=~/Documents/korea_IT/lanhchain_ai_vision/refac_bid_box
+W=~/orca/workspaces/refac_bid_box
 SP=/private/tmp/claude-501/-Users-kwanbum-Documents-korea-IT-lanhchain-ai-vision-refac-bid-box/1bfa3543-376e-4f9c-8bdb-faabda368e81/scratchpad/bakeoff
-KIMI=/Users/kwanbum/.kimi-code/bin/kimi
+KIMI=~/.kimi-code/bin/kimi
 cd "$REPO"
 
 ACTIVE=(laguna_s north_mini mimo)
@@ -17,7 +17,7 @@ launch() {
   (
     t0=$(date +%s)
     if [[ "$model" == or-free/* ]]; then
-      ( cd "$W/bakeoff-$m" && KIMI_CODE_HOME=/Users/kwanbum/.kimi-openrouter-bakeoff \
+      ( cd "$W/bakeoff-$m" && KIMI_CODE_HOME=~/.kimi-openrouter-bakeoff \
           "$KIMI" -m "$model" -p "$(cat "$SP/$m.preamble")" ) > "$SP/$m.log" 2>&1
     else
       opencode run --dir "$W/bakeoff-$m" -m "$model" "$(cat "$SP/$m.preamble")" > "$SP/$m.log" 2>&1

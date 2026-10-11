@@ -29,10 +29,10 @@ Check TOML...........................................(no files to check)Skipped
 Check Merge Conflict.....................................................Passed
 [0m
 [0m← [0mEdit tests/test_audit_model_inventory.py
-Index: /Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
+Index: ~/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
 ===================================================================
---- /Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
-+++ /Users/kwanbum/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
+--- ~/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
++++ ~/Documents/korea_IT/lanhchain_ai_vision/bench-ws-3/b2-mimo/tests/test_audit_model_inventory.py
 @@ -519,9 +519,9 @@
  audit_tool.main(["--state", str(temp_state_path), "--json"])
  
