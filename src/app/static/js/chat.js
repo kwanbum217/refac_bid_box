@@ -83,13 +83,24 @@ $(document).ready(function() {
 
     function isSafeMarkdownUrl(value) {
         const raw = String(value ?? '').trim();
-        if (!raw || raw.startsWith('//')) {
+        if (!raw || raw.startsWith('//') || raw.startsWith('/\\')) {
             return false;
         }
         if (/[\u0000-\u001f\u007f]/.test(raw)) {
             return false;
         }
         return /^(?:https?:|mailto:|[/#])/i.test(raw);
+    }
+
+    // LLM 이 답변 전체를 ```markdown 펜스 하나로 감싸 보내면 코드 블록으로 보입니다.
+    // 그 경우만 바깥 펜스를 벗깁니다. 원시 HTML 은 renderer 가 계속 이스케이프하고,
+    // ```python 같은 정상 코드 블록과 일부만 펜스인 답변은 그대로 둡니다.
+    function unwrapWholeMarkdownFence(value) {
+        const match = /^```(?:markdown|md)[ \t]*\n([\s\S]*?)\n```[ \t]*$/i.exec(String(value ?? '').trim());
+        if (!match || match[1].includes('```')) {
+            return value;
+        }
+        return match[1];
     }
 
     // 봇 응답 markdown 에는 외부 데이터가 섞입니다. 원시 HTML 토큰(블록·인라인)은
@@ -371,7 +382,7 @@ $(document).ready(function() {
         const scrollMode = options.scrollMode || (isBot ? 'start' : 'bottom');
 
         if (isBot) {
-            formattedText = normalizePlainBotMarkdown(formattedText);
+            formattedText = normalizePlainBotMarkdown(unwrapWholeMarkdownFence(formattedText));
             formattedText = formattedText.replace(/\[(\d+)\]/g, '<span class="citation-badge" title="Source #$1">$1</span>');
             formattedText = marked.parse(formattedText);
         } else {

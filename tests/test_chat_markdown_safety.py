@@ -183,3 +183,59 @@ def test_own_citation_badge_passes_through(rendered):
     html = rendered["citation_badge"]
     assert '<span class="citation-badge" title="Source #1">' in html
     assert "&lt;span" not in html
+
+
+# --------------------------------------------------------------------------- #
+# 답변 전체를 감싼 ```markdown 펜스와 백슬래시 상대 경로 링크.
+# --------------------------------------------------------------------------- #
+
+
+def _run_fence_and_url_harness() -> dict:
+    node = shutil.which("node")
+    if node is None or not MARKED_JS.is_file():
+        pytest.skip("node 또는 vendor marked 를 사용할 수 없습니다")
+    text = _source()
+    cases = {
+        "whole_markdown": "```markdown\n**굵게** 문장\n\n- 항목\n```",
+        "whole_md_html": "```md\n<img src=x onerror=alert(1)>\n```",
+        "python_block": "```python\nprint(1)\n```",
+        "partial_fence": "앞 문장\n\n```markdown\n**x**\n```",
+        "nested_fence": "```markdown\n```python\nprint(1)\n```\n```",
+    }
+    script = "\n".join(
+        [
+            f"const marked = require({json.dumps(str(MARKED_JS))});",
+            "marked.setOptions({ breaks: true, gfm: true });",
+            _extract_function(text, "escapeHtml"),
+            _extract_statement(text, "const CITATION_BADGE_OPEN"),
+            _extract_function(text, "isSafeMarkdownUrl"),
+            _extract_function(text, "unwrapWholeMarkdownFence"),
+            _extract_marked_use(text),
+            f"const cases = {json.dumps(cases)};",
+            "const out = {};",
+            "for (const [k, v] of Object.entries(cases)) out[k] = marked.parse(unwrapWholeMarkdownFence(v));",
+            "out.backslash_link = marked.parse('[x](/\\\\evil.com)');",
+            "process.stdout.write(JSON.stringify(out));",
+        ]
+    )
+    result = subprocess.run(  # noqa: S603 - node 경로와 인자를 이 테스트가 직접 고정합니다
+        [node, "-e", script], capture_output=True, text=True, timeout=120
+    )
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def test_whole_markdown_fence_is_unwrapped_but_code_blocks_stay():
+    out = _run_fence_and_url_harness()
+    assert "<strong>굵게</strong>" in out["whole_markdown"]
+    assert "<pre>" not in out["whole_markdown"]
+    assert "<img" not in out["whole_md_html"]
+    assert "&lt;img" in out["whole_md_html"]
+    assert '<pre><code class="language-python">' in out["python_block"]
+    assert "<pre>" in out["partial_fence"]
+    assert "<pre>" in out["nested_fence"]
+
+
+def test_backslash_relative_link_is_not_linked():
+    out = _run_fence_and_url_harness()
+    assert "<a " not in out["backslash_link"]
