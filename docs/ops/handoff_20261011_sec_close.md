@@ -1,8 +1,8 @@
-# 핸드오프 인수인계 — 재발주 조회 인덱스, 충남 별표 2·3·4, 회원정보 수정, 보안 검토 후속 전량
+# 핸드오프 인수인계 — 재발주 조회 인덱스, 충남 별표 2·3·4, 회원정보 수정, 보안 검토 후속 전량, 등급확인서 PDF 자동 입력
 
 > **작성일**: 2026-10-11
 > **작성**: Claude 코디네이터 (Orca Run `run_38d15a53246a`)
-> **기준 커밋**: `22a3ccb6` (이 문서가 들어가는 최종 병합의 부모)
+> **기준 커밋**: `6edc8dd3` (이 문서가 들어가는 최종 병합의 부모)
 > **직전 인수인계**: [handoff_20261009_mypage_detail_latency_close.md](handoff_20261009_mypage_detail_latency_close.md)
 
 ---
@@ -14,7 +14,9 @@
 | 1 | 이 문서가 들어간 최종 병합 커밋의 CI 가 원격 `main` 에서 녹색인지 확인 | 없음 |
 | 2 | 1절 운영 주의 사항 중 사용자 조치 항목(1.9 GitHub 비공개 취약점 제보 활성화)을 사용자에게 확인 | 사용자 |
 | 3 | 로그인 상태로 마이페이지(정보 수정·모든 기기 로그아웃), 공고 상세, 챗봇 답변, 대시보드를 브라우저에서 열어 CSP 위반 콘솔 오류가 없는지 확인 | 스택 기동, 계정 비밀번호(사용자) |
-| 4 | 6절 잔여 항목의 처리 여부를 사용자에게 받기 | 사용자 결정 |
+| 4 | 같은 로그인 상태로 마이페이지 정보 수정 화면에서 등급확인서 자동 채우기를 브라우저로 확인(1.12). 토글을 켜야 보인다 | 3번과 같음 |
+| 5 | 다른 클론·머신에서 이 `main` 을 받았으면 1.13 의 Chroma 백업 tar 복원 명령 실행 | 해당 클론 |
+| 6 | 6절 잔여 항목의 처리 여부를 사용자에게 받기 | 사용자 결정 |
 
 ---
 
@@ -95,6 +97,28 @@
 
 - app 컨테이너는 코드 변경을 자동 반영하지 않는다(uvicorn --reload 없음). 병합 뒤 `docker compose restart app`, 의존성 변경 뒤에는 `--build`.
 
+### 1.12 등급확인서 PDF 자동 입력 (W1 `6edc8dd3`, W2 `2c64a701`)
+
+- 마이페이지 정보 수정 화면에서 신용평가등급확인서 **텍스트 PDF** 를 올리면 `POST /api/v1/documents/extract` 가 신용평가등급·평가일을 추출해 입력칸을 미리 채운다. 저장·제출은 사용자가 직접 한다. 신뢰도 low 이거나 등급 코드 목록에 없는 값은 채우지 않고 근거만 보여 준다.
+- **기능 토글 `DOCUMENT_EXTRACTION_ENABLED` 기본값은 false 다.** 꺼져 있으면 API 는 404, 화면에는 업로드 블록이 나오지 않는다.
+- **켜는 법**: `.env` 에 `DOCUMENT_EXTRACTION_ENABLED=true` 를 넣고 `docker compose up -d app`(운영은 `-f docker-compose.prod.yml`). 컨테이너는 `.env` 파일을 직접 읽지 않고 compose 의 `environment` 목록만 받는다. 이 세션 최종 병합에서 두 compose 의 app 서비스에 이 변수 전달을 추가했다. 그 전 compose 로는 `.env` 에 넣어도 꺼진 채로 남는다. 켠 뒤 `docker exec refac_bid_box-app-1 printenv DOCUMENT_EXTRACTION_ENABLED` 로 확인한다.
+- **새 의존성**: `pdfplumber 0.11.x` 와 전이 의존성 `pdfminer-six`·`pypdfium2`(사용자 승인 범위). 다른 머신은 `uv sync --frozen`, Docker 는 `docker compose up -d --build app worker`. 재시작만 하면 문서 추출 라우터 import 가 실패해 **앱이 뜨지 않는다**. 이 맥은 재빌드 완료. PyMuPDF(AGPL)는 금지.
+- **원본 미저장**: 업로드 파일은 요청 안에서 메모리(`io.BytesIO`)로만 처리하고 디스크·Redis·DB 에 남기지 않는다. 로그에는 크기·소요 시간·상태만 남는다. 이 성질을 깨는 변경(원본 보관, 비동기 큐 처리)은 개인정보 고지(`terms_content.html`)와 함께 바꿔야 한다.
+- **제한**: 본문 5MB, 10쪽, 처리 10초, 암호화 PDF 거부. 요청 제한은 사용자 시간당 10회, IP 시간당 30회(`src/app/core/security.py` 상수, 키 `api:ratelimit:document_extraction:*`, TTL 3600초). 형식 오류 요청도 한도를 1회 소모한다(계약에 순서 규정 없음, 리뷰에서 결함 아님으로 판정).
+- **범위**: 텍스트 PDF 만. 스캔본(이미지 PDF)은 `unrecognized` 로 돌려주고 직접 입력을 안내한다. OCR 은 후속(6절). LLM·외부 API·클라우드 OCR 은 쓰지 않는다(정규식 파서, `src/app/services/document_extraction/credit_certificate.py`).
+- **파서 한계**: 합성 문서로만 시험했다. 실제 신용평가사 확인서 양식(표 배치, 기업어음·회사채 등급 병기)에서의 적중률은 실측하지 않았다. 공개 저장소라 실제 확인서를 시험 픽스처로 커밋하면 안 된다. 실물 검증은 로컬에서만 하고 결과 수치만 남긴다.
+- 출처 검사(1.5)가 자동 적용된다. 다른 도메인에서 프런트를 서빙하면 `CORS_ALLOWED_ORIGINS` 가 필요하다.
+
+### 1.13 다른 클론의 Chroma 백업 tar 복원 (V3)
+
+- V3 가 `data/backups/chroma_db_before_rebuild_20260731_204932.tar.gz` 의 **추적을 해제**했다. 추적 해제 커밋을 병합·pull 하면 git 이 그 파일을 **작업 트리에서 실제로 삭제한다.** 이 맥은 병합 직후 복원했다(835,335바이트, ignore 대상).
+- 이 `main` 을 pull 한 다른 클론·머신에서는 다음으로 복원한다.
+
+  ```bash
+  git show 22a3ccb6:data/backups/chroma_db_before_rebuild_20260731_204932.tar.gz > data/backups/chroma_db_before_rebuild_20260731_204932.tar.gz
+  git check-ignore data/backups/chroma_db_before_rebuild_20260731_204932.tar.gz
+  ```
+
 ---
 
 ## 2. 이 세션에서 병합한 것
@@ -117,7 +141,10 @@
 | 잔여 | V2 vendor 감사 | `f221ba96` | vendor SOURCE.txt·SHA-256 고정 시험 | 리뷰 pass(28/28) |
 | 잔여 | U2 모델 무결성 | `48b6ac0c` | manifest 검증, print → logger | 1차 리뷰 fail → 재작업 → 재리뷰 pass |
 | 잔여 | V1 모든 기기 로그아웃 | `22a3ccb6` | 세션 세대 번호 | 리뷰 pass(반례 9종) |
-| 잔여 | V3 저장소 정리 | 이 문서와 같은 병합 | tar 추적 해제, 경로 치환, LICENSE, SECURITY.md | 리뷰 pass |
+| 잔여 | V3 저장소 정리 | `dadc6420` | tar 추적 해제, 경로 치환, LICENSE, SECURITY.md, Redis volatile-lru | 리뷰 pass |
+| PDF 자동 입력 | W2 화면 | `2c64a701` | 정보 수정 화면 업로드 블록, `doc-autofill.js`, 이용약관 고지 | 리뷰 pass |
+| PDF 자동 입력 | W1 API | `6edc8dd3` | `POST /api/v1/documents/extract`, pdfplumber, 전용 요청 제한기, 토글 | 리뷰 pass(반례 33항), 전량 7,139 통과 |
+| PDF 자동 입력 | 코디네이터 | 이 문서와 같은 병합 | 두 compose 의 app 에 토글 전달, 인수인계, 현황판 `source_commit` | `docker compose config` |
 
 ---
 
@@ -134,6 +161,20 @@
 ### 3.3 vendor 감사(V2)
 
 npm audit 결과 bootstrap·chartjs·daisyui·fontawesome·jquery·marked 는 취약점 없음. tailwindcss 는 high 5·moderate 2 지만 **빌드 도구 의존성 취약점이고 `vendor/tailwindcss/3.4.16/tailwindcss.js` 는 어떤 템플릿·JS 도 참조하지 않는 미사용 파일**이다. 그 디렉터리 표기는 3.4.16 이지만 내용은 3.4.17 이다. bootstrap·daisyui·fontawesome 3개 파일은 원본보다 후행 개행 1바이트가 많다.
+
+### 3.4 PDF 자동 입력 통합 확인 (개발 스택, 2026-10-11)
+
+토글을 셸 변수로만 켜서(`.env` 미변경) app 을 재기동해 확인했다. 시험용 합성 PDF 만 썼다.
+
+| 확인 | 결과 |
+| --- | --- |
+| 컨테이너 안 추출 서비스(재빌드 이미지의 pdfplumber) | 한국어 합성 확인서에서 등급 `AA-`·평가일 `2026-03-15`, 둘 다 high, 1.9ms |
+| 실행 중 서버 HTTP | 비로그인 POST 401, OpenAPI 경로 56개에 등록, `doc-autofill.js` 200, 정보 수정 화면 비로그인 303 로그인 이동 |
+| 실제 앱·Redis, 인증만 가짜 사용자로 대체 | 200 계약 JSON 일치, 415·400·413 거부, 11번째 요청 429, 제한 키 2개 TTL 3600. 시험 키는 삭제 |
+| 토글 켜진 정보 수정 화면 렌더링(실제 회원 1명으로 GET 만) | 200, CSP 헤더, 업로드 블록·고지 문구 표시, 인라인 이벤트 0, nonce 없는 인라인 스크립트 0 |
+| 브라우저에서 PDF 선택 후 자동 채우기 | **미수행**(계정 비밀번호 필요, 0절 4번) |
+
+영문 문구(`Credit Grade AA-`)는 파서 대상이 아니라 `unrecognized` 가 나온다. 파서는 한국어 표기(`신용등급`, `평가등급`, `평가일`, `평가일자`, `발급일`)를 찾는다.
 
 ---
 
@@ -153,6 +194,9 @@ npm audit 결과 bootstrap·chartjs·daisyui·fontawesome·jquery·marked 는 �
 | `orca worktree rm` 은 비동기이고 브랜치도 함께 지운다 | 몇 초 뒤 재확인, `branch not found` 는 정상 |
 | U2 병합 뒤 워크트리 정리를 빠뜨렸다 | 병합 직후 그 Task 의 워크트리·브랜치를 바로 정리 |
 | 확인용 서버 정리에 `lsof -ti tcp:8001` 로 잡힌 PID 를 그대로 kill 해 puppeteer Chrome 을 종료했다 | PID 의 명령을 먼저 확인한다 |
+| opencode 리뷰어 터미널을 런처로 만든 뒤 `--launcher` 없이 dispatch 하면 `inject_rejected`(에이전트 미탐지). 런처가 `.orca/preamble.txt` 를 기다리는 중이다 | `orca_taskctl.py dispatch` 에 `--launcher scripts/orca_opencode_launch.py --repo <주 저장소> --worktree path:<워크트리> --agent opencode --model ... --allow-unverified-delivery` 를 준다 |
+| 새 설정 토글을 `config.py`·`.env.example` 에만 넣으면 Docker 에서는 켤 수 없다(컨테이너는 `.env` 미포함, compose `environment` 만 받음) | 새 토글은 두 compose 의 해당 서비스 `environment` 에도 넣는다. 빌더 Intent 의 허용 파일에 compose 를 포함한다 |
+| 컨테이너에 `docker cp` 로 넣은 파일은 root 소유라 앱 사용자로 `rm` 이 거부된다 | `docker exec -u root ... rm -f` |
 
 ---
 
@@ -161,10 +205,11 @@ npm audit 결과 bootstrap·chartjs·daisyui·fontawesome·jquery·marked 는 �
 | 자원 | 상태 |
 | --- | --- |
 | Orca Run `run_38d15a53246a` | 이번 세션 Task 전부 `completed`, 워커 창 전부 닫음, 상시 감시기 종료 |
-| 워크트리 | 주 저장소만 남김(최종 병합 후 V3 워크트리 정리). 세션 이전부터 있던 브랜치 4개는 손대지 않음 |
+| 워크트리 | 주 저장소만 남김(W1·W2 워크트리·브랜치 정리). 세션 이전부터 있던 브랜치 4개는 손대지 않음 |
 | 운영 DB | alembic head `a6b7c8d9e0f1` |
 | 모델 | 이 맥 `data/model_files` 에 manifest 5개 생성 |
-| Docker | 개발 스택 기동 중. app·worker 는 defusedxml 반영 재빌드, 최종 병합 후 app 재시작 |
+| Docker | **사용자 요청으로 컴퓨터 종료 전 개발 스택 전부 정지**(`docker compose stop`, 볼륨 유지). app·worker 이미지는 defusedxml·pdfplumber 반영 재빌드 상태. 다음 시동은 `docker compose up -d`. 토글은 기본값(false)으로 뜬다 |
+| 배경 프로세스 | 코디네이터 대기 루프·감시기 전부 종료 |
 
 ---
 
@@ -181,4 +226,9 @@ npm audit 결과 bootstrap·chartjs·daisyui·fontawesome·jquery·marked 는 �
 | 품질 4(nosec 272개 재점검), 6(에이전트 설정 4벌 미러), 9(uv 없는 설치용 constraints) | 미착수 |
 | `retrain_task.py`·`worker.py` 의 예외 원문 기록 | U3 범위 밖이라 남음 |
 | 충남 별표 3 두 번째 표(생활폐기물 참고 예시) | 등록하지 않음 |
-| 로그인 화면 브라우저 확인 | 계정 비밀번호가 필요해 미수행(0절 3번) |
+| 로그인 화면 브라우저 확인 | 계정 비밀번호가 필요해 미수행(0절 3번·4번) |
+| 스캔본 등급확인서 OCR | 후속. 로컬 OCR(rapidocr·onnxruntime 등) 의존성 승인 필요. 클라우드 OCR 은 금지 |
+| 재무제표 PDF 자동 입력(지시서 B안) | 제품 결정 필요. 지시서가 참조한 `financial_ocr_plan.md` 는 저장소 어디에도 없다 |
+| 실제 확인서 양식 적중률 실측 | 미수행. 로컬에서만, 결과 수치만 기록(1.12) |
+| 운영 Redis 컨테이너 재생성(volatile-lru 적용) | 운영 서버에서 1.7 명령 실행 필요 |
+| GitHub Private vulnerability reporting 활성화 | 사용자 조치(1.9) |
