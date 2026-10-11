@@ -1,7 +1,7 @@
 # 환경변수 명세
 
 > **작성일**: 2026-07-31
-> **갱신일**: 2026-08-25
+> **갱신일**: 2026-10-11
 > **상태**: 운영 계약
 > **관련**: [`.env.example`](../../.env.example)
 
@@ -185,6 +185,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | `MODEL_FILES_DIR` | 아니오 | `data/model_files` | 서빙 가중치 위치. 경로 정본이며 `model_registry.py`, `promotion.py`, `verify_migration.py` 가 함께 따릅니다 |
 | `MODEL_BACKUPS_DIR` | 아니오 | `data/model_backups` | 승격 시 직전 서빙본 보관 위치. G1 원본 기준선 대조에 쓰이므로 서빙 경로와 함께 옮겨야 합니다 |
 | `MODEL_METRICS_DIR` | 아니오 | `data/model_metrics` | 서빙 모델 실측 지표 사이드카. 승격 게이트가 champion 지표를 읽습니다 |
+| `MODEL_MANIFEST_SIGNING_KEY` | staging·production은 **예** | (없음) | 서빙 모델 무결성 manifest(`artifact_manifest.json`)의 HMAC-SHA256 서명 키. 비면 서명 없이 기록됩니다 |
 | `ML_WEEKLY_RETRAIN_ENABLED` | 아니오 | `true` | 매주 월요일 03:00 재학습 크론 사용 여부 |
 | `MLOPS_WEBHOOK_URL` | 아니오 | (없음) | 재학습 실패·승격 권고를 보낼 **Slack Incoming Webhook** 주소. 비면 알림을 보내지 않습니다 |
 | `LATENCY_SEGMENT_LOGGING` | 아니오 | `false` | 구간별 지연 구조화 로그 활성화. 진단 전용이며 정식 레이턴시 게이트에서는 기본 끔 |
@@ -202,6 +203,8 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 `MLOPS_WEBHOOK_URL` 이 비어 있으면 알림 발신이 통째로 생략됩니다. 개발 장비의 기본 동작이며, `ML_WEEKLY_RETRAIN_ENABLED` 와 같은 규약입니다. 알림 발신 실패는 재학습을 되돌리지 않고 로그만 남깁니다. 무엇을 보내고 무엇을 보내지 않는지는 [`docs/design/mlops_notification_20260805.md`](../design/mlops_notification_20260805.md) 4장을 참조하십시오.
 
 가중치 3종 경로(`MODEL_FILES_DIR`, `MODEL_BACKUPS_DIR`, `MODEL_METRICS_DIR`)는 **함께 움직여야 합니다.** 서빙 경로만 옮기고 백업을 두고 오면, 승격된 모델의 원본 기준선을 대조할 곳이 없어 `verify_migration.py` 가 체크섬 불일치로 실패합니다(G1). 옮길 때는 `scripts/sync_model_files.py` 로 세 경로를 한 번에 내보내고 들여오십시오.
+
+`MODEL_MANIFEST_SIGNING_KEY` 는 서빙 모델 무결성 manifest(`artifact_manifest.json`)에 HMAC-SHA256 서명을 더합니다. 서명 대상은 `signature` 필드를 뺀 `{schema, files}` 의 정규 JSON(키 정렬, 최소 구분자, UTF-8)이며, manifest 를 쓰는 `scripts/write_model_manifests.py` 와 승격·롤백 경로가 키가 있을 때 서명을 함께 기록합니다. `production`·`staging` 은 키가 없거나 manifest 에 서명이 없거나 서명이 틀리면 모델 로드를 거부하고, `development` 는 키나 서명이 없으면 경고 후 기존 해시 검증만 수행합니다. **키를 바꾸면 write_model_manifests.py 로 manifest 를 다시 써야 합니다.** 서명이 옛 키로 남으면 해시가 맞아도 서명 검증에서 거부됩니다. `production` 은 키 없이 기동하면 모델 로드를 전부 거부합니다. 값 생성은 `python -c "import secrets; print(secrets.token_hex(32))"` 이며 `.env` 와 배포 시크릿에만 둡니다.
 
 재학습 시각 자체는 환경 변수가 아니라 `src/tasks/worker.py` 의 `cron_jobs` 에 고정되어 있습니다. 원본 Airflow DAG 의 `schedule_interval='0 3 * * 1'` 을 그대로 옮긴 값이므로, 바꿀 때는 원본과의 차이를 인지하고 변경하십시오.
 
