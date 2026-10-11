@@ -136,7 +136,7 @@ def verify_evidence_ids_in_kb(
             f"FROM embeddings e "
             f"JOIN segments s ON s.id = e.segment_id "
             f"JOIN collections col ON col.id = s.collection "
-            f"WHERE col.name = ? AND e.embedding_id IN ({placeholders})"  # nosec B608
+            f"WHERE col.name = ? AND e.embedding_id IN ({placeholders})"  # nosec B608 - placeholders 는 물음표만 반복 생성하며 값은 바인딩합니다
         )
         cur.execute(batch_query, [collection_name, *ev_id_list])
         found = {str(row[0]) for row in cur.fetchall()}

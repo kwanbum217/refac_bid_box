@@ -175,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"기동: agy --model {args.model} (지시문 {len(prompt)}자)", flush=True)
     # 인자는 셸을 거치지 않고 그대로 전달되므로 주입 위험이 없습니다. 모델 ID 와
     # 지시문 모두 코디네이터가 만든 값입니다.
-    os.execvpe(cmd[0], cmd, env)  # noqa: S606  # nosec B606
+    os.execvpe(cmd[0], cmd, env)  # noqa: S606  # nosec B606 - 셸을 거치지 않고 코디네이터가 만든 인자로 프로세스를 교체합니다
     return 0  # execvpe 가 성공하면 여기에 도달하지 않습니다.
 
 

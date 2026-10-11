@@ -1066,7 +1066,7 @@ def resolve_intent_deps(intent: dict[str, Any]) -> str | None:
             if isinstance(parsed, list):
                 items = [str(x).strip() for x in parsed if str(x).strip()]
                 return json.dumps(items) if items else None
-        except Exception:  # nosec B110 # noqa: S110
+        except Exception:  # nosec B110 - JSON 배열 파싱 실패는 정상 흐름이라 무시합니다  # noqa: S110
             pass
     return json.dumps([cleaned]) if cleaned else None
 

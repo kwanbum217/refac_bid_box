@@ -43,7 +43,7 @@ class Choice:
         checked = " checked" if self.checked else ""
         # 보간값을 전부 escape 한 뒤에만 Markup 으로 감쌉니다. Markup 은 Jinja
         # 자동 이스케이프를 건너뛰므로 원문을 그대로 넣으면 HTML 주입이 됩니다.
-        return Markup(  # nosec B704
+        return Markup(  # nosec B704 - escape 를 거친 값만 Markup 으로 감쌉니다
             f'<input type="radio" name="{escape(self.name)}" value="{escape(self.value)}" '
             f'id="{escape(self.id_for_label)}" class="peer sr-only"{checked}>'
         )
@@ -93,11 +93,11 @@ class BoundField:
         # escape 없이 Markup 에 넣으면 반사형 XSS 가 됩니다.
         if self.hidden:
             value = "" if self.value is None else self.value
-            return Markup(  # nosec B704
+            return Markup(  # nosec B704 - escape 를 거친 값만 Markup 으로 감쌉니다
                 f'<input type="hidden" name="{escape(self.name)}" '
                 f'id="{escape(self.id_for_label)}" value="{escape(value)}">'
             )
-        return Markup(  # nosec B704
+        return Markup(  # nosec B704 - escape 를 거친 값만 Markup 으로 감쌉니다
             f'<input type="{escape(self.input_type)}" name="{escape(self.name)}" '
             f'id="{escape(self.id_for_label)}" value="{escape(self.value or "")}">'
         )

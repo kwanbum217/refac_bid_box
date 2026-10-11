@@ -1477,7 +1477,7 @@ def classify_npm_execution(argv: list[str], cmd: str) -> tuple[str, str]:
 def read(handle: str) -> str | None:
     """orca terminal read 로 터미널 화면을 읽습니다. 실패 시 None 을 반환합니다."""
     try:
-        out = subprocess.run(  # nosec B603 B607
+        out = subprocess.run(  # nosec B603 B607 - orca CLI 를 shell 없이 고정 인자로 실행합니다
             ["orca", "terminal", "read", "--terminal", handle],
             capture_output=True,
             text=True,
@@ -1491,7 +1491,7 @@ def read(handle: str) -> str | None:
 
 
 def send(handle: str, text: str) -> None:
-    subprocess.run(  # nosec B603 B607
+    subprocess.run(  # nosec B603 B607 - orca CLI 를 shell 없이 고정 인자로 실행합니다
         ["orca", "terminal", "send", "--terminal", handle, "--text", text, "--enter"],
         capture_output=True,
         text=True,

@@ -76,7 +76,7 @@ def run_claude(cmd: list[str], env: dict[str, str]) -> int:
 def open_interactive_shell(env: dict[str, str]) -> None:
     """대화형 셸로 프로세스를 대체해 터미널 창을 유지합니다."""
     shell = resolve_shell(env)
-    os.execvpe(shell, [shell], env)  # noqa: S606  # nosec B606
+    os.execvpe(shell, [shell], env)  # noqa: S606  # nosec B606 - 터미널 유지를 위한 대화형 셸 교체 호출입니다
 
 
 def spawn_permission_setup(
@@ -179,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         open_interactive_shell(env)
         return exit_code
 
-    os.execvpe(cmd[0], cmd, env)  # noqa: S606  # nosec B606
+    os.execvpe(cmd[0], cmd, env)  # noqa: S606  # nosec B606 - 셸을 거치지 않고 코디네이터가 만든 인자로 프로세스를 교체합니다
     return 0
 
 

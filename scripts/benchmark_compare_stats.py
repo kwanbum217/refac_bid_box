@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 내부 벤치마크 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 from datetime import UTC, datetime
@@ -262,14 +262,14 @@ def summarize_rounds(rounds: list[dict[str, Any]]) -> dict[str, Any]:
 
 def send_compare_stats_request(base_url: str, timeout_sec: float) -> tuple[float, bool, str | None]:
     """compare-stats 한 회차를 호출하고 wall time, 성공 여부, 오류 메시지를 돌려줍니다."""
-    req = urlrequest.Request(  # nosec B310
+    req = urlrequest.Request(
         f"{base_url.rstrip('/')}{COMPARE_STATS_PATH}",
         headers={"Accept": "application/json"},
         method="GET",
     )
     started = time.perf_counter()
     try:
-        with urlrequest.urlopen(req, timeout=timeout_sec) as response:  # nosec B310
+        with urlrequest.urlopen(req, timeout=timeout_sec) as response:  # nosec B310 - 내부에서 정한 고정 compare-stats URL 만 엽니다
             response.read()
             elapsed_ms = (time.perf_counter() - started) * 1000.0
             return elapsed_ms, True, None
@@ -298,7 +298,7 @@ def _command_output(command: list[str], cwd: Path | None = None) -> str:
     project_root = Path(__file__).resolve().parents[1]
     target = cwd if cwd is not None else project_root
     try:
-        out = subprocess.check_output(  # nosec B603
+        out = subprocess.check_output(  # nosec B603 - 고정 인자 목록으로 명령을 shell 없이 실행합니다
             command,
             cwd=target,
             text=True,

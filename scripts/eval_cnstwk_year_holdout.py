@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - git 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 import warnings
@@ -277,7 +277,7 @@ def _segment_metrics(
 
 def _git_commit() -> str:
     try:
-        result = subprocess.run(  # nosec B603 B607
+        result = subprocess.run(  # nosec B603 B607 - git rev-parse 를 shell 없이 고정 인자로 실행합니다
             ["git", "rev-parse", "HEAD"],
             capture_output=True,
             text=True,

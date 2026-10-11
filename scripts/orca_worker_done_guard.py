@@ -14,7 +14,7 @@ import argparse
 import json
 import os
 import re
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 검증 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -316,7 +316,7 @@ def execute_orca_send(
         cmd.extend(["--report-path", str(report_path)])
 
     try:
-        proc = subprocess.run(  # nosec B603
+        proc = subprocess.run(  # nosec B603 - 고정 인자 목록으로 검증 명령을 shell 없이 실행합니다
             cmd,
             capture_output=True,
             text=True,

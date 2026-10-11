@@ -104,7 +104,7 @@ def _resolve_reference_date(features_dict: dict[str, Any]) -> datetime:
                 if pd.notna(ts):
                     return ts.to_pydatetime()
             # 파싱 실패한 후보 키는 건너뛰고 다음 키를 봅니다
-            except Exception:  # nosec B112
+            except Exception:  # nosec B112 - 파싱 실패한 후보 키는 건너뛰고 다음 키를 봅니다
                 continue
     return utcnow()
 

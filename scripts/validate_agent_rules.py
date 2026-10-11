@@ -1449,7 +1449,7 @@ def check_analysis_metrics_docs(root: Path = PROJECT_ROOT) -> CheckResult:
             continue  # 마커 없는 문서는 통과
         checked.append(md_path.name)
         try:
-            result = subprocess.run(  # nosec B603 B607 - 고정 인자 목록으로 호출합니다
+            result = subprocess.run(  # nosec B603 - 고정 인자 목록으로 호출합니다
                 [sys.executable, str(script), "verify", "--doc", str(md_path)],
                 capture_output=True,
                 text=True,

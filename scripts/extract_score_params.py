@@ -29,7 +29,7 @@ import io
 import json
 import re
 import sys
-import xml.etree.ElementTree as ET  # nosec B405
+import xml.etree.ElementTree as ET  # nosec B405 - 정화한 조달청 OpenAPI 응답만 파싱합니다
 import zipfile
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -533,7 +533,7 @@ async def fetch_announcement(
         response = await client.get(f"{API_BASE_URL}/{operation}", params=params, timeout=120)
         response.raise_for_status()
         # 조달청 OpenAPI 응답 전용. 외부 사용자 입력을 파싱하지 않는다.
-        root = ET.fromstring(sanitize_xml_text(response.text))  # nosec B314  # noqa: S314
+        root = ET.fromstring(sanitize_xml_text(response.text))  # nosec B314 - 정화한 조달청 OpenAPI 응답만 파싱합니다  # noqa: S314
         for item in root.findall(".//item"):
             row = {child.tag: (child.text or "").strip() for child in item}
             if row.get("bidNtceNo") == bid_no:

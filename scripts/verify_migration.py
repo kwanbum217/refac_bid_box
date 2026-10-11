@@ -21,7 +21,7 @@ import importlib
 import json
 import os
 import sqlite3
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - git 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 from collections.abc import Callable
@@ -985,7 +985,7 @@ def verify_reconciliation(
 def get_head_commit_sha() -> str:
     """현재 HEAD 커밋 SHA 를 조회합니다."""
     try:
-        result = subprocess.run(  # nosec B603, B607
+        result = subprocess.run(  # nosec B603 B607 - git rev-parse 를 shell 없이 고정 인자로 실행합니다
             ["git", "rev-parse", "HEAD"],
             cwd=PROJECT_ROOT,
             capture_output=True,

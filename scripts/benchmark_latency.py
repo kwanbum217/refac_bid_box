@@ -25,7 +25,7 @@ import concurrent.futures
 import math
 import os
 import statistics
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 내부 벤치마크 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 from contextlib import suppress
@@ -203,7 +203,7 @@ __all__ = [
 
 def _command_output(command: list[str], allow_empty: bool = False) -> str:
     try:
-        out = subprocess.check_output(  # nosec B603
+        out = subprocess.check_output(  # nosec B603 - 호출부가 넘긴 고정 인자 목록으로 shell 없이 실행합니다
             command,
             cwd=PROJECT_ROOT,
             text=True,

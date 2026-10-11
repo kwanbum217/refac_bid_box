@@ -23,7 +23,7 @@ import argparse
 import hashlib
 import json
 import re
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - 내부 벤치마크 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 from dataclasses import dataclass
@@ -167,7 +167,7 @@ def _command_output(
 ) -> str:
     target_cwd = cwd if cwd is not None else PROJECT_ROOT
     try:
-        out = subprocess.check_output(  # nosec B603
+        out = subprocess.check_output(  # nosec B603 - 호출부가 넘긴 고정 인자 목록으로 shell 없이 실행합니다
             command,
             cwd=target_cwd,
             text=True,
@@ -649,7 +649,7 @@ def send_query(
 ) -> tuple[float, bool, str | None, str | None, str | None]:
     """단발 질의를 보내고 왕복 시간, 성공 여부, trace_id, 실패 사유, 예외 메시지를 돌려줍니다."""
     body = json.dumps({"query": question}).encode("utf-8")
-    req = urlrequest.Request(  # nosec B310
+    req = urlrequest.Request(
         f"{base_url}{QUERY_PATH}",
         data=body,
         headers={"Content-Type": "application/json"},
@@ -657,7 +657,7 @@ def send_query(
     )
     started = time.perf_counter()
     try:
-        with urlrequest.urlopen(req, timeout=timeout_sec) as response:  # nosec B310
+        with urlrequest.urlopen(req, timeout=timeout_sec) as response:  # nosec B310 - 내부에서 정한 고정 질의 URL 만 엽니다
             headers = response.headers
             trace_id = headers.get("X-RAG-Trace-Id") or headers.get("x-rag-trace-id")
             response.read()

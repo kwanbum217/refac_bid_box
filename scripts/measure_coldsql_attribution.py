@@ -338,7 +338,7 @@ def send_http_query(
     )
     started = time.perf_counter()
     try:
-        with urlrequest.urlopen(req, timeout=timeout_sec) as response:  # nosec B310
+        with urlrequest.urlopen(req, timeout=timeout_sec) as response:  # nosec B310 - 내부에서 정한 고정 URL 만 엽니다
             payload = json.loads(response.read().decode("utf-8"))
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         return {"ok": True, "elapsed_ms": elapsed_ms, "payload": payload}

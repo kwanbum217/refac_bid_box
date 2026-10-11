@@ -52,7 +52,7 @@ def _is_worker_unreachable_host(hostname: str) -> bool:
     if not host:
         return True
     # 바인딩이 아니라 로컬 호스트 판별용 비교입니다
-    if host in {"localhost", "0.0.0.0", "::1"} or host.endswith(".localhost"):  # nosec B104
+    if host in {"localhost", "0.0.0.0", "::1"} or host.endswith(".localhost"):  # nosec B104 - 바인딩이 아니라 로컬 호스트 판별용 비교입니다
         return True
     try:
         address = ipaddress.ip_address(host)

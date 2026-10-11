@@ -200,7 +200,7 @@ def escapejs(value) -> str:
     script 본문에서 이스케이프가 깨집니다. Django escapejs 와 같이 위험 문자를
     \\uXXXX 로 치환합니다.
     """
-    return Markup(str(value or "").translate(_JS_ESCAPES))  # nosec B704
+    return Markup(str(value or "").translate(_JS_ESCAPES))  # nosec B704 - JS 이스케이프를 거친 값만 Markup 으로 감쌉니다
 
 
 def to_json(value) -> Markup:
@@ -219,7 +219,7 @@ def to_json(value) -> Markup:
         ("\u2029", "\\u2029"),
     ):
         encoded = encoded.replace(char, replacement)
-    return Markup(encoded)  # nosec B704
+    return Markup(encoded)  # nosec B704 - JS 이스케이프를 거친 값만 Markup 으로 감쌉니다
 
 
 def csp_nonce_context(request: Request) -> dict[str, str]:

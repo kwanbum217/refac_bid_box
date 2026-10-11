@@ -218,7 +218,7 @@ def v3_presmpt_availability(conn) -> None:
 
     df = q(
         conn,
-        """  # nosec B608 - 보간값이 모듈 상수입니다
+        """
         SELECT COUNT(*) AS open_announcements,
                SUM(raw_data IS NOT NULL) AS has_raw,
                SUM(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(raw_data,'$.presmptPrce')),'') IS NOT NULL) AS has_presmpt,

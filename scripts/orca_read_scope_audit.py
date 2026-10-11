@@ -64,7 +64,7 @@ SYSTEM_ALLOWLIST_PREFIXES: tuple[str, ...] = (
     "/System",
     "/private/var",
     "/private/tmp",
-    "/tmp",  # nosec B108 # noqa: S108
+    "/tmp",  # nosec B108 - 시스템 경로 허용 목록 상수이지 임시 파일 생성이 아닙니다  # noqa: S108
     "/dev",
     "/proc",
 )
@@ -264,7 +264,7 @@ def read_terminal_scrollback(
             "--json",
         ]
         try:
-            proc = subprocess.run(  # nosec B603 B607
+            proc = subprocess.run(  # nosec B603 - 고정 인자 목록으로 명령을 shell 없이 실행합니다
                 cmd,
                 capture_output=True,
                 text=True,

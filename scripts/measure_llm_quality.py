@@ -29,7 +29,7 @@ import argparse
 import hashlib
 import json
 import re
-import subprocess  # nosec B404
+import subprocess  # nosec B404 - docker 명령 실행용으로만 subprocess 를 가져옵니다
 import sys
 import time
 from datetime import UTC, datetime
@@ -98,7 +98,7 @@ REFUSAL_PATTERNS = [
 def send_query(base_url: str, question: str, timeout_sec: float) -> dict[str, Any]:
     """운영 RAG 질의 경로로 질문을 보내고 응답과 소요 시간을 반환한다."""
     body = json.dumps({"query": question}).encode("utf-8")
-    req = urlrequest.Request(  # nosec B310
+    req = urlrequest.Request(
         f"{base_url}{QUERY_PATH}",
         data=body,
         headers={"Content-Type": "application/json"},
@@ -106,7 +106,7 @@ def send_query(base_url: str, question: str, timeout_sec: float) -> dict[str, An
     )
     started = time.perf_counter()
     try:
-        with urlrequest.urlopen(req, timeout=timeout_sec) as response:  # nosec B310
+        with urlrequest.urlopen(req, timeout=timeout_sec) as response:  # nosec B310 - 내부에서 정한 고정 질의 URL 만 엽니다
             payload = json.loads(response.read().decode("utf-8"))
         elapsed_ms = (time.perf_counter() - started) * 1000.0
         return {"ok": True, "elapsed_ms": elapsed_ms, "payload": payload}
@@ -412,7 +412,7 @@ def serving_model(container: str) -> str:
     읽지 못하면 빈 문자열을 돌려주고, 호출 측이 측정을 무효로 판정한다.
     """
     try:
-        out = subprocess.check_output(  # nosec B603 B607
+        out = subprocess.check_output(  # nosec B603 B607 - docker exec 을 shell 없이 고정 인자로 실행합니다
             ["docker", "exec", container, "printenv", "OLLAMA_MODEL"],
             text=True,
             timeout=30,
@@ -457,7 +457,7 @@ def validate_base_url_port(base_url: str, app_container: str) -> tuple[bool, str
 
     try:
         # docker inspect 로 컨테이너 포트 매핑 조회
-        raw_ports = subprocess.check_output(  # nosec B603 B607
+        raw_ports = subprocess.check_output(  # nosec B603 B607 - docker inspect 를 shell 없이 고정 인자로 실행합니다
             ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", app_container],
             text=True,
             timeout=30,

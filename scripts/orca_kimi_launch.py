@@ -105,7 +105,7 @@ def run_kimi(cmd: list[str], env: dict[str, str]) -> int:
 def open_interactive_shell(env: dict[str, str]) -> None:
     """대화형 셸로 프로세스를 대체해 터미널 창을 유지합니다."""
     shell = resolve_shell(env)
-    os.execvpe(shell, [shell], env)  # noqa: S606  # nosec B606
+    os.execvpe(shell, [shell], env)  # noqa: S606  # nosec B606 - 터미널 유지를 위한 대화형 셸 교체 호출입니다
 
 
 def spawn_permission_setup(
