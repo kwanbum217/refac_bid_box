@@ -4,13 +4,15 @@ src/app/models/accounts.py
 사용자 계정 ORM (원본 apps/accounts/models.py CustomUser 1:1 이식).
 테이블은 원본 그대로 accounts_customuser 이며, Django AbstractUser 컬럼과
 프로젝트 커스텀 컬럼(nickname, birth_y/m/d, gender)을 모두 보존합니다.
+accounts_session_generation 은 원본에 없는 신규 테이블로, 전체 로그아웃 세대의
+정본을 보관합니다.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.app.core.db import Base, PKBigInteger
@@ -48,6 +50,34 @@ class CustomUser(Base):
 
     def __str__(self) -> str:
         return f"{self.username} ({self.nickname})"
+
+
+class SessionGeneration(Base):
+    """사용자별 세션 세대 정본 (원본에 없는 신규 테이블).
+
+    전체 로그아웃은 이 행의 generation 을 1 올려 그 사용자의 모든 세션을
+    무효화합니다. Redis 키 auth:user_epoch:<user_id> 는 이 값의 캐시일 뿐이라
+    Redis 데이터가 지워져도 세대가 되돌아가지 않습니다. 행이 없는 사용자는
+    세대 0 과 같습니다.
+    """
+
+    __tablename__ = "accounts_session_generation"
+
+    user_id: Mapped[int] = mapped_column(
+        PKBigInteger,
+        ForeignKey(
+            "accounts_customuser.id",
+            name="fk_accounts_session_generation_user_id",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    )
+    generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow, onupdate=utcnow
+    )
 
 
 # 이전 리팩토링본이 임의로 도입한 이름과의 호환 별칭

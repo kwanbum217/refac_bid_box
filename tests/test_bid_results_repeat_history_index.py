@@ -90,7 +90,11 @@ def test_revision_follows_bid_announcements_institution_date_index():
 
     assert script.get_revision(REVISION).down_revision == "f5a6b7c8d9e0"
     assert len(script.get_heads()) == 1
-    assert script.get_current_head() == REVISION
+    # 리비전이 현재 head 의 계보에 있는지만 봅니다. head 를 REVISION 으로
+    # 고정하면 이후 마이그레이션이 추가될 때마다 이 시험이 깨집니다.
+    head = script.get_current_head()
+    assert head is not None
+    assert REVISION in {rev.revision for rev in script.iterate_revisions(head, "base")}
 
 
 def test_model_declares_repeat_history_index_columns():
