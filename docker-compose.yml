@@ -62,6 +62,8 @@ services:
       - PREDICTION_GC_MODE=${PREDICTION_GC_MODE-freeze}
       - LATENCY_SEGMENT_LOGGING=${LATENCY_SEGMENT_LOGGING:-false}
       - NGRAM_PREFILTER_ENABLED=${NGRAM_PREFILTER_ENABLED:-false}
+      # 등급확인서 PDF 추출 API 토글입니다. 컨테이너는 .env 를 읽지 않으므로 여기서 넘겨야 켜집니다.
+      - DOCUMENT_EXTRACTION_ENABLED=${DOCUMENT_EXTRACTION_ENABLED:-false}
       # 읽기 경로 A/B 실측 전용 스위치입니다. 기본값 true 가 운영 동작입니다.
       - READ_PATH_PRELOAD_ANNOUNCEMENTS=${READ_PATH_PRELOAD_ANNOUNCEMENTS:-true}
       # 정본은 G2B_SERVICE_KEY이며, 기존 .env 의 serviceKey 도 호환을 위해 전달합니다.
