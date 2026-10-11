@@ -23,6 +23,8 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 import httpx
+from defusedxml import ElementTree as DefusedET
+from defusedxml.common import DefusedXmlException
 
 from src.app.models.bids import extract_business_budget, normalize_bid_ntce_ord
 
@@ -279,7 +281,10 @@ async def _fetch_paged(
         async with sem:
             resp = await _make_request_with_retry(client, api_url, params)
         # G2B 공공 API 응답 전용. 외부 사용자 입력이 아닙니다
-        root = ET.fromstring(sanitize_xml_text(resp.text))  # nosec B314
+        try:
+            root = DefusedET.fromstring(sanitize_xml_text(resp.text))
+        except DefusedXmlException as exc:
+            raise ET.ParseError(f"안전하지 않은 XML 응답으로 파싱 실패: {exc}") from exc
 
         result_code = root.findtext(".//resultCode", default="")
         if result_code != "00":

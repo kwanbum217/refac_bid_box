@@ -88,6 +88,19 @@ make check-all
 make benchmark
 ```
 
+### 의존성 버전 고정
+
+의존성은 `uv.lock` 에 해시까지 고정됩니다. 재현 가능한 설치에는 `uv sync --frozen`
+을 쓰십시오. 이 명령은 `uv.lock` 과 `pyproject.toml` 이 어긋나면 실패하므로, 고정이
+깨진 상태를 조용히 넘기지 않습니다. `uv.lock` 없이 `pip install .` 로 설치하면
+`pyproject.toml` 의 범위 표기(`>=`)만 적용되어 버전이 고정되지 않습니다.
+
+`make` 가 없는 Windows 환경에서는 `make setup` 대신 아래 명령을 직접 실행합니다.
+
+```bash
+uv sync --all-groups
+```
+
 ### 스키마 마이그레이션
 
 `make migrate-current` 로 현재 리비전을 확인하고, `make migrate-check` 로 모델과
