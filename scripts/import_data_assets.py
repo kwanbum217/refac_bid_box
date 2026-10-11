@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts.write_model_manifests import write_manifests_under  # noqa: E402
+
 DEFAULT_SOURCE = PROJECT_ROOT.parent / "bid_box"
 
 MODEL_NAMES = ("v25", "quantum_leap_v25_pro", "ssh_hist_premium", "v13_hybrid")
@@ -98,6 +103,10 @@ def main() -> int:
 
     print(f"[1/4] ML model_files 복사: {model_src} -> {model_dest}")
     copy_tree(model_src, model_dest)
+    # 원본 머신의 manifest 를 그대로 두면 배치된 파일과 어긋나 로더가 거부합니다.
+    # 복사 직후 배치된 파일 기준으로 다시 봉인합니다.
+    written, total_files, skipped = write_manifests_under(model_dest)
+    print(f"      manifest: 모델 {written}개 / 파일 {total_files}개, 건너뜀 {skipped}개")
 
     backup_dir.mkdir(parents=True, exist_ok=True)
     if chroma_source_backup.exists():

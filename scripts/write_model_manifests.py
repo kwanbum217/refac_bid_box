@@ -43,6 +43,29 @@ def iter_model_slots(root: Path) -> list[Path]:
     )
 
 
+def write_manifests_under(root: Path) -> tuple[int, int, int]:
+    """모델 루트 아래 슬롯마다 공개 세대 트리에 manifest 를 씁니다.
+
+    (쓴 모델 수, 봉인한 파일 수, 건너뛴 슬롯 수)를 돌려줍니다. 배치 직후
+    서빙 트리의 manifest 를 다시 만들어야 하는 호출부가 이 함수를 씁니다.
+    """
+    written = 0
+    total_files = 0
+    skipped = 0
+    for slot in iter_model_slots(root):
+        tree = resolve_serving_tree(slot)
+        targets = iter_manifest_targets(tree)
+        if not targets:
+            print(f"[건너뜀] {slot.name}: 로드 대상 파일이 없습니다 ({tree})")
+            skipped += 1
+            continue
+        write_manifest(tree)
+        written += 1
+        total_files += len(targets)
+        print(f"[갱신] {slot.name}: 파일 {len(targets)}개 ({tree})")
+    return written, total_files, skipped
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="서빙 모델 무결성 manifest 생성")
     parser.add_argument(
@@ -58,21 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[실패] 모델 디렉터리를 찾을 수 없습니다: {root}")
         return 1
 
-    written = 0
-    total_files = 0
-    skipped = 0
-    for slot in iter_model_slots(root):
-        tree = resolve_serving_tree(slot)
-        targets = iter_manifest_targets(tree)
-        if not targets:
-            print(f"[건너뜀] {slot.name}: 로드 대상 파일이 없습니다 ({tree})")
-            skipped += 1
-            continue
-        write_manifest(tree)
-        written += 1
-        total_files += len(targets)
-        print(f"[갱신] {slot.name}: 파일 {len(targets)}개 ({tree})")
-
+    written, total_files, skipped = write_manifests_under(root)
     print(f"완료: 모델 {written}개 / 파일 {total_files}개, 건너뜀 {skipped}개")
     return 0
 
