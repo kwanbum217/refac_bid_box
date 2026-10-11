@@ -1,0 +1,45 @@
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css
+SHA-256: 7dc0565c017914a9f00e5db5b8ef8a5aaa8f5d1736247e7f6e13f96a5b7d819c
+Upstream-SHA-256: 1edb1725a9ea8ca4dcf2f5508cee183218aa1685e47c1b23056717f754f58ebf (로컬은 후행 개행 1바이트 추가)
+File: fontawesome/6.4.0/css/all.min.css
+
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-brands-400.ttf
+SHA-256: 20c4a58bc9d1d69e935d06f1528923646a715be5e218665655cade8f5f1b8c00
+File: fontawesome/6.4.0/webfonts/fa-brands-400.ttf
+
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-brands-400.woff2
+SHA-256: 748332090c4b8e20f95d0ff59f0be20fa9c889359d3b36d4b886d73376054207
+File: fontawesome/6.4.0/webfonts/fa-brands-400.woff2
+
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-regular-400.ttf
+SHA-256: 528d022dce6725f8a0811fd91d8e6513445c81ef33353a5c3234eab932551abf
+File: fontawesome/6.4.0/webfonts/fa-regular-400.ttf
+
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-regular-400.woff2
+SHA-256: 8e7e5ea1b15f62ab14dbd41768e8fbcd21cc859a4ea5da812457ee714299fb35
+File: fontawesome/6.4.0/webfonts/fa-regular-400.woff2
+
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-solid-900.ttf
+SHA-256: 67a65763c7f80903d81603bbeb9049fc2bf28508479b83ed011fe24c71fa950a
+File: fontawesome/6.4.0/webfonts/fa-solid-900.ttf
+
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-solid-900.woff2
+SHA-256: 7152a6933ee3d690ec2af3d09da9d701723d16aa3410a6d80f28ff8866f3b880
+File: fontawesome/6.4.0/webfonts/fa-solid-900.woff2
+
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-v4compatibility.ttf
+SHA-256: 0515a423f828ce4e6accf92a2ea0b03d19d31cc86d9af0373291e1fd4db5f348
+File: fontawesome/6.4.0/webfonts/fa-v4compatibility.ttf
+
+fontawesome-free 6.4.0
+Source: https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-v4compatibility.woff2
+SHA-256: 694a17c3d9d6c05f8aac63c544615552a4b220e9a4de863d87341a6bcfc1bc8d
+File: fontawesome/6.4.0/webfonts/fa-v4compatibility.woff2
