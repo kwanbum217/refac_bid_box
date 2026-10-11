@@ -167,6 +167,41 @@
             {% endif %}
         </div>
 
+        <!-- 세션 보안 -->
+        <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-8 md:p-10">
+            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2 mb-2">
+                <i class="fas fa-shield-halved text-primary"></i>
+                세션 보안
+            </h2>
+            <p class="text-xs text-slate-400 mb-6">비밀번호를 바꿨거나 기기를 잃어버린 경우, 이 계정으로 로그인한 모든 기기의 세션을 한 번에 끊을 수 있습니다.</p>
+
+            <div class="flex flex-col gap-4 rounded-lg border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm font-bold text-red-700">모든 기기에서 로그아웃</p>
+                    <p class="text-xs text-red-500 mt-0.5">현재 기기를 포함한 모든 세션이 무효가 되며 다시 로그인해야 합니다.</p>
+                </div>
+                <form action="{{ url('accounts:logout_all') }}" method="POST" data-logout-all-form class="shrink-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-600 transition-all hover:bg-red-100 hover:border-red-400 cursor-pointer sm:w-auto">
+                        <i class="fas fa-right-from-bracket"></i>
+                        모든 기기에서 로그아웃
+                    </button>
+                </form>
+            </div>
+        </div>
+
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script nonce="{{ csp_nonce }}">
+    document.querySelectorAll('[data-logout-all-form]').forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+            if (!window.confirm('모든 기기에서 로그아웃합니다. 현재 기기도 함께 로그아웃되며 다시 로그인해야 합니다. 계속할까요?')) {
+                event.preventDefault();
+            }
+        });
+    });
+</script>
 {% endblock %}
