@@ -325,7 +325,9 @@ class Settings(BaseSettings):
         if not value:
             return value
         path = Path(value)
-        if path.is_absolute():
+        # Windows 에서는 드라이브 문자 없는 "/app/x" 가 is_absolute() 가 아니지만
+        # 루트에서 시작하는 경로라 그대로 둬야 합니다(compose 가 넘기는 컨테이너 경로).
+        if path.is_absolute() or path.root:
             return value
         return str(PROJECT_ROOT / path)
 
