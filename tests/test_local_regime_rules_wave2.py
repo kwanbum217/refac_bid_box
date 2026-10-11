@@ -5,9 +5,9 @@
  - EXT/seoul, EXT/busan, EXT/daejeon, EXT/chungnam, EXT/jeonbuk, EXT/sejong 추출물
  - docs/design/local_regime_rules_design_20261005.md 0절(D5·D8)·6.4절
 
-충남(별표 1·2의1·5)과 세종 SW·육상운송은 원문이 평탄 비율만 인쇄하고 점수는 미인쇄라
-기대 점수는 산식 대입값입니다. 충남 별표 2·3·4 는 B(5억 축)·k(고시금액 축)가 결합
-인쇄되지 않아 짝짓기를 추론하지 않고 등록하지 않았으며, 그 사용자 입력 경로도 고정합니다.
+충남(별표 1·2·2의1·3·4·5)과 세종 SW·육상운송은 원문이 평탄 비율만 인쇄하고 점수는 미인쇄라
+기대 점수는 산식 대입값입니다. 충남 별표 2·3·4 는 배점 B 가 추정가격 5억원 축이고 계수 k·기준
+비율·낙찰하한율이 고시금액 축이라, 두 경계를 합친 3구간으로 등록하고 그 구간값을 고정합니다.
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ from src.app.models.demand_institutions import G2BDemandInstitution
 from src.app.schemas.predictions import PredictPriceResponse
 from src.app.services.evaluation_flat_zones import flat_zone_for
 from src.app.services.evaluation_rules import (
-    BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
     BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED,
     LOCAL_RULES,
     QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
@@ -39,6 +38,7 @@ from src.app.services.evaluation_rules import (
     resolve_score_params,
 )
 from src.app.services.evaluation_scoring import calculate_price_score
+from src.ml.notice_amount import notice_amount_for_year
 
 ANALYZE_URL = "/api/v1/evaluations/analyze"
 
@@ -49,6 +49,9 @@ BUSAN_SIMPLE_ID = "SERVC_LOCAL_BUSAN_20250626_SIMPLE_LABOR"
 DAEJEON_GENERAL_ID = "SERVC_LOCAL_DAEJEON_20260101_ATTACH_01"
 DAEJEON_SIMPLE_ID = "SERVC_LOCAL_DAEJEON_20260101_SIMPLE_LABOR"
 CHUNGNAM_FACILITY_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_01"
+CHUNGNAM_INFO_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_02"
+CHUNGNAM_WASTE_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_03"
+CHUNGNAM_LAND_TRANSPORT_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_04"
 CHUNGNAM_SW_SME_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_2_1"
 CHUNGNAM_FISHERY_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_05"
 JEONBUK_GENERAL_ID = "SERVC_LOCAL_JEONBUK_20240118_ATTACH_01"
@@ -64,6 +67,9 @@ NEW_RULE_IDS = (
     CHUNGNAM_FACILITY_ID,
     CHUNGNAM_SW_SME_ID,
     CHUNGNAM_FISHERY_ID,
+    CHUNGNAM_INFO_ID,
+    CHUNGNAM_WASTE_ID,
+    CHUNGNAM_LAND_TRANSPORT_ID,
     JEONBUK_GENERAL_ID,
     JEONBUK_SIMPLE_ID,
 )
@@ -121,6 +127,16 @@ REGION_BAND_CASES = (
     (CHUNGNAM_SW_SME_ID, "600000000", "60", "4", "88", "0.91"),
     (CHUNGNAM_FISHERY_ID, "300000000", "70", "5", "85", "0.91"),
     (CHUNGNAM_FISHERY_ID, "600000000", "60", "2", "85", "0.88"),
+    # 충남 별표 2·3·4 는 배점(5억 축)과 계수(고시금액 축)를 합친 3구간입니다.
+    (CHUNGNAM_INFO_ID, "200000000", "70", "4", "85", "0.88"),
+    (CHUNGNAM_INFO_ID, "300000000", "70", "2", "85", "0.88"),
+    (CHUNGNAM_INFO_ID, "600000000", "60", "2", "85", "0.88"),
+    (CHUNGNAM_WASTE_ID, "200000000", "70", "4", "85", "0.88"),
+    (CHUNGNAM_WASTE_ID, "300000000", "70", "2", "85", "0.88"),
+    (CHUNGNAM_WASTE_ID, "600000000", "60", "2", "85", "0.88"),
+    (CHUNGNAM_LAND_TRANSPORT_ID, "200000000", "70", "4", "85", "0.88"),
+    (CHUNGNAM_LAND_TRANSPORT_ID, "300000000", "70", "2", "85", "0.88"),
+    (CHUNGNAM_LAND_TRANSPORT_ID, "600000000", "60", "2", "85", "0.88"),
     (JEONBUK_GENERAL_ID, "300000000", "70", "4", "95", "0.88"),
     (JEONBUK_GENERAL_ID, "1000000000", "30", "1", "90", "0.88"),
     (JEONBUK_GENERAL_ID, "4000000000", "30", "1", "85", "0.88"),
@@ -159,6 +175,9 @@ SOURCE_TOKEN_CASES = (
     (CHUNGNAM_FACILITY_ID, "EXT/chungnam/"),
     (CHUNGNAM_SW_SME_ID, "EXT/chungnam/"),
     (CHUNGNAM_FISHERY_ID, "EXT/chungnam/"),
+    (CHUNGNAM_INFO_ID, "docs/analysis/qual_chungnam_2026_1235_hwpx_20261008.md"),
+    (CHUNGNAM_WASTE_ID, "docs/analysis/qual_chungnam_2026_1235_hwpx_20261008.md"),
+    (CHUNGNAM_LAND_TRANSPORT_ID, "docs/analysis/qual_chungnam_2026_1235_hwpx_20261008.md"),
     (JEONBUK_GENERAL_ID, "EXT/jeonbuk/jb_general_2024_10.tbl.txt"),
     (JEONBUK_SIMPLE_ID, "EXT/jeonbuk/jb_general_2024_10.tbl.txt"),
 )
@@ -167,6 +186,68 @@ SOURCE_TOKEN_CASES = (
 @pytest.mark.parametrize(("rule_id", "source_token"), SOURCE_TOKEN_CASES)
 def test_new_region_rule_source_cites_ext_original(rule_id: str, source_token: str) -> None:
     assert source_token in _rule(rule_id).source
+
+
+# --------------------------------------------------------------------------- #
+# 1-1. 충남 별표 2·3·4 두 축 결합 3구간 (배점 5억 축 x 계수·하한율 고시금액 축)
+# --------------------------------------------------------------------------- #
+
+CHUNGNAM_ATTACH_2_3_4_IDS = (CHUNGNAM_INFO_ID, CHUNGNAM_WASTE_ID, CHUNGNAM_LAND_TRANSPORT_ID)
+
+# (추정가격, 기대 B, 기대 k, 기대 lwlt). 구간 상한은 고시금액(230000000)과 5억원입니다.
+CHUNGNAM_ATTACH_2_3_4_BANDS = (
+    ("200000000", "70", "4", "84.245"),
+    ("300000000", "70", "2", "80.495"),
+    ("600000000", "60", "2", "80.495"),
+)
+
+
+@pytest.mark.parametrize("rule_id", CHUNGNAM_ATTACH_2_3_4_IDS)
+@pytest.mark.parametrize(
+    ("price", "expected_b", "expected_k", "expected_lwlt"), CHUNGNAM_ATTACH_2_3_4_BANDS
+)
+def test_chungnam_attach_2_3_4_bands(
+    rule_id: str, price: str, expected_b: str, expected_k: str, expected_lwlt: str
+) -> None:
+    """세 규칙이 추정가격 2억·3억·6억에서 B·k·T·기준비율·lwlt 를 원문값으로 해석한다."""
+    rule = _rule(rule_id)
+    result = resolve_score_params(rule, Decimal(price), None, None)
+    assert result.max_price_score == Decimal(expected_b), (rule_id, price)
+    assert result.multiplier == Decimal(expected_k), (rule_id, price)
+    assert result.pass_threshold == Decimal("85"), (rule_id, price)
+    assert (result.base_rate or rule.base_rate) == Decimal("0.88"), (rule_id, price)
+    assert result.price_band_index is not None
+    band = rule.price_bands[result.price_band_index]
+    assert band.lwlt_rate == Decimal(expected_lwlt), (rule_id, price)
+    assert rule.lwlt_rate == Decimal("84.245"), rule_id
+
+
+# (추정가격, 기대 구간 인덱스, 기대 lwlt). 고시금액·5억원 경계값은 이상 쪽 구간에 속합니다.
+CHUNGNAM_ATTACH_2_3_4_BOUNDARIES = (
+    ("229999999", 0, "84.245"),
+    ("230000000", 1, "80.495"),
+    ("499999999", 1, "80.495"),
+    ("500000000", 2, "80.495"),
+)
+
+
+@pytest.mark.parametrize("rule_id", CHUNGNAM_ATTACH_2_3_4_IDS)
+@pytest.mark.parametrize(("price", "band_index", "expected_lwlt"), CHUNGNAM_ATTACH_2_3_4_BOUNDARIES)
+def test_chungnam_attach_2_3_4_band_boundaries(
+    rule_id: str, price: str, band_index: int, expected_lwlt: str
+) -> None:
+    """경계값이 원문의 이상/미만과 같은 방향으로 구간을 고른다."""
+    rule = _rule(rule_id)
+    result = resolve_score_params(rule, Decimal(price), None, None)
+    assert result.price_band_index == band_index, (rule_id, price)
+    assert rule.price_bands[band_index].lwlt_rate == Decimal(expected_lwlt), (rule_id, price)
+
+
+def test_chungnam_attach_2_3_4_first_upper_bound_tracks_notice_amount() -> None:
+    """첫 구간 상한이 2026 고시금액과 같아, 고시금액이 바뀌면 이 시험이 깨진다."""
+    expected = Decimal(notice_amount_for_year(2026))
+    for rule_id in CHUNGNAM_ATTACH_2_3_4_IDS:
+        assert _rule(rule_id).price_bands[0].upper_bound == expected, rule_id
 
 
 # --------------------------------------------------------------------------- #
@@ -394,16 +475,21 @@ def test_chungnam_sw_requires_sme_marker_or_user_selection() -> None:
     assert selected.rule.rule_id == CHUNGNAM_SW_SME_ID
 
 
-def test_chungnam_unregistered_attachments_keep_user_input_path() -> None:
-    """충남 별표 2·3·4(정보통신 비대상·폐기물·육상운송)는 미등록이라 규칙 없음으로 차단한다."""
-    for method in (
-        "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만",
-        "폐기물 처리용역 적격심사 추정가격 5억원 미만",
-        "화물 육상운송용역 적격심사 추정가격 5억원 미만",
-    ):
+def test_chungnam_attachments_2_3_4_resolve_to_registered_rules() -> None:
+    """충남 별표 2·3·4(정보통신 비대상·폐기물·육상운송)가 등록 규칙으로 확정된다."""
+    cases = (
+        (
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만",
+            CHUNGNAM_INFO_ID,
+        ),
+        ("폐기물 처리용역 적격심사 추정가격 5억원 미만", CHUNGNAM_WASTE_ID),
+        ("화물 육상운송용역 적격심사 추정가격 5억원 미만", CHUNGNAM_LAND_TRANSPORT_ID),
+    )
+    for method, rule_id in cases:
         result = _resolve(region_code="44", region_name="충청남도", method=method)
-        assert result.rule is None, method
-        assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND, method
+        assert result.rule is not None, method
+        assert result.rule.rule_id == rule_id, method
+        assert result.is_blocked is False, method
 
 
 # --------------------------------------------------------------------------- #

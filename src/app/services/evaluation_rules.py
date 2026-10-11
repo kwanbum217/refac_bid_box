@@ -1590,6 +1590,30 @@ _SRC_CHUNGNAM_ATTACH_05 = (
     "및 어장관리용역); EXT/chungnam/chungnam_2026_1235.txt:"
     "193,457-459,481-483,2248,2334-2366; EXT/chungnam/chungnam_tables.txt:137-158"
 )
+# 충남 별표 2·3·4(정보통신·폐기물처리·육상운송)는 배점 B 가 추정가격 5억원 축(미만 70·이상 60)이고
+# 계수 k·기준비율·낙찰하한율이 고시금액 축(미만 k4·84.245% / 이상 k2·80.495%)이라 한 행에 결합
+# 인쇄되지 않습니다. 2026-10-08 HWPX 원문 격자 검토(3.3·3.4절)와 2026-10-09 재검증(2절 3·14·
+# 21행)으로 계층 분리가 확정되어, 두 경계를 합친 3구간으로 등록합니다.
+_SRC_CHUNGNAM_HWPX = "docs/analysis/qual_chungnam_2026_1235_hwpx_20261008.md"
+_SRC_CHUNGNAM_HWPX_REVIEW = "docs/analysis/qual_chungnam_2026_1235_hwpx_review_20261009.md"
+_SRC_CHUNGNAM_ATTACH_02 = (
+    f"{_SRC_CHUNGNAM_HWPX}:74-97 (충청남도 일반용역 적격심사 세부기준, 공고 2026-1235호, "
+    "시행 2026-07-13, 별표 2 정보통신용역; 3.3 낙찰하한율·평점산식, 3.4 별표별 축 정리: "
+    "고시금액 미만 k=4·84.245%, 고시금액 이상 k=2·80.495%, 배점 5억원 미만 70·이상 60); "
+    f"{_SRC_CHUNGNAM_HWPX_REVIEW}:53,64,71 (원문 격자 재검증 일치)"
+)
+_SRC_CHUNGNAM_ATTACH_03 = (
+    f"{_SRC_CHUNGNAM_HWPX}:74-97 (충청남도 일반용역 적격심사 세부기준, 공고 2026-1235호, "
+    "시행 2026-07-13, 별표 3 폐기물처리용역; 3.3·3.4, 별표 2 와 같은 산식: "
+    "고시금액 미만 k=4·84.245%, 고시금액 이상 k=2·80.495%, 배점 5억원 미만 70·이상 60); "
+    f"{_SRC_CHUNGNAM_HWPX_REVIEW}:53,64,71 (원문 격자 재검증 일치)"
+)
+_SRC_CHUNGNAM_ATTACH_04 = (
+    f"{_SRC_CHUNGNAM_HWPX}:74-97 (충청남도 일반용역 적격심사 세부기준, 공고 2026-1235호, "
+    "시행 2026-07-13, 별표 4 육상운송용역; 3.3·3.4, 별표 2 와 같은 산식: "
+    "고시금액 미만 k=4·84.245%, 고시금액 이상 k=2·80.495%, 배점 5억원 미만 70·이상 60); "
+    f"{_SRC_CHUNGNAM_HWPX_REVIEW}:53,64,71 (원문 격자 재검증 일치)"
+)
 _SRC_JEONBUK = (
     f"{_SRC_RECOVER}:204-230 (전북특별자치도 일반용역 적격심사 세부기준, 부칙 제2024-10호, "
     "시행 2024-01-18, 별표 1); EXT/jeonbuk/jb_general_2024_10.tbl.txt:"
@@ -1813,6 +1837,24 @@ def _five_band_price(
     return tuple(
         replace(band, lwlt_rate=Decimal(rate) if rate is not None else None)
         for band, rate in zip(bands, lwlt_rates, strict=True)
+    )
+
+
+def _chungnam_notice_band_price(source: str) -> tuple[PriceBand, ...]:
+    """충남 별표 2·3·4 의 두 축 결합 3구간 B·k·기준비율·하한율.
+
+    배점 B 는 추정가격 5억원 축(미만 70·이상 60)이고 계수 k·기준비율·낙찰하한율은 고시금액
+    축(미만 k4·84.245% / 이상 k2·80.495%)이라 한 행에 결합 인쇄되지 않습니다. 두 경계를
+    합치면 상한 230000000(고시금액 2026 값)·500000000·없음 세 구간이 됩니다.
+    """
+    return (
+        _local_price_band(
+            "230000000", "70", "4", "추정가격 고시금액 미만", source, lwlt_rate="84.245"
+        ),
+        _local_price_band(
+            "500000000", "70", "2", "5억원 미만 고시금액 이상", source, lwlt_rate="80.495"
+        ),
+        _local_price_band(None, "60", "2", "추정가격 5억원 이상", source, lwlt_rate="80.495"),
     )
 
 
@@ -2623,9 +2665,10 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_DAEJEON),
         lwlt_rate="87.745",
     ),
-    # 충청남도 (공고 2026-1235호, 시행 2026-07-13) — 별표 1·2의1·5 만 등록합니다.
-    # 별표 2·3·4 는 B(5억 축)와 k(고시금액 축)가 결합 인쇄되지 않아 짝짓기를 추론하지 않고
-    # 등록하지 않습니다(수집 판정 규칙 8). 해당 용역은 LOCAL_RULE_NOT_FOUND 사용자 입력 경로입니다.
+    # 충청남도 (공고 2026-1235호, 시행 2026-07-13) — 별표 1·2·2의1·3·4·5 를 등록합니다.
+    # 별표 2·3·4 는 배점 B 가 추정가격 5억원 축(미만 70·이상 60)이고 계수 k·기준비율·낙찰하한율이
+    # 고시금액 축(미만 k4·84.245% / 이상 k2·80.495%)이라, 두 경계를 합친 3구간 price_bands 로
+    # 표현합니다(2026-10-08 HWPX 원문 격자 검토·2026-10-09 재검증으로 계층 분리 확정).
     _local_rule(
         "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_01",
         sido_code="44",
@@ -2717,6 +2760,46 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         ),
         threshold_bands=_single_threshold("85", "전 구간 85", _SRC_CHUNGNAM_ATTACH_05),
         base_rate="0.91",
+    ),
+    _local_rule(
+        "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_02",
+        sido_code="44",
+        sido_name="충청남도",
+        service_type="SW",
+        effective_date="2026-07-13",
+        source=_SRC_CHUNGNAM_ATTACH_02,
+        description="충청남도 정보통신용역 적격심사 (별표 2)",
+        # 고시금액 미만 k4·84.245% / 고시금액 이상 5억원 미만 k2·80.495% / 5억원 이상 B60·k2·
+        # 80.495%. 규칙 대표값은 첫 구간(고시금액 미만) 인쇄값을 씁니다.
+        lwlt_rate="84.245",
+        price_bands=_chungnam_notice_band_price(_SRC_CHUNGNAM_ATTACH_02),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_CHUNGNAM_ATTACH_02),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_03",
+        sido_code="44",
+        sido_name="충청남도",
+        service_type="WASTE",
+        effective_date="2026-07-13",
+        source=_SRC_CHUNGNAM_ATTACH_03,
+        description="충청남도 폐기물처리용역 적격심사 (별표 3)",
+        # 별표 2 와 같은 3구간·같은 값입니다(고시금액 미만 k4·84.245% / 이상 k2·80.495%).
+        lwlt_rate="84.245",
+        price_bands=_chungnam_notice_band_price(_SRC_CHUNGNAM_ATTACH_03),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_CHUNGNAM_ATTACH_03),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_04",
+        sido_code="44",
+        sido_name="충청남도",
+        service_type="LAND_TRANSPORT",
+        effective_date="2026-07-13",
+        source=_SRC_CHUNGNAM_ATTACH_04,
+        description="충청남도 육상운송용역 적격심사 (별표 4)",
+        # 별표 2·3 과 같은 3구간·같은 값입니다(원문 3.4절 "별표 2 와 동일").
+        lwlt_rate="84.245",
+        price_bands=_chungnam_notice_band_price(_SRC_CHUNGNAM_ATTACH_04),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_CHUNGNAM_ATTACH_04),
     ),
     # 전북특별자치도 (부칙 제2024-10호, 시행 2024-01-18) — 서울과 동일 구조
     _local_rule(

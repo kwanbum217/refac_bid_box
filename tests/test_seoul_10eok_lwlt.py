@@ -261,8 +261,11 @@ def test_seoul_simple_labor_is_87_745() -> None:
 # main 기준 스냅샷 해시. 서울 GENERAL 만 분할 대상이라 이 목록에서 제외한다.
 # 2026-10-06: 인천·제주·강원·경남·경북 04 정정으로 서울 외 LOCAL 규칙 값이 바뀌어 재생성했다.
 # 2026-10-07: 서울 단순노무·경북 단순노무 대표값을 원문 산식 역산값 87.745 로 정정하며 재생성했다.
+# 2026-10-11: 충남 별표 2·3·4 신규 3규칙(ATTACH_02·03·04) 추가로 재생성했다.
+#   이전 d4bf004e28be73fdb59c614d6a419547edc64da63e9dab8040bd12439c233372
+#   이후 4e8030ef9619e2ef7ee5b5088a1aeb949df978974bdc604ef1ebe96ac9f02f02
 LOCAL_RULES_EXCLUDING_SEOUL_DIGEST = (
-    "d4bf004e28be73fdb59c614d6a419547edc64da63e9dab8040bd12439c233372"
+    "4e8030ef9619e2ef7ee5b5088a1aeb949df978974bdc604ef1ebe96ac9f02f02"
 )
 NATIONAL_RULES_DIGEST = "3436d7f5bfa896ec4b4d4f95e1367add414424ab746143fcae364005f8e00e3f"
 
@@ -300,7 +303,7 @@ def _digest(rules: tuple[EvaluationRule, ...]) -> str:
 
 
 def test_other_local_rules_unchanged() -> None:
-    """서울 GENERAL 을 뺀 46개 LOCAL 규칙은 main 과 같은 동작 필드를 유지한다."""
+    """서울 GENERAL 을 뺀 49개 LOCAL 규칙은 main 과 같은 동작 필드를 유지한다."""
     rules = tuple(rule for rule in LOCAL_RULES if rule.rule_id != SEOUL_GENERAL_ID)
     assert _digest(rules) == LOCAL_RULES_EXCLUDING_SEOUL_DIGEST
 
