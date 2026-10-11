@@ -19,6 +19,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from src.app.core.config import settings
 from src.app.core.timeutil import utcnow
 from src.ml.conformal import (
     CALIBRATION_SPLIT,
@@ -347,15 +348,15 @@ class ModelTrainer:
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL_NAME,
-        registry_dir: str = "ml_registry",
+        registry_dir: str | None = None,
         category_code: str | None = None,
     ):
         self.model_name = model_name
-        self.registry_dir = Path(registry_dir)
+        self.registry_dir = Path(registry_dir or settings.MODEL_REGISTRY_DIR)
         self.category_code = (category_code or "").strip() or None
 
     @classmethod
-    def for_category(cls, category_code: str | None, registry_dir: str = "ml_registry"):
+    def for_category(cls, category_code: str | None, registry_dir: str | None = None):
         """카테고리 전용 학습기를 만듭니다.
 
         분기가 없으면 용역 재학습이 물품 디렉터리에 저장되고 물품 champion 과

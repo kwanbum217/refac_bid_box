@@ -808,7 +808,7 @@ def _acquire_drift_monitor_claim() -> ScheduleClaimResult:
 async def drift_monitor_task(
     ctx: dict[str, Any],
     evaluation_window_days: int = DRIFT_EVALUATION_WINDOW_DAYS,
-    registry_dir: str = "ml_registry",
+    registry_dir: str | None = None,
 ) -> dict[str, Any]:
     """매일 04:00 주기적 PSI 드리프트 검사 태스크.
 
@@ -839,7 +839,9 @@ async def drift_monitor_task(
         )
 
     try:
-        return await _run_drift_monitor(ctx, evaluation_window_days, registry_dir)
+        return await _run_drift_monitor(
+            ctx, evaluation_window_days, registry_dir or settings.MODEL_REGISTRY_DIR
+        )
     finally:
         # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
         if claim.acquired and claim.token:

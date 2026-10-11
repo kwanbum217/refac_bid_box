@@ -39,6 +39,16 @@ def get_app_version() -> str:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
+# 프로젝트 루트 기준으로 해석해야 하는 경로 설정 필드입니다.
+_PROJECT_PATH_FIELDS = (
+    "CHROMA_DB_PATH",
+    "MODEL_FILES_DIR",
+    "MODEL_BACKUPS_DIR",
+    "MODEL_METRICS_DIR",
+    "MODEL_REGISTRY_DIR",
+    "FEATURE_STORE_DIR",
+)
+
 
 class Settings(BaseSettings):
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
@@ -223,8 +233,8 @@ class Settings(BaseSettings):
     MODEL_METRICS_DIR: str = str(PROJECT_ROOT / "data" / "model_metrics")
 
     # ML MLOps Directory
-    MODEL_REGISTRY_DIR: str = "ml_registry"
-    FEATURE_STORE_DIR: str = "data/feature_store"
+    MODEL_REGISTRY_DIR: str = str(PROJECT_ROOT / "ml_registry")
+    FEATURE_STORE_DIR: str = str(PROJECT_ROOT / "data" / "feature_store")
 
     # OpenTelemetry 관측성 설정
     # 기본값은 비활성(False)이며 플래그 하나로 제어됩니다. 비활성 시 계측 비용이 발생하지 않습니다.
@@ -297,6 +307,22 @@ class Settings(BaseSettings):
         raise ValueError(
             f"유효하지 않은 LOG_LEVEL 입니다: {v}. (DEBUG, INFO, WARNING, ERROR, CRITICAL 중 하나여야 합니다)"
         )
+
+    @field_validator(*_PROJECT_PATH_FIELDS, mode="after")
+    @classmethod
+    def normalize_project_paths(cls, value: str) -> str:
+        """경로 설정값을 프로젝트 루트 기준 절대 경로로 정규화합니다.
+
+        상대 경로 값은 프로세스 CWD 가 아니라 PROJECT_ROOT 기준으로 해석합니다.
+        실행 위치가 달라져도 같은 디렉터리를 보게 하기 위함입니다. Docker
+        compose 처럼 절대 경로를 넘기는 경우에는 값을 그대로 둡니다.
+        """
+        if not value:
+            return value
+        path = Path(value)
+        if path.is_absolute():
+            return value
+        return str(PROJECT_ROOT / path)
 
     def _require_explicit_cors_origins(self, environment: str) -> None:
         """명시 오리진이 필수인 환경에서 빈 목록과 와일드카드를 거부합니다.
