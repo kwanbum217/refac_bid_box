@@ -5,6 +5,7 @@ deploy/Caddyfile 보안 응답 헤더 및 프록시 설정 검증 테스트.
 - X-Content-Type-Options "nosniff" 존재 검증
 - X-Frame-Options "SAMEORIGIN" 존재 검증
 - Referrer-Policy "strict-origin-when-cross-origin" 존재 검증
+- Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" 존재 검증
 - -Server (Server 헤더 제거) 존재 검증
 - Content-Security-Policy 부재 검증 (SSR 인라인 스크립트 호환성)
 """
@@ -26,6 +27,10 @@ def test_caddyfile_security_headers_present_and_csp_absent():
     assert 'X-Content-Type-Options "nosniff"' in content
     assert 'X-Frame-Options "SAMEORIGIN"' in content
     assert 'Referrer-Policy "strict-origin-when-cross-origin"' in content
+    assert (
+        'Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"'
+        in content
+    )
 
     # Server 헤더 제거 지시어
     assert "-Server" in content
