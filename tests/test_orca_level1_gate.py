@@ -15,6 +15,7 @@ from scripts.orca_level1_gate import (
     format_failed_nodes,
     format_human_output,
     get_git_changed_files,
+    get_git_deleted_files,
     get_gitignored_committed_files,
     parse_arguments,
     parse_pytest_output,
@@ -1889,3 +1890,33 @@ def test_record_evidence_written_on_strict_pass(tmp_path: Path):
     assert evidence["strict"] is True
     assert evidence["verdict"] == "pass"
     assert datetime.datetime.fromisoformat(evidence["recorded_at"]).tzinfo is not None
+
+
+def test_gate7_passes_when_tracked_ignored_file_is_untracked(tmp_path: Path):
+    """무시 대상인데 과거에 추적된 파일을 git rm --cached 로 빼는 정리는 위반이 아닙니다."""
+    repo, base, branch = _make_gitignore_repo(tmp_path)
+    _git(repo, "checkout", base)
+    (repo / "old.ignored").write_text("legacy\n", encoding="utf-8")
+    _git(repo, "add", "-f", "old.ignored")
+    _commit(repo, "chore: legacy tracked ignored file")
+    _git(repo, "checkout", "-B", branch)
+    _git(repo, "rm", "--cached", "old.ignored")
+    _commit(repo, "chore: untrack ignored file")
+
+    changed, _unique, _renames = get_git_changed_files(repo, base, branch)
+    assert "old.ignored" in changed
+    assert get_git_deleted_files(repo, base, branch) == ["old.ignored"]
+
+    _code, output = run_level1_gate(base=base, branch=branch, repo=repo, as_json=True)
+    data = json.loads(output)
+    assert data["gates"]["gate7_gitignored"]["status"] == "pass"
+
+    (repo / "new.ignored").write_text("forced\n", encoding="utf-8")
+    _git(repo, "add", "-f", "new.ignored")
+    _commit(repo, "feat: forced new ignored file")
+    _code, output = run_level1_gate(base=base, branch=branch, repo=repo, as_json=True)
+    data = json.loads(output)
+    assert data["gates"]["gate7_gitignored"]["status"] == "fail"
+    details = " ".join(data["gates"]["gate7_gitignored"]["details"])
+    assert "new.ignored" in details
+    assert "old.ignored" not in details

@@ -326,7 +326,7 @@ services:
   redis:
     restart: unless-stopped
     image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
-    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set} --maxmemory 512mb --maxmemory-policy volatile-lru
     volumes:
       - redis_data:/data
     healthcheck:

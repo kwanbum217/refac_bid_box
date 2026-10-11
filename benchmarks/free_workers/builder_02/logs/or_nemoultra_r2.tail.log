@@ -1,7 +1,7 @@
 # or_nemoultra_r2  exit/소요초: 0 560
 # 원본    48827 bytes (마지막 3KB)
 ---
-INFO] Restored changes from /Users/kwanbum/.cache/pre-commit/patch1787226950-49149.
+INFO] Restored changes from ~/.cache/pre-commit/patch1787226950-49149.
 pre-commit이 여전히 이전 버전을 캐시하고 있는 것 같습니다. 파일 내용을 다시 확인해보겠습니다.이미 수정되었는데 pre-commit이 캐시된 내용을 보는 것 같습니다. 다시 add하고 커밋해보겠습니다.이제 다시 커밋해보겠습니다.Ruff Format..............................................................
 Passed
 Ruff Lint................................................................
