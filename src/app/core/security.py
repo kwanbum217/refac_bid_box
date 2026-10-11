@@ -235,6 +235,10 @@ RATE_LIMIT_ACCOUNT_PREFIX = "auth:ratelimit:account:"
 RATE_LIMIT_EXCEEDED_DETAIL = "너무 많은 로그인 시도가 발생했습니다. 잠시 후 다시 시도해 주십시오."
 ANONYMOUS_API_RATE_LIMIT_PREFIX = "api:ratelimit:anonymous:"
 ANONYMOUS_API_RATE_LIMIT_EXCEEDED_DETAIL = "요청이 너무 많습니다. 잠시 후 다시 시도해 주십시오."
+AUTHENTICATED_API_RATE_LIMIT_PREFIX = "api:ratelimit:user:"
+AUTHENTICATED_API_RATE_LIMIT_MAX_REQUESTS = 120
+AUTHENTICATED_API_RATE_LIMIT_WINDOW_SECONDS = 60
+AUTHENTICATED_API_RATE_LIMIT_EXCEEDED_DETAIL = "요청이 너무 많습니다. 잠시 후 다시 시도해 주십시오."
 SIGNUP_RATE_LIMIT_PREFIX = "auth:ratelimit:signup:ip:"
 SIGNUP_RATE_LIMIT_EXCEEDED_DETAIL = (
     "너무 많은 회원가입 시도가 발생했습니다. 잠시 후 다시 시도해 주십시오."
@@ -418,8 +422,75 @@ class AnonymousAPIRateLimiter:
 anonymous_api_rate_limiter = AnonymousAPIRateLimiter()
 
 
+class AuthenticatedAPIRateLimiter:
+    """로그인 사용자 API 요청 제한기 (user 축).
+
+    Redis 장애 시에는 익명 제한기와 같이 요청을 차단하지 않고 제한을 건너뜁니다.
+    한도와 윈도우는 모듈 상수로 고정합니다.
+    """
+
+    def __init__(self, connection: RedisConnection | None = None):
+        self._conn = connection or RedisConnection(label="authenticated_api_rate_limit")
+
+    @property
+    def max_requests(self) -> int:
+        return AUTHENTICATED_API_RATE_LIMIT_MAX_REQUESTS
+
+    @property
+    def window_seconds(self) -> int:
+        return AUTHENTICATED_API_RATE_LIMIT_WINDOW_SECONDS
+
+    @staticmethod
+    def _key(user_id: int) -> str:
+        return f"{AUTHENTICATED_API_RATE_LIMIT_PREFIX}{user_id}"
+
+    def check_rate_limit(self, user_id: int | None) -> None:
+        """현재 로그인 요청 수가 임계를 넘었는지 검사합니다."""
+        client = self._conn.client()
+        if client is None or user_id is None:
+            return
+        try:
+            count = client.get(self._key(user_id))
+            if count is not None and int(count) >= self.max_requests:
+                logger.warning("로그인 API 요청 제한 초과: %s", user_id)
+                raise HTTPException(
+                    status_code=429,
+                    detail=AUTHENTICATED_API_RATE_LIMIT_EXCEEDED_DETAIL,
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning(
+                "로그인 API 요청 제한 조회 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc
+            )
+
+    def record_request(self, user_id: int | None) -> None:
+        """로그인 요청을 현재 윈도우에 기록합니다."""
+        client = self._conn.client()
+        if client is None or user_id is None:
+            return
+        try:
+            pipe = client.pipeline()
+            key = self._key(user_id)
+            pipe.incr(key)
+            pipe.expire(key, self.window_seconds)
+            pipe.execute()
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning(
+                "로그인 API 요청 제한 기록 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc
+            )
+
+
+authenticated_api_rate_limiter = AuthenticatedAPIRateLimiter()
+
+
 def enforce_anonymous_api_quota(request: Any, user: Any) -> None:
     if user is not None:
+        user_id = getattr(user, "id", None)
+        authenticated_api_rate_limiter.check_rate_limit(user_id)
+        authenticated_api_rate_limiter.record_request(user_id)
         return
     peer = request.client.host if request.client and request.client.host else ""
     ip = resolve_client_ip(peer, request.headers.get("x-forwarded-for"))

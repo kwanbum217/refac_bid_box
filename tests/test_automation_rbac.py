@@ -317,3 +317,55 @@ def test_callback_path_unchanged_by_rbac(mock_enqueue, client, isolated_db):
     )
     assert callback_resp.status_code == 200
     assert callback_resp.json()["status"] == "success"
+
+
+# --------------------------------------------------------------------------- #
+# RBAC: confirm·cancel 은 staff 전용
+# --------------------------------------------------------------------------- #
+
+
+def _seed_pending_request(db, user_id: int, job_id: str):
+    from src.app.models.chatbot import AutomationRequest
+
+    request_obj = AutomationRequest(
+        request_id=job_id,
+        user_id=user_id,
+        intent_type="full_validation",
+        action_key="full_validation",
+        requested_text="전체 점검해줘",
+        pipeline_name="BIDBOX_Personal_Pipeline_Staging",
+        status="pending_confirmation",
+        requires_confirmation=True,
+    )
+    db.add(request_obj)
+    db.commit()
+    return request_obj
+
+
+def test_non_staff_confirm_returns_403(client, isolated_db):
+    signup = _signup(client)
+    _login(client)
+    _seed_pending_request(isolated_db, signup.json()["id"], "job-rbac-confirm-001")
+
+    response = client.post(
+        "/api/v1/automation/job/job-rbac-confirm-001/confirm",
+        json={"confirmation_token": "anything"},
+    )
+
+    assert response.status_code == 403
+    assert "관리자 권한" in response.json()["detail"]
+
+
+def test_non_staff_cancel_returns_403(client, isolated_db):
+    from src.app.models.chatbot import AutomationRequest
+
+    signup = _signup(client)
+    _login(client)
+    _seed_pending_request(isolated_db, signup.json()["id"], "job-rbac-cancel-001")
+
+    response = client.post("/api/v1/automation/job/job-rbac-cancel-001/cancel")
+
+    assert response.status_code == 403
+    assert "관리자 권한" in response.json()["detail"]
+    stored = isolated_db.query(AutomationRequest).filter_by(request_id="job-rbac-cancel-001").one()
+    assert stored.status == "pending_confirmation"
