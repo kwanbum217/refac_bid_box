@@ -30,6 +30,7 @@ from src.app.core.config import settings
 from src.app.core.db import get_db
 from src.app.core.security import (
     AUTH_SERVICE_UNAVAILABLE_DETAIL,
+    PASSWORD_MAX_LENGTH,
     SESSION_COOKIE_NAME,
     SESSION_TTL_SECONDS,
     SessionStoreUnavailable,
@@ -38,7 +39,9 @@ from src.app.core.security import (
     destroy_session,
     login_rate_limiter,
     make_password,
+    needs_rehash,
     read_session,
+    rehash_password,
     resolve_client_ip,
     signup_rate_limiter,
 )
@@ -206,8 +209,8 @@ class QualificationFactsRequest(BaseModel):
 
 class SignUpRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=150)
-    password1: str = Field(..., min_length=8)
-    password2: str = Field(..., min_length=8)
+    password1: str = Field(..., min_length=8, max_length=PASSWORD_MAX_LENGTH)
+    password2: str = Field(..., min_length=8, max_length=PASSWORD_MAX_LENGTH)
     nickname: str = Field(..., max_length=50, description="닉네임")
     email: EmailStr = Field(..., description="이메일")
     birth_date: date = Field(..., description="생년월일 (YYYY-MM-DD)")
@@ -251,7 +254,7 @@ class MyPageEditRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     username: str
-    password: str
+    password: str = Field(..., max_length=PASSWORD_MAX_LENGTH)
 
 
 class UserResponse(BaseModel):
@@ -573,6 +576,8 @@ def login(
         raise HTTPException(status_code=403, detail="비활성화된 계정입니다.")
 
     login_rate_limiter.record_success(ip, payload.username)
+    if needs_rehash(user.password):
+        user.password = rehash_password(payload.password)
     user.last_login = utcnow()
     db.commit()
     db.refresh(user)

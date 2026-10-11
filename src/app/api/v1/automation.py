@@ -215,8 +215,8 @@ def automation_job_callback_api(
     x_bidbox_callback_token: str = Header("", alias="X-BIDBOX-CALLBACK-TOKEN"),
     db: Session = Depends(get_db),
 ):
-    request_obj = _require_request(db, job_id)
     if not verify_callback_token(str(job_id), x_bidbox_callback_token.strip()):
         raise HTTPException(status_code=403, detail="유효하지 않은 callback 토큰입니다.")
+    request_obj = _require_request(db, job_id)
     apply_callback_payload(db, request_obj, payload)
     return {"status": "success"}
