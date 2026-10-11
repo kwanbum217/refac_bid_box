@@ -75,15 +75,12 @@ SECURITY_BLOCK_ANSWER = (
     "보안상의 이유로 시스템 내부 분류 코드체계 및 코드 베이스 관련 정보는 제공할 수 없습니다. "
     "시스템 관리자에게 문의하시기 바랍니다."
 )
+AUTOMATION_STAFF_REQUIRED_MESSAGE = "자동화 실행은 관리자만 이용할 수 있습니다."
 
 
 @dataclass
 class _PendingRagAnswer:
-    """플래너와 도구 실행까지 끝나고 RAG 본문만 남은 상태입니다.
-
-    이 지점 이전의 분기(세션 전환, 보안 차단, 자동화 확인·실행, 자동화 상태)는
-    생성할 토큰이 없어 스트리밍할 것이 없습니다. 스트리밍은 여기서부터 갈라집니다.
-    """
+    """플래너·도구 실행 후 RAG 본문만 남은 상태입니다. 이전 즉답 분기는 스트리밍하지 않습니다."""
 
     message: str
     session_key: str
@@ -94,19 +91,29 @@ class _PendingRagAnswer:
     user_id: int | None
 
 
+def _automation_staff_denied(kb_status: dict[str, Any] | None, session_key: str) -> ChatResponse:
+    """자동화 실행·확인이 관리자 전용임을 알리는 거부 응답입니다."""
+    return ChatResponse(
+        status="error",
+        mode="error",
+        message=AUTOMATION_STAFF_REQUIRED_MESSAGE,
+        answer=_append_kb_status(AUTOMATION_STAFF_REQUIRED_MESSAGE, kb_status),
+        kb_status=kb_status,
+        session_key=session_key,
+    )
+
+
 def _prepare_chat(
     db: Session, payload: ChatRequest, user_id: int | None = None
 ) -> ChatResponse | _PendingRagAnswer:
-    """RAG 답변 직전까지 진행합니다.
-
-    즉답이 가능한 분기는 완성된 ChatResponse 를, RAG 가 필요하면
-    _PendingRagAnswer 를 돌려줍니다.
-    """
+    """RAG 직전까지 진행합니다. 즉답 분기는 ChatResponse, RAG 는 _PendingRagAnswer 입니다."""
     message = (payload.message or "").strip()
     session_key = ensure_session_key(payload.session_key, user_id=user_id)
     context_state = load_conversation_context(db, session_key, user_id=user_id)
     history = context_state.get("chat_history", [])
     kb_status = get_latest_kb_status_payload(db)
+    staff_user = db.get(CustomUser, user_id) if user_id is not None else None
+    is_staff = bool(staff_user and (staff_user.is_staff or staff_user.is_superuser))
 
     # 세션 전환 요청 (메시지 없이 session_key 만 전달)
     if not message and payload.session_key:
@@ -139,6 +146,8 @@ def _prepare_chat(
 
     # 실행 확인은 계획 수립보다 먼저 처리합니다 (원본 동일).
     confirmation_token = (payload.confirmation_token or "").strip()
+    if not is_staff and (confirmation_token or _is_text_confirmation_message(message)):
+        return _automation_staff_denied(kb_status, session_key)
     if confirmation_token:
         job_id = resolve_confirmation_token(confirmation_token)
         request_obj = get_automation_request(db, job_id)
@@ -198,6 +207,9 @@ def _prepare_chat(
                 session_key=session_key,
                 plan_steps=_plan_steps_payload(plan),
             )
+
+        if not is_staff:
+            return _automation_staff_denied(kb_status, session_key)
 
         request_obj = create_automation_request(
             db,
@@ -463,12 +475,7 @@ async def chat_stream_api(
     request: Request,
     user: CustomUser | None = Depends(get_current_user),
 ):
-    """POST /chat 와 동일한 파이프라인을 SSE 로 흘립니다.
-
-    이벤트 순서는 stage -> (plan) -> (token...) -> final 입니다. `final` 은
-    비스트리밍 응답과 완전히 같은 ChatResponse 라, 화면은 기존 렌더 로직을
-    그대로 쓰면 됩니다. 토큰은 체감 속도를 위한 것이고 정본은 `final` 입니다.
-    """
+    """POST /chat 과 같은 파이프라인을 SSE 로 흘립니다. `final` 이 비스트리밍과 같은 정본입니다."""
     await asyncio.to_thread(enforce_anonymous_api_quota, request, user)
     user_id = user.id if user else None
 

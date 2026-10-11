@@ -152,7 +152,7 @@ def automation_job_confirm_api(
     job_id: str,
     confirmation_token: str = Body("", embed=True),
     db: Session = Depends(get_db),
-    user: CustomUser = Depends(require_current_user),
+    user: CustomUser = Depends(require_staff_user),
 ):
     request_obj = _require_request(db, job_id, user)
     if not confirmation_token:
@@ -202,7 +202,7 @@ def automation_job_status_api(
 def automation_job_cancel_api(
     job_id: str,
     db: Session = Depends(get_db),
-    user: CustomUser = Depends(require_current_user),
+    user: CustomUser = Depends(require_staff_user),
 ):
     request_obj = _require_request(db, job_id, user)
     return _envelope(db, cancel_automation_request(db, request_obj))

@@ -203,7 +203,7 @@ def test_chat_api_falls_back_to_polling_for_loopback_callback_base_url(
     비워 보내는 것까지 확인해야 워커가 헛된 HTTP 시도를 하지 않습니다.
     """
     automation_settings(base_url="http://127.0.0.1:8800", shares_db=False)
-    _login(client)
+    _login(client, isolated_db)
 
     payload = client.post(
         "/api/v1/chatbot/chat", json={"message": "오늘 데이터 갱신해서 그래프 보여줘"}

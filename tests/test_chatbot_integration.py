@@ -46,6 +46,19 @@ def _login(client) -> int:
     return signup.json()["id"]
 
 
+def _make_staff(db) -> None:
+    """로그인한 사용자를 staff 로 승급시킵니다 (챗봇 자동화는 staff 전용)."""
+    import sqlalchemy
+
+    from src.app.models.accounts import CustomUser
+
+    user = db.execute(
+        sqlalchemy.select(CustomUser).where(CustomUser.username == "chat-int-user")
+    ).scalar_one()
+    user.is_staff = True
+    db.commit()
+
+
 def _seed_kb_status(db, **overrides) -> KnowledgeBaseStatus:
     """원본 setUp 의 KnowledgeBaseStatus 픽스처 대응."""
     payload = {
@@ -171,6 +184,7 @@ def test_chat_creates_automation_request_for_data_refresh(mock_enqueue, client, 
     제거한 이식본에 대응 개념이 없어 제외했습니다.
     """
     _login(client)
+    _make_staff(isolated_db)
     _seed_kb_status(isolated_db)
     payload = _chat(client, "오늘 데이터 갱신해서 그래프 보여줘").json()
     assert payload["mode"] == "action"
@@ -193,6 +207,7 @@ def test_chat_requires_login_for_automation(client, isolated_db):
 def test_chat_requires_confirmation_for_full_validation(client, isolated_db):
     """원본 test_chat_api_requires_confirmation_for_full_validation 대응."""
     _login(client)
+    _make_staff(isolated_db)
     _seed_kb_status(isolated_db)
     payload = _chat(client, "전체 점검해줘").json()
     assert payload["mode"] == "confirmation"
@@ -211,6 +226,7 @@ def test_chat_cancel_pending_confirmation_marks_canceled(mock_enqueue, client, i
     확인 대기 상태의 요청은 워커에 넣지 않은 채 취소되어야 합니다.
     """
     _login(client)
+    _make_staff(isolated_db)
     _seed_kb_status(isolated_db)
     job_id = _chat(client, "전체 점검해줘").json()["job"]["job_id"]
 
@@ -232,6 +248,7 @@ def test_chat_text_confirmation_executes_pending_request(mock_enqueue, client, i
     확인 대기 요청이 있을 때 "승인 후 실행해줘" 는 그 요청을 실행으로 전환합니다.
     """
     _login(client)
+    _make_staff(isolated_db)
     _seed_kb_status(isolated_db)
     job_id = _chat(client, "전체 점검해줘").json()["job"]["job_id"]
 
@@ -250,6 +267,7 @@ def test_chat_text_confirmation_executes_pending_request(mock_enqueue, client, i
 def test_chat_text_confirmation_without_pending_request_returns_guidance(client, isolated_db):
     """원본 test_chat_api_text_confirmation_without_pending_request_returns_guidance 대응."""
     _login(client)
+    _make_staff(isolated_db)
     _seed_kb_status(isolated_db)
 
     payload = _chat(client, "승인 후 실행해줘").json()
