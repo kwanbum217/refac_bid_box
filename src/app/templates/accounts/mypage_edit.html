@@ -1,0 +1,196 @@
+{% extends 'base.html' %}
+
+{% block title %}회원정보 수정 - BIDBOX Intelligence{% endblock %}
+
+{% block page_header %}회원정보 수정{% endblock %}
+
+{% block content %}
+<div class="min-h-[calc(100vh-128px)] bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-3xl mx-auto">
+        <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-8 md:p-10">
+            <div class="mb-8">
+                <h1 class="text-2xl font-bold text-slate-900 tracking-tight mb-2">회원정보 수정</h1>
+                <p class="text-slate-500 text-sm">닉네임·이메일과 회사·정량평가 원자료를 수정합니다. 아이디와 비밀번호는 변경할 수 없습니다.</p>
+            </div>
+
+            <form method="POST" class="space-y-8">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+                {% if non_field_errors %}
+                <div class="p-4 bg-red-50 border border-red-100 rounded-lg">
+                    {% for error in non_field_errors %}
+                    <p class="text-red-500 text-xs font-medium flex items-center">
+                        <i class="fas fa-circle-exclamation mr-2"></i> {{ error }}
+                    </p>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- 계정 정보 -->
+                <section class="space-y-5">
+                    <h2 class="text-sm font-bold text-slate-700">계정 정보</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1.5">
+                            <span class="block text-xs font-bold text-slate-500 uppercase tracking-wider">아이디</span>
+                            <p class="block w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 text-sm">{{ account.username }}</p>
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_nickname" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">닉네임</label>
+                            <input type="text" name="nickname" id="id_nickname" value="{{ form.nickname|default('', true) }}" maxlength="50" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="닉네임">
+                            {% if errors.get('nickname') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('nickname').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <label for="id_email" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">이메일</label>
+                            <input type="email" name="email" id="id_email" value="{{ form.email|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="이메일">
+                            {% if errors.get('email') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('email').0 }}</p>{% endif %}
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 회사·담당자 정보 -->
+                <section class="space-y-5 pt-6 border-t border-slate-100">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700">회사 정보 <span class="text-slate-400">(선택)</span></h2>
+                        <p class="text-xs text-slate-400 mt-1">입력하지 않아도 저장됩니다. 공고 조회 때 정량평가에 활용됩니다.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1.5">
+                            <label for="id_company_name" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">회사명</label>
+                            <input type="text" name="company_name" id="id_company_name" value="{{ form.company_name|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="회사명">
+                            {% if errors.get('company_name') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('company_name').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_representative_name" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">대표자</label>
+                            <input type="text" name="representative_name" id="id_representative_name" value="{{ form.representative_name|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="대표자 성명">
+                            {% if errors.get('representative_name') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('representative_name').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <label for="id_address" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">주소</label>
+                            <input type="text" name="address" id="id_address" value="{{ form.address|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="회사 주소">
+                            {% if errors.get('address') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('address').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_phone" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">전화</label>
+                            <input type="text" name="phone" id="id_phone" value="{{ form.phone|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="회사 전화">
+                            {% if errors.get('phone') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('phone').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_fax" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">팩스</label>
+                            <input type="text" name="fax" id="id_fax" value="{{ form.fax|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="팩스">
+                            {% if errors.get('fax') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('fax').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <label for="id_company_email" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">회사 이메일</label>
+                            <input type="email" name="company_email" id="id_company_email" value="{{ form.company_email|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="회사 이메일">
+                            {% if errors.get('company_email') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('company_email').0 }}</p>{% endif %}
+                        </div>
+                    </div>
+
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700 pt-4 border-t border-slate-100">담당자 정보</h2>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1.5">
+                            <label for="id_contact_name" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">담당자</label>
+                            <input type="text" name="contact_name" id="id_contact_name" value="{{ form.contact_name|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="담당자 성명">
+                            {% if errors.get('contact_name') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('contact_name').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_contact_position" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">직책</label>
+                            <input type="text" name="contact_position" id="id_contact_position" value="{{ form.contact_position|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="직책">
+                            {% if errors.get('contact_position') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('contact_position').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_contact_department" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">부서</label>
+                            <input type="text" name="contact_department" id="id_contact_department" value="{{ form.contact_department|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="부서">
+                            {% if errors.get('contact_department') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('contact_department').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_contact_phone" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">담당자 전화</label>
+                            <input type="text" name="contact_phone" id="id_contact_phone" value="{{ form.contact_phone|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="담당자 전화">
+                            {% if errors.get('contact_phone') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('contact_phone').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <label for="id_contact_email" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">담당자 이메일</label>
+                            <input type="email" name="contact_email" id="id_contact_email" value="{{ form.contact_email|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="담당자 이메일">
+                            {% if errors.get('contact_email') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('contact_email').0 }}</p>{% endif %}
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 정량평가 원자료 -->
+                <section class="space-y-5 pt-6 border-t border-slate-100">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700">정량평가 원자료 <span class="text-slate-400">(선택)</span></h2>
+                        <p class="text-xs text-slate-400 mt-1">점수는 저장하지 않고 원자료만 남깁니다. 공고 조회 때 정량평가 엔진이 환산합니다.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div class="space-y-1.5">
+                            <label for="id_credit_grade" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">경영상태 신용평가등급</label>
+                            <select name="credit_grade" id="id_credit_grade" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
+                                <option value="">선택 안 함</option>
+                                {% for value, label in credit_grade_choices %}
+                                <option value="{{ value }}" {% if form.credit_grade == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            {% if errors.get('credit_grade') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('credit_grade').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_credit_evaluated_on" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">평가일</label>
+                            <input type="date" name="credit_evaluated_on" id="id_credit_evaluated_on" value="{{ form.credit_evaluated_on|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
+                            {% if errors.get('credit_evaluated_on') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('credit_evaluated_on').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5 md:col-span-2">
+                            <span class="block text-xs font-bold text-slate-500 uppercase tracking-wider">신인도 항목</span>
+                            <div class="grid grid-cols-1 gap-2 mt-1">
+                                {% for item in reputation_fields %}
+                                <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                                    {% if item.is_single_option %}
+                                    <label for="id_reputation_{{ item.code }}" class="flex items-start gap-2 cursor-pointer">
+                                        <input type="checkbox" name="reputation_items" value="{{ item.code }}" data-reputation-score="{{ item.score_options[0] }}" id="id_reputation_{{ item.code }}" class="mt-0.5 w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer" {% if item.checked %}checked{% endif %}>
+                                        <span>{{ item.label }}</span>
+                                    </label>
+                                    {% elif item.is_range %}
+                                    <label for="{{ item.name }}" class="flex items-center gap-2">
+                                        <span class="flex-1">{{ item.label }}</span>
+                                        <input type="number" name="{{ item.name }}" id="{{ item.name }}" value="{{ item.selected }}" min="{{ item.min_value }}" max="{{ item.max_value }}" step="0.25" class="w-24 px-2 py-1 bg-white border border-slate-200 rounded text-right text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary" placeholder="{{ item.min_value }} ~ {{ item.max_value }}">
+                                    </label>
+                                    {% else %}
+                                    <label for="{{ item.name }}" class="flex items-center gap-2">
+                                        <span class="flex-1">{{ item.label }}</span>
+                                        <select name="{{ item.name }}" id="{{ item.name }}" class="px-2 py-1 bg-white border border-slate-200 rounded text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                                            <option value="">선택 안 함</option>
+                                            {% for option in item.score_options %}
+                                            <option value="{{ option }}" {% if item.selected == option %}selected{% endif %}>{{ option }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </label>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% if errors.get('reputation_items') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('reputation_items').0 }}</p>{% endif %}
+                        </div>
+                        <div class="space-y-1.5">
+                            <label for="id_non_price_quant_score" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">비가격 정량점수</label>
+                            <input type="number" step="0.01" min="0" max="100" name="non_price_quant_score" id="id_non_price_quant_score" value="{{ form.non_price_quant_score|default('', true) }}" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" placeholder="0 ~ 100">
+                            {% if errors.get('non_price_quant_score') %}<p class="text-red-500 text-[10px] font-bold mt-1">{{ errors.get('non_price_quant_score').0 }}</p>{% endif %}
+                        </div>
+                    </div>
+                </section>
+
+                <div class="flex items-center gap-3 pt-6 border-t border-slate-100">
+                    <button type="submit" class="inline-flex justify-center py-3 px-6 border border-transparent rounded-lg shadow-xs text-sm font-bold text-white bg-primary hover:bg-primary/90 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all">
+                        저장
+                    </button>
+                    <a href="{{ url('accounts:mypage') }}" class="inline-flex justify-center py-3 px-6 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 transition-all">
+                        취소
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

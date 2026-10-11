@@ -18,6 +18,10 @@
                     <h1 class="text-2xl font-bold text-slate-900 tracking-tight truncate">{{ account.nickname|default(account.username, true) }}</h1>
                     <p class="text-slate-500 text-sm truncate">{{ account.username }}</p>
                 </div>
+                <a href="{{ url('accounts:mypage_edit') }}" class="ml-auto inline-flex items-center gap-2 shrink-0 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition-all hover:border-primary/40 hover:bg-slate-50 hover:text-primary">
+                    <i class="fas fa-pen"></i>
+                    정보 수정
+                </a>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
