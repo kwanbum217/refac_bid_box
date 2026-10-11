@@ -555,6 +555,9 @@ def _mypage_edit_context(
         "non_field_errors": errors.get("__all__", []),
         "credit_grade_choices": CREDIT_GRADE_CHOICES,
         "reputation_fields": build_reputation_fields(form_values),
+        "document_extraction_enabled": bool(
+            getattr(settings, "DOCUMENT_EXTRACTION_ENABLED", False)
+        ),
     }
 
 
