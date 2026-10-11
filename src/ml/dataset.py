@@ -59,6 +59,7 @@ import pandas as pd
 from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 
+from src.app.core.config import settings
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.ml.training_config import CATEGORY_MODEL_NAMES
 
@@ -74,8 +75,8 @@ MAX_WINNING_RATE = 110.0
 MIN_PRESMPT_PRCE = 100_000
 MAX_PRESMPT_PRCE = 1_000_000_000_000
 
-# 데이터셋 parquet 캐시 기본 위치.
-DEFAULT_OUTPUT_DIR = "data/feature_store"
+# 데이터셋 parquet 캐시 기본 위치는 설정값을 씁니다 (src/app/core/config.py).
+DEFAULT_OUTPUT_DIR = settings.FEATURE_STORE_DIR
 
 # raw_data JSON 키 -> 학습 프레임 컬럼명.
 # 전부 bid_announcements.raw_data 안에만 있어 정식 컬럼으로 조회할 수 없습니다.

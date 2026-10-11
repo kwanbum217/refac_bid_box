@@ -23,6 +23,7 @@ from typing import Any
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.observability import traced_worker_task
 from src.app.models.predictions import RetrainLog
@@ -39,8 +40,8 @@ from src.tasks.notifier import (
 
 logger = logging.getLogger(__name__)
 
-# 데이터셋 parquet 캐시 위치. build_training_dataset 의 기본값과 같습니다.
-DEFAULT_FEATURE_STORE_DIR = "data/feature_store"
+# 데이터셋 parquet 캐시 위치는 설정값을 씁니다 (src/app/core/config.py).
+DEFAULT_FEATURE_STORE_DIR = settings.FEATURE_STORE_DIR
 
 # 비교 대상을 찾지 못했을 때의 표시입니다. 예전에는 여기에 rmse=inf 를 두어
 # **어떤 챌린저든 자동으로 이기게** 되어 있었습니다. 주석은 "무조건 승격되지
@@ -66,7 +67,7 @@ def _serving_metrics(model_name: str) -> tuple[str, dict] | None:
     return version, metrics
 
 
-def _load_champion_metrics(model_name: str, registry_dir: str = "ml_registry") -> tuple[str, dict]:
+def _load_champion_metrics(model_name: str, registry_dir: str | None = None) -> tuple[str, dict]:
     """현재 서빙 중인 모델의 지표를 읽습니다.
 
     서빙본에 지표가 없으면 비교가 불가능하다는 뜻이며, 레지스트리의 다른
@@ -81,7 +82,7 @@ def _load_champion_metrics(model_name: str, registry_dir: str = "ml_registry") -
         # 서빙본은 있는데 지표가 없습니다. 원본에서 이식한 가중치가 이렇습니다.
         return version or NO_CHAMPION, {}
 
-    base = Path(registry_dir) / model_name
+    base = Path(registry_dir or settings.MODEL_REGISTRY_DIR) / model_name
     if not base.exists():
         return NO_CHAMPION, {}
 
