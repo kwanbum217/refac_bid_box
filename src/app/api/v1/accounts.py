@@ -67,6 +67,11 @@ router = APIRouter(prefix="/accounts", tags=["Accounts"])
 
 SESSION_STORE_UNAVAILABLE_DETAIL = "세션 저장소를 사용할 수 없습니다. 잠시 후 다시 시도해 주십시오."
 
+# 계정이 없는 아이디로 로그인해도 같은 비용의 검증을 한 번 수행해 응답 시간으로
+# 아이디 존재 여부를 알 수 없게 하는 더미 해시입니다. 실제 계정과 같은 반복
+# 횟수여야 타이밍이 같아집니다.
+_DUMMY_PASSWORD_HASH = make_password("bidbox-dummy-password-for-timing")
+
 
 def _session_store_unavailable() -> HTTPException:
     """저장소 장애를 401 이 아니라 503 으로 알립니다.
@@ -558,7 +563,9 @@ def login(
     user = db.execute(
         select(CustomUser).where(CustomUser.username == payload.username)
     ).scalar_one_or_none()
-    if user is None or not check_password(payload.password, user.password):
+    stored_password = user.password if user is not None else _DUMMY_PASSWORD_HASH
+    password_matches = check_password(payload.password, stored_password)
+    if user is None or not password_matches:
         login_rate_limiter.record_failure(ip, payload.username)
         raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
     if not user.is_active:

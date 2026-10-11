@@ -62,13 +62,20 @@ def test_login_cookie_development_not_secure(client, login_user):
 
 
 def test_login_cookie_production_is_secure(client, login_user):
-    """production 환경에서는 secure, samesite=lax, httponly, max_age 가 발급된다."""
+    """production 환경에서는 secure, samesite=lax, httponly, max_age 가 발급된다.
+
+    CSRF 쿠키도 production 에서 Secure 로 발급되므로, 실제 운영과 같이 HTTPS
+    base_url 을 쓰는 클라이언트로 이중 제출 토큰을 주고받습니다.
+    """
+    https_client = TestClient(app, base_url="https://testserver")
     with patch("src.app.api.ui.settings") as mock_settings:
         mock_settings.ENVIRONMENT = "production"
-        response = client.post(
+        response = https_client.post(
             "/accounts/login/",
             data=csrf_form(
-                client, "/accounts/login/", {"username": "a2_tester", "password": "a2-pass-1234"}
+                https_client,
+                "/accounts/login/",
+                {"username": "a2_tester", "password": "a2-pass-1234"},
             ),
             follow_redirects=False,
         )

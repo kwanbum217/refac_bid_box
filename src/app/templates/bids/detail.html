@@ -696,7 +696,7 @@ $(document).ready(function() {
 
                 availableModels.forEach(model => {
                     const selected = (model.id === preferredModelId) ? 'selected' : '';
-                    $select.append(`<option value="${model.id}" ${selected}>${model.name}</option>`);
+                    $select.append(`<option value="${escapeHtml(model.id)}" ${selected}>${escapeHtml(model.name)}</option>`);
                 });
 
                 $select.val(preferredModelId);
