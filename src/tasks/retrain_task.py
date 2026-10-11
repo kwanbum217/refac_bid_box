@@ -30,6 +30,7 @@ from src.ml.dataset import build_training_dataset
 from src.ml.trainer import ModelTrainer, trainer
 from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.ml.validate_model import compare_champion_vs_challenger
+from src.tasks.error_payload import summarize_error
 from src.tasks.notifier import (
     notify_empty_training_data,
     notify_retrain_result,
@@ -287,7 +288,7 @@ async def run_retrain_pipeline_task(
         # 알리기만 하고 그대로 올립니다. 여기서 삼키면 호출부가 성공으로 오인합니다.
         await notify_task_failure(
             "재학습 파이프라인",
-            str(exc),
+            summarize_error(exc),
             detail=f"대상 {category_code or '미지정'} / 트리거 {trigger_source}",
         )
         raise
