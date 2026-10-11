@@ -22,7 +22,6 @@ from src.app.core.db import SessionLocal
 from src.app.core.observability import traced_worker_task
 from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import PipelineExecution
-from src.app.services.api_collector import mask_credentials
 from src.app.services.automation_orchestrator import (
     STATUS_FAILED,
     STATUS_RUNNING,
@@ -39,6 +38,7 @@ from src.tasks.automation_steps import (
     _step_retrain,
     _step_search,
 )
+from src.tasks.error_payload import safe_error, summarize_error
 from src.tasks.run_mode_matrix import get_run_mode_steps
 
 # fmt: off
@@ -363,7 +363,7 @@ async def run_automation_pipeline(
                 automation_request_id,
                 "final",
                 "failed",
-                f"실행 중 오류가 발생했습니다: {mask_credentials(exc)}",
+                f"실행 중 오류가 발생했습니다: {summarize_error(exc)}",
                 {"completed_steps": completed},
                 final=True,
                 **delivery,
@@ -378,7 +378,7 @@ async def run_automation_pipeline(
             if execution is not None:
                 execution.status = STATUS_FAILED
                 execution.ended_at = utcnow()
-                execution.logs_summary = mask_credentials(exc)
+                execution.logs_summary = summarize_error(exc)
                 db.commit()
         except Exception as exec_err:
             logger.error("PipelineExecution 상태 갱신 실패: %s", exec_err)
@@ -387,7 +387,7 @@ async def run_automation_pipeline(
             except Exception as rb_exc:
                 logger.debug("실행 상태 갱신 롤백 실패: %s", rb_exc)
 
-        return {"status": "failed", "run_mode": run_mode, "error": str(exc)}
+        return {"status": "failed", "run_mode": run_mode, **safe_error(exc)}
     finally:
         db.close()
 

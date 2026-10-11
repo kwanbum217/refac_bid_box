@@ -28,6 +28,7 @@ from src.app.services.result_coverage import (
     evaluate_match_rate_alerts,
     parse_alert_suppressions,
 )
+from src.tasks.error_payload import safe_error
 from src.tasks.notifier import notify
 from src.tasks.scheduled_tasks import (
     RESULT_COVERAGE_CLAIM_KEY,
@@ -104,7 +105,7 @@ async def _run_result_coverage_monitor() -> dict[str, Any]:
             "as_of": date.today().isoformat(),
             "alerts": [],
             "rows": 0,
-            "error": str(exc),
+            **safe_error(exc),
         }
 
     alerts = result["alerts"]
