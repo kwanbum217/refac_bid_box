@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [ main ]
 
+# 기본 토큰 권한은 읽기 전용입니다. 쓰기 권한이 필요한 잡(supply-chain 의
+# security-events 등)만 잡 단위 permissions 로 명시해 최소 권한을 유지합니다.
+permissions:
+  contents: read
+
 jobs:
   supply-chain:
     name: 공급망 보안 검증

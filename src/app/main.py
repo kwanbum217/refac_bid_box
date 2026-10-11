@@ -17,8 +17,8 @@ from src.app.api.v1.automation import router as automation_router
 from src.app.api.v1.bids import router as bids_router
 from src.app.api.v1.chatbot import router as chatbot_router
 from src.app.api.v1.evaluations import router as evaluations_router
+from src.app.api.v1.health import _safe_failure_detail, warmup_state
 from src.app.api.v1.health import router as health_router
-from src.app.api.v1.health import warmup_state
 from src.app.api.v1.predictions import router as predictions_router
 from src.app.core.config import Settings, get_app_version, settings
 from src.app.core.logging_config import DEFAULT_DATE_FORMAT, DEFAULT_LOG_FORMAT, configure_logging
@@ -53,7 +53,7 @@ async def _warm_llm_backend() -> None:
         warmup_state.mark_llm_done(success=bool(success))
     except Exception as exc:
         logger.warning("LLM 예열 실패: %s", exc)
-        warmup_state.mark_llm_done(success=False, error=str(exc))
+        warmup_state.mark_llm_done(success=False, error=_safe_failure_detail(exc))
 
 
 async def _warm_predictor() -> None:
@@ -92,7 +92,7 @@ async def _warm_predictor() -> None:
             elapsed_ms,
             exc,
         )
-        warmup_state.mark_predictor_done(success=False, error=str(exc))
+        warmup_state.mark_predictor_done(success=False, error=_safe_failure_detail(exc))
 
 
 async def _warm_vector_search() -> None:
@@ -131,7 +131,7 @@ async def _warm_vector_search() -> None:
             elapsed_ms,
             exc,
         )
-        warmup_state.mark_vector_done(success=False, error=str(exc))
+        warmup_state.mark_vector_done(success=False, error=_safe_failure_detail(exc))
 
 
 # 구간 계측 로그를 내보내는 로거 이름이다. 새 계측 지점을 추가하면 여기에 넣어야

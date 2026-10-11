@@ -170,10 +170,13 @@ def _check_llm() -> dict[str, Any]:
             "latency_ms": round((time.perf_counter() - started_at) * 1000, 3),
         }
     except Exception as exc:
+        # 원문 예외 메시지에는 DSN·키·내부 경로가 섞일 수 있으므로 응답에는 분류만
+        # 싣고 원문은 로그로만 남깁니다. 다른 의존성 점검(_run_check)과 같은 규칙입니다.
+        logger.warning("LLM 헬스체크 실패: %s", exc)
         return {
             "ok": False,
             "provider": getattr(settings, "LLM_PROVIDER", "unknown"),
-            "detail": f"{type(exc).__name__}: {exc}",
+            "detail": _safe_failure_detail(exc),
             "latency_ms": round((time.perf_counter() - started_at) * 1000, 3),
         }
 

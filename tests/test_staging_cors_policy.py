@@ -14,7 +14,13 @@ from src.app.main import _cors_kwargs
 
 STAGING_BASE = {
     "ENVIRONMENT": "staging",
+    # DEBUG 와 DB 값은 안전한 값을 명시합니다. 실행 환경의 DEBUG=True·기본 DB
+    # 비밀번호가 그대로 실리면 staging 에 새로 적용된 fail-closed 검사가 CORS 검사
+    # 보다 먼저 걸려 검증하려던 메시지를 가립니다.
+    "DEBUG": False,
     "SECRET_KEY": "test-only-secret-key-at-least-32-characters",
+    "DATABASE_URL": "mysql+pymysql://app:strong-password@db:3306/procurement",
+    "DB_PASSWORD": "strong-password",
 }
 
 DEVELOPMENT_BASE = {

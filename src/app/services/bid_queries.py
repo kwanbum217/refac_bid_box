@@ -747,15 +747,16 @@ def list_announcements(
     stmt = select(BidAnnouncement)
 
     if query:
+        # 사용자 검색어의 % 와 _ 는 LIKE 와일드카드이므로 autoescape 로 리터럴 처리합니다.
         # 숫자로만 이루어지거나 하이픈 포함 숫자인 경우 공고번호 전용 검색으로 인덱스 타게 함
         if query.replace("-", "").isdigit():
-            stmt = stmt.where(BidAnnouncement.bid_ntce_no.contains(query))
+            stmt = stmt.where(BidAnnouncement.bid_ntce_no.contains(query, autoescape=True))
         else:
             stmt = stmt.where(
                 or_(
-                    BidAnnouncement.bid_ntce_nm.contains(query),
-                    BidAnnouncement.bid_ntce_no.contains(query),
-                    BidAnnouncement.dminstt_nm.contains(query),
+                    BidAnnouncement.bid_ntce_nm.contains(query, autoescape=True),
+                    BidAnnouncement.bid_ntce_no.contains(query, autoescape=True),
+                    BidAnnouncement.dminstt_nm.contains(query, autoescape=True),
                 )
             )
 
@@ -841,15 +842,16 @@ def list_results(
     stmt = select(BidResult)
 
     if query:
+        # 사용자 검색어의 % 와 _ 는 LIKE 와일드카드이므로 autoescape 로 리터럴 처리합니다.
         if query.replace("-", "").isdigit():
-            stmt = stmt.where(BidResult.bid_ntce_no.contains(query))
+            stmt = stmt.where(BidResult.bid_ntce_no.contains(query, autoescape=True))
         else:
             stmt = stmt.where(
                 or_(
-                    BidResult.bid_ntce_nm.contains(query),
-                    BidResult.bid_ntce_no.contains(query),
-                    BidResult.dminstt_nm.contains(query),
-                    BidResult.bidwinnr_nm.contains(query),
+                    BidResult.bid_ntce_nm.contains(query, autoescape=True),
+                    BidResult.bid_ntce_no.contains(query, autoescape=True),
+                    BidResult.dminstt_nm.contains(query, autoescape=True),
+                    BidResult.bidwinnr_nm.contains(query, autoescape=True),
                 )
             )
 

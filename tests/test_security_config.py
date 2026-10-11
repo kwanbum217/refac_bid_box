@@ -111,9 +111,15 @@ def test_cors_dev_allow_all_does_not_exempt_production():
 def test_staging_rejects_insecure_cors_settings(overrides, message):
     # staging 은 development 의 임의 오리진 허용 편의를 물려받지 않습니다.
     # CORS_DEV_ALLOW_ALL 을 켜 둬도 명시 목록 검증을 우회할 수 없습니다.
+    # DEBUG 와 DB 값은 안전한 값을 명시합니다. 실행 환경의 DEBUG=True·기본
+    # 비밀번호가 그대로 실리면 새로 적용된 staging 검사가 CORS 검사보다 먼저
+    # 걸려 검증하려던 메시지를 가립니다.
     values = {
         "ENVIRONMENT": "staging",
+        "DEBUG": False,
         "SECRET_KEY": "staging-test-secret-key-that-is-long-enough",
+        "DATABASE_URL": "mysql+pymysql://app:strong-password@db:3306/procurement",
+        "DB_PASSWORD": "strong-password",
         "CORS_DEV_ALLOW_ALL": True,
         "_env_file": None,
     }
@@ -121,6 +127,57 @@ def test_staging_rejects_insecure_cors_settings(overrides, message):
 
     with pytest.raises(ValidationError, match=message):
         Settings(**values)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"DEBUG": True}, "DEBUG"),
+        (
+            {"SECRET_KEY": "change-this-in-production-to-a-secure-random-key"},
+            "예제 SECRET_KEY",
+        ),
+        ({"DB_PASSWORD": "rootpassword"}, "데이터베이스 비밀번호"),
+        (
+            {"DATABASE_URL": "mysql+pymysql://root:rootpassword@db:3306/procurement"},
+            "데이터베이스 비밀번호",
+        ),
+    ],
+)
+def test_staging_rejects_insecure_defaults(overrides, message):
+    """staging 도 production 과 같은 fail-closed 검증을 적용합니다.
+
+    staging 만 완화해 두면 운영에 준하는 환경에서 예제 SECRET_KEY·DEBUG·기본 DB
+    비밀번호가 그대로 통과합니다.
+    """
+    values = {
+        "ENVIRONMENT": "staging",
+        "DEBUG": False,
+        "SECRET_KEY": "staging-test-secret-key-that-is-long-enough",
+        "DATABASE_URL": "mysql+pymysql://app:strong-password@db:3306/procurement",
+        "DB_PASSWORD": "strong-password",
+        "CORS_ALLOWED_ORIGINS": "https://staging.example.com",
+        "_env_file": None,
+    }
+    values.update(overrides)
+
+    with pytest.raises(ValidationError, match=message):
+        Settings(**values)
+
+
+def test_staging_accepts_explicit_secure_settings():
+    configured = Settings(
+        ENVIRONMENT="staging",
+        DEBUG=False,
+        SECRET_KEY="staging-test-secret-key-that-is-long-enough",
+        DATABASE_URL="mysql+pymysql://app:strong-password@db:3306/procurement",
+        DB_PASSWORD="strong-password",
+        CORS_ALLOWED_ORIGINS="https://staging.example.com",
+        _env_file=None,
+    )
+
+    assert configured.ENVIRONMENT == "staging"
+    assert configured.docs_enabled is True
 
 
 def test_development_allows_empty_cors_origins():
