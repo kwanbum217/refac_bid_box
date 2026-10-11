@@ -423,6 +423,27 @@ def get_gitignored_committed_files(
     raise GateToolError(f"git check-ignore 실패 (종료 코드 {code}): {stderr.strip()}")
 
 
+def get_git_deleted_files(
+    repo: Path,
+    base: str,
+    branch: str,
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+) -> list[str]:
+    """base...branch 에서 삭제된 경로만 구합니다.
+
+    gitignore 대상인데 과거에 추적된 파일을 `git rm --cached` 로 빼는 정리는
+    게이트 7 이 막으려는 무시 대상 커밋이 아니라 그 반대입니다. 2026-10-11 에
+    Chroma 백업 tar 의 추적 해제가 게이트 7 위반으로 잡혔습니다.
+    """
+    cmd = ["git", "diff", "--name-only", "-z", "--diff-filter=D", f"{base}...{branch}"]
+    code, stdout, stderr, timed_out = run_command_safe(cmd, repo, timeout)
+    if timed_out:
+        raise GateToolError(f"git diff --diff-filter=D 타임아웃 ({timeout}초)")
+    if code != 0:
+        raise GateToolError(f"git diff --diff-filter=D 실패 (종료 코드 {code}): {stderr.strip()}")
+    return [p for p in stdout.split("\0") if p]
+
+
 def run_gate7_gitignored(
     repo: Path,
     changed_files: list[str],
@@ -2191,8 +2212,10 @@ def run_level1_gate(
         # 게이트 7: gitignore 무시 대상 커밋 검증. 기존 게이트 번호를 밀지
         # 않기 위해 끝에만 추가합니다. 중간에 끼우면 gate_keys 대응이 밀려
         # 뒤 게이트가 잘못된 키로 보고됩니다. 입력은 게이트 1 의 변경 목록
-        # 뿐이며 작업 트리 미커밋/미추적 파일은 보지 않습니다.
-        g7 = run_gate7_gitignored(repo_path, changed_files)
+        # 뿐이며 작업 트리 미커밋/미추적 파일은 보지 않습니다. 삭제된 경로는
+        # 무시 대상의 추적 해제이므로 검사에서 뺍니다.
+        deleted_files = set(get_git_deleted_files(repo_path, base, branch))
+        g7 = run_gate7_gitignored(repo_path, [p for p in changed_files if p not in deleted_files])
         gates.append(g7)
 
         # 게이트 8: 커밋 메시지 규약 검증
