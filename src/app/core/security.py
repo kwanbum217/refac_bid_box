@@ -434,6 +434,14 @@ SIGNUP_RATE_LIMIT_PREFIX = "auth:ratelimit:signup:ip:"
 SIGNUP_RATE_LIMIT_EXCEEDED_DETAIL = (
     "너무 많은 회원가입 시도가 발생했습니다. 잠시 후 다시 시도해 주십시오."
 )
+DOCUMENT_EXTRACTION_RATE_LIMIT_USER_PREFIX = "api:ratelimit:document_extraction:user:"
+DOCUMENT_EXTRACTION_RATE_LIMIT_IP_PREFIX = "api:ratelimit:document_extraction:ip:"
+DOCUMENT_EXTRACTION_RATE_LIMIT_USER_MAX_REQUESTS = 10
+DOCUMENT_EXTRACTION_RATE_LIMIT_IP_MAX_REQUESTS = 30
+DOCUMENT_EXTRACTION_RATE_LIMIT_WINDOW_SECONDS = 3600
+DOCUMENT_EXTRACTION_RATE_LIMIT_EXCEEDED_DETAIL = (
+    "요청이 너무 많습니다. 잠시 후 다시 시도해 주십시오."
+)
 
 
 AUTH_SERVICE_UNAVAILABLE_DETAIL = (
@@ -675,6 +683,96 @@ class AuthenticatedAPIRateLimiter:
 
 
 authenticated_api_rate_limiter = AuthenticatedAPIRateLimiter()
+
+
+class DocumentExtractionRateLimiter:
+    """문서 추출 API 요청 제한기 (사용자·IP 축, 고정 윈도우).
+
+    사용자 기준 시간당 10회, IP 기준 시간당 30회로 제한합니다. Redis 장애 시에는
+    로그인 사용자 제한기와 같이 요청을 차단하지 않고 제한을 건너뜁니다. 카운터
+    키에는 반드시 TTL 을 겁니다(운영 Redis 는 volatile-lru).
+    """
+
+    def __init__(self, connection: RedisConnection | None = None):
+        self._conn = connection or RedisConnection(label="document_extraction_rate_limit")
+
+    @staticmethod
+    def _user_key(user_id: int) -> str:
+        return f"{DOCUMENT_EXTRACTION_RATE_LIMIT_USER_PREFIX}{user_id}"
+
+    @staticmethod
+    def _ip_key(ip: str) -> str:
+        return f"{DOCUMENT_EXTRACTION_RATE_LIMIT_IP_PREFIX}{ip}"
+
+    def check_rate_limit(self, user_id: int | None, ip: str | None) -> None:
+        """사용자·IP 축 한도를 모두 검사합니다. 초과 시 429 를 발생시킵니다."""
+        client = self._conn.client()
+        if client is None:
+            return
+        try:
+            if user_id is not None:
+                count = client.get(self._user_key(user_id))
+                if (
+                    count is not None
+                    and int(count) >= DOCUMENT_EXTRACTION_RATE_LIMIT_USER_MAX_REQUESTS
+                ):
+                    logger.warning("문서 추출 요청 제한 초과(사용자): %s", user_id)
+                    raise HTTPException(
+                        status_code=429,
+                        detail=DOCUMENT_EXTRACTION_RATE_LIMIT_EXCEEDED_DETAIL,
+                    )
+            if ip:
+                count = client.get(self._ip_key(ip))
+                if (
+                    count is not None
+                    and int(count) >= DOCUMENT_EXTRACTION_RATE_LIMIT_IP_MAX_REQUESTS
+                ):
+                    logger.warning("문서 추출 요청 제한 초과(IP): %s", ip)
+                    raise HTTPException(
+                        status_code=429,
+                        detail=DOCUMENT_EXTRACTION_RATE_LIMIT_EXCEEDED_DETAIL,
+                    )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning(
+                "문서 추출 요청 제한 조회 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc
+            )
+
+    def record_request(self, user_id: int | None, ip: str | None) -> None:
+        """요청을 사용자·IP 축 카운터에 기록합니다. 두 키 모두 TTL 을 겁니다."""
+        client = self._conn.client()
+        if client is None:
+            return
+        try:
+            pipe = client.pipeline()
+            if user_id is not None:
+                key = self._user_key(user_id)
+                pipe.incr(key)
+                pipe.expire(key, DOCUMENT_EXTRACTION_RATE_LIMIT_WINDOW_SECONDS)
+            if ip:
+                key = self._ip_key(ip)
+                pipe.incr(key)
+                pipe.expire(key, DOCUMENT_EXTRACTION_RATE_LIMIT_WINDOW_SECONDS)
+            pipe.execute()
+        except Exception as exc:
+            self._conn.invalidate(exc)
+            logger.warning(
+                "문서 추출 요청 제한 기록 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc
+            )
+
+
+document_extraction_rate_limiter = DocumentExtractionRateLimiter()
+
+
+def enforce_document_extraction_quota(request: Any, user: Any) -> None:
+    """문서 추출 요청의 사용자·IP 축 한도를 검사하고 기록합니다."""
+    user_id = getattr(user, "id", None)
+    peer = request.client.host if request.client and request.client.host else ""
+    ip = resolve_client_ip(peer, request.headers.get("x-forwarded-for"))
+    document_extraction_rate_limiter.check_rate_limit(user_id, ip)
+    document_extraction_rate_limiter.record_request(user_id, ip)
 
 
 def enforce_anonymous_api_quota(request: Any, user: Any) -> None:

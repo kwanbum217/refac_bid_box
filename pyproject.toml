@@ -41,6 +41,7 @@ dependencies = [
     "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
     "opentelemetry-exporter-otlp-proto-http>=1.27.0",
     "defusedxml>=0.7.1",
+    "pdfplumber>=0.11.10",
 ]
 
 
