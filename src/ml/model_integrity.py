@@ -47,6 +47,51 @@ class ModelIntegrityError(RuntimeError):
     """서빙 아티팩트가 manifest 와 일치하지 않습니다."""
 
 
+def _is_single_path_component(filename: object) -> bool:
+    """이름이 디렉터리 안 단일 경로 성분인지 판정합니다.
+
+    경로 구분자, 상위 참조(`..`), 절대 경로, 빈 문자열을 모두 거부합니다.
+    POSIX 에서 백슬래시는 구분자가 아니지만 Windows 배포를 함께 막기 위해
+    `/` 와 `\\` 를 모두 금지합니다.
+    """
+    if not isinstance(filename, str) or not filename:
+        return False
+    if filename in {".", ".."}:
+        return False
+    if "/" in filename or "\\" in filename:
+        return False
+    return not Path(filename).is_absolute()
+
+
+def _assert_single_path_component(filename: object, *, label: str) -> str:
+    if not _is_single_path_component(filename):
+        raise ModelIntegrityError(f"{label} 이 디렉터리 밖을 가리킵니다: {filename!r}")
+    return str(filename)
+
+
+def resolve_artifact_path(model_dir: Path | str, candidate: Path | str) -> Path:
+    """로드 대상 경로를 model_dir 안의 단일 파일로 확정합니다.
+
+    `..`, 절대 경로, 심볼릭 링크로 디렉터리 밖을 가리키면
+    ModelIntegrityError 를 냅니다. 래퍼가 여는 경로와 manifest 로 검증하는
+    경로를 같은 resolved 경로로 묶기 위한 함수입니다.
+    """
+    directory = Path(model_dir).resolve()
+    raw = Path(str(candidate))
+    if raw.is_absolute():
+        raise ModelIntegrityError(f"절대 경로 아티팩트는 열지 않습니다: {candidate}")
+    resolved = (directory / raw).resolve()
+    try:
+        relative = resolved.relative_to(directory)
+    except ValueError as exc:
+        raise ModelIntegrityError(
+            f"모델 디렉터리 밖의 아티팩트는 열지 않습니다: {candidate}"
+        ) from exc
+    if len(relative.parts) != 1 or not _is_single_path_component(relative.name):
+        raise ModelIntegrityError(f"모델 디렉터리 밖의 아티팩트는 열지 않습니다: {candidate}")
+    return resolved
+
+
 def sha256_file(path: Path | str) -> str:
     """파일의 SHA-256 을 청크 단위로 계산합니다."""
     digest = hashlib.sha256()
@@ -77,10 +122,10 @@ def write_manifest(model_dir: Path | str) -> dict[str, Any]:
     if not directory.is_dir():
         raise FileNotFoundError(f"모델 디렉터리를 찾을 수 없습니다: {directory}")
 
-    files = {
-        path.name: {"sha256": sha256_file(path), "bytes": path.stat().st_size}
-        for path in iter_manifest_targets(directory)
-    }
+    files = {}
+    for path in iter_manifest_targets(directory):
+        name = _assert_single_path_component(path.name, label="manifest 키")
+        files[name] = {"sha256": sha256_file(path), "bytes": path.stat().st_size}
     payload = {"schema": MANIFEST_SCHEMA, "files": files}
     manifest_path = directory / MANIFEST_FILENAME
     manifest_path.write_text(
@@ -101,6 +146,8 @@ def load_manifest(model_dir: Path | str) -> dict[str, Any] | None:
         raise ModelIntegrityError(f"manifest 를 읽을 수 없습니다: {manifest_path}: {exc}") from exc
     if not isinstance(payload, dict) or not isinstance(payload.get("files"), dict):
         raise ModelIntegrityError(f"manifest 형식이 올바르지 않습니다: {manifest_path}")
+    for name in payload["files"]:
+        _assert_single_path_component(name, label="manifest 키")
     return payload
 
 
@@ -110,7 +157,11 @@ def verify_file(model_dir: Path | str, filename: str) -> None:
     manifest 가 없으면 production·staging 은 거부하고 development 는 경고 후
     진행합니다. manifest 가 있는데 파일이 없거나 해시가 다르면 환경과 무관하게
     거부합니다(변조는 개발 볼륨에서도 조용히 넘기지 않습니다).
+
+    filename 은 디렉터리 안 단일 경로 성분이어야 합니다. `..` 나 구분자가 섞이면
+    검증 대상과 실제로 여는 파일이 갈라지므로 먼저 거부합니다.
     """
+    _assert_single_path_component(filename, label="아티팩트 이름")
     directory = Path(model_dir)
     manifest = load_manifest(directory)
     if manifest is None:

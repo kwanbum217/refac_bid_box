@@ -24,6 +24,8 @@ from src.app.core.config import settings
 from src.ml.model_integrity import (
     MANIFEST_FILENAME,
     ModelIntegrityError,
+    load_manifest,
+    resolve_artifact_path,
     verify_file,
     write_manifest,
 )
@@ -172,6 +174,75 @@ def test_file_missing_from_manifest_refuses_load(tmp_path):
 
     with pytest.raises(ModelIntegrityError, match="manifest 에 아티팩트가 없습니다"):
         _load_wrapper(model_dir)
+
+
+def test_resolve_artifact_path_pins_the_verified_file(tmp_path):
+    """검증 대상과 로드 대상이 같은 resolved 경로로 확정된다."""
+    model_dir = _write_model_dir(tmp_path)
+
+    resolved = resolve_artifact_path(model_dir, "model.bin")
+
+    assert resolved == (model_dir / "model.bin").resolve()
+    assert resolved.parent == model_dir.resolve()
+
+
+def test_metadata_model_file_traversal_does_not_shadow_verified_file(tmp_path):
+    """metadata 의 model_file 이 디렉터리 밖을 가리키면 로드를 거부한다.
+
+    검증은 디렉터리 안 evil.bin 을 보고 로드는 `../evil.bin` 을 여는
+    traversal_verify_load_mismatch 우회를 고정하는 회귀 시험이다.
+    """
+    model_dir = _write_model_dir(tmp_path)
+    joblib.dump(ManifestDummyModel(999.0), model_dir / "evil.bin")
+    write_manifest(model_dir)
+    joblib.dump(ManifestDummyModel(999.0), tmp_path / "evil.bin")
+
+    with pytest.raises(ModelIntegrityError, match="디렉터리 밖"):
+        JoblibModelWrapper(str(model_dir), {"model_file": "../evil.bin"})
+
+
+def test_absolute_metadata_model_file_is_rejected(tmp_path):
+    """metadata 의 model_file 이 절대 경로면 로드를 거부한다."""
+    model_dir = _write_model_dir(tmp_path)
+    write_manifest(model_dir)
+    outside = tmp_path / "evil.bin"
+    joblib.dump(ManifestDummyModel(999.0), outside)
+
+    with pytest.raises(ModelIntegrityError, match="절대 경로"):
+        JoblibModelWrapper(str(model_dir), {"model_file": str(outside)})
+
+
+def test_manifest_key_outside_directory_is_rejected(tmp_path):
+    """manifest 키가 디렉터리 밖을 가리키면 읽기 단계에서 거부한다."""
+    model_dir = _write_model_dir(tmp_path)
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"outside-bytes")
+    payload = write_manifest(model_dir)
+    payload["files"]["../outside.bin"] = {
+        "sha256": _sha256(outside),
+        "bytes": outside.stat().st_size,
+    }
+    (model_dir / MANIFEST_FILENAME).write_text(
+        json.dumps(payload, sort_keys=True), encoding="utf-8"
+    )
+
+    with pytest.raises(ModelIntegrityError, match="디렉터리 밖"):
+        load_manifest(model_dir)
+    with pytest.raises(ModelIntegrityError, match="디렉터리 밖"):
+        verify_file(model_dir, "../outside.bin")
+
+
+@pytest.mark.parametrize(
+    "bad_name",
+    ["../evil.bin", "sub/model.bin", "/etc/hosts", "..", "", "dir\\model.bin"],
+)
+def test_verify_file_rejects_non_component_names(tmp_path, bad_name):
+    """경로 구분자·상위 참조·절대 경로·빈 이름은 검증 전에 거부한다."""
+    model_dir = _write_model_dir(tmp_path)
+    write_manifest(model_dir)
+
+    with pytest.raises(ModelIntegrityError, match="디렉터리 밖"):
+        verify_file(model_dir, bad_name)
 
 
 def test_write_manifest_is_reproducible(tmp_path):
