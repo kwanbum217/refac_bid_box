@@ -1,0 +1,4 @@
+daisyui 4.12.23
+Source: https://cdn.jsdelivr.net/npm/daisyui@4.12.23/dist/full.min.css
+SHA-256: 7c427e577c1d581e19af030d65b08da842fa453d4137e4bd39b222ab13810001
+Upstream-SHA-256: a3afa9372ef6540f54150a483f8e21b9e6cee0867ee4ab72d318132baeaffa33 (로컬은 후행 개행 1바이트 추가)

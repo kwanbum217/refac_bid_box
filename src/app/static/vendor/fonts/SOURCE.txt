@@ -1,0 +1,59 @@
+Inter (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.0/files/inter-latin-300-normal.woff2
+SHA-256: 6b2cee468448705a862f7c05364350cda3d1bf6fecab0aa67690c5b0a391a1b4
+File: fonts/inter/inter-latin-300-normal.woff2
+
+Inter (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.0/files/inter-latin-400-normal.woff2
+SHA-256: 0364d368abf457d4e70dbc7a7a360f3486eaea2837b194915b23d4398bee91ac
+File: fonts/inter/inter-latin-400-normal.woff2
+
+Inter (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.0/files/inter-latin-500-normal.woff2
+SHA-256: d53336707c39d1ec20a2b1f7399ca9f183c45592e215a42fd596dfa2dbb8ad7a
+File: fonts/inter/inter-latin-500-normal.woff2
+
+Inter (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.0/files/inter-latin-600-normal.woff2
+SHA-256: 048d136d592e66896cccc1fe4fada4feb16b7f6af671cd49a2fe6ed6b2276c6c
+File: fonts/inter/inter-latin-600-normal.woff2
+
+Inter (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.0/files/inter-latin-700-normal.woff2
+SHA-256: ced2d8e02e2fbf08d2edec9b5f13648ed8348588a05f7181632f3c1dd6e1f5c3
+File: fonts/inter/inter-latin-700-normal.woff2
+
+Inter (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.0/files/inter-latin-800-normal.woff2
+SHA-256: a51ac27d8b29011f6774908f6a51a53b1ac07a009ba73928dc459ca34670f5ae
+File: fonts/inter/inter-latin-800-normal.woff2
+
+Noto Sans KR (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.0/files/noto-sans-kr-korean-300-normal.woff2
+SHA-256: 89e370be421dc22a0e83e5f752d37577076743e731c49b39f84503b0fa18a638
+File: fonts/noto-sans-kr/noto-sans-kr-korean-300-normal.woff2
+
+Noto Sans KR (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.0/files/noto-sans-kr-korean-400-normal.woff2
+SHA-256: c4d1e008ce109de6a97294db444ccdd382b7b80d0624f4b78e48a822e3922fe8
+File: fonts/noto-sans-kr/noto-sans-kr-korean-400-normal.woff2
+
+Noto Sans KR (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.0/files/noto-sans-kr-korean-500-normal.woff2
+SHA-256: fd7d7057e7cc71c01360d3f41131c63eb761e45bb83a6994bb6a3ca6fb93ed4b
+File: fonts/noto-sans-kr/noto-sans-kr-korean-500-normal.woff2
+
+Noto Sans KR (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.0/files/noto-sans-kr-korean-700-normal.woff2
+SHA-256: 8f52d9c99cab1a21c5f25ca314a786181848a535f52196f8b917500bbd1121bf
+File: fonts/noto-sans-kr/noto-sans-kr-korean-700-normal.woff2
+
+Noto Sans KR (fontsource) 5.0.0
+Source: https://cdn.jsdelivr.net/npm/@fontsource/noto-sans-kr@5.0.0/files/noto-sans-kr-korean-900-normal.woff2
+SHA-256: 2a09bf1cb517ca78fa4878352f7f714984ef24e9f40c3b1e216c609412a14c9d
+File: fonts/noto-sans-kr/noto-sans-kr-korean-900-normal.woff2
+
+fonts.css (repo-local)
+Source: repo-local (src/app/static/vendor/fonts/fonts.css, 직접 작성. @fontsource 5.0.0 웹폰트를 참조)
+SHA-256: 94e526ebd321b53793b5f341e63c6646b936550bbbf20552752a68eb5040c2c8
+File: fonts/fonts.css
