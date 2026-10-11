@@ -664,7 +664,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 $(document).ready(function() {
     let availableModels = [];
     const defaultModelId = '{{ default_prediction_model|default("v25", true) }}';
