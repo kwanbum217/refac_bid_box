@@ -258,17 +258,17 @@
 
                 <div class="flex items-center space-x-2">
                     {% if page_obj.has_previous %}
-                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}" class="pagination-btn flex h-8 items-center justify-center rounded-sm border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50" data-results-loading-link>
+                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}" class="pagination-btn whitespace-nowrap flex h-8 items-center justify-center rounded-sm border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50" data-results-loading-link>
                         이전
                     </a>
                     {% endif %}
 
-                    <span class="flex h-8 items-center justify-center rounded-sm bg-emerald-600 px-3 text-xs font-bold text-white">
+                    <span class="whitespace-nowrap flex h-8 items-center justify-center rounded-sm bg-emerald-600 px-3 text-xs font-bold text-white">
                         {{ page_obj.number }} 페이지
                     </span>
 
                     {% if page_obj.has_next %}
-                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}" class="pagination-btn flex h-8 items-center justify-center rounded-sm border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50" data-results-loading-link>
+                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}" class="pagination-btn whitespace-nowrap flex h-8 items-center justify-center rounded-sm border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50" data-results-loading-link>
                         다음
                     </a>
                     {% endif %}

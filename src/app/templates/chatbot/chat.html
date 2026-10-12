@@ -481,6 +481,40 @@
             padding: 0 1rem;
         }
     }
+
+    /* 768px 미만: 대화 목록을 기본으로 숨기고 토글 버튼으로 여는 서랍으로 쓴다. */
+    @media (max-width: 767.98px) {
+        #chat-sessions-panel.is-open {
+            display: flex;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 70;
+            width: 18rem;
+            max-width: 85vw;
+            box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.45);
+        }
+
+        #chat-sessions-overlay.is-open {
+            display: block;
+        }
+
+        #suggestions-area .quick-btn {
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+
+        #chat-input-wrap {
+            min-width: 0;
+        }
+
+        #btn-send,
+        #btn-stop {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -491,8 +525,9 @@
 </div>
 
 <div class="flex h-[calc(100vh-64px)] overflow-hidden">
+    <div id="chat-sessions-overlay" class="fixed inset-0 z-[60] hidden bg-slate-900/50" data-chat-sessions-overlay></div>
     <!-- Sidebar: Interaction History (Light Enterprise Style) -->
-    <aside class="w-72 h-full h-sidebar flex flex-col border-r border-harness-border">
+    <aside id="chat-sessions-panel" class="hidden md:flex w-72 h-full h-sidebar flex-col border-r border-harness-border">
         <div class="p-6 border-b border-harness-border">
             <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">AI 상호작용 허브</h3>
             <button id="btn-new-chat" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary hover:bg-primary/90 text-white rounded-lg text-sm font-bold transition-all shadow-md shadow-primary/20">
@@ -542,8 +577,11 @@
     <div class="flex-1 flex flex-col min-w-0 bg-[#F9FAFB] dark:bg-slate-950">
 
         <!-- Workspace Header -->
-        <header class="h-14 bg-white dark:bg-slate-900 border-b border-harness-border dark:border-slate-800 px-6 flex items-center justify-between shrink-0">
-            <div class="flex items-center gap-4">
+        <header class="h-14 bg-white dark:bg-slate-900 border-b border-harness-border dark:border-slate-800 px-6 max-sm:px-4 flex items-center justify-between shrink-0">
+            <div class="flex min-w-0 items-center gap-4">
+                <button type="button" id="chat-sessions-toggle" data-chat-sessions-toggle class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-harness-border text-slate-500 transition-colors hover:text-primary md:hidden" aria-controls="chat-sessions-panel" aria-expanded="false" aria-label="대화 목록 열기">
+                    <i class="fas fa-list text-sm"></i>
+                </button>
                 <div class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                     <i class="fas fa-microchip text-primary"></i>
                     <span>AI 신경망 코어</span>
@@ -627,7 +665,7 @@
                      data-user-initial="{{ user.username[:1]|upper if user else '' }}"
                      data-initial-message="{{ initial_message|to_json|forceescape if initial_message else '' }}"
                      class="relative flex items-center gap-3">
-                    <div class="relative flex-1">
+                    <div id="chat-input-wrap" class="relative flex-1">
                         <input type="text" id="chat-input"
                                placeholder="분석하려는 내용이나 궁금한 점을 입력하세요..."
                                class="w-full bg-slate-50 dark:bg-slate-800 border border-harness-border dark:border-slate-700 focus:border-primary dark:focus:border-primary focus:outline-hidden focus:ring-4 focus:ring-primary/10 text-sm py-4 pl-5 pr-20 rounded-xl transition-all">
