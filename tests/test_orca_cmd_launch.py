@@ -179,22 +179,49 @@ def test_effort_flag_rejects_unknown_level(tmp_path: Path):
 
 
 def test_build_command_auto_approve_flags():
-    """--yolo 는 어떤 조합에서도 붙지 않고, --auto 는 --trust 만 추가합니다.
+    """--auto 는 --trust 와 --yolo 를 추가해 승인 대화창 없이 기동합니다.
 
     --trust 는 cmd --help 기준 "Auto-trust project (skip initial permission
-    prompt)" 로 작업 공간 신뢰 대화창만 넘깁니다. 도구 승인 대화창은 기본 모드로
-    남아 자동 승인 감시기가 판정합니다.
+    prompt)" 로 작업 공간 신뢰 대화창만 넘깁니다. --yolo 는 승인 대화창 없이
+    거의 모든 것을 실행하되 deny 규칙은 유효해 위험 명령은 워커 정책 파일의
+    deny 가 막습니다.
     """
     assert "--yolo" not in build_command(MODEL, "지시문")
     assert "--trust" not in build_command(MODEL, "지시문")
 
     cmd = build_command(MODEL, "지시문", auto=True)
-    assert cmd == ["cmd", "--model", MODEL, "--trust", "지시문"]
-    assert "--yolo" not in cmd
+    assert cmd == ["cmd", "--model", MODEL, "--trust", "--yolo", "지시문"]
+    for forbidden in ("--dangerously-skip-permissions", "--accept-edits", "--permission-mode"):
+        assert forbidden not in cmd
 
     one_shot = build_command(MODEL, "지시문", auto=True, one_shot=True)
-    assert one_shot == ["cmd", "--model", MODEL, "--trust", "-p", "지시문"]
-    assert "--yolo" not in one_shot
+    assert one_shot == ["cmd", "--model", MODEL, "--trust", "--yolo", "-p", "지시문"]
+    for forbidden in ("--dangerously-skip-permissions", "--accept-edits", "--permission-mode"):
+        assert forbidden not in one_shot
+
+
+@pytest.mark.parametrize(
+    ("one_shot", "effort"),
+    [(False, None), (False, "high"), (True, None), (True, "high")],
+)
+def test_build_command_auto_includes_trust_and_yolo_every_combination(
+    one_shot: bool, effort: str | None
+):
+    """auto=True 는 단발/대화형, effort 유무 어느 조합에서도 --trust --yolo 를 싣습니다."""
+    cmd = build_command(MODEL, "지시문", auto=True, one_shot=one_shot, effort=effort)
+    assert "--trust" in cmd
+    assert "--yolo" in cmd
+    assert cmd[cmd.index("--trust") + 1] == "--yolo"
+    for forbidden in ("--dangerously-skip-permissions", "--accept-edits", "--permission-mode"):
+        assert forbidden not in cmd
+
+
+def test_build_command_auto_false_omits_trust_and_yolo():
+    """auto=False 는 --trust 와 --yolo 를 붙이지 않습니다."""
+    for one_shot in (False, True):
+        cmd = build_command(MODEL, "지시문", auto=False, one_shot=one_shot)
+        assert "--trust" not in cmd
+        assert "--yolo" not in cmd
 
 
 @patch("scripts.orca_cmd_launch.run_cmd", return_value=0)

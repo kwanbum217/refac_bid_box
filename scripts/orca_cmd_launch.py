@@ -83,17 +83,18 @@ def build_command(
 
     대화형은 cmd "<message>" 위치 인자이고 단발은 cmd -p <message> 입니다.
     모델은 --model 로 provider/model 형태이며 추론 등급은 --effort 입니다.
-    권한은 기본 모드로 띄웁니다. --yolo(권한 우회)는 어떤 조합에서도 붙이지
-    않습니다. auto=True 는 --trust 만 추가하는데, cmd --help 기준 --trust 는
-    "Auto-trust project (skip initial permission prompt)" 로 작업 공간 신뢰
-    대화창만 넘기고 도구 승인 대화창은 그대로 둡니다. 그 대화창은 자동 승인
-    감시기(scripts/orca_auto_approve.py)가 화이트리스트로 판정합니다.
+    권한은 기본 모드로 띄웁니다. auto=True 는 --trust 와 --yolo 를 붙입니다.
+    --trust 는 작업 공간 신뢰 대화창을 넘기고, --yolo 는 승인 대화창 없이
+    거의 모든 것을 실행합니다. 다만 deny 규칙은 yolo 에서도 유효해 위험 명령은
+    워커 정책 파일(scripts/orca_policies/commandcode_worker_settings.json)의
+    deny 가 막습니다. 근거: commandcode.ai/docs/permissions ("Deny rules, ask
+    rules, and the root/home removal breaker still apply.").
     """
     cmd = ["cmd", "--model", model]
     if effort and effort != EFFORT_DEFAULT_LEVEL:
         cmd.extend(["--effort", effort])
     if auto:
-        cmd.append("--trust")
+        cmd.extend(["--trust", "--yolo"])
     if one_shot:
         cmd.extend(["-p", prompt])
         return cmd
@@ -170,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--auto",
         action="store_true",
-        help="작업 공간 신뢰 대화창만 넘깁니다(--trust). 권한 우회(--yolo)는 붙이지 않습니다.",
+        help="작업 공간 신뢰(--trust)와 권한 우회(--yolo)를 켭니다. 승인 대화창 없이 "
+        "실행하되 위험 명령은 워커 정책 파일의 deny 가 막습니다.",
     )
     parser.add_argument(
         "--role",
