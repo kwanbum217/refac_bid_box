@@ -359,3 +359,11 @@ Finalize나 재수집도 한 번만 반영합니다.
 - **`expand` 의 Intent 선언 보존**: `scripts/orca_taskctl.py` 의 `parse_intent` 는 Intent YAML 내 `verification_commands` 및 `shared_resources` 블록을 정식 파싱하여 보존합니다.
 - **공유 자원 안전 병합**: `resolve_shared_resources` 는 파일 경로에서 자동 감지된 공유 자원(`features_py`, `docker`)과 Intent 에 명시된 자원(`redis`, `docker` 등)을 누락 없이 병합합니다.
 - **미선언 시 mypy 자동 부착**: Intent 에 `verification_commands` 가 명시되지 않은 경우, `src/` 하위 변경에 대해 `CAPABILITY_COMMANDS` 에 따라 `uv run mypy src` 가 자동으로 부착되어 Capsule 이 생성됩니다.
+
+### 6.8 워커 워크트리 최소 `.env` 준비 (신규 H)
+
+- **주 저장소 `.env` 전체 복사 제거**: 워커 워크트리에 주 저장소 `.env` 를 통째로 복사하지 않습니다. `scripts/orca_prepare_worktree.py` 가 `scripts/orca_worker_env.py` 의 허용 목록 `ALLOWED_WORKER_ENV_KEYS` 키만 담은 최소 `.env` 를 씁니다.
+- **외부 서비스 비밀값 비전달**: `G2B_SERVICE_KEY`, `G2B_USRINFO_SERVICE_KEY`, `GEMINI_API_KEY`, `MODEL_MANIFEST_SIGNING_KEY`, `MYSQL_ROOT_PASSWORD`, `GF_SECURITY_ADMIN_PASSWORD`, `ALERTMANAGER_SLACK_WEBHOOK_URL`, `MLOPS_WEBHOOK_URL` 는 워커에게 넘기지 않습니다.
+- **SECRET_KEY 재생성**: 원본 값을 복사하지 않고 워크트리마다 `secrets.token_hex(32)` 로 새로 만듭니다.
+- **기존 .env 정리**: 기존 워크트리 `.env` 에 금지 키가 남아 있거나 `SECRET_KEY` 가 주 저장소 값과 같으면 최소 `.env` 로 다시 씁니다. `--check` 는 그 상태를 미준비로 판정합니다.
+- **잔여 위험**: 허용 목록의 DB 접속 키(`DATABASE_URL`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`)는 읽기 전용 조회(`scripts/db_readonly_query.py`)에 필요해 허용합니다. 같은 자격증명으로 쓰기도 가능한 잔여 위험이 남으므로 워커는 조회에만 사용합니다.
