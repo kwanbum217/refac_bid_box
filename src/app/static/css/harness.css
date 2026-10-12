@@ -147,3 +147,26 @@ body {
 .h-content-padding {
     padding: 2rem;
 }
+
+/* 모바일 터치 영역. 44px 미만이면 손가락으로 정확히 누르기 어렵다.
+   768px 미만에서만 키우므로 1024px 이상 데스크톱 레이아웃은 그대로다. */
+@media (max-width: 767.98px) {
+    #app_settings_modal button[aria-label="환경 설정 닫기"],
+    #settings-theme-toggle,
+    #settings-show-sources,
+    [id^="reputation_score__"] {
+        min-height: 2.75rem;
+    }
+
+    #app_settings_modal button[aria-label="환경 설정 닫기"],
+    #settings-theme-toggle,
+    #settings-show-sources {
+        min-width: 2.75rem;
+    }
+
+    #dashboard-doc-link {
+        display: inline-flex;
+        align-items: center;
+        min-height: 2.75rem;
+    }
+}
