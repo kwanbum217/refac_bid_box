@@ -43,29 +43,35 @@ def _policy_permissions() -> dict:
 @pytest.mark.parametrize("one_shot", [False, True])
 @pytest.mark.parametrize("auto", [False, True])
 @pytest.mark.parametrize("effort", [None, "low"])
-def test_cmd_launcher_never_adds_yolo(auto: bool, one_shot: bool, effort: str | None):
-    """cmd 는 어떤 인자 조합에서도 권한 우회를 켜지 않습니다."""
+def test_cmd_launcher_yolo_follows_auto(auto: bool, one_shot: bool, effort: str | None):
+    """--auto 일 때만 --yolo 를 켜고, 권한 우회 별칭은 어떤 조합에서도 쓰지 않습니다."""
     cmd = orca_cmd_launch.build_command(
         CMD_MODEL, "지시문", effort=effort, one_shot=one_shot, auto=auto
     )
-    assert "--yolo" not in cmd
+    if auto:
+        assert "--yolo" in cmd
+        assert cmd[cmd.index("--trust") + 1] == "--yolo"
+    else:
+        assert "--yolo" not in cmd
+        assert "--trust" not in cmd
     assert "--dangerously-skip-permissions" not in cmd
 
 
 def test_cmd_launcher_auto_keeps_only_workspace_trust():
-    """--trust 는 작업 공간 신뢰 대화창만 넘기므로 유지하고 --yolo 는 뺍니다."""
+    """--trust 로 작업 공간 신뢰를 넘기고 --yolo 로 승인 대화창을 없앱니다. deny 는 유효합니다."""
     assert orca_cmd_launch.build_command(CMD_MODEL, "지시문", auto=True) == [
         "cmd",
         "--model",
         CMD_MODEL,
         "--trust",
+        "--yolo",
         "지시문",
     ]
 
 
 @patch("scripts.orca_cmd_launch.run_cmd", return_value=0)
-def test_cmd_main_never_execs_yolo(mock_run, tmp_path: Path, monkeypatch):
-    """build_command 뿐 아니라 실제 main 실행 경로에서도 --yolo 가 없어야 합니다."""
+def test_cmd_main_execs_trust_and_yolo(mock_run, tmp_path: Path, monkeypatch):
+    """build_command 뿐 아니라 실제 main 실행 경로에서도 --trust --yolo 가 실립니다."""
     monkeypatch.setattr(orca_cmd_launch.common, "deploy_worker_settings", lambda *a, **k: None)
     target = tmp_path / "preamble_policy_cmd.txt"
     target.write_text("지시문", encoding="utf-8")
@@ -89,7 +95,11 @@ def test_cmd_main_never_execs_yolo(mock_run, tmp_path: Path, monkeypatch):
     argv = mock_run.call_args[0][0]
     assert argv[:5] == ["cmd", "--model", CMD_MODEL, "--effort", "low"]
     assert "--trust" in argv
-    assert "--yolo" not in argv
+    assert "--yolo" in argv
+    assert argv[argv.index("--trust") + 1] == "--yolo"
+    assert "--dangerously-skip-permissions" not in argv
+    assert "--accept-edits" not in argv
+    assert "--permission-mode" not in argv
 
 
 @pytest.mark.parametrize("one_shot", [False, True])
