@@ -844,6 +844,13 @@ SHELL_VARIABLE_EXPANSION = re.compile(
     r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<plain>[A-Za-z_][A-Za-z0-9_]*))"
 )
 
+# 셸 특수 매개변수 중 값이 정수(직전 명령 종료 코드)로만 정해지는 $? 와 ${?} 는
+# 경로가 될 수 없으므로 변수 확장으로 보지 않습니다. 워커가 검증 명령 뒤에
+# `echo "EXIT=$?"` 를 붙이는 표준 형태인데, 이것을 확장으로 보류하면 검증이
+# 멈춥니다(2026-10-13 cmd 워커 정체). $#, $$, $@, $*, $0~$9, $! 등 다른 특수
+# 매개변수는 이번 범위가 아니므로 종전대로 보류합니다.
+SHELL_SAFE_SPECIAL_PARAMETERS = re.compile(r"\$(?:\{\?\}|\?)")
+
 # 루프 변수는 루프가 값을 정하므로 본문에서는 확장이라도 작업 트리 밖이라고
 # 단정할 수 없습니다. `for f in src/*.py; do cat $f; done` 처럼 루프 변수를 경로로
 # 쓰는 정상 명령을 변수 확장이라는 이유로 보류하면 워커가 매번 멈춥니다.
@@ -877,6 +884,8 @@ def check_variable_expansion(arg: str, bound_vars: frozenset[str]) -> str | None
     $VAR, ${VAR} 는 실행 시점에 값이 정해지므로 작업 트리 밖을 가리킬 수 있어
     보류합니다. 다만 루프 변수(bound_vars)만 참조하고 그 밖에 해석 불가한 $ 가
     없으면 통과시킵니다. 토큰 끝의 $ 는 정규식 앵커이므로 확장으로 보지 않습니다.
+    $? 와 ${?} 는 직전 명령 종료 코드(정수)라 경로가 될 수 없으므로 확장으로
+    보지 않습니다. 다른 특수 매개변수($#, $$, $0 등)는 종전대로 보류합니다.
     """
     if "$" not in arg:
         return None
@@ -888,6 +897,10 @@ def check_variable_expansion(arg: str, bound_vars: frozenset[str]) -> str | None
         name = match.group("braced") or match.group("plain")
         if name:
             names.append(name)
+
+    # 직전 명령 종료 코드($?, ${?})는 정수이므로 경로가 될 수 없어 확장에서 뺍니다.
+    for match in SHELL_SAFE_SPECIAL_PARAMETERS.finditer(arg):
+        covered.update(range(match.start(), match.end()))
 
     for index, ch in enumerate(arg):
         if ch != "$" or index in covered:
