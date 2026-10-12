@@ -121,3 +121,17 @@ def test_rendered_pages_have_no_inline_event_handlers(auth_client, client, path)
 
     assert not INLINE_HANDLER.search(body), "인라인 이벤트 핸들러는 CSP 위반입니다"
     assert "javascript:" not in body.lower()
+
+
+@pytest.mark.parametrize("path", ANONYMOUS_PATHS + AUTHENTICATED_PATHS)
+def test_footer_has_no_empty_links(auth_client, client, path):
+    """연결할 페이지가 없는 href="#" 링크를 푸터에 남기지 않습니다."""
+    page_client = client if path in ANONYMOUS_PATHS else auth_client
+    body = _rendered(page_client, path)
+
+    footer = re.search(r"<footer\b.*?</footer>", body, re.DOTALL)
+    assert footer, "푸터를 찾지 못했습니다"
+    footer_html = footer.group(0)
+    assert 'href="#"' not in footer_html
+    for label in ("문서", "지원 센터", "API 안내"):
+        assert label not in footer_html

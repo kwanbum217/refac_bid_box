@@ -163,10 +163,4 @@ body {
     #settings-show-sources {
         min-width: 2.75rem;
     }
-
-    #dashboard-doc-link {
-        display: inline-flex;
-        align-items: center;
-        min-height: 2.75rem;
-    }
 }
