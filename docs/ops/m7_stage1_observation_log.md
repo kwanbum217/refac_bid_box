@@ -21,9 +21,15 @@
 | --- | --- | --- | --- | --- | --- |
 | 2026-10-13 | cmd `deepseek-v4.1-flash` | `uv run pytest ... 2>&1 \| tail -20; echo "EXIT=$?"` | 약 3시간 반 | `orca_auto_approve.py` 의 `check_variable_expansion` 이 `$?` 를 경로 변수 확장으로 보고 보류(코디네이터 재현 확정). 파이프·`;` 는 원인이 아니었다. `orca_worker_watch.py` 의 `BLOCK_SIGNALS` 에 cmd 대화창 문구가 없어 차단으로 보고되지 않았다 | 수동 승인. 근본 수정은 Run `run_43d241b65dee` 의 AA1(`$?` 예외)·WW1(감시 신호) |
 
+| 2026-10-13 | cmd `deepseek-v4.1-flash` | 파일 편집·새 파일 생성 대화창, `orca orchestration ask` 명령 대화창 | 수 분씩 4회 이상 | `--yolo` 제거 후 편집 대화창을 처리하는 장치가 없었고, 감시기 허용 목록에 `orca orchestration ask` 가 없었다. 사용자가 네 번 먼저 발견했다 | 사용자 결정으로 관찰을 중단하고 무승인(yolo) + deny 강화로 전환(CA1 런처, PB1 정책) |
+
 ---
 
-## 3. 판정 기준 (관찰 종료 시)
+## 3. 관찰 종료 (2026-10-13)
+
+첫날 정체가 반복되어 사용자가 관찰을 중단하고 워커 권한 모드를 무승인(yolo)으로 되돌리도록 결정했다. 정본 조항은 [`multi_agent_setup.md`](multi_agent_setup.md) 5.3절이다. 아래 판정 기준은 기록으로만 남긴다.
+
+## 4. 판정 기준 (관찰 종료 시)
 
 | 관찰 결과 | 다음 조치 |
 | --- | --- |
