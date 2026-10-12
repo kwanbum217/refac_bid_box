@@ -109,32 +109,30 @@ def test_build_command_interactive_and_one_shot():
     assert one_shot_cmd == ["opencode", "run", "--model", "openai/gpt-5.6-turbo", "지시문"]
 
 
-def test_build_command_auto_flag():
-    """권한 자동 승인 플래그(--auto)는 명시적으로 지정될 때만 인자에 포함되어야 합니다."""
-    cmd_default = build_command("openai/gpt-5.6-turbo", "지시문", auto=False)
-    assert "--auto" not in cmd_default
+def test_build_command_never_forwards_auto_flag():
+    """--auto 는 어떤 조합에서도 opencode 에 넘기지 않아야 합니다.
 
-    cmd_flag_interactive = build_command(
-        "openai/gpt-5.6-turbo", "지시문", one_shot=False, auto=True
-    )
-    assert "--auto" in cmd_flag_interactive
-    assert cmd_flag_interactive == [
+    --auto 는 명시 deny 가 아닌 모든 승인 요청을 자동 승인합니다(opencode --help:
+    "auto-approve permissions that are not explicitly denied (dangerous!)").
+    인자 자체는 호환을 위해 남기지만 argv 에는 실리지 않습니다.
+    """
+    for one_shot in (False, True):
+        for auto in (False, True):
+            cmd = build_command("openai/gpt-5.6-turbo", "지시문", one_shot=one_shot, auto=auto)
+            assert "--auto" not in cmd, cmd
+
+    assert build_command("openai/gpt-5.6-turbo", "지시문", auto=True) == [
         "opencode",
         "--model",
         "openai/gpt-5.6-turbo",
-        "--auto",
         "--prompt",
         "지시문",
     ]
-
-    cmd_flag_oneshot = build_command("openai/gpt-5.6-turbo", "지시문", one_shot=True, auto=True)
-    assert "--auto" in cmd_flag_oneshot
-    assert cmd_flag_oneshot == [
+    assert build_command("openai/gpt-5.6-turbo", "지시문", one_shot=True, auto=True) == [
         "opencode",
         "run",
         "--model",
         "openai/gpt-5.6-turbo",
-        "--auto",
         "지시문",
     ]
 
@@ -324,9 +322,9 @@ def test_build_command_kilo_binary_with_variant():
         "openrouter/stealth/space-bunny-alpha",
         "--variant",
         "max",
-        "--auto",
         "지시문",
     ]
+    assert "--auto" not in cmd
 
 
 def test_build_command_rejects_variant_in_opencode_interactive_mode():
@@ -353,7 +351,8 @@ def test_build_command_kilo_interactive_variant_selects_injected_agent():
         binary="kilo",
         variant="max",
     )
-    assert cmd == ["kilo", "--agent", "orca-worker", "--auto", "--prompt", "지시문"]
+    assert cmd == ["kilo", "--agent", "orca-worker", "--prompt", "지시문"]
+    assert "--auto" not in cmd
 
 
 def test_build_env_injects_kilo_agent_with_model_and_variant():
@@ -444,4 +443,4 @@ def test_main_one_shot_runs_kilo_binary(mock_run: MagicMock, mock_shell: MagicMo
         "--variant",
         "max",
     ]
-    assert "--auto" in cmd
+    assert "--auto" not in cmd

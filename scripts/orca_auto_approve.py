@@ -67,6 +67,17 @@ CMD_EXEC_END_MARKERS = (
     "ctrl+e explain",
 )
 
+# OpenCode CLI 의 권한 승인 대화창. 제목이 "Permission required" 이고 선택지가
+# "Allow once" / "Always allow" / "Reject" 입니다. 셸 요청은 본문에 실행할 명령을
+# "$ <명령>" 한 줄로 적습니다. 확인 문구가 CONFIRM_PHRASES 와 달라 기존 패턴에
+# 걸리지 않았습니다. 2026-10-12 에 opencode 런처의 --auto 를 제거하면서 대화창이
+# 다시 뜨게 되어 탐지 패턴을 추가했습니다. 선택지 문구는 OpenCode TUI 의
+# permissionOptionLabel 과 같습니다.
+OPENCODE_PERMISSION_MARKER = "Permission required"
+OPENCODE_PERMISSION_REQUIRED_LABELS = ("Allow once", "Reject")
+OPENCODE_PERMISSION_OPTION_LABELS = ("Allow once", "Always allow", "Reject")
+OPENCODE_SHELL_COMMAND_PREFIX = "$ "
+
 # 리다이렉트 대상으로 허용하는 경로. 워크트리 상대 경로와 임시 디렉터리만 씁니다.
 # 절대 경로, 상위 참조, .env, .git 아래는 거부합니다.
 REDIRECT_DENY = re.compile(r"^/(?!tmp/|dev/null)|\.\.|(^|/)\.env|(^|/)\.git/")
@@ -1796,6 +1807,54 @@ def extract_command_code_command(screen: str) -> str | None:
     return " ".join(command.split())
 
 
+def extract_opencode_permission_command(screen: str) -> str | None:
+    """OpenCode 승인 대화창에서 실행 대기 중인 셸 명령을 추출합니다.
+
+    대화창이 아니면 None 을 반환합니다. 셸 요청이 아니면(편집·외부 디렉터리 등)
+    실행할 명령이 없으므로 빈 문자열을 돌려 보류 경로로 보냅니다. 명령 줄의 끝을
+    선택지 문구로 확정하지 못하면 명령이 접혀 일부만 보일 수 있으므로, 잘린
+    명령을 승인하지 않도록 역시 빈 문자열을 돌려줍니다.
+    """
+    if not isinstance(screen, str) or not screen:
+        return None
+    normalized = normalize_text(screen)
+    if normalize_text(OPENCODE_PERMISSION_MARKER) not in normalized:
+        return None
+    if not all(
+        normalize_text(label) in normalized for label in OPENCODE_PERMISSION_REQUIRED_LABELS
+    ):
+        return None
+
+    lines = screen.splitlines()
+    start = next(
+        (
+            index
+            for index, raw in enumerate(lines)
+            if raw.strip().startswith(OPENCODE_SHELL_COMMAND_PREFIX)
+        ),
+        None,
+    )
+    if start is None:
+        return ""
+
+    collected = [lines[start].strip()[len(OPENCODE_SHELL_COMMAND_PREFIX) :].strip()]
+    terminated = False
+    for raw in lines[start + 1 :]:
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        if any(stripped.startswith(label) for label in OPENCODE_PERMISSION_OPTION_LABELS):
+            terminated = True
+            break
+        if stripped.startswith(("⇆", "enter ")):
+            terminated = True
+            break
+        collected.append(stripped)
+    if not terminated:
+        return ""
+    return " ".join(" ".join(collected).split())
+
+
 def pending_command(screen: str) -> str | None:
     norm_screen = normalize_text(screen)
 
@@ -1809,7 +1868,12 @@ def pending_command(screen: str) -> str | None:
     if cmd_command is not None:
         return cmd_command
 
-    # 3. 기존 도구/명령 실행 승인 프롬프트 검사
+    # 3. OpenCode 승인 대화창 검사
+    opencode_command = extract_opencode_permission_command(screen)
+    if opencode_command is not None:
+        return opencode_command
+
+    # 4. 기존 도구/명령 실행 승인 프롬프트 검사
     confirm = next(
         (phrase for phrase in CONFIRM_PHRASES if phrase in screen or phrase.lower() in norm_screen),
         None,

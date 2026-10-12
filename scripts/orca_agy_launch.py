@@ -51,8 +51,12 @@ def build_command(model: str, prompt: str) -> list[str]:
     --mode accept-edits 를 시작 인자로 넣어 TUI 가 첫 프롬프트를 받기 전에 편집
     모드를 확정합니다. 이렇게 하지 않으면 스피너 화면에서 shift+tab 전환을
     시도하는 경쟁 조건이 생겨 첫 편집 대화창보다 모드 확신이 늦어집니다.
+
+    --sandbox 는 agy --help 기준 "Run in a sandbox with terminal restrictions
+    enabled" 로 터미널 샌드박스를 켭니다. 승인 목록 판정(감시기)과 별개로 명령
+    실행 자체를 OS 경계 안에 가두는 2차 방어선입니다.
     """
-    return ["agy", "--model", model, "--mode", "accept-edits", "-i", prompt]
+    return ["agy", "--model", model, "--mode", "accept-edits", "--sandbox", "-i", prompt]
 
 
 def acquire_permissions(
