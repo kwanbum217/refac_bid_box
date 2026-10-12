@@ -4,11 +4,17 @@
 CSP 때문에 인라인 이벤트 핸들러를 쓸 수 없어 외부 스크립트로 동작을 옮긴
 구조를 렌더링된 HTML 에서 고정합니다. 데스크톱(1024px 이상) 클래스는
 md:/lg: 접두로 복원되는지도 함께 확인합니다.
+
+Bootstrap 5 를 함께 불러오므로 이름이 겹치는 간격 유틸리티는 !important 로
+Tailwind 의 반응형 변형을 이깁니다. 같은 class 속성에 둘이 함께 있으면 모바일
+여백이 데스크톱까지 덮어써지므로, main 에 이미 있던 조합만 예외로 두고
+이번 변경이 새로 만든 조합은 test_no_new_bootstrap_spacing_conflicts 가 막습니다.
 """
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -135,3 +141,91 @@ def test_footer_has_no_empty_links(auth_client, client, path):
     assert 'href="#"' not in footer_html
     for label in ("문서", "지원 센터", "API 안내"):
         assert label not in footer_html
+
+
+TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "src" / "app" / "templates"
+
+CLASS_ATTR = re.compile(r'class="([^"]*)"')
+RESPONSIVE_PREFIX = re.compile(r"^(?:sm|md|lg|xl|2xl|max-(?:sm|md|lg|xl|2xl)):")
+
+# Bootstrap 5 의 간격 유틸리티 접두. -0 ~ -5 만 생성되며 값이 모두 !important 다.
+BOOTSTRAP_SPACING_PREFIXES = frozenset(
+    ("p", "px", "py", "pt", "pb", "ps", "pe", "m", "mx", "my", "mt", "mb", "ms", "me", "gap", "g")
+)
+
+# main(67ddfc99) 에 원래 있던 조합. Bootstrap 의 !important 값이 이미 적용되고
+# 있어 이번 변경의 회귀가 아니므로 그대로 둔다.
+PINNED_BOOTSTRAP_CONFLICTS = frozenset(
+    {
+        ("accounts/login.html", "px-4", "sm:px-6"),
+        ("accounts/login.html", "px-4", "lg:px-8"),
+        ("accounts/mypage.html", "px-4", "sm:px-6"),
+        ("accounts/mypage.html", "px-4", "lg:px-8"),
+        ("accounts/mypage_edit.html", "px-4", "sm:px-6"),
+        ("accounts/mypage_edit.html", "px-4", "lg:px-8"),
+        ("accounts/signup.html", "px-4", "sm:px-6"),
+        ("accounts/signup.html", "px-4", "lg:px-8"),
+        ("accounts/signup.html", "p-4", "sm:p-6"),
+        ("bids/detail.html", "p-3", "sm:p-6"),
+        ("bids/detail.html", "p-0", "sm:p-4"),
+        ("index.html", "px-5", "sm:px-8"),
+        ("index.html", "px-5", "xl:px-10"),
+    }
+)
+
+
+def _spacing_axis(token: str) -> str | None:
+    """'px-4', 'sm:px-8' 처럼 간격 클래스면 접두(px, py, gap...)를 돌려준다."""
+    parts = token.split(":")[-1].split("-")
+    if len(parts) < 2 or parts[0] not in BOOTSTRAP_SPACING_PREFIXES:
+        return None
+    try:
+        int(parts[1])
+    except ValueError:
+        return None
+    return parts[0]
+
+
+def _is_bootstrap_spacing_class(token: str) -> bool:
+    """Bootstrap 5 가 -0 ~ -5 로 만드는, 접두 없는 간격 클래스인지 본다."""
+    if ":" in token:
+        return False
+    parts = token.split("-")
+    if len(parts) < 2 or parts[0] not in BOOTSTRAP_SPACING_PREFIXES:
+        return False
+    try:
+        step = int(parts[1])
+    except ValueError:
+        return False
+    return 0 <= step <= 5
+
+
+def _bootstrap_spacing_conflicts(markup: str) -> set[tuple[str, str]]:
+    found: set[tuple[str, str]] = set()
+    for match in CLASS_ATTR.finditer(markup):
+        tokens = match.group(1).split()
+        for token in tokens:
+            if not _is_bootstrap_spacing_class(token):
+                continue
+            axis = _spacing_axis(token)
+            for candidate in tokens:
+                if RESPONSIVE_PREFIX.match(candidate) and _spacing_axis(candidate) == axis:
+                    found.add((token, candidate))
+    return found
+
+
+def test_no_new_bootstrap_spacing_conflicts():
+    """Bootstrap 과 겹치는 간격 클래스 옆에 같은 속성의 반응형 변형을 두지 않는다.
+
+    둘이 같은 class 속성에 있으면 Bootstrap 의 !important 가 반응형 변형을 이겨
+    모바일 값이 데스크톱까지 번진다. 모바일 값은 겹치지 않는 클래스의 max-sm:
+    변형으로만 주고, main 에 원래 있던 조합은 예외로 고정한다.
+    """
+    found = set()
+    for template in sorted(TEMPLATES_DIR.rglob("*.html")):
+        relative = template.relative_to(TEMPLATES_DIR).as_posix()
+        for bare, variant in _bootstrap_spacing_conflicts(template.read_text(encoding="utf-8")):
+            found.add((relative, bare, variant))
+
+    unexpected = sorted(found - PINNED_BOOTSTRAP_CONFLICTS)
+    assert not unexpected, f"Bootstrap 간격 유틸리티와 충돌하는 조합이 추가되었습니다: {unexpected}"
