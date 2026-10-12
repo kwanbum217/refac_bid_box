@@ -224,6 +224,14 @@ BLOCK_SIGNALS: list[tuple[str, str, str, BlockKind]] = [
         "화면을 읽고 승인 여부를 판단",
         "prompt",
     ),
+    # Command Code(cmd) CLI 는 확인 문구 대신 본문에 실행할 명령을 문장으로 적고
+    # 번호 선택지를 띄웁니다. 표지는 orca_auto_approve.py 의 CMD_EXEC_MARKER 와 같습니다.
+    (
+        "Command Code needs to execute",
+        "Command Code 도구 승인 대화창",
+        "자동 승인 감시기가 보류한 명령일 수 있음. 터미널 끝을 읽고 승인 여부를 판단",
+        "prompt",
+    ),
 ]
 
 BLOCK_KIND_LABELS: dict[BlockKind, str] = {
