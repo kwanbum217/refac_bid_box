@@ -164,6 +164,43 @@ class TestVariableExpansionInPathArguments:
         assert "경로 인자에 변수 확장" in reason
 
 
+class TestExitCodeSpecialParameter:
+    """직전 명령 종료 코드($?)는 경로가 될 수 없으므로 확장으로 보지 않습니다.
+
+    2026-10-13 cmd 워커가 `uv run pytest ... ; echo "EXIT=$?"` 형태의 검증 명령을
+    승인 대화창에서 붙잡혀 멈췄습니다. 원인은 check_variable_expansion 이 $? 를
+    이름형 변수처럼 보류한 것입니다. $? 와 ${?} 만 통과시키고 다른 특수 매개변수와
+    이름형 변수 확장은 종전대로 보류합니다.
+    """
+
+    STALLED_COMMAND = 'uv run pytest tests/test_x.py -q 2>&1 | tail -20; echo "EXIT=$?"'
+
+    def test_stalled_verification_command_is_approved(self, worktree: Path) -> None:
+        verdict, reason = classify_command(self.STALLED_COMMAND, workspace_root=worktree)
+        assert verdict == "approve", f"판정이 {verdict}입니다: {reason}"
+
+    def test_stalled_verification_command_is_approved_without_workspace_root(self) -> None:
+        verdict, reason = classify_command(self.STALLED_COMMAND)
+        assert verdict == "approve", f"판정이 {verdict}입니다: {reason}"
+
+    @pytest.mark.parametrize("cmd", ['echo "EXIT=$?"', "echo ${?}", "echo $?"])
+    def test_exit_code_expansion_is_approved(self, cmd: str, worktree: Path) -> None:
+        verdict, reason = classify_command(cmd, workspace_root=worktree)
+        assert verdict == "approve", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+
+    @pytest.mark.parametrize("cmd", ['echo "$?$HOME"', "cat $HOME/x"])
+    def test_exit_code_mixed_with_name_expansion_is_held(self, cmd: str, worktree: Path) -> None:
+        verdict, reason = classify_command(cmd, workspace_root=worktree)
+        assert verdict == "hold", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+        assert "경로 인자에 변수 확장" in reason
+
+    @pytest.mark.parametrize("cmd", ["echo $#", "echo $$"])
+    def test_other_special_parameters_are_held(self, cmd: str, worktree: Path) -> None:
+        verdict, reason = classify_command(cmd, workspace_root=worktree)
+        assert verdict == "hold", f"'{cmd}' 판정이 {verdict}입니다: {reason}"
+        assert "경로 인자에 변수 확장" in reason
+
+
 class TestInsidePathsAreApproved:
     """작업 트리 안 상대 경로와 임시 디렉터리는 계속 승인해야 합니다."""
 
