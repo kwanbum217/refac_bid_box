@@ -16,7 +16,9 @@ OpenCode CLI 와 그 포크인 Kilo CLI(--binary kilo)를 Orca 워커로 씁니�
 kilo 는 KILO_CONFIG_CONTENT 로 model·variant 를 고정한 전용 에이전트를 주입하고
 --agent 로 선택합니다. 사용자가 왼쪽 워크트리에서 TUI 로 진행을 볼 수 있습니다.
 
-    --binary kilo --model openrouter/stealth/space-bunny-alpha --variant max --auto
+    --binary kilo --model openrouter/stealth/space-bunny-alpha --variant max
+
+--auto 는 호환을 위해 인자만 남아 있고 opencode 에 전달되지 않습니다.
 """
 
 from __future__ import annotations
@@ -60,7 +62,12 @@ def build_command(
 
     대화형은 opencode --prompt [prompt] 이고 단발은 opencode run [message] 입니다.
     모델은 -m 또는 --model 로 provider/model 형태입니다.
-    권한 자동 승인 인자(--auto)는 기본으로 붙이지 않으며 명시적으로 요청될 때만 포함합니다.
+
+    auto 인자는 호환을 위해 남겨 두지만 opencode 에 --auto 를 넘기지 않습니다.
+    --auto 는 명시 deny 가 아닌 모든 승인 요청을 자동 승인하므로(opencode --help:
+    "auto-approve permissions that are not explicitly denied (dangerous!)")
+    승인 대화창을 감시기 판정 경로로 되돌립니다. 권한은 opencode.json 의
+    permission 블록(deny)이 담당합니다.
     """
     if variant is not None and not one_shot and binary != "kilo":
         raise ValueError(
@@ -70,8 +77,6 @@ def build_command(
         cmd = [binary, "run", "--model", model]
         if variant is not None:
             cmd.extend(["--variant", variant])
-        if auto:
-            cmd.append("--auto")
         cmd.append(prompt)
         return cmd
 
@@ -79,8 +84,6 @@ def build_command(
         cmd = [binary, "--agent", KILO_AGENT_NAME]
     else:
         cmd = [binary, "--model", model]
-    if auto:
-        cmd.append("--auto")
     cmd.extend(["--prompt", prompt])
     return cmd
 
@@ -176,7 +179,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--auto",
         action="store_true",
-        help="권한 자동 승인 (--auto) 플래그를 추가합니다. 기본값은 미사용입니다.",
+        help="호환용 인자입니다. opencode 에 --auto 를 넘기지 않습니다.",
     )
     parser.add_argument(
         "--role",

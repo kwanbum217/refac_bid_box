@@ -34,5 +34,20 @@
         "baseURL": "https://api.cerebras.ai/v1"
       }
     }
+  },
+  "permission": {
+    "external_directory": "deny",
+    "read": {
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow"
+    },
+    "bash": {
+      "git push*": "deny",
+      "git reset --hard*": "deny",
+      "git clean -*": "deny",
+      "rm -rf *": "deny",
+      "sudo *": "deny"
+    }
   }
 }

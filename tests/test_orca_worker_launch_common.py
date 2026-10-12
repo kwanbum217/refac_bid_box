@@ -14,11 +14,14 @@ from scripts.orca_worker_launch_common import (
     REVIEWER_NOTICE,
     ROLE_MARKER_BUILDER,
     ROLE_MARKER_REVIEWER,
+    WORKER_SETTINGS_PATH,
     acquire_permissions,
     append_role_notice,
+    deploy_worker_settings,
     detect_role,
     format_role_marker,
     inject_role_marker,
+    is_main_worktree,
     is_terminal_ready,
     parse_role_marker,
     resolve_notice,
@@ -26,6 +29,7 @@ from scripts.orca_worker_launch_common import (
     schedule_permission_setup,
     spawn_permission_setup,
     wait_for_preamble,
+    worker_policy_source,
 )
 
 
@@ -635,3 +639,117 @@ def test_wait_for_preamble_missing_file_times_out(tmp_path: Path):
     """존재하지 않는 파일 경로는 지정된 타임아웃 후 TimeoutError 를 일으켜야 합니다."""
     with pytest.raises(TimeoutError):
         wait_for_preamble(tmp_path / "non_existent.txt", timeout_sec=0.2, poll_sec=0.05)
+
+
+class _Completed:
+    def __init__(self, returncode: int, stdout: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+
+
+class _FakeRevParse:
+    """git rev-parse 대역. --git-dir 과 --git-common-dir 만 돌려줍니다."""
+
+    def __init__(self, git_dir: str | None, common_dir: str | None) -> None:
+        self.git_dir = git_dir
+        self.common_dir = common_dir
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, **kwargs):
+        self.calls.append(list(args))
+        if args[-1] == "--git-dir":
+            value = self.git_dir
+        elif args[-1] == "--git-common-dir":
+            value = self.common_dir
+        else:
+            value = None
+        if value is None:
+            return _Completed(128, "")
+        return _Completed(0, value + "\n")
+
+
+def test_is_main_worktree_true_when_dirs_match(tmp_path: Path):
+    runner = _FakeRevParse(".git", ".git")
+    assert is_main_worktree(tmp_path, runner=runner) is True
+
+
+def test_is_main_worktree_false_for_linked_worktree(tmp_path: Path):
+    """연결 워크트리는 --git-dir 과 --git-common-dir 이 달라집니다."""
+    runner = _FakeRevParse("/repo/.git/worktrees/wt", "/repo/.git")
+    assert is_main_worktree(tmp_path, runner=runner) is False
+
+
+@pytest.mark.parametrize(("git_dir", "common_dir"), [(None, None), (".git", None), (None, ".git")])
+def test_is_main_worktree_fails_safe_when_git_unavailable(
+    tmp_path: Path, git_dir: str | None, common_dir: str | None
+):
+    """판정 불가면 주 작업 트리로 봐야 주 저장소 설정을 덮어쓰지 않습니다."""
+    runner = _FakeRevParse(git_dir, common_dir)
+    assert is_main_worktree(tmp_path, runner=runner) is True
+
+
+def test_worker_policy_source_is_tracked_policy_file():
+    source = worker_policy_source()
+    assert source.is_file()
+    assert source.name == "commandcode_worker_settings.json"
+    assert source.parent.name == "orca_policies"
+
+
+def test_deploy_writes_policy_only_in_linked_worktree(tmp_path: Path):
+    runner = _FakeRevParse("/repo/.git/worktrees/wt", "/repo/.git")
+    stderr = io.StringIO()
+
+    deployed = deploy_worker_settings(tmp_path, runner=runner, stderr=stderr)
+
+    assert deployed == tmp_path / WORKER_SETTINGS_PATH
+    assert deployed is not None
+    assert deployed.read_text(encoding="utf-8") == worker_policy_source().read_text(
+        encoding="utf-8"
+    )
+    assert stderr.getvalue() == ""
+
+
+def test_deploy_skips_main_worktree(tmp_path: Path):
+    """주 저장소에서는 어떤 파일도 만들지 않아야 합니다."""
+    runner = _FakeRevParse(".git", ".git")
+    assert deploy_worker_settings(tmp_path, runner=runner) is None
+    assert not (tmp_path / ".commandcode").exists()
+
+
+def test_deploy_never_overwrites_main_repo_settings(tmp_path: Path):
+    """주 저장소의 사용자 개인 설정은 배치 대상이 아닙니다."""
+    existing = tmp_path / WORKER_SETTINGS_PATH
+    existing.parent.mkdir(parents=True)
+    existing.write_text('{"permissions": {"allow": ["Shell(brew:*)"]}}', encoding="utf-8")
+    runner = _FakeRevParse(".git", ".git")
+
+    assert deploy_worker_settings(tmp_path, runner=runner) is None
+    assert existing.read_text(encoding="utf-8") == '{"permissions": {"allow": ["Shell(brew:*)"]}}'
+
+
+def test_deploy_refuses_malformed_policy(tmp_path: Path):
+    """깨진 정책을 배치하면 cmd 가 규칙 없이 뜰 수 있으므로 배치하지 않습니다."""
+    source = tmp_path / "broken.json"
+    source.write_text("{not json", encoding="utf-8")
+    cwd = tmp_path / "wt"
+    cwd.mkdir()
+    runner = _FakeRevParse("/repo/.git/worktrees/wt", "/repo/.git")
+    stderr = io.StringIO()
+
+    assert deploy_worker_settings(cwd, source=source, runner=runner, stderr=stderr) is None
+    assert not (cwd / ".commandcode").exists()
+    assert "정책" in stderr.getvalue()
+
+
+def test_deploy_refuses_missing_policy(tmp_path: Path):
+    cwd = tmp_path / "wt"
+    cwd.mkdir()
+    runner = _FakeRevParse("/repo/.git/worktrees/wt", "/repo/.git")
+    stderr = io.StringIO()
+
+    assert (
+        deploy_worker_settings(cwd, source=tmp_path / "absent.json", runner=runner, stderr=stderr)
+        is None
+    )
+    assert not (cwd / ".commandcode").exists()
+    assert "정책" in stderr.getvalue()

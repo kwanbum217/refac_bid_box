@@ -121,9 +121,22 @@ def test_build_command_passes_prompt_as_agy_argument():
         "gemini-3.8-flash-medium",
         "--mode",
         "accept-edits",
+        "--sandbox",
         "-i",
         "본문",
     ]
+
+
+def test_build_command_enables_terminal_sandbox():
+    """agy --help 기준 --sandbox 는 터미널 제한 샌드박스를 켭니다.
+
+    승인 감시기의 화이트리스트 판정과 별개로 명령 실행을 OS 경계 안에 가두는
+    2차 방어선이므로 어떤 모델에서도 빠지면 안 됩니다.
+    """
+    for model in ("gemini-3.8-flash-medium", "claude-sonnet-4-6", "gemini-3.8-flash-high"):
+        cmd = build_command(model, "임의 지시")
+        assert "--sandbox" in cmd, cmd
+        assert "--dangerously-skip-permissions" not in cmd
 
 
 def test_build_command_supports_different_model_ids():
@@ -135,6 +148,7 @@ def test_build_command_supports_different_model_ids():
         "claude-sonnet-4-6",
         "--mode",
         "accept-edits",
+        "--sandbox",
         "-i",
         "지시",
     ]

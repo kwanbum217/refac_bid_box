@@ -1539,3 +1539,91 @@ class TestHeredocCommitAfterPrefix:
         from scripts.orca_auto_approve import classify_command
 
         assert classify_command("git add x && git commit -F - <<EOF")[0] == "hold"
+
+
+class TestOpenCodePermissionDialog:
+    """OpenCode 승인 대화창 탐지 계약입니다.
+
+    opencode 런처에서 --auto 를 제거하면서 승인 대화창이 다시 뜨게 됐습니다.
+    제목은 "Permission required" 이고 선택지는 "Allow once" / "Always allow" /
+    "Reject", 셸 요청 본문은 "$ <명령>" 한 줄입니다(OpenCode TUI
+    permission.tsx, util/permission.ts). 확인 문구가 CONFIRM_PHRASES 와 달라
+    기존 패턴에 걸리지 않았습니다.
+    """
+
+    SHELL_SCREEN = (
+        "△ Permission required\n"
+        "$ git status --short\n"
+        "\n"
+        "Allow once  Always allow  Reject\n"
+        "⇆ select  enter confirm\n"
+    )
+
+    def test_extracts_shell_command(self):
+        from scripts.orca_auto_approve import pending_command
+
+        assert pending_command(self.SHELL_SCREEN) == "git status --short"
+
+    def test_extracted_command_is_classified(self):
+        """탐지만 되고 판정에서 보류되면 워커는 여전히 멈춥니다."""
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        assert classify_command(pending_command(self.SHELL_SCREEN))[0] == "approve"
+
+    def test_wrapped_command_is_joined(self):
+        """접힌 명령 줄을 이어 붙이지 않으면 앞부분만 승인되고 뒤가 실행됩니다."""
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        screen = (
+            "△ Permission required\n"
+            "$ uv run pytest tests/a.py tests/b.py\n"
+            "tests/c.py -q 2>&1 | tail -30\n"
+            "Allow once  Reject\n"
+            "enter confirm\n"
+        )
+        cmd = pending_command(screen)
+        assert "\n" not in cmd
+        assert cmd == "uv run pytest tests/a.py tests/b.py tests/c.py -q 2>&1 | tail -30"
+        assert classify_command(cmd)[0] == "approve"
+
+    def test_dangerous_shell_command_is_held(self):
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        screen = (
+            "△ Permission required\n$ rm -rf /\nAllow once  Always allow  Reject\nenter confirm\n"
+        )
+        assert classify_command(pending_command(screen))[0] == "hold"
+
+    def test_non_shell_request_has_no_command_and_is_held(self):
+        """편집·외부 디렉터리 승인은 실행할 셸 명령이 없으므로 자동 승인하지 않습니다."""
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        screen = (
+            "△ Permission required\n"
+            "→ Edit src/app/main.py\n"
+            "Allow once  Always allow  Reject\n"
+            "⇆ select  enter confirm\n"
+        )
+        cmd = pending_command(screen)
+        assert cmd == ""
+        assert classify_command(cmd)[0] == "hold"
+
+    def test_unterminated_command_is_not_approved(self):
+        """명령 끝을 확정할 수 없으면 잘린 명령을 승인하지 않고 보류합니다."""
+        from scripts.orca_auto_approve import classify_command, pending_command
+
+        screen = "Allow once  Reject\n△ Permission required\n$ rm -rf /\n"
+        cmd = pending_command(screen)
+        assert cmd == ""
+        assert classify_command(cmd)[0] == "hold"
+
+    def test_marker_without_dialog_labels_is_not_a_dialog(self):
+        """본문에 우연히 같은 문구가 있어도 대화창으로 오인하지 않습니다."""
+        from scripts.orca_auto_approve import pending_command
+
+        assert pending_command("Permission required for this release") is None
+
+    def test_plain_screen_is_not_a_dialog(self):
+        from scripts.orca_auto_approve import pending_command
+
+        assert pending_command("작업이 순조롭게 진행 중입니다") is None

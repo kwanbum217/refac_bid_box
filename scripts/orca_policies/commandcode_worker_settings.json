@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "defaultMode": "default",
+    "deny": [
+      "Shell(git push:*)",
+      "Edit(.git/**)",
+      "Read(.env*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.netrc)",
+      "Read(~/.gitconfig)",
+      "Read(//etc/**)"
+    ],
+    "disableBypass": "disable"
+  }
+}

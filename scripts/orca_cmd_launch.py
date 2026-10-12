@@ -83,18 +83,17 @@ def build_command(
 
     대화형은 cmd "<message>" 위치 인자이고 단발은 cmd -p <message> 입니다.
     모델은 --model 로 provider/model 형태이며 추론 등급은 --effort 입니다.
-    권한 자동 승인(--trust --yolo)은 기본으로 붙이지 않으며 명시적으로 요청될 때만
-    포함합니다.
+    권한은 기본 모드로 띄웁니다. --yolo(권한 우회)는 어떤 조합에서도 붙이지
+    않습니다. auto=True 는 --trust 만 추가하는데, cmd --help 기준 --trust 는
+    "Auto-trust project (skip initial permission prompt)" 로 작업 공간 신뢰
+    대화창만 넘기고 도구 승인 대화창은 그대로 둡니다. 그 대화창은 자동 승인
+    감시기(scripts/orca_auto_approve.py)가 화이트리스트로 판정합니다.
     """
     cmd = ["cmd", "--model", model]
     if effort and effort != EFFORT_DEFAULT_LEVEL:
         cmd.extend(["--effort", effort])
     if auto:
-        # --permission-mode auto-accept 는 파일 편집만 자동 승인하고 셸 명령은
-        # 여전히 대화창을 띄웁니다. 감시기가 그 대화창을 읽어 승인하지만 화면
-        # 줄바꿈과 판정 지연 때문에 워커가 멈추는 구간이 생깁니다. 격리 워크트리에서
-        # 도는 워커는 대화창 자체를 띄우지 않는 편이 낫습니다.
-        cmd.extend(["--trust", "--yolo"])
+        cmd.append("--trust")
     if one_shot:
         cmd.extend(["-p", prompt])
         return cmd
@@ -171,7 +170,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--auto",
         action="store_true",
-        help="권한 자동 승인(--trust --yolo)을 추가합니다. 기본값은 미사용입니다.",
+        help="작업 공간 신뢰 대화창만 넘깁니다(--trust). 권한 우회(--yolo)는 붙이지 않습니다.",
     )
     parser.add_argument(
         "--role",
@@ -216,6 +215,11 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     env = dict(os.environ)
+    # cmd 는 기동 시 현재 작업 디렉터리의 .commandcode/settings.json 을 읽습니다.
+    # 정책 원본은 저장소가 관리하고, 주 저장소가 아닌 워커 워크트리에만 배치합니다.
+    deployed = common.deploy_worker_settings(Path.cwd())
+    if deployed is not None:
+        print(f"cmd 워커 권한 정책 배치: {deployed}", flush=True)
     cmd = build_command(
         args.model,
         prompt,

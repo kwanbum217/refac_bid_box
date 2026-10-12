@@ -47,6 +47,10 @@ def _guard_cmd_permission_setup(monkeypatch):
         return orig_spawn(launcher_script, terminal, model, popen=popen)
 
     monkeypatch.setattr(orca_cmd_launch, "spawn_permission_setup", safe_spawn)
+    # main 이 실행 중인 작업 트리에 .commandcode/settings.json 을 실제로 배치하면
+    # 테스트가 저장소를 오염시킵니다. 배치 자체는 test_orca_worker_permission_policy.py
+    # 가 임시 워크트리에서 검증합니다.
+    monkeypatch.setattr(orca_cmd_launch.common, "deploy_worker_settings", lambda *a, **k: None)
 
 
 def test_wait_returns_content_once_written(tmp_path: Path):
@@ -175,11 +179,22 @@ def test_effort_flag_rejects_unknown_level(tmp_path: Path):
 
 
 def test_build_command_auto_approve_flags():
-    """권한 자동 승인 인자는 명시적으로 지정될 때만 포함되어야 합니다."""
+    """--yolo 는 어떤 조합에서도 붙지 않고, --auto 는 --trust 만 추가합니다.
+
+    --trust 는 cmd --help 기준 "Auto-trust project (skip initial permission
+    prompt)" 로 작업 공간 신뢰 대화창만 넘깁니다. 도구 승인 대화창은 기본 모드로
+    남아 자동 승인 감시기가 판정합니다.
+    """
     assert "--yolo" not in build_command(MODEL, "지시문")
+    assert "--trust" not in build_command(MODEL, "지시문")
 
     cmd = build_command(MODEL, "지시문", auto=True)
-    assert cmd == ["cmd", "--model", MODEL, "--trust", "--yolo", "지시문"]
+    assert cmd == ["cmd", "--model", MODEL, "--trust", "지시문"]
+    assert "--yolo" not in cmd
+
+    one_shot = build_command(MODEL, "지시문", auto=True, one_shot=True)
+    assert one_shot == ["cmd", "--model", MODEL, "--trust", "-p", "지시문"]
+    assert "--yolo" not in one_shot
 
 
 @patch("scripts.orca_cmd_launch.run_cmd", return_value=0)

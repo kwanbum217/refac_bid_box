@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess  # nosec B404 - 자기 자신(런처 스크립트)을 고정 인자로만 재호출합니다
@@ -422,3 +423,95 @@ def schedule_permission_setup(
     if hasattr(err_stream, "flush"):
         err_stream.flush()
     return False
+
+
+WORKER_POLICY_FILENAME = "commandcode_worker_settings.json"
+WORKER_SETTINGS_PATH = Path(".commandcode") / "settings.json"
+
+
+def worker_policy_source() -> Path:
+    """저장소가 관리하는 cmd 워커 정책 원본 경로를 돌려줍니다."""
+    return Path(__file__).resolve().parent / "orca_policies" / WORKER_POLICY_FILENAME
+
+
+def _git_rev_parse(cwd: Path, flag: str, runner: Any) -> str | None:
+    """git rev-parse 결과를 문자열로 돌려줍니다. 실패하면 None 입니다."""
+    try:
+        completed = runner(  # nosec B603 B607 - 고정 인자 목록으로 git 만 조회합니다
+            ["git", "-C", str(cwd), "rev-parse", flag],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    value = completed.stdout.strip()
+    return value or None
+
+
+def is_main_worktree(cwd: Path, *, runner: Any = None) -> bool:
+    """cwd 가 저장소의 주 작업 트리인지 판정합니다.
+
+    연결 워크트리(git worktree add)에서는 --git-dir 이 공용 .git/worktrees/<이름>
+    을 가리키고 --git-common-dir 은 공용 .git 을 가리켜 서로 다릅니다. 주 작업
+    트리에서는 둘이 같은 .git 입니다. 판정할 수 없으면(fail-safe) 주 작업 트리로
+    봅니다. 그래야 정책 배치가 주 저장소의 사용자 설정을 덮어쓰지 않습니다.
+    """
+    run = subprocess.run if runner is None else runner  # nosec B603 B607 - 고정 인자 목록으로 git 만 조회합니다
+    cwd = Path(cwd)
+    git_dir = _git_rev_parse(cwd, "--git-dir", run)
+    common_dir = _git_rev_parse(cwd, "--git-common-dir", run)
+    if git_dir is None or common_dir is None:
+        return True
+
+    def _absolute(value: str) -> Path:
+        path = Path(value)
+        return (path if path.is_absolute() else cwd / path).resolve()
+
+    return _absolute(git_dir) == _absolute(common_dir)
+
+
+def deploy_worker_settings(
+    cwd: Path,
+    *,
+    source: Path | None = None,
+    runner: Any = None,
+    stderr: Any = None,
+) -> Path | None:
+    """cmd 워커 워크트리일 때만 <cwd>/.commandcode/settings.json 을 배치합니다.
+
+    주 저장소(메인 작업 트리)에서는 아무것도 쓰지 않습니다. 주 저장소의
+    .commandcode/settings.json 은 사용자 개인 allow 규칙을 담고 있어 덮어쓰면
+    안 됩니다. 정책 원본이 JSON 으로 읽히지 않으면 배치하지 않습니다. 깨진
+    정책을 배치하면 cmd 가 기동을 거부하거나 규칙 없이 뜰 수 있습니다.
+
+    배치한 경로를 돌려주고, 배치하지 않았거나 실패하면 None 을 돌려줍니다.
+    """
+    err_stream = sys.stderr if stderr is None else stderr
+    cwd = Path(cwd)
+    if is_main_worktree(cwd, runner=runner):
+        return None
+
+    root = worker_policy_source() if source is None else Path(source)
+    try:
+        payload = root.read_text(encoding="utf-8")
+        json.loads(payload)
+    except (OSError, ValueError) as err:
+        err_stream.write(f"오류: cmd 워커 정책을 읽을 수 없습니다: {root} ({err})\n")
+        if hasattr(err_stream, "flush"):
+            err_stream.flush()
+        return None
+
+    target = cwd / WORKER_SETTINGS_PATH
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(payload, encoding="utf-8")
+    except OSError as err:
+        err_stream.write(f"오류: cmd 워커 정책을 배치하지 못했습니다: {target} ({err})\n")
+        if hasattr(err_stream, "flush"):
+            err_stream.flush()
+        return None
+    return target
