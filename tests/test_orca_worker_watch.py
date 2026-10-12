@@ -48,6 +48,37 @@ def test_file_edit_signals_have_shift_tab_fix() -> None:
         assert kind == "prompt"
 
 
+CMD_EXEC_DIALOG_SCREEN = "\n".join(
+    [
+        "Command Code needs to execute uv run pytest -q.",
+        "Workdir: /repo",
+        "1. Yes",
+        "2. No, and tell Command Code what to do differently (esc)",
+    ]
+)
+
+
+def test_cmd_tool_approval_dialog_is_detected_as_prompt() -> None:
+    found = watch.detect_block(CMD_EXEC_DIALOG_SCREEN)
+    assert found is not None
+    reason, fix, kind = found
+    assert "Command Code" in reason
+    assert fix
+    assert kind == "prompt"
+
+
+def test_cmd_marker_absent_is_not_blocked() -> None:
+    screen = "\n".join(
+        [
+            "  → Add a follow-up",
+            "  Ran uv run pytest tests/ -q",
+            "  1. Yes",
+            "  Composer 2.5 · 34%",
+        ]
+    )
+    assert watch.detect_block(screen) is None
+
+
 def test_detect_block_returns_none_for_working_screen() -> None:
     screen = "\n".join(
         [
