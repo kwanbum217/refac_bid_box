@@ -5,7 +5,7 @@ scripts/orca_prepare_worktree.py
 워커 워크트리 준비 도구.
 
 워크트리 생성 후 필수적인 3가지 사전 준비를 한 번에 처리합니다:
-  1. .env 파일 배치 (Git 미추적 파일 복사)
+  1. 워커용 최소 .env 생성 (허용 목록 키만, SECRET_KEY 재생성)
   2. Antigravity 워크스페이스 신뢰 사전 등록 (다이얼로그 차단 방지)
   3. Git pre-commit 훅 확인 및 설치 (검증 생략 커밋 방지)
 
@@ -19,18 +19,17 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess  # nosec B404 - 고정된 인자 목록으로만 git 및 pre-commit 을 호출합니다
 import sys
 from pathlib import Path
 
 try:
-    from scripts import orca_trust_worktree
+    from scripts import orca_trust_worktree, orca_worker_env
 except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
     if str(_repo_root) not in sys.path:
         sys.path.insert(0, str(_repo_root))
-    from scripts import orca_trust_worktree
+    from scripts import orca_trust_worktree, orca_worker_env
 
 
 def git_common_dir(path: Path) -> Path | None:
@@ -80,27 +79,42 @@ def validate_worktree_ownership(worktree: Path, repo: Path | None) -> tuple[bool
 
 
 def check_or_prepare_env(worktree: Path, repo: Path, check: bool) -> tuple[bool, str]:
-    """1단계: .env 배치 확인 및 복사.
+    """1단계: 워커용 최소 .env 배치 확인 및 생성.
+
+    주 저장소 .env 전체를 복사하지 않고 허용 목록(scripts/orca_worker_env.py)의
+    키만 담은 최소 .env 를 씁니다. SECRET_KEY 는 워크트리마다 새로 만들고 외부
+    서비스 비밀값은 넘기지 않습니다. 기존 .env 에 금지 키가 남아 있거나 SECRET_KEY
+    가 주 저장소 값과 같으면 최소 .env 로 다시 씁니다.
 
     보안 규칙: .env 의 실제 값을 출력하거나 로그에 남기지 않습니다.
     """
     wt_env = (worktree / ".env").resolve()
     repo_env = (repo / ".env").resolve()
+    repo_text = repo_env.read_text(encoding="utf-8") if repo_env.is_file() else None
 
     if wt_env.is_file():
-        return True, f"[.env] 이미 준비됨: {wt_env}"
+        reasons = orca_worker_env.audit_worker_env(wt_env.read_text(encoding="utf-8"), repo_text)
+        if not reasons:
+            return True, f"[.env] 이미 준비됨: {wt_env}"
+        if check:
+            return False, (
+                f"[.env] 미준비: 기존 .env 에 정리할 키 {len(reasons)}종이 남아 있음 ({wt_env})"
+            )
 
     if check:
         return False, f"[.env] 미준비: .env 파일 없음 ({wt_env})"
 
-    if not repo_env.is_file():
-        return False, f"[.env] 오류: 주 저장소에 .env 파일이 없습니다 ({repo_env})"
+    source = repo_text
+    if source is None:
+        if not wt_env.is_file():
+            return False, f"[.env] 오류: 주 저장소에 .env 파일이 없습니다 ({repo_env})"
+        source = wt_env.read_text(encoding="utf-8")
 
     try:
-        shutil.copy2(repo_env, wt_env)
-        return True, f"[.env] 복사 완료: {repo_env} -> {wt_env}"
+        wt_env.write_text(orca_worker_env.build_minimal_env(source), encoding="utf-8")
+        return True, f"[.env] 최소 .env 생성 완료: {repo_env} -> {wt_env}"
     except OSError as exc:
-        return False, f"[.env] 복사 실패: {exc}"
+        return False, f"[.env] 생성 실패: {exc}"
 
 
 def is_workspace_trusted(worktree: Path) -> bool:
@@ -375,7 +389,7 @@ def prepare_worktree(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="워커 워크트리 준비 도구 (.env 복사, Antigravity 신뢰 등록, pre-commit 훅 설치, Capsule 설정)"
+        description="워커 워크트리 준비 도구 (최소 .env 생성, Antigravity 신뢰 등록, pre-commit 훅 설치, Capsule 설정)"
     )
     parser.add_argument("worktree", type=Path, help="준비할 워크트리 경로")
     parser.add_argument(

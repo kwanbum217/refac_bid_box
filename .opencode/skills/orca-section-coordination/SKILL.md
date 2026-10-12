@@ -686,18 +686,35 @@ orca terminal send --terminal <handle> --text "<지시>" --enter
 
 ---
 
-## 10. 격리 트리에는 `.env` 가 없습니다
+## 10. 격리 트리에는 최소 `.env` 만 넣습니다
 
 `.env` 는 Git 미추적이라 새 워크트리에 따라가지 않습니다. 이 저장소는
 `Settings()` 가 `SECRET_KEY` 를 필수로 검증하므로, `.env` 가 없으면 애플리케이션
 설정을 읽는 코드가 전부 실패합니다. DB 접속도 마찬가지입니다.
 
-워커를 띄운 직후 코디네이터가 배치하십시오. 워커가 스스로 진단하기 어려운
+**주 저장소 `.env` 를 통째로 복사하지 마십시오.** 워커에게 외부 서비스
+비밀값을 넘기지 않기 위해서입니다. 워커를 띄운 직후 코디네이터가 준비 도구로
+허용 목록 키만 담은 최소 `.env` 를 배치하십시오. 워커가 스스로 진단하기 어려운
 실패입니다.
 
 ```bash
-cp <주 저장소>/.env <워크트리>/.env
+python3 scripts/orca_prepare_worktree.py <워크트리> --repo <주 저장소> --capsule <Capsule 경로>
 ```
+
+규칙은 `scripts/orca_worker_env.py` 한 곳에 있습니다.
+
+- `ALLOWED_WORKER_ENV_KEYS` 에 있는 키만 옮기고, 나머지는 값이 있어도 버립니다.
+- `SECRET_KEY` 는 원본을 복사하지 않고 워크트리마다 `secrets.token_hex(32)` 로 새로 만듭니다.
+- 제외 키: `G2B_SERVICE_KEY`, `G2B_USRINFO_SERVICE_KEY`, `GEMINI_API_KEY`,
+  `MODEL_MANIFEST_SIGNING_KEY`, `MYSQL_ROOT_PASSWORD`, `GF_SECURITY_ADMIN_PASSWORD`,
+  `ALERTMANAGER_SLACK_WEBHOOK_URL`, `MLOPS_WEBHOOK_URL`.
+- 기존 워크트리 `.env` 에 금지 키가 남아 있거나 `SECRET_KEY` 가 주 저장소 값과
+  같으면 최소 `.env` 로 다시 씁니다. `--check` 는 그 상태를 미준비로 판정합니다.
+
+DB 접속 키(`DATABASE_URL`, `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`,
+`DB_NAME`)는 읽기 전용 조회(`scripts/db_readonly_query.py`)에 필요해 허용합니다.
+다만 같은 자격증명으로 쓰기도 가능한 잔여 위험이 남으므로, 워커는 조회에만 쓰고
+쓰기 질의를 시도하지 마십시오.
 
 값을 문서나 커밋에 남기지 마십시오. `.env` 는 `.gitignore` 대상이라 커밋되지
 않지만, 워커에게 커밋 금지를 함께 지시하십시오.

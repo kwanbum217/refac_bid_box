@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import orca_prepare_worktree, orca_trust_worktree
+from scripts import orca_prepare_worktree, orca_trust_worktree, orca_worker_env
 
 
 @pytest.fixture
@@ -63,9 +63,13 @@ def fake_git_worktree(tmp_path: Path):
         capture_output=True,
     )
 
-    # .env 생성 (주 저장소)
+    # .env 생성 (주 저장소). 금지 키와 허용 목록 밖 키를 섞어 최소 .env 가
+    # 실제로 걸러내는지 시험이 확인할 수 있게 합니다.
     (repo_dir / ".env").write_text(
-        "DATABASE_URL=mysql://user:pass@localhost/db\nSECRET_KEY=dummy_val_123\n",
+        "DATABASE_URL=mysql://user:pass@localhost/db\n"
+        "SECRET_KEY=dummy_val_123\n"
+        "GEMINI_API_KEY=forbidden_value_must_not_copy\n"
+        "API_KEY=not_allowlisted_value\n",
         encoding="utf-8",
     )
     # .pre-commit-config.yaml 생성
@@ -141,9 +145,16 @@ def test_prepare_worktree_then_check_passes(
     assert exit_code == 0
 
     # 2. 결과 검증
-    # (a) .env 복사 확인
+    # (a) 최소 .env 생성 확인 (허용 키만, SECRET_KEY 재생성)
     assert (wt / ".env").is_file()
-    assert (wt / ".env").read_text(encoding="utf-8") == (repo / ".env").read_text(encoding="utf-8")
+    wt_values = orca_worker_env.parse_env((wt / ".env").read_text(encoding="utf-8"))
+    repo_values = orca_worker_env.parse_env((repo / ".env").read_text(encoding="utf-8"))
+    assert wt_values["DATABASE_URL"] == repo_values["DATABASE_URL"]
+    assert "API_KEY" not in wt_values
+    assert orca_worker_env.forbidden_keys_in((wt / ".env").read_text(encoding="utf-8")) == []
+    assert "GEMINI_API_KEY" not in wt_values
+    assert wt_values[orca_worker_env.SECRET_KEY_NAME] != repo_values["SECRET_KEY"]
+    assert len(wt_values[orca_worker_env.SECRET_KEY_NAME]) == 64
 
     # (b) 신뢰 등록 확인
     settings_data = json.loads(mock_gemini_env["settings_path"].read_text(encoding="utf-8"))
@@ -225,6 +236,48 @@ def test_missing_repo_env_fails(mock_gemini_env, fake_git_worktree, capsys):
 
     assert exit_code == 1
     assert "주 저장소에 .env 파일이 없습니다" in captured.out
+
+
+def test_existing_full_env_is_regenerated(mock_gemini_env, fake_git_worktree, monkeypatch, capsys):
+    """워크트리에 남은 기존 full .env 는 금지 키를 걷어낸 최소 .env 로 다시 씁니다."""
+    wt = fake_git_worktree["worktree"]
+    repo = fake_git_worktree["repo"]
+    (wt / ".env").write_text(
+        "DATABASE_URL=mysql://user:pass@localhost/db\n"
+        "SECRET_KEY=dummy_val_123\n"
+        "G2B_SERVICE_KEY=leaked_worker_secret\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        orca_prepare_worktree,
+        "install_pre_commit_hook",
+        _create_fake_pre_commit_installer(),
+    )
+
+    exit_code = orca_prepare_worktree.prepare_worktree(wt, repo, check=False)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    text = (wt / ".env").read_text(encoding="utf-8")
+    assert "G2B_SERVICE_KEY" not in text
+    assert orca_worker_env.forbidden_keys_in(text) == []
+    assert "leaked_worker_secret" not in captured.out
+
+
+def test_check_reports_leaked_env_as_unprepared(mock_gemini_env, fake_git_worktree, capsys):
+    """금지 키가 남은 워크트리 .env 는 --check 에서 미준비로 판정합니다."""
+    wt = fake_git_worktree["worktree"]
+    repo = fake_git_worktree["repo"]
+    (wt / ".env").write_text(
+        "SECRET_KEY=dummy_val_123\nG2B_SERVICE_KEY=leaked_value\n", encoding="utf-8"
+    )
+
+    exit_code = orca_prepare_worktree.prepare_worktree(wt, repo, check=True)
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "[.env] 미준비" in captured.out
+    assert "leaked_value" not in captured.out
 
 
 def test_invalid_worktree_path(capsys, tmp_path: Path):
