@@ -67,6 +67,26 @@ CMD_EXEC_END_MARKERS = (
     "ctrl+e explain",
 )
 
+# 승인 시 전송할 선택 번호. Command Code(cmd) 대화창은 "1. Yes" 가 1회 승인이고
+# "2. Yes, don't ask again ..." 는 이 프로젝트 상시 허용이라 워커 워크트리의
+# .commandcode/settings.json 에 allow 규칙을 심습니다. 감시기가 2번을 보내면
+# 워커가 자기 정책을 스스로 넓히는 셈이라(2026-10-13 실증) 1번을 보냅니다.
+# 다른 CLI(Claude Code, Antigravity 등)는 종전대로 2번이 승인입니다.
+CMD_APPROVE_KEY = "1"
+DEFAULT_APPROVE_KEY = "2"
+
+
+def approve_response_key(screen: str) -> str:
+    """승인 시 보낼 선택 번호를 화면 종류에 따라 정합니다.
+
+    화면에 cmd 명령 실행 대화창 표지(CMD_EXEC_MARKER)가 있으면 1회 승인(1번)을,
+    그 밖의 대화창이면 종전 값(2번)을 돌려줍니다.
+    """
+    if isinstance(screen, str) and CMD_EXEC_MARKER in screen:
+        return CMD_APPROVE_KEY
+    return DEFAULT_APPROVE_KEY
+
+
 # OpenCode CLI 의 권한 승인 대화창. 제목이 "Permission required" 이고 선택지가
 # "Allow once" / "Always allow" / "Reject" 입니다. 셸 요청은 본문에 실행할 명령을
 # "$ <명령>" 한 줄로 적습니다. 확인 문구가 CONFIRM_PHRASES 와 달라 기존 패턴에
@@ -1982,7 +2002,7 @@ def poll_loop(
                         workspace_roots[h] = resolve_workspace_root(h)
                     verdict, reason = classify_command(cmd, workspace_root=workspace_roots[h])
                     if verdict == "approve":
-                        send(h, "2")
+                        send(h, approve_response_key(screen))
                         print(f"[승인] {h[:16]} {short}", flush=True)
                         seen_cmds.pop(h, None)
                         time.sleep(2)
