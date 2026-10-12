@@ -129,10 +129,16 @@ def test_policy_source_is_repo_managed_file():
     )
 
 
-def test_policy_disables_permission_bypass():
+def test_policy_keeps_default_mode_and_allows_yolo():
+    """yolo 진입을 열어 두고(defaultMode 유지, disableBypass 없음) 고정합니다."""
     permissions = _policy_permissions()
-    assert permissions["disableBypass"] == "disable"
     assert permissions["defaultMode"] == "default"
+    assert "disableBypass" not in permissions, "yolo 진입을 막으면 안 됩니다"
+
+
+def test_policy_has_no_allow_rules():
+    """yolo 는 deny 규칙만으로 위험 명령을 막습니다. allow 규칙은 두지 않습니다."""
+    assert "allow" not in _policy_permissions()
 
 
 def test_policy_denies_git_push_git_dir_and_secret_reads():
@@ -146,10 +152,44 @@ def test_policy_denies_git_push_git_dir_and_secret_reads():
     assert any(rule.startswith("Read(~/") for rule in deny), deny
 
 
-def test_policy_has_no_blanket_allow():
-    """Shell(uv:*) 같은 포괄 allow 는 감시기 판정을 우회하므로 두지 않습니다."""
-    permissions = _policy_permissions()
-    assert "allow" not in permissions
+# yolo 에서도 살아남아야 하는 추가 deny 입니다. yolo 는 deny 규칙을 지웁니다.
+REQUIRED_DENY_RULES = {
+    # 운영 DB 직접 접근
+    "Shell(mysql:*)",
+    "Shell(mysqldump:*)",
+    "Shell(mysqladmin:*)",
+    # 컨테이너/볼륨/이미지 삭제와 임의 실행
+    "Shell(docker compose down:*)",
+    "Shell(docker-compose down:*)",
+    "Shell(docker compose rm:*)",
+    "Shell(docker volume rm:*)",
+    "Shell(docker volume prune:*)",
+    "Shell(docker system prune:*)",
+    "Shell(docker rm:*)",
+    "Shell(docker exec:*)",
+    "Shell(docker run:*)",
+    # 작업 트리 밖 삭제와 권한 상승
+    "Shell(rm -rf:*)",
+    "Shell(rm -fr:*)",
+    "Shell(sudo:*)",
+    # main 브랜치 조작과 이력 재작성
+    "Shell(git checkout main:*)",
+    "Shell(git switch main:*)",
+    "Shell(git merge:*)",
+    "Shell(git reset --hard:*)",
+    "Shell(git branch -D:*)",
+    "Shell(git rebase:*)",
+    # 하위 경로 비밀 파일
+    "Read(**/.env)",
+    "Read(**/.env.*)",
+}
+
+
+def test_policy_denies_database_docker_delete_and_branch_commands():
+    """yolo 에서도 유효해야 하는 위험 명령이 deny 에 모두 있는지 고정합니다."""
+    deny = set(_policy_permissions()["deny"])
+    missing = sorted(REQUIRED_DENY_RULES - deny)
+    assert not missing, missing
 
 
 # ---------------------------------------------------------------------------
