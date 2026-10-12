@@ -10,8 +10,30 @@
       "Read(~/.gnupg/**)",
       "Read(~/.netrc)",
       "Read(~/.gitconfig)",
-      "Read(//etc/**)"
-    ],
-    "disableBypass": "disable"
+      "Read(//etc/**)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Shell(mysql:*)",
+      "Shell(mysqldump:*)",
+      "Shell(mysqladmin:*)",
+      "Shell(docker compose down:*)",
+      "Shell(docker-compose down:*)",
+      "Shell(docker compose rm:*)",
+      "Shell(docker volume rm:*)",
+      "Shell(docker volume prune:*)",
+      "Shell(docker system prune:*)",
+      "Shell(docker rm:*)",
+      "Shell(docker exec:*)",
+      "Shell(docker run:*)",
+      "Shell(rm -rf:*)",
+      "Shell(rm -fr:*)",
+      "Shell(sudo:*)",
+      "Shell(git checkout main:*)",
+      "Shell(git switch main:*)",
+      "Shell(git merge:*)",
+      "Shell(git reset --hard:*)",
+      "Shell(git branch -D:*)",
+      "Shell(git rebase:*)"
+    ]
   }
 }

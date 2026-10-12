@@ -321,7 +321,8 @@ class TestPollLoopPathConfine:
     def test_inside_path_is_approved(self, worktree: Path) -> None:
         with patch("scripts.orca_auto_approve.resolve_workspace_root", return_value=worktree):
             mock_send = self._run(self.INSIDE_SCREEN)
-        mock_send.assert_called_once_with("term_confine", "2")
+        # cmd 대화창은 1회 승인(1번)을 보냅니다. 2번은 상시 허용이라 정책을 넓힙니다.
+        mock_send.assert_called_once_with("term_confine", "1")
 
     def test_unresolved_root_holds_absolute_path(self, capsys: pytest.CaptureFixture[str]) -> None:
         with patch("scripts.orca_auto_approve.resolve_workspace_root", return_value=None):

@@ -15,6 +15,7 @@ from scripts.orca_auto_approve import (
     SAFE_NON_COMMAND_PROMPTS,
     SAFE_STANDALONE_COMMANDS,
     SAFE_TEST_COMMANDS,
+    approve_response_key,
     check_dangerous_prompt,
     classify_command,
     get_watcher_pid_path,
@@ -1627,3 +1628,72 @@ class TestOpenCodePermissionDialog:
         from scripts.orca_auto_approve import pending_command
 
         assert pending_command("작업이 순조롭게 진행 중입니다") is None
+
+
+class TestCmdDialogApproveKey:
+    """승인 시 보낼 선택 번호를 화면 종류에 따라 가릅니다.
+
+    cmd 대화창의 2번은 "이 프로젝트에서 상시 허용"이라 워커 워크트리의
+    .commandcode/settings.json 에 allow 규칙을 심습니다. 감시기가 2번을 보내면
+    워커가 자기 정책을 스스로 넓히게 되므로(2026-10-13 실증) cmd 대화창에서는
+    1회 승인(1번)을 보내고, 다른 CLI 의 종전 응답(2번)은 바꾸지 않습니다.
+    """
+
+    CMD_SCREEN = (
+        "Execute Shell Command\n"
+        "Command Code needs to execute uv run pytest tests/test_x.py -q.\n"
+        "\n"
+        "Press [ctrl+e] to explain this command\n"
+        "\n"
+        "  1. Yes\n"
+        "  2. Yes, don't ask again for this exact command in this project\n"
+        "  3. No, tell Command Code what to do differently\n"
+    )
+
+    OTHER_CLI_SCREEN = (
+        "Some log output\n"
+        "Requesting permission for:\n"
+        "  git status -s\n"
+        "Do you want to proceed?\n"
+        "[1] Deny  [2] Allow"
+    )
+
+    def test_cmd_dialog_uses_once_key(self) -> None:
+        assert approve_response_key(self.CMD_SCREEN) == "1"
+
+    def test_other_cli_dialog_keeps_previous_key(self) -> None:
+        assert approve_response_key(self.OTHER_CLI_SCREEN) == "2"
+
+    @patch("scripts.orca_auto_approve.time.sleep", side_effect=StopIteration)
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_sends_once_for_cmd_dialog(
+        self, mock_read: MagicMock, mock_send: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        mock_read.return_value = self.CMD_SCREEN
+        with pytest.raises(StopIteration):
+            poll_loop(["term_cmd_once"])
+        mock_send.assert_called_once_with("term_cmd_once", "1")
+
+    @patch("scripts.orca_auto_approve.time.sleep", side_effect=StopIteration)
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_keeps_previous_key_for_other_cli(
+        self, mock_read: MagicMock, mock_send: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        mock_read.return_value = self.OTHER_CLI_SCREEN
+        with pytest.raises(StopIteration):
+            poll_loop(["term_other_cli"])
+        mock_send.assert_called_once_with("term_other_cli", "2")
+
+    @patch("scripts.orca_auto_approve.time.sleep", side_effect=StopIteration)
+    @patch("scripts.orca_auto_approve.send")
+    @patch("scripts.orca_auto_approve.read")
+    def test_poll_loop_never_sends_persistent_allow_for_cmd_dialog(
+        self, mock_read: MagicMock, mock_send: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """상시 허용 키(2번)를 cmd 대화창에 보내지 않아야 정책이 스스로 넓어지지 않습니다."""
+        mock_read.return_value = self.CMD_SCREEN
+        with pytest.raises(StopIteration):
+            poll_loop(["term_cmd_no_persist"])
+        assert all(call.args[1] != "2" for call in mock_send.call_args_list)
