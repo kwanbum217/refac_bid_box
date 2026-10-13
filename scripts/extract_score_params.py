@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import html
 import io
 import json
@@ -58,6 +59,12 @@ BROWSER_USER_AGENT = (
 _PRICE_FORMULA_RE = re.compile(
     r"평점\s*\(\s*점\s*\)\s*=\s*배점한도\s*[-\u2013]\s*(\d+(?:\.\d+)?)\s*TIMES", re.I
 )
+# 바이너리 HWP 의 수식 개체는 위 HWPX/HWPML 평문화와 달리 배점한도와 계수를
+# 숫자로 바꿔 평점=배점한도-계수 형태로 남긴다. 계수가 1 이면 생략된다.
+# group(1) 은 배점한도(B), group(2) 는 평점계수(k, 없으면 1)이다.
+_HWP_PRICE_FORMULA_RE = re.compile(
+    r"평점\s*=\s*(\d+(?:\.\d+)?)\s*(?:[-\u2013\u2212]\s*(\d+(?:\.\d+)?)?\s*[\u00d7xX*])?"
+)
 # 기준비율. HWP 수식 개체는 "{90} over {100}" 형태로 평문화된다.
 _BASE_RATE_RE = re.compile(r"\{\s*(\d+(?:\.\d+)?)\s*\}\s*over\s*\{\s*(\d+(?:\.\d+)?)\s*\}")
 # 통과점수 문구. 실측 예: "종합평점이 85점(다만, 소프트웨어용역의 ...은 88점)이상이면"
@@ -70,6 +77,16 @@ _HWP_KEEP_RE = re.compile(
     r"[^\t\n\u0020-\u007E\u00A1-\u00FF\u2010-\u2027\u2026\u3000-\u303F"
     r"\u3131-\u318E\u4E00-\u9FFF\uAC00-\uD7A3\uFF01-\uFF60]"
 )
+
+# HWP 5.x 바이너리 본문 레코드 태그. BodyText/SectionN 스트림은 레코드 열이다.
+# 레코드 헤더는 32비트로 TagID(10) | Level(10) | Size(12) 이며 Size 가 0xFFF 이면
+# 다음 4바이트가 실제 크기다. 한컴 공개 문서 "HWP 5.0 문서 파일 형식" 기준.
+_HWP_TAG_PARA_TEXT = 0x43
+_HWP_TAG_CTRL_HEADER = 0x47
+_HWP_TAG_LIST_HEADER = 0x48
+_HWP_TAG_TABLE = 0x4D
+_HWP_CTRL_ID_TABLE = b"tbl "
+_HWP_EXTENDED_SIZE = 0xFFF
 
 
 def _norm(text: str | None) -> str:
@@ -257,10 +274,140 @@ def _ole_streams(data: bytes) -> dict[str, bytes]:
     return streams
 
 
-def _binary_hwp_document(data: bytes) -> DocumentText:
-    """바이너리 HWP 의 BodyText 스트림에서 본문 텍스트를 뽑는다.
+def _hwp_records(data: bytes) -> list[tuple[int, int, bytes]]:
+    """HWP 5.x 본문 스트림을 (tag, level, payload) 레코드 목록으로 푼다.
 
-    HWP 5.0 은 본문을 UTF-16LE 로 저장한다. 표 구조는 복원하지 않는다.
+    손상되었거나 잘린 레코드를 만나면 그 지점에서 멈춘다. 예외를 내지 않는다.
+    """
+    records: list[tuple[int, int, bytes]] = []
+    offset = 0
+    end = len(data)
+    while offset + 4 <= end:
+        header = int.from_bytes(data[offset : offset + 4], "little")
+        tag = header & 0x3FF
+        level = (header >> 10) & 0x3FF
+        size = (header >> 20) & 0xFFF
+        offset += 4
+        if size == _HWP_EXTENDED_SIZE:
+            if offset + 4 > end:
+                break
+            size = int.from_bytes(data[offset : offset + 4], "little")
+            offset += 4
+        if offset + size > end:
+            break
+        records.append((tag, level, data[offset : offset + size]))
+        offset += size
+    return records
+
+
+def _hwp_para_text(payload: bytes) -> str:
+    """PARA_TEXT 레코드 payload 를 사람이 읽는 문자열로 만든다."""
+    text = _HWP_KEEP_RE.sub("", payload.decode("utf-16le", "ignore"))
+    return _WHITESPACE_RE.sub(" ", text).strip()
+
+
+def _hwp_cell_text(
+    records: list[tuple[int, int, bytes]], start: int, cell_level: int
+) -> tuple[str, int]:
+    """LIST_HEADER 하나가 여는 셀의 문단 텍스트를 모은다.
+
+    다음 셀(LIST_HEADER, 같은 레벨) 또는 상위 레벨 레코드를 만나면 멈춘다.
+    중첩 표 셀의 문단(더 깊은 레벨)은 바깥 셀 텍스트에 포함된다.
+    """
+    parts: list[str] = []
+    index = start
+    while index < len(records):
+        tag, level, payload = records[index]
+        if level < cell_level:
+            break
+        if tag == _HWP_TAG_LIST_HEADER and level == cell_level:
+            break
+        if tag == _HWP_TAG_PARA_TEXT and level >= cell_level:
+            text = _hwp_para_text(payload)
+            if text:
+                parts.append(text)
+        index += 1
+    return " ".join(parts), index
+
+
+def _hwp_read_table(
+    records: list[tuple[int, int, bytes]], start: int, level: int
+) -> list[tuple[str, ...]]:
+    """TABLE 레코드 하나를 행·열 격자로 복원한다.
+
+    TABLE 레코드의 행 수·열 수와 셀 주소(col·row·colspan·rowspan)를 함께 써서
+    격자를 만들고, 병합 셀은 덮는 칸을 같은 값으로 채운다. 비정상 값은 버린다.
+    """
+    header = records[start][2]
+    declared_rows = int.from_bytes(header[4:6], "little") if len(header) >= 6 else 0
+    declared_cols = int.from_bytes(header[6:8], "little") if len(header) >= 8 else 0
+
+    cells: list[tuple[int, int, int, int, str]] = []
+    index = start + 1
+    while index < len(records):
+        tag, cell_level, payload = records[index]
+        if cell_level < level:
+            break
+        if tag == _HWP_TAG_LIST_HEADER and cell_level == level:
+            if len(payload) < 16:
+                index += 1
+                continue
+            col = int.from_bytes(payload[8:10], "little")
+            row = int.from_bytes(payload[10:12], "little")
+            col_span = int.from_bytes(payload[12:14], "little") or 1
+            row_span = int.from_bytes(payload[14:16], "little") or 1
+            if not (0 < col_span <= 64) or not (0 < row_span <= 64):
+                col_span, row_span = 1, 1
+            text, index = _hwp_cell_text(records, index + 1, cell_level)
+            cells.append((row, col, row_span, col_span, text))
+            continue
+        index += 1
+
+    if not cells:
+        return []
+
+    max_row = max(row + row_span for row, _, row_span, _, _ in cells)
+    max_col = max(col + col_span for _, col, _, col_span, _ in cells)
+    rows = max(declared_rows, max_row)
+    cols = max(declared_cols, max_col)
+    if not (0 < rows <= 100_000 and 0 < cols <= 10_000):
+        rows, cols = max_row, max_col
+
+    grid = [["" for _ in range(cols)] for _ in range(rows)]
+    for row, col, row_span, col_span, text in cells:
+        for grid_row in range(row, min(row + row_span, rows)):
+            for grid_col in range(col, min(col + col_span, cols)):
+                if not grid[grid_row][grid_col]:
+                    grid[grid_row][grid_col] = text
+    return [tuple(grid_row) for grid_row in grid]
+
+
+def _hwp_table_rows(records: list[tuple[int, int, bytes]]) -> list[tuple[str, ...]]:
+    """레코드 목록에서 표를 찾아 행 목록으로 복원한다.
+
+    표는 CTRL_HEADER(ctrl id 'tbl ') 바로 뒤의 TABLE 레코드로 시작한다.
+    """
+    rows: list[tuple[str, ...]] = []
+    index = 0
+    while index < len(records):
+        tag, level, _payload = records[index]
+        if (
+            tag == _HWP_TAG_TABLE
+            and index > 0
+            and records[index - 1][0] == _HWP_TAG_CTRL_HEADER
+            and bytes(records[index - 1][2][:4])[::-1] == _HWP_CTRL_ID_TABLE
+        ):
+            rows.extend(_hwp_read_table(records, index, level))
+        index += 1
+    return rows
+
+
+def _binary_hwp_document(data: bytes) -> DocumentText:
+    """바이너리 HWP 의 BodyText 스트림에서 본문 텍스트와 표 행을 뽑는다.
+
+    HWP 5.0 은 본문을 UTF-16LE 로 저장한다. 문단 텍스트는 기존과 같이 평문으로
+    잇고, 추가로 TABLE/LIST_HEADER 레코드에서 행·열 격자를 복원해 rows 에 넣는다.
+    표 복원이 실패해도 평문 추출은 유지한다.
     """
     try:
         streams = _ole_streams(data)
@@ -268,14 +415,19 @@ def _binary_hwp_document(data: bytes) -> DocumentText:
         return DocumentText(reason=f"HWP 스트림 파싱 실패: {type(exc).__name__}")
 
     chunks: list[str] = []
+    rows: list[tuple[str, ...]] = []
     for name in sorted(streams):
-        if name.startswith("BodyText/") or re.fullmatch(r"(BodyText/)?Section\d+", name):
-            text = streams[name].decode("utf-16le", "ignore")
-            chunks.append(_HWP_KEEP_RE.sub("", text))
+        if not (name.startswith("BodyText/") or re.fullmatch(r"(BodyText/)?Section\d+", name)):
+            continue
+        section = streams[name]
+        chunks.append(_HWP_KEEP_RE.sub("", section.decode("utf-16le", "ignore")))
+        # 표 복원이 실패해도 평문 추출은 유지한다.
+        with contextlib.suppress(Exception):
+            rows.extend(_hwp_table_rows(_hwp_records(section)))
     flat = _WHITESPACE_RE.sub(" ", "\n".join(chunks)).strip()
-    if not flat:
+    if not flat and not rows:
         return DocumentText(reason="HWP 본문 텍스트 없음")
-    return DocumentText(flat=flat)
+    return DocumentText(rows=tuple(rows), flat=flat)
 
 
 def extract_document_text(data: bytes) -> DocumentText:
@@ -341,9 +493,14 @@ def parse_price_formula(rows: tuple[tuple[str, ...], ...] | list[list[str]]) -> 
             # HWP 수식 개체는 조판에 따라 백틱이 끼어든다("`평점(점)`=`배점한도-`2`").
             normalized_cell = cell.replace("`", "")
             match = _PRICE_FORMULA_RE.search(normalized_cell)
-            if match is None:
-                continue
-            multiplier = _to_decimal(match.group(1))
+            if match is not None:
+                multiplier = _to_decimal(match.group(1))
+            else:
+                # 바이너리 HWP 수식 개체는 평점=배점한도-계수 형태로 계수를 숫자로 남긴다.
+                binary = _HWP_PRICE_FORMULA_RE.search(normalized_cell)
+                if binary is None or "입찰가격" not in normalized_cell:
+                    continue
+                multiplier = _to_decimal(binary.group(2)) if binary.group(2) else Decimal("1")
             if multiplier is None:
                 continue
             rate = _BASE_RATE_RE.search(normalized_cell)
@@ -378,9 +535,12 @@ def parse_price_limit(rows: tuple[tuple[str, ...], ...] | list[list[str]]) -> li
         joined = " ".join(row)
         if "입찰가격" not in joined:
             continue
-        if _PRICE_FORMULA_RE.search(joined):
-            continue
-        numbers = [cell.strip() for cell in row if re.fullmatch(r"\d{1,3}(?:\.\d+)?", cell.strip())]
+        # 배점한도는 "70" 또는 "30점" 형태다. 수식 셀은 숫자 셀이 아니라 걸러진다.
+        numbers = [
+            cell.strip().removesuffix("점")
+            for cell in row
+            if re.fullmatch(r"\d{1,3}(?:\.\d+)?점?", cell.strip())
+        ]
         if numbers:
             limit_values = numbers
             break

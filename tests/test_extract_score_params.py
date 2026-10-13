@@ -21,6 +21,8 @@ from scripts.extract_score_params import (
     BandValue,
     DocumentText,
     ScoreParams,
+    _hwp_records,
+    _hwp_table_rows,
     band_matches,
     extract_document_text,
     parse_pass_threshold,
@@ -222,3 +224,116 @@ def test_score_params_as_dict_normalizes_decimals() -> None:
 def test_document_text_ok_flag() -> None:
     assert not DocumentText().ok
     assert DocumentText(flat="x").ok
+
+
+# ----------------------------------------------------------------------------
+# 바이너리 HWP 표 복원 (합성 레코드)
+# ----------------------------------------------------------------------------
+
+_HWP_TAG_PARA_HEADER = 0x42
+_HWP_TAG_PARA_TEXT = 0x43
+_HWP_TAG_CTRL_HEADER = 0x47
+_HWP_TAG_LIST_HEADER = 0x48
+_HWP_TAG_TABLE = 0x4D
+
+
+def _record(tag: int, level: int, payload: bytes) -> bytes:
+    header = tag | (level << 10) | (len(payload) << 20)
+    return header.to_bytes(4, "little") + payload
+
+
+def _cell_record(col: int, row: int, row_span: int, col_span: int, text: str, level: int) -> bytes:
+    """셀 하나를 LIST_HEADER + 문단(PARA_HEADER·PARA_TEXT)으로 조립한다."""
+    header = (
+        (1).to_bytes(4, "little")
+        + (0x20).to_bytes(4, "little")
+        + col.to_bytes(2, "little")
+        + row.to_bytes(2, "little")
+        + col_span.to_bytes(2, "little")
+        + row_span.to_bytes(2, "little")
+        + b"\x00" * 8
+    )
+    return (
+        _record(_HWP_TAG_LIST_HEADER, level, header)
+        + _record(_HWP_TAG_PARA_HEADER, level, b"\x00" * 22)
+        + _record(_HWP_TAG_PARA_TEXT, level + 1, text.encode("utf-16le"))
+    )
+
+
+def _synthetic_section(cells: list[tuple[int, int, int, int, str]], rows: int, cols: int) -> bytes:
+    """표 1개(셀 N개)를 담은 합성 BodyText 섹션 바이트를 만든다.
+
+    실제 HWP 5.x 와 같이 CTRL_HEADER(ctrl id 'tbl ') 바로 뒤에 TABLE 레코드가 오고,
+    셀은 같은 레벨의 LIST_HEADER 로 이어진다. cells 항목은 (col, row, rowspan, colspan, text).
+    """
+    level = 2
+    data = _record(_HWP_TAG_CTRL_HEADER, level - 1, b"tbl "[::-1] + b"\x00" * 42)
+    data += _record(
+        _HWP_TAG_TABLE,
+        level,
+        (0).to_bytes(4, "little") + rows.to_bytes(2, "little") + cols.to_bytes(2, "little"),
+    )
+    for col, row, row_span, col_span, text in cells:
+        data += _cell_record(col, row, row_span, col_span, text, level)
+    return data
+
+
+def test_binary_hwp_table_rows_restored() -> None:
+    cells = [
+        (0, 0, 1, 1, "심사항목"),
+        (1, 0, 1, 1, "심사분야"),
+        (2, 0, 1, 1, "입찰가격"),
+        (3, 0, 1, 1, "배점한도"),
+    ]
+    section = _synthetic_section(cells, rows=1, cols=4)
+    rows = _hwp_table_rows(_hwp_records(section))
+    assert rows == [("심사항목", "심사분야", "입찰가격", "배점한도")]
+
+
+def test_binary_hwp_table_fills_merged_rowspan_cells() -> None:
+    cells = [
+        (0, 0, 3, 1, "머리"),
+        (1, 0, 1, 1, "가"),
+        (1, 1, 1, 1, "나"),
+        (1, 2, 1, 1, "다"),
+    ]
+    section = _synthetic_section(cells, rows=3, cols=2)
+    rows = _hwp_table_rows(_hwp_records(section))
+    assert rows == [("머리", "가"), ("머리", "나"), ("머리", "다")]
+
+
+def test_hwp_records_stop_at_truncated_record() -> None:
+    section = _synthetic_section([(0, 0, 1, 1, "값")], rows=1, cols=1)
+    records = _hwp_records(section + b"\x42\x00\x00")
+    assert records
+    assert all(isinstance(payload, bytes) for _, _, payload in records)
+
+
+# ----------------------------------------------------------------------------
+# 바이너리 HWP 수식 개체 서식
+# ----------------------------------------------------------------------------
+
+HWP_PRICE_FORMULA_ROWS = (
+    (
+        "2. 입찰가격",
+        "o 다음 산식에 의해 산출된 평점 적용 88 입찰가격 "
+        "*평점=50-2\u00d7\uff5c( - )\u00d7100\uff5c 100 예정가격",
+        "50점",
+    ),
+    (
+        "2. 입찰가격",
+        "o 다음 산식에 의해 산출된 평점 적용 88 입찰가격 "
+        "* 평점=30 -\uff5c( - )\u00d7100\uff5c 100 예정가격",
+        "30점",
+    ),
+)
+
+
+def test_parse_price_formula_reads_binary_renderings() -> None:
+    formulas = parse_price_formula(HWP_PRICE_FORMULA_ROWS)
+    assert [formula.multiplier for formula in formulas] == [Decimal("2"), Decimal("1")]
+
+
+def test_parse_price_limit_reads_point_suffixed_b_values() -> None:
+    limits = parse_price_limit(HWP_PRICE_FORMULA_ROWS)
+    assert [(limit.label, limit.value) for limit in limits] == [("", Decimal("50"))]
