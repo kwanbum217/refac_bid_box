@@ -34,7 +34,6 @@ from src.app.schemas.predictions import PredictPriceResponse
 from src.app.services import evaluation_rules as rules_module
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_RULE_REGIME_MISMATCH,
-    BLOCK_CODE_RULE_SCOPE_AMBIGUOUS,
     INSTITUTION_RULES,
     RULE_SCOPE_INSTITUTION,
     RULE_SCOPE_REGION,
@@ -367,9 +366,9 @@ def test_institution_rule_selection_is_by_longest_service_token() -> None:
     assert general.rule.rule_id == "SERVC_INST_KOGAS_20260709_GENERAL"
 
 
-def test_two_variants_at_same_service_token_block_as_ambiguous() -> None:
-    """임대차용역 k=2·k=4 구간은 원문이 구분 근거를 인쇄하지 않아 하나를 고르지 않는다."""
-    result = _resolve(
+def test_lease_rule_splits_k_by_notice_amount() -> None:
+    """별표 8 임대차용역은 원문이 고시금액 미만 k=4·이상 k=2 로 인쇄해 고시금액 경계로 나눈다."""
+    over = _resolve(
         {
             "sucsfbidMthdNm": "적격심사제-임대차 적격심사 추정가격 고시금액 이상",
             "srvceDivNm": "일반용역",
@@ -378,10 +377,60 @@ def test_two_variants_at_same_service_token_block_as_ambiguous() -> None:
         },
         estimated_price="300000000",
     )
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_RULE_SCOPE_AMBIGUOUS
-    assert result.scope_stage == RULE_SCOPE_INSTITUTION
-    assert result.rule is None
+    assert over.is_blocked is False
+    assert over.rule is not None
+    assert over.rule.rule_id == "SERVC_INST_IIAC_20250101_LEASE"
+    assert over.scope_stage == RULE_SCOPE_INSTITUTION
+    # 3억원은 고시금액(2.3억) 이상 구간이라 k=2·인쇄 하한율 80.495% 를 쓴다.
+    assert over.effective_lwlt_rate == Decimal("80.495")
+    under = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-임대차 적격심사 추정가격 고시금액 미만",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-07-01",
+            "dminsttNm": "인천국제공항공사",
+        },
+        estimated_price="200000000",
+    )
+    assert under.is_blocked is False
+    assert under.rule is not None
+    assert under.rule.rule_id == "SERVC_INST_IIAC_20250101_LEASE"
+    # 2억원은 고시금액 미만 구간이라 k=4·인쇄 하한율 84.245% 를 쓴다.
+    assert under.effective_lwlt_rate == Decimal("84.245")
+
+
+def test_khnp_head_office_alias_matches_but_subsidiary_does_not() -> None:
+    """한수원 본사 표기(별칭)는 매칭되고 지역본부 등 하위 조직 표기는 매칭되지 않는다."""
+    branch = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-청소용역",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-07-01",
+            "dminsttNm": "한국수력원자력(주)",
+        },
+    )
+    assert branch.rule is not None
+    assert branch.rule.rule_id == "SERVC_INST_KHNP_20260619_CLEANING"
+    assert branch.scope_stage == RULE_SCOPE_INSTITUTION
+    corp = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-청소용역",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-07-01",
+            "dminsttNm": "한국수력원자력주식회사",
+        },
+    )
+    assert corp.rule is not None
+    assert corp.rule.rule_id == "SERVC_INST_KHNP_20260619_CLEANING"
+    subsidiary = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-청소용역",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-07-01",
+            "dminsttNm": "한국수력원자력(주) 한울원자력본부",
+        },
+    )
+    assert subsidiary.scope_stage != RULE_SCOPE_INSTITUTION
 
 
 def test_institution_rule_effective_date_is_checked() -> None:
