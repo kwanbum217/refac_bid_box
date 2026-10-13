@@ -11,6 +11,9 @@ Kimi 런처와 다른 점이 하나 있습니다. qwen 은 `-i` 로 지시문을
 코디네이터가 `orca terminal send` 로 후속 지시와 반려 사유를 같은 세션에 보낼 수
 있습니다. `--one-shot` 을 주면 `-p` 단발 실행으로 바뀝니다.
 
+워커 권한 무승인(yolo) 규칙에 따라 기본 경로에는 `--yolo` 를 함께 붙입니다.
+그러지 않으면 qwen 이 'Auto mode' 로 떠 위험 판단 시 승인 대기로 멈춥니다.
+
 허용 모델 목록은 `MODEL_POOL` 에서 provider 가 qwen 인 항목으로 파생합니다. Alibaba
 Token Plan 경유 ID 뿐 아니라 qwen CLI 의 OpenRouter 프로바이더
 (`~/.qwen/settings.json`, envKey `OPENROUTER_API_KEY`)를 경유하는 ID 도 같은
@@ -88,11 +91,13 @@ wait_for_preamble = common.wait_for_preamble
 def build_command(model_id: str, prompt: str, one_shot: bool) -> list[str]:
     """qwen 실행 인자를 만듭니다.
 
-    기본은 -i 입니다. 지시문을 실행한 뒤 대화형 세션이 남아 코디네이터가 후속
-    지시를 같은 세션에 보낼 수 있습니다. -p 는 단발이라 세션이 끝납니다.
+    기본은 --yolo -i 입니다. 워커 권한 무승인(yolo) 규칙에 맞춰 --yolo 를 붙여
+    'Auto mode' 승인 대기로 멈추지 않게 하고, 지시문을 실행한 뒤 대화형 세션이
+    남아 코디네이터가 후속 지시를 같은 세션에 보낼 수 있습니다. -p 는 단발이라
+    세션이 끝나므로 기본 경로에서는 쓰지 않습니다.
     """
     flag = "-p" if one_shot else "-i"
-    return ["qwen", "-m", model_id, flag, prompt]
+    return ["qwen", "-m", model_id, "--yolo", flag, prompt]
 
 
 def build_completion_message(exit_code: int, model_id: str) -> str:
@@ -192,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     schedule_permission_setup(Path(__file__).resolve(), model_id)
 
     mode = "-p 단발" if args.one_shot else "-i 대화형"
-    print(f"기동: qwen -m {model_id} ({mode}, 지시문 {len(prompt)}자)", flush=True)
+    print(f"기동: qwen -m {model_id} --yolo ({mode}, 지시문 {len(prompt)}자)", flush=True)
     # 인자는 셸을 거치지 않고 그대로 전달되므로 주입 위험이 없습니다. 모델 ID 와
     # 지시문 모두 코디네이터가 만든 값입니다.
     exit_code = run_qwen(cmd, env)
