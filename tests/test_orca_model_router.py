@@ -356,6 +356,8 @@ class TestModelPoolAndSelection:
             # 2026-09-21 등록. 명시 지정 전용이며 자동 배정하지 않습니다.
             "cmd-glm-flash",
             "cmd-hy4-preview",
+            # 2026-10-13 등록. qwen CLI 경유 OpenRouter 무료 리뷰어, 명시 지정 전용입니다.
+            "qwen-nemotron-ultra-free",
         }
 
 
@@ -2687,3 +2689,103 @@ class TestCommandCodeExplicitOnlyPoolRegistration:
                         assert res["fallback_pool"] != pool_key
                         assert res["primary_model"] != model_id
                         assert res["fallback_model"] != model_id
+
+
+class TestQwenNemotronUltraRegistration:
+    """Qwen Code 경유 OpenRouter Nemotron 3 Ultra 리뷰어 등록 계약입니다.
+
+    2026-10-13 사용자 지정. qwen CLI 의 OpenRouter 프로바이더
+    (~/.qwen/settings.json, envKey OPENROUTER_API_KEY)를 경유하므로 provider 는
+    qwen 이며, 빌더 기본값(cmd)과 계열이 갈려 리뷰어 독립 판정을 통과합니다.
+    무료 풀 규칙에 따라 자동 배정하지 않고 명시 지정 전용입니다. 이 환경에는
+    OPENROUTER_API_KEY 가 없을 수 있어 실제 probe 가 실패하므로 시험은 네트워크
+    없이 고정합니다.
+    """
+
+    POOL_KEY = "qwen-nemotron-ultra-free"
+    MODEL_ID = "nvidia/nemotron-3-ultra-550b-a55b:free"
+
+    def test_pool_entry_is_registered_as_explicit_only_reviewer(self):
+        info = orca_model_router.MODEL_POOL[self.POOL_KEY]
+        assert info["id"] == self.MODEL_ID
+        assert info["provider"] == "qwen"
+        assert info["tier"] == "free"
+        assert info["auto_selectable"] is False
+        assert info["suitable_for"] == ["reviewer"]
+
+    def test_pool_key_and_id_resolve_to_qwen_provider(self):
+        from scripts.orca_model_router import pool_for_model
+
+        assert pool_for_model(self.POOL_KEY) == self.POOL_KEY
+        assert pool_for_model(self.MODEL_ID) == self.POOL_KEY
+        assert orca_model_router.provider_for_model(self.POOL_KEY) == "qwen"
+        assert orca_model_router.provider_for_model(self.MODEL_ID) == "qwen"
+
+    def test_absent_from_automatic_routing_tables(self):
+        """TIER_POLICY 와 무료 후보 순서 어디에도 없어야 합니다."""
+        for candidates in orca_model_router.TIER_POLICY.values():
+            assert self.POOL_KEY not in candidates
+            assert self.MODEL_ID not in candidates
+        for order in orca_model_router.FREE_ORDER_BY_ROLE.values():
+            assert self.POOL_KEY not in order
+            assert self.MODEL_ID not in order
+        assert self.POOL_KEY not in orca_model_router.FREE_POOL_ORDER
+
+    def test_select_model_never_auto_selects(self):
+        roles = ["builder", "reviewer", "investigator", "benchmarker", "documenter", "unknown"]
+        risks = ["low", "medium", "high"]
+        for role in roles:
+            for risk in risks:
+                for allow_free in (False, True):
+                    kwargs: dict[str, object] = {
+                        "allow_free": allow_free,
+                        "has_write_scope": False,
+                    }
+                    if role == "reviewer":
+                        kwargs["builder_provider"] = "cmd"
+                    res = orca_model_router.select_model(role, risk, **kwargs)
+                    assert res["primary_pool"] != self.POOL_KEY
+                    assert res["fallback_pool"] != self.POOL_KEY
+                    assert res["primary_model"] != self.MODEL_ID
+                    assert res["fallback_model"] != self.MODEL_ID
+
+    def test_cmd_builder_reviewer_explicit_passes_independence(self):
+        """빌더 기본값(cmd) 리뷰에서 이 모델을 명시 지정하면 독립 정책을 통과합니다."""
+        res = orca_model_router.route(
+            role="reviewer",
+            risk="high",
+            explicit_model=self.MODEL_ID,
+            builder_provider="cmd",
+            probe=False,
+        )
+        assert res.primary_model == self.MODEL_ID
+        assert orca_model_router.provider_for_model(self.MODEL_ID) != "cmd"
+
+    def test_same_family_explicit_reviewer_fails_closed(self):
+        """빌더가 qwen 계열이면 같은 계열이라 독립 리뷰 정책이 막습니다."""
+        with pytest.raises(
+            orca_model_router.ModelRoutingError, match="독립 리뷰 정책을 위반합니다"
+        ):
+            orca_model_router.route(
+                role="reviewer",
+                risk="high",
+                explicit_model=self.MODEL_ID,
+                builder_provider="qwen",
+                probe=False,
+            )
+
+    def test_probe_uses_qwen_cli_with_resolved_id(self, monkeypatch):
+        """probe 는 qwen CLI 를 실제 모델 ID 로 호출합니다 (네트워크 없이 고정)."""
+        captured_cmd: list[str] = []
+
+        def _mock_run(cmd, *args, **kwargs):
+            captured_cmd.extend(cmd)
+            return MagicMock(returncode=0, stdout="pong", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", _mock_run)
+        available, _detail = orca_model_router.probe_model(self.MODEL_ID)
+        assert available is True
+        assert captured_cmd[0] == "qwen"
+        assert "-m" in captured_cmd
+        assert self.MODEL_ID in captured_cmd
+        assert self.POOL_KEY not in captured_cmd

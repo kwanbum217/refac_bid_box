@@ -125,6 +125,23 @@ def test_resolve_model_validates_against_registry():
     assert "등록되어 있지 않습니다" in str(exc.value)
 
 
+def test_resolve_model_includes_openrouter_via_qwen_entry():
+    """qwen CLI 의 OpenRouter 프로바이더 경유 무료 리뷰어도 허용 목록에 포함됩니다."""
+    model_id = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    registered = registered_qwen_models()
+    assert registered["qwen-nemotron-ultra-free"] == model_id
+
+    assert resolve_model(model_id) == model_id
+    assert resolve_model("qwen-nemotron-ultra-free") == model_id
+    assert build_command(model_id, "지시문", one_shot=False) == [
+        "qwen",
+        "-m",
+        model_id,
+        "-i",
+        "지시문",
+    ]
+
+
 @patch("scripts.orca_qwen_launch.subprocess.run")
 def test_run_qwen_uses_subprocess(mock_run: MagicMock):
     mock_run.return_value = MagicMock(returncode=0)
