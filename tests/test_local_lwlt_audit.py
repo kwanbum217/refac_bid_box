@@ -59,6 +59,7 @@ GG_SW_ID = "SERVC_LOCAL_GG_20250808_ATTACH_1_2"
 GG_WASTE_ID = "SERVC_LOCAL_GG_20250808_ATTACH_1_3"
 GG_LAND_TRANSPORT_ID = "SERVC_LOCAL_GG_20250808_ATTACH_1_4"
 GG_GENERAL_ID = "SERVC_LOCAL_GG_20250808_ATTACH_1_6"
+GG_INSURANCE_ID = "SERVC_LOCAL_GG_20250808_ATTACH_1_5"
 
 GENERAL_METHOD = "일반용역 적격심사 추정가격 5억원 이상"
 SIMPLE_LABOR_METHOD = "단순노무용역 적격심사 추정가격 5억원 미만"
@@ -359,6 +360,17 @@ def test_uncorrected_local_rules_keep_rule_default() -> None:
         rule = _rule(rule_id)
         assert rule.lwlt_rate == Decimal(expected_rate), rule_id
         assert all(band.lwlt_rate is None for band in rule.price_bands or ()), rule_id
+
+
+def test_gg_insurance_source_cites_annex_1_5_derivation() -> None:
+    """경기 보험 별표 1-5 는 낙찰하한율 열 대신 원문 산식 역산 근거를 source 에 밝힌다."""
+    rule = _rule(GG_INSURANCE_ID)
+    assert rule.lwlt_rate == Decimal("47.995")
+    assert all(band.lwlt_rate is None for band in rule.price_bands or ())
+    sources = (rule.source, *((band.source or "") for band in rule.price_bands or ()))
+    for text in sources:
+        assert "coord:676-728" in text
+        assert "원문 산식 역산" in text
 
 
 def test_national_rule_unaffected() -> None:

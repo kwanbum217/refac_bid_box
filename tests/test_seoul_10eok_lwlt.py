@@ -1,16 +1,16 @@
 """서울특별시 GENERAL 규칙 10억원 이상 30억원 분할(77.995/72.995) 시험.
 
 정본:
- - .orca/capsules/task_d7afb4a5cee5/capsule.yaml (서울 전용 5구간, 단위·끝단 시험 지시)
- - docs/analysis/local_lwlt_announcement_measure_20261005.md 1장 2번·3장 서울 행
-   (10~30억 77.995, 74건 / 30억 이상 72.995, 24건)
- - src/app/services/evaluation_rules.py 의 _measured_lwlt_seoul_five_band_price,
+ - .orca/capsules/task_bc62ea611198/capsule.yaml (서울 별표 1~4 원문 산식 역산 대조)
+ - docs/analysis/local_lwlt_seoul_gg_derivation_20261013.md (구간별 역산 대조표)
+ - src/app/services/evaluation_rules.py 의 _seoul_five_band_price,
    src/app/services/evaluation_flat_zones.py 의 서울 전용 평탄 매핑
 
-10억원 이상 두 구간값은 공고 실측 최빈값이라 band.source 에 자치법규 원문이 아니라
-공고 실측임을 밝힌다. 평가 API 끝단은 mock 없이 TestClient 로 호출하고, 이 워크트리에
-모델 파일이 없어 예측 모델만 시험 대역으로 대체한다. 규칙 판별·구간 하한율·최저
-투찰금액·점수는 실제 코드가 계산한다.
+2026-10-13 별표 1~4 입찰가격 평점산식과 제7조 통과점수(30억원 이상 85·10억~30억 90·
+10억원 미만 95)를 역산한 값이 종전 공고 실측 최빈값과 모두 일치함을 확인했다. band.source
+에는 자치법규 원문이 아니라 그 역산 근거를 밝힌다. 평가 API 끝단은 mock 없이 TestClient 로
+호출하고, 이 워크트리에 모델 파일이 없어 예측 모델만 시험 대역으로 대체한다. 규칙 판별·
+구간 하한율·최저 투찰금액·점수는 실제 코드가 계산한다.
 """
 
 from __future__ import annotations
@@ -49,8 +49,9 @@ SEOUL_SIMPLE_ID = "SERVC_LOCAL_SEOUL_20240812_SIMPLE_LABOR"
 GENERAL_METHOD = "시설분야용역 적격심사 추정가격 5억원 이상"
 SIMPLE_LABOR_METHOD = "단순노무용역 적격심사 추정가격 5억원 미만"
 MEASURED_SOURCE_DOC = "docs/analysis/local_lwlt_announcement_measure_20261005.md"
+SEOUL_FORMULA_MARK = "원문 산식 역산"
 
-# (상한, 공고 실측 하한율, 구간 라벨). 마지막 두 행이 30억원 경계 분할 구간이다.
+# (상한, 원문 산식 역산 하한율, 구간 라벨). 마지막 두 행이 30억원 경계 분할 구간이다.
 SEOUL_BANDS = (
     ("200000000", "87.745", "추정가격 2억원 미만"),
     ("500000000", "86.745", "5억원 미만 2억원 이상"),
@@ -93,8 +94,8 @@ def _resolve(
 # --------------------------------------------------------------------------- #
 
 
-def test_seoul_general_has_five_measured_bands() -> None:
-    """서울 GENERAL 은 10억원 이상을 30억원 경계로 나눈 5구간이고 값은 공고 실측이다."""
+def test_seoul_general_has_five_formula_bands() -> None:
+    """서울 GENERAL 은 10억원 이상을 30억원 경계로 나눈 5구간이고 값은 원문 산식 역산이다."""
     rule = _rule(SEOUL_GENERAL_ID)
     assert rule.price_bands is not None
     assert len(rule.price_bands) == len(SEOUL_BANDS)
@@ -103,8 +104,9 @@ def test_seoul_general_has_five_measured_bands() -> None:
         assert band.upper_bound == expected_upper, upper
         assert band.lwlt_rate == Decimal(rate), upper
         assert band.label == label, upper
-        assert MEASURED_SOURCE_DOC in (band.source or ""), upper
-        assert "원문 미확인" in (band.source or ""), upper
+        assert SEOUL_FORMULA_MARK in (band.source or ""), upper
+        assert MEASURED_SOURCE_DOC not in (band.source or ""), upper
+        assert "원문 미확인" not in (band.source or ""), upper
     # 규칙 대표값은 분할 전과 같은 87.995 로 두어 구간 하한율 없는 경로가 바뀌지 않는다.
     assert rule.lwlt_rate == Decimal("87.995")
 
@@ -187,7 +189,7 @@ BAND_RATE_CASES = (
 
 @pytest.mark.parametrize(("price", "expected_rate", "band_label"), BAND_RATE_CASES)
 def test_seoul_band_rate_selected_by_price(price: str, expected_rate: str, band_label: str) -> None:
-    """공고 하한율이 없으면 추정가격이 고른 구간의 실측 하한율을 쓴다."""
+    """공고 하한율이 없으면 추정가격이 고른 구간의 원문 산식 역산 하한율을 쓴다."""
     result = _resolve(
         region_code="11",
         region_name="서울특별시",

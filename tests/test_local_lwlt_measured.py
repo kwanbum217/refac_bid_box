@@ -1,14 +1,14 @@
-"""LOCAL GENERAL 규칙 6개의 구간 하한율 시험 (서울 공고 실측 + 5곳 원문 산식 역산).
+"""LOCAL GENERAL 규칙 6개의 구간 하한율 시험 (6곳 모두 원문 산식 역산).
 
 정본:
  - docs/analysis/local_10eok_lwlt_derivation_20261006.md (인천·제주·강원·경남·경북 원문 역산)
- - docs/analysis/local_lwlt_announcement_measure_20261005.md 6.1절 (서울 공고 실측 최빈값)
- - .orca/capsules/task_b1c4b69f0e6f/capsule.yaml
+ - docs/analysis/local_lwlt_seoul_gg_derivation_20261013.md (서울 별표 1~4 원문 산식 역산)
+ - .orca/capsules/task_bc62ea611198/capsule.yaml
  - src/app/services/evaluation_rules.py 의 PriceBand.lwlt_rate
 
-2026-10-06 부로 서울 GENERAL 만 10억원 미만 3개 구간에 공고 실측 최빈값을 쓰고, 인천·제주·
-강원·경남은 원문 별표 산식과 본문 통과점수로 역산한 5구간(87.745/86.745/85.495/77.995/
-72.995), 경북 04 는 원문 별표 4 두 행(5억원 미만 87.745%, 5억원 이상 86.745%)을 씁니다.
+서울 GENERAL 은 2026-10-13 별표 1~4 평점산식과 제7조 통과점수를 역산해 5구간
+(87.745/86.745/85.495/77.995/72.995)을 확정했고, 인천·제주·강원·경남도 같은 산식 역산
+5구간을, 경북 04 는 원문 별표 4 두 행(5억원 미만 87.745%, 5억원 이상 86.745%)을 씁니다.
 평가 API 끝단은 mock 없이 TestClient 로 호출하고, 이 워크트리에 모델 파일이 없어 예측 모델만
 시험 대역으로 대체합니다. 규칙 판별·구간 하한율·최저 투찰금액은 실제 코드다.
 """
@@ -100,6 +100,7 @@ SOURCE_TOKEN_BY_RULE = {
     GB_GENERAL_ID: "EXT/gb/gb_byp004.tbl.txt",
 }
 MEASURED_SOURCE_DOC = "docs/analysis/local_lwlt_announcement_measure_20261005.md"
+SEOUL_FORMULA_MARK = "원문 산식 역산"
 
 
 def _rule(rule_id: str) -> EvaluationRule:
@@ -159,18 +160,19 @@ def test_original_band_sources_cite_ext(rule_id: str, source_token: str) -> None
         assert "공고 실측" not in (band.source or ""), (rule_id, band.label)
 
 
-def test_seoul_bands_stay_measured() -> None:
-    """서울 01 은 10억원 이상을 30억원 경계로 나눈 공고 실측 5구간이다."""
+def test_seoul_bands_are_formula_derived() -> None:
+    """서울 01 은 10억원 이상을 30억원 경계로 나눈 원문 산식 역산 5구간이다."""
     rule = _rule(SEOUL_GENERAL_ID)
     bands = rule.price_bands or ()
     for band, (upper, rate, label) in zip(bands, FIVE_BANDS, strict=True):
         assert band.upper_bound == (Decimal(upper) if upper is not None else None), upper
         assert band.lwlt_rate == Decimal(rate), upper
         assert band.label == label, upper
-    # 실측 하한율을 붙인 구간은 공고 실측임을 함께 밝힌다.
-    for band in bands[:3]:
-        assert MEASURED_SOURCE_DOC in (band.source or ""), band.label
-        assert "원문 미확인" in (band.source or ""), band.label
+    # 모든 구간이 별표 1~4 평점산식·제7조 통과점수 역산임을 함께 밝힌다.
+    for band in bands:
+        assert SEOUL_FORMULA_MARK in (band.source or ""), band.label
+        assert MEASURED_SOURCE_DOC not in (band.source or ""), band.label
+        assert "원문 미확인" not in (band.source or ""), band.label
 
 
 # --------------------------------------------------------------------------- #
