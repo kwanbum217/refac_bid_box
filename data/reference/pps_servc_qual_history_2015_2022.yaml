@@ -1,0 +1,3909 @@
+schema: PPS_SERVC_QUAL_HISTORY_V1
+version: 1.0.0
+created_at: '2026-10-13'
+source_task: task_c4b489e36343
+scope: PPS_SERVC_QUAL_HISTORY
+title: 조달청 일반용역 적격심사 세부기준 입찰가격 평점 별표 개정판 명세 (2015~2022 시행)
+conventions:
+  score_formula: P = B - k * |base_ratio/100 - bid_price/estimated_price| * 100
+  lwlt_formula: base_ratio - (100 - pass_score) / k
+  lwlt_notation: '계산값을 소수 둘째 자리까지 버린 뒤 0.005 를 뺀 .995 표기 관행. 예: 88.000 -> 87.995, 84.250 -> 84.245'
+  lwlt_basis: 낙찰하한율은 고시 조문·별표에 인쇄되어 있지 않다. 이 명세의 lwlt_rate 는 위 lwlt_formula 로 역산한 파생값이다.
+  lower_inclusive: true
+  upper_exclusive: true
+  boundary_token: 고시금액(용역)은 국가계약법 시행령에 따른 연도별 고시금액이다. 추정가격 구간 경계는 문자열 '고시금액' 으로 적는다.
+  money_unit: KRW
+  band_axes: 별표에 따라 배점한도 B 의 추정가격 구간 경계와 평점산식 k 의 추정가격 구간 경계가 다르다. price_lower/price_upper 는 B 구간, formula_lower/formula_upper 는 평점산식 구간이다.
+source:
+  archive: 국가법령정보센터 행정규칙 연혁
+  archive_url: https://www.law.go.kr/admRulLsInfoP.do?admRulId=33121&efYd=0
+  admin_rule_id: '33121'
+  retrieved_at: '2026-10-13'
+  read_method: scripts/extract_score_params.py 의 HWP 5.x(OLE) 판독기를 재사용해 BodyText/Section0 레코드에서 표·수식 개체를 읽었다. 원문 파일은 .cache/pps_history/ 에만 두고 커밋하지 않는다.
+revisions:
+- notice_no: 조달청공고 제2015-41호
+  notice_key: 2015-41
+  admrul_seq: '2100000018261'
+  promulgated: '2015-04-22'
+  effective_from: '2015-05-01'
+  effective_to: '2016-04-30'
+  change_type: 폐지제정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 정보통신용역, 육상운송용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사항목및배점한도
+    service_type: 학술연구용역
+    fl_seq: '19967657'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 2억원이상
+      - 추정가격 2억원미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 [별표 1-1]의 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 200000000
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 200000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 2
+    title: 시설분야용역적격심사항목및배점한도
+    service_type: 시설분야용역
+    fl_seq: '19967622'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 [별표 2-1]의 평가기준에 의하여 평가한다. 다만, 이행실적은 3개월 이상 계속 수행한 실적에(분할실적 포함) 한하여 인정하며, 아파트 및 주상복합건물의 청소용역실적은 인정하지 아니함. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다. 근로조건 이행계획의 적정성 평가는 [별표 2-2] 근로조건 이행계획의 적정성 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 3
+    title: 정보통신용역중소기업자간경쟁제품비대상적격심사항목및배점한도
+    service_type: 정보통신용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '19967661'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 [별표 3-1]의 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 [별표 3-1]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사항목및배점한도
+    service_type: 폐기물처리용역
+    fl_seq: '19967722'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 [별표 4-1]의 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 [별표 4-1]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5
+    title: 육상운송용역중소기업자간경쟁제품비대상적격심사항목및배점한도
+    service_type: 육상운송용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '19967759'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 [별표 5-1]의 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 [별표 5-1]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+- notice_no: 조달청공고 제2016-48호
+  notice_key: 2016-48
+  admrul_seq: '2100000044177'
+  promulgated: '2016-04-08'
+  effective_from: '2016-05-01'
+  effective_to: '2016-04-30'
+  change_type: 폐지제정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 정보통신용역, 육상운송용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '24323670'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 2억원이상
+      - 추정가격 2억원미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 200000000
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 200000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '24323678'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 다만, 이행실적은 3개월 이상 계속 수행한 실적에(분할실적 포함) 한하여 인정하며, 아파트 및 주상복합건물의 청소용역실적은 인정하지 아니함. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다. 근로조건 이행계획의 적정성 평가는 3. 근로조건 이행계획의 적정성 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 3
+    title: 정보통신용역중소기업자간경쟁제품비대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '24323693'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 3의2
+    title: 정보통신용역중소기업자간경쟁제품대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '24323709'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '24323734'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5
+    title: 육상운송용역중소기업자간경쟁제품비대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '24323749'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5의2
+    title: 육상운송용역중소기업자간경쟁제품대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '24323752'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+- notice_no: 조달청공고 제2016-51호
+  notice_key: 2016-51
+  admrul_seq: '2100000045349'
+  promulgated: '2016-04-26'
+  effective_from: '2016-05-01'
+  effective_to: '2017-04-30'
+  change_type: 폐지제정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 정보통신용역, 육상운송용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '24468537'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 2억원이상
+      - 추정가격 2억원미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 200000000
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 200000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '24468551'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 다만, 이행실적은 3개월 이상 계속 수행한 실적에(분할실적 포함) 한하여 인정하며, 아파트 및 주상복합건물의 청소용역실적은 인정하지 아니함. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다. 근로조건 이행계획의 적정성 평가는 3. 근로조건 이행계획의 적정성 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 3
+    title: 정보통신용역중소기업자간경쟁제품비대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '24468572'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 3의2
+    title: 정보통신용역중소기업자간경쟁제품대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '24468575'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '24468585'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5
+    title: 육상운송용역중소기업자간경쟁제품비대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '24468682'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5의2
+    title: 육상운송용역중소기업자간경쟁제품대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '24468685'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+- notice_no: 조달청공고 제2017-35호
+  notice_key: 2017-35
+  admrul_seq: '2100000081949'
+  promulgated: '2017-04-03'
+  effective_from: '2017-05-01'
+  effective_to: '2017-09-30'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 정보통신용역, 육상운송용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '29459892'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 2억원이상
+      - 추정가격 2억원미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 200000000
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 200000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '29459897'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 다만, 이행실적은 3개월 이상 계속 수행한 실적에(분할실적 포함) 한하여 인정하며, 아파트 및 주상복합건물의 청소용역실적은 인정하지 아니함. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다. 근로조건 이행계획의 적정성 평가는 3. 근로조건 이행계획의 적정성 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 3
+    title: 정보통신용역중소기업자간경쟁제품비대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '29459902'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 3의2
+    title: 정보통신용역중소기업자간경쟁제품대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '29459926'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '29459958'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5
+    title: 육상운송용역중소기업자간경쟁제품비대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '29459986'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5의2
+    title: 육상운송용역중소기업자간경쟁제품대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '29460047'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+- notice_no: 조달청공고 제2017-82호
+  notice_key: 2017-82
+  admrul_seq: '2100000093629'
+  promulgated: '2017-08-10'
+  effective_from: '2017-10-01'
+  effective_to: '2017-11-30'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 정보통신용역, 육상운송용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사제5조제1항제1호관련
+    service_type: 학술연구용역
+    fl_seq: '30900514'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 2억원이상
+      - 추정가격 2억원미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 200000000
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 200000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 평점(점) = 배점한도 ­ 2 × ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 2
+    title: 시설분야용역적격심사제5조제1항제2호관련
+    service_type: 시설분야용역
+    fl_seq: '30900517'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 다만, 이행실적은 3개월 이상 계속 수행한 실적에(분할실적 포함) 한하여 인정하며, 아파트 및 주상복합건물의 청소용역실적은 인정하지 아니함. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다. 근로조건 이행계획의 적정성 평가는 3. 근로조건 이행계획의 적정성 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 평점(점) = 배점한도­5× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 3
+    title: 정보통신용역중소기업자간경쟁제품비대상적격심사제5조제1항제3호관련
+    service_type: 정보통신용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '30900521'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 3의2
+    title: 정보통신용역중소기업자간경쟁제품대상적격심사제5조제1항제3호관련
+    service_type: 정보통신용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '30900531'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) - ｜｜는 절대값 표시임. - 입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사제5조제1항제4호관련
+    service_type: 폐기물처리용역
+    fl_seq: '30900537'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5
+    title: 육상운송용역중소기업자간경쟁제품비대상적격심사제5조제1항제5호관련
+    service_type: 육상운송용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '30900544'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: ㅇ평점(점) = 배점한도­2× ( 88 ­ 입찰가격 )× 100
+  - attachment: 별표 5의2
+    title: 육상운송용역중소기업자간경쟁제품대상적격심사제5조제1항제5호관련
+    service_type: 육상운송용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '30900548'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+      exceptions:
+      - (다만, 입찰가격이 예정가격 이하로서 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수로 평가) -｜｜는 절대값 표시임. -입찰가격을 예정가격으로 나눈 결과 소숫점 이하의 숫자가 있는 경우에는 소숫점 다섯째자리에서 반올림함. - 최저평점은 2점으로 함. 이행실적 평가는 2. 이행실적 평가기준에 의하여 평가한다. 경영상태 평가는 [별표 6]의 평가기준에 의하여 평가한다. 기술능력 평가는 3. 기술능력 평가기준에 의하여 평가한다. 신인도 평가는 [별표 7]의 평가기준에 의하여 평가한다.
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: ㅇ평점(점) = 배점한도­4× ( 91 ­ 입찰가격 )× 100
+- notice_no: 조달청공고 제2017-95호
+  notice_key: 2017-95
+  admrul_seq: '2100000098129'
+  promulgated: '2017-09-29'
+  effective_from: '2017-12-01'
+  effective_to: '2018-03-31'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 정보통신용역, 육상운송용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '31491659'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 2.1억원 이상
+      - 추정가격 2.1억원 미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 210000000
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 210000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: 210000000
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '31491662'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-5 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+  - attachment: 별표 3
+    title: 정보통신용역중소기업자간경쟁제품비대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '31491670'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 210000000
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 3의2
+    title: 정보통신용역중소기업자간경쟁제품대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '31491676'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '31491681'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 210000000
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5
+    title: 육상운송용역중소기업자간경쟁제품비대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '31491687'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 210000000
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5의2
+    title: 육상운송용역중소기업자간경쟁제품대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '31491693'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+- notice_no: 조달청공고 제2018-36호
+  notice_key: 2018-36
+  admrul_seq: '2100000118678'
+  promulgated: '2018-03-29'
+  effective_from: '2018-04-01'
+  effective_to: '2019-03-31'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 정보통신용역, 육상운송용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '33901427'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 2.1억원 이상
+      - 추정가격 2.1억원 미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 210000000
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 210000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: 210000000
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '33901435'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-5 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+  - attachment: 별표 3
+    title: 정보통신용역중소기업자간경쟁제품비대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '33901439'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 210000000
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 3의2
+    title: 정보통신용역중소기업자간경쟁제품대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '33901442'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '33901446'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 210000000
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5
+    title: 육상운송용역중소기업자간경쟁제품비대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '33901450'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 210000000
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 210000000
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5의2
+    title: 육상운송용역중소기업자간경쟁제품대상적격심사
+    service_type: 육상운송용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '33901453'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+- notice_no: 조달청공고 제2019-31호
+  notice_key: 2019-31
+  admrul_seq: '2100000176251'
+  promulgated: '2019-02-21'
+  effective_from: '2019-04-01'
+  effective_to: '2020-03-31'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 정보통신용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '40769526'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 고시금액
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 고시금액
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '40769532'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-5 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+  - attachment: 별표 3
+    title: 정보통신용역중소기업자간경쟁제품비대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '40769542'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 3의2
+    title: 정보통신용역중소기업자간경쟁제품대상적격심사
+    service_type: 정보통신용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '40769552'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '40769562'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5
+    title: 육상운송용역적격심사
+    service_type: 육상운송용역
+    fl_seq: '40769570'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+- notice_no: 조달청공고 제2020-10호
+  notice_key: 2020-10
+  admrul_seq: '2100000187835'
+  promulgated: '2020-03-11'
+  effective_from: '2020-04-01'
+  effective_to: '2020-07-14'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 소프트웨어용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '59849491'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 고시금액
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 고시금액
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '59849867'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-5 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+  - attachment: 별표 3
+    title: 소프트웨어용역중소기업자간경쟁제품비대상적격심사
+    service_type: 소프트웨어용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '59850307'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 3의2
+    title: 소프트웨어용역중소기업자간경쟁제품대상적격심사
+    service_type: 소프트웨어용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '59850875'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '59851567'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5% 이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5
+    title: 여객육상운송용역적격심사
+    service_type: 여객 육상운송용역
+    fl_seq: '59851599'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5의2
+    title: 화물육상운송용역적격심사
+    service_type: 화물 육상운송용역
+    fl_seq: '59851795'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+- notice_no: 조달청공고 제2020-30호
+  notice_key: 2020-30
+  admrul_seq: '2100000190902'
+  promulgated: '2020-07-09'
+  effective_from: '2020-07-15'
+  effective_to: '2021-01-06'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 소프트웨어용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '69741353'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 고시금액
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 고시금액
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '69741365'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-5 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+  - attachment: 별표 3
+    title: 소프트웨어용역중소기업자간경쟁제품비대상적격심사
+    service_type: 소프트웨어용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '69741917'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 3의2
+    title: 소프트웨어용역중소기업자간경쟁제품대상적격심사
+    service_type: 소프트웨어용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '69745277'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '69747325'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5% 이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5
+    title: 여객육상운송용역적격심사
+    service_type: 여객 육상운송용역
+    fl_seq: '69747481'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5의2
+    title: 화물육상운송용역적격심사
+    service_type: 화물 육상운송용역
+    fl_seq: '69747561'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+- notice_no: 조달청공고 제2021-2호
+  notice_key: 2021-2
+  admrul_seq: '2100000196763'
+  promulgated: '2021-01-05'
+  effective_from: '2021-01-07'
+  effective_to: '2022-02-10'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 소프트웨어용역의 중소기업자간 경쟁제품은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '96694581'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 고시금액
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 고시금액
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '96694587'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-5 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+  - attachment: 별표 3
+    title: 소프트웨어용역중소기업자간경쟁제품비대상적격심사
+    service_type: 소프트웨어용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '96694597'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 3의2
+    title: 소프트웨어용역중소기업자간경쟁제품대상적격심사
+    service_type: 소프트웨어용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '96694603'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '96694609'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5% 이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5
+    title: 여객육상운송용역적격심사
+    service_type: 여객 육상운송용역
+    fl_seq: '96694617'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5의2
+    title: 화물육상운송용역적격심사
+    service_type: 화물 육상운송용역
+    fl_seq: '96694625'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 6
+    title: 보험용역적격심사
+    service_type: 보험용역
+    fl_seq: '96694631'
+    evidence:
+      header_row: 1
+      b_row: 5
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-0.375 TIMES ( {88} over {100}
+      exceptions: []
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 0.375
+        base_ratio: 88.0
+        flat_ratio: null
+        pass_score: 85
+        lwlt_rate: 47.995
+        evidence: 배점한도-0.375 TIMES ( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 0.375
+        base_ratio: 88.0
+        flat_ratio: null
+        pass_score: 85
+        lwlt_rate: 47.995
+        evidence: 배점한도-0.375 TIMES ( {88} over {100}
+- notice_no: 조달청공고 제2022-42호
+  notice_key: 2022-42
+  admrul_seq: '2100000209025'
+  promulgated: '2022-02-10'
+  effective_from: '2022-02-11'
+  effective_to: '2023-04-30'
+  change_type: 일부개정
+  pass_score_default: 85
+  pass_score_competition_product: 88
+  pass_score_evidence: 종합평점이 85점(다만, 소프트웨어용역의 중소기업자간 경쟁제품, 여객 육상운송용역은 88점)이상이면 낙찰자로 결정한다
+  attachments:
+  - attachment: 별표 1
+    title: 학술연구용역적격심사
+    service_type: 학술연구용역
+    fl_seq: '112916177'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '40'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 고시금액
+      price_upper: null
+      B: 40
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 고시금액
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 2
+    title: 시설분야용역적격심사
+    service_type: 시설분야용역
+    fl_seq: '112916183'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-5 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 5.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 85
+        lwlt_rate: 87.995
+        evidence: 배점한도-5 TIMES |( {91} over {100}
+  - attachment: 별표 3
+    title: 소프트웨어용역중소기업자간경쟁제품비대상적격심사
+    service_type: 소프트웨어용역(중소기업자간 경쟁제품 비대상)
+    fl_seq: '112916193'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 3의2
+    title: 소프트웨어용역중소기업자간경쟁제품대상적격심사
+    service_type: 소프트웨어용역(중소기업자간 경쟁제품 대상)
+    fl_seq: '112916199'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+  - attachment: 별표 4
+    title: 폐기물처리용역적격심사
+    service_type: 폐기물처리용역
+    fl_seq: '112916205'
+    evidence:
+      header_row: 1
+      b_row: 8
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5% 이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 5
+    title: 여객육상운송용역적격심사
+    service_type: 여객 육상운송용역
+    fl_seq: '112916213'
+    evidence:
+      header_row: 1
+      b_row: 7
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-4 TIMES |( {91} over {100}
+      exceptions:
+      - 예정가격의 94%이상인 경우에는 입찰가격이 예정가격의 94%인 경우의 점수
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 4.0
+        base_ratio: 91.0
+        flat_ratio: 94.0
+        pass_score: 88
+        lwlt_rate: 87.995
+        evidence: 배점한도-4 TIMES |( {91} over {100}
+  - attachment: 별표 5의2
+    title: 화물육상운송용역적격심사
+    service_type: 화물 육상운송용역
+    fl_seq: '112916221'
+    evidence:
+      header_row: 1
+      b_row: 6
+      band_labels:
+      - 추정가격 5억원이상
+      - 추정가격 5억원미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-2 TIMES |( {88} over {100}
+      - 배점한도-4 TIMES |( {88} over {100}
+      exceptions:
+      - 예정가격의 95.5%이상인 경우에는 입찰가격이 예정가격의 95.5%인 경우의
+      - 예정가격의 91.75%이상인 경우에는 입찰가격이 예정가격의 91.75%인 경우의
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: 고시금액
+        formula_upper: null
+        k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 95.5
+        pass_score: 85
+        lwlt_rate: 80.495
+        evidence: 배점한도-2 TIMES |( {88} over {100}
+      - formula_lower: null
+        formula_upper: 고시금액
+        k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 91.75
+        pass_score: 85
+        lwlt_rate: 84.245
+        evidence: 배점한도-4 TIMES |( {88} over {100}
+  - attachment: 별표 6
+    title: 보험용역적격심사
+    service_type: 보험용역
+    fl_seq: '112916227'
+    evidence:
+      header_row: 1
+      b_row: 5
+      band_labels:
+      - 추정가격 5억원 이상
+      - 추정가격 5억원 미만
+      B_row:
+      - '60'
+      - '70'
+      formula:
+      - 배점한도-0.375 TIMES ( {88} over {100}
+      exceptions: []
+    bands:
+    - price_lower: 500000000
+      price_upper: null
+      B: 60
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 0.375
+        base_ratio: 88.0
+        flat_ratio: null
+        pass_score: 85
+        lwlt_rate: 47.995
+        evidence: 배점한도-0.375 TIMES ( {88} over {100}
+    - price_lower: null
+      price_upper: 500000000
+      B: 70
+      score_tiers:
+      - formula_lower: null
+        formula_upper: null
+        k: 0.375
+        base_ratio: 88.0
+        flat_ratio: null
+        pass_score: 85
+        lwlt_rate: 47.995
+        evidence: 배점한도-0.375 TIMES ( {88} over {100}
+gaps:
+- revision: 2015-41
+  item: 별표 3의2·5의2 (정보통신·육상운송 중소기업자간 경쟁제품 대상)
+  reason: 본문 제10조는 대상 용역에 88점을 적지만, 이 판의 행정규칙 별표 첨부에 대상 별표 파일이 없다. 대상 배점한도·평점계수는 미수집.
+- revision: 2020-10, 2020-30
+  item: 보험용역 별표
+  reason: 이 두 판의 별표 첨부는 별표 1~5의2 와 별표 6(신용평가등급)·7(신인도)로, 보험용역 별표가 없다. 보험용역 별표는 제2021-2호부터 첨부에 나타난다.
+- revision: 2016-48
+  item: 시행일 중복
+  reason: 제2016-48호(발령 2016-04-08)와 제2016-51호(발령 2016-04-26)가 시행일을 2016-05-01 로 같이 둔다. 별표 9개 중 5개는 문서 텍스트가 동일하고 4개는 결격사유·신인도 문구만 다르며 가격 파라미터는 같다. 시행일 전 제2016-51호로 대체된 것으로 본다.
+- revision: 전 판
+  item: 낙찰하한율 원문
+  reason: 낙찰하한율은 고시 조문·별표에 인쇄되어 있지 않다. lwlt_rate 는 기준비율·평점계수·통과점수로 역산한 파생값이다.
+- revision: 2015-41 직전
+  item: 제2014-56호 (시행 2014-10-01)
+  reason: 2015-01-01~2015-04-30 구간을 담당하나 시행일이 2014년이라 이 명세(2015~2022 시행) 범위 밖이다.
