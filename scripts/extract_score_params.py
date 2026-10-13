@@ -105,6 +105,10 @@ _HWP_TAG_PARA_TEXT = 0x43
 _HWP_TAG_CTRL_HEADER = 0x47
 _HWP_TAG_LIST_HEADER = 0x48
 _HWP_TAG_TABLE = 0x4D
+# 수식 개체. CTRL_HEADER(ctrl id 'eqed') 아래에 오며, payload 앞부분에 수식 스크립트
+# 문자열이 UTF-16LE 로 들어 있다. 실측 예:
+#   "배점한도-2 TIMES |( {88} over {100} - {입찰가격} over {예정가격} ) TIMES 100|"
+_HWP_TAG_EQEDIT = 0x58
 _HWP_CTRL_ID_TABLE = b"tbl "
 _HWP_EXTENDED_SIZE = 0xFFF
 
@@ -155,12 +159,15 @@ def _formula_text_rows(text: str) -> tuple[tuple[str, ...], ...]:
     계산식이 표 셀이 아니라 수식 개체 문단으로만 남은 문서가 있다. 그 문단을
     행으로 올려 두면 `parse_price_formula` 가 표 행과 같은 방식으로 읽는다.
     문맥에 '입찰가격' 또는 '예정가격'이 있어야 입찰가격 계산식으로 인정한다.
+    수식 개체 스크립트는 조판에 따라 백틱이 끼므로("평점(점)`=`배점한도-`2`") 먼저
+    제거한 뒤 찾는다. `parse_price_formula` 도 같은 정규화를 한다.
     """
     rows: list[tuple[str, ...]] = []
-    for match in _FORMULA_HINT_RE.finditer(text or ""):
+    normalized = (text or "").replace("`", "")
+    for match in _FORMULA_HINT_RE.finditer(normalized):
         start = max(0, match.start() - 60)
-        end = min(len(text), match.end() + 240)
-        window = text[start:end]
+        end = min(len(normalized), match.end() + 240)
+        window = normalized[start:end]
         if "입찰가격" in window or "예정가격" in window:
             rows.append((window,))
     return tuple(rows)
@@ -345,6 +352,24 @@ def _hwp_para_text(payload: bytes) -> str:
     return _WHITESPACE_RE.sub(" ", text).strip()
 
 
+def _hwp_record_text(records: list[tuple[int, int, bytes]]) -> str:
+    """문단·수식 개체 레코드에서 직접 읽은 텍스트를 모은다.
+
+    본문 스트림 전체를 UTF-16LE 로 통째로 디코딩하면 레코드 크기가 홀수일 때
+    정렬이 한 바이트씩 어긋나 뒤따르는 텍스트가 통째로 유실된다. 실측에서 문단
+    텍스트의 약 40% 가 이렇게 사라졌다. 문단(PARA_TEXT)과 수식 개체(EQEDIT)
+    레코드를 개별로 디코딩해 그 유실분을 메운다. EQEDIT payload 앞부분의 이진
+    필드는 `_HWP_KEEP_RE` 가 걸러내고 스크립트 문자열만 남는다.
+    """
+    parts: list[str] = []
+    for tag, _level, payload in records:
+        if tag in (_HWP_TAG_PARA_TEXT, _HWP_TAG_EQEDIT):
+            text = _hwp_para_text(payload)
+            if text:
+                parts.append(text)
+    return "\n".join(parts)
+
+
 def _hwp_cell_text(
     records: list[tuple[int, int, bytes]], start: int, cell_level: int
 ) -> tuple[str, int]:
@@ -441,12 +466,22 @@ def _hwp_table_rows(records: list[tuple[int, int, bytes]]) -> list[tuple[str, ..
     return rows
 
 
+def _hwp_formula_rows(records: list[tuple[int, int, bytes]]) -> list[tuple[str, ...]]:
+    """레코드에서 직접 읽은 텍스트에서 계산식 문단을 행으로 승격한다.
+
+    표 복원과 달리 레코드 텍스트는 스트림 정렬 오차에 영향받지 않으므로, 전체
+    스트림 디코딩이 놓친 계산식 문단·수식 개체 스크립트를 여기서 회수한다.
+    """
+    return list(_formula_text_rows(_hwp_record_text(records)))
+
+
 def _binary_hwp_document(data: bytes) -> DocumentText:
     """바이너리 HWP 의 BodyText 스트림에서 본문 텍스트와 표 행을 뽑는다.
 
     HWP 5.0 은 본문을 UTF-16LE 로 저장한다. 문단 텍스트는 기존과 같이 평문으로
     잇고, 추가로 TABLE/LIST_HEADER 레코드에서 행·열 격자를 복원해 rows 에 넣는다.
-    표 복원이 실패해도 평문 추출은 유지한다.
+    표 복원이 실패해도 평문 추출은 유지한다. 레코드 단위로도 문단·수식 개체
+    텍스트를 읽어, 전체 스트림 디코딩이 정렬 오차로 놓친 계산식을 보강한다.
     """
     try:
         streams = _ole_streams(data)
@@ -460,9 +495,11 @@ def _binary_hwp_document(data: bytes) -> DocumentText:
             continue
         section = streams[name]
         chunks.append(_HWP_KEEP_RE.sub("", section.decode("utf-16le", "ignore")))
+        records = _hwp_records(section)
         # 표 복원이 실패해도 평문 추출은 유지한다.
         with contextlib.suppress(Exception):
-            rows.extend(_hwp_table_rows(_hwp_records(section)))
+            rows.extend(_hwp_table_rows(records))
+        rows.extend(_hwp_formula_rows(records))
     flat = _WHITESPACE_RE.sub(" ", "\n".join(chunks)).strip()
     if not flat and not rows:
         return DocumentText(reason="HWP 본문 텍스트 없음")
