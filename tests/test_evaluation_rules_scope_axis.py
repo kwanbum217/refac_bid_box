@@ -211,3 +211,55 @@ def test_migration_is_single_head_and_follows_expected_revision() -> None:
         "migrations/versions/a2c7e9f1b4d6_add_snapshot_rule_scope_context.py"
     ).read_text(encoding="utf-8")
     assert 'down_revision: str | Sequence[str] | None = "9d4e2b7a1c63"' in migration
+
+
+# --------------------------------------------------------------------------- #
+# 기관 규칙(INSTITUTION_RULES) 수요기관 축 판정
+# --------------------------------------------------------------------------- #
+
+
+def _institution_rule(**changes: object) -> EvaluationRule:
+    values: dict[str, object] = {
+        "rule_id": "INST",
+        "institution_scope": RULE_SCOPE_INSTITUTION,
+        "institution_code": "123",
+        "institution_name": "가나다공사",
+        "institution_aliases": ("라마바공사",),
+    }
+    values.update(changes)
+    return replace(BASE, **values)  # type: ignore[arg-type]
+
+
+def test_institution_axis_code_wins_over_conflicting_name() -> None:
+    """규칙과 공고 양쪽에 코드가 있으면 코드 일치로만 판정한다."""
+    scoped = _institution_rule()
+    matched = _resolve((BASE, scoped), institution_code="123", institution_name="다른기관")
+    assert matched.rule == scoped
+    mismatched = _resolve((BASE, scoped), institution_code="456", institution_name="가나다공사")
+    assert mismatched.rule == BASE
+
+
+def test_institution_axis_falls_back_to_name_when_a_code_is_missing() -> None:
+    """한쪽이라도 코드가 없으면 공백 제거 이름 일치로 판정한다."""
+    scoped = _institution_rule()
+    by_rule_name = _resolve((BASE, scoped), institution_name="가나다 공사")
+    assert by_rule_name.rule == scoped
+    by_alias = _resolve((BASE, scoped), institution_name="라마바공사")
+    assert by_alias.rule == scoped
+    partial = _resolve((BASE, scoped), institution_name="가나다")
+    assert partial.rule == BASE
+    unknown = _resolve((BASE, scoped), institution_name="다른기관")
+    assert unknown.rule == BASE
+
+
+def test_registered_institution_rules_declare_scope_and_axis() -> None:
+    """등록된 기관 규칙은 모두 INSTITUTION 범위이며 코드나 이름을 가진다."""
+    from src.app.services.evaluation_rules import INSTITUTION_RULES
+
+    assert INSTITUTION_RULES
+    for rule in INSTITUTION_RULES:
+        assert rule.institution_scope == RULE_SCOPE_INSTITUTION
+        assert rule.institution_code or rule.institution_name
+        assert rule.patterns
+        assert rule.price_bands
+        assert rule.threshold_bands

@@ -1,0 +1,708 @@
+"""수요기관 기관 규칙(INSTITUTION_RULES) 시험.
+
+정본:
+ - data/reference/institution_rules_20261013.yaml (R1, status=confirmed 기관 10곳)
+ - src/app/services/evaluation_rules.py 의 INSTITUTION_RULES·_select_institution_rule
+ - docs/analysis/institution_rule_inventory_20261013.md 5~7절, docs/analysis/institution_rules_apply_20261013.md
+
+(가) 10개 기관 구간별 값(B·k·기준비율·통과점수·하한율·경계)이 YAML 과 같은지 대조하고,
+(나) 수요기관 이름·코드·name_aliases 로 기관 규칙이 선택되는지, (다) 공고기관이 조달청
+계열이면 같은 수요기관이라도 조달청 규칙이 선택되는지, (라) 지방계약(LOCAL)이면 기관 규칙이
+배제되는지, (마) partial·unresolved 기관은 조달청 규칙 그대로인지, (바) 평가 API 끝단에서
+기관 공고의 최저투찰금액이 기관 규칙 하한율로 계산되는지를 고정합니다.
+
+평가 API 끝단은 mock 없이 TestClient 로 호출하며, 예측 모델만 이 워크트리에 모델 파일이
+없어 시험 대역으로 대체합니다. 규칙 판별·구간 하한율·최저 투찰금액 경로는 실제 코드입니다.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from decimal import Decimal
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import yaml
+
+from src.app.api.v1 import evaluations
+from src.app.api.v1.evaluations import require_current_user
+from src.app.core.timeutil import utcnow
+from src.app.main import app
+from src.app.models.bids import BidAnnouncement
+from src.app.schemas.predictions import PredictPriceResponse
+from src.app.services import evaluation_rules as rules_module
+from src.app.services.evaluation_rules import (
+    BLOCK_CODE_RULE_REGIME_MISMATCH,
+    BLOCK_CODE_RULE_SCOPE_AMBIGUOUS,
+    INSTITUTION_RULES,
+    RULE_SCOPE_INSTITUTION,
+    RULE_SCOPE_REGION,
+    resolve_evaluation_rule_from_raw_data,
+)
+
+YAML_PATH = Path("data/reference/institution_rules_20261013.yaml")
+ANALYZE_URL = "/api/v1/evaluations/analyze"
+
+# 2026년 고시금액(용역). 명세의 "고시금액" 표기를 옮긴 값입니다.
+NOTICE_AMOUNT = Decimal("230000000")
+# DB g2b_demand_institutions 로 확인한 수요기관 코드(한국수력원자력은 본청 코드 부재).
+EXPECTED_CODES: dict[str, str | None] = {
+    "국토교통부": "1613000",
+    "국가유산청": "1833100",
+    "환경부": "1482000",
+    "한국농어촌공사": "B552149",
+    "한국가스공사": "B551210",
+    "한국수력원자력": None,
+    "한국지역난방공사": "B550373",
+    "한국석유공사": "B410005",
+    "인천국제공항공사": "B551177",
+    "인천공항시설관리": "Z043894",
+}
+# 원문(한국수력원자력 별표 9·10)이 구간 값이 같아 한 규칙으로 합친 표기입니다.
+MERGED_LABEL_PREFIX = "별표 9·10 "
+
+IIAC_OTHER_METHOD = "적격심사제-기타용역 추정가격 고시금액 이상"
+IIAC_OTHER_ID = "SERVC_INST_IIAC_20250101_OTHER"
+KDHC_FACILITY_METHOD = "적격심사제-시설분야용역 적격심사 추정가격 5억원 이상"
+KDHC_FACILITY_ID = "SERVC_INST_KDHC_20260101_FACILITY"
+KDHC_FACILITY_LWLT = Decimal("87.995")
+
+
+def _yaml_institutions() -> list[dict]:
+    data = yaml.safe_load(YAML_PATH.read_text(encoding="utf-8"))
+    return list(data["institutions"])
+
+
+def _confirmed_institutions() -> list[dict]:
+    return [
+        institution for institution in _yaml_institutions() if institution["status"] == "confirmed"
+    ]
+
+
+def _expected_bound(band: dict) -> Decimal | None:
+    """YAML band 의 상한. 원문이 "고시금액 미만"만 인쇄한 행은 고시금액을 상한으로 봅니다."""
+    if band["upper"] == "고시금액":
+        return NOTICE_AMOUNT
+    if band["upper"] is not None:
+        return Decimal(str(band["upper"]))
+    if "미만" in band["band"] and band["lower"] == "고시금액":
+        return NOTICE_AMOUNT
+    return None
+
+
+def _expected_values(band: dict) -> tuple:
+    b = band["B"]
+    return (
+        _expected_bound(band),
+        None if isinstance(b, list) else Decimal(str(b)),
+        Decimal(str(band["k"])),
+        Decimal(str(band["base_ratio"])) / Decimal("100"),
+        Decimal(str(band["pass_score"])),
+        Decimal(str(band["lwlt_rate"])),
+    )
+
+
+def _code_values(rule) -> list[tuple]:
+    return [
+        (
+            band.upper_bound,
+            band.max_price_score,
+            band.multiplier,
+            band.base_rate,
+            threshold.pass_threshold,
+            band.lwlt_rate,
+        )
+        for band, threshold in zip(rule.price_bands or (), rule.threshold_bands or (), strict=True)
+    ]
+
+
+def _rules_for(institution_name: str) -> list:
+    return [rule for rule in INSTITUTION_RULES if rule.institution_name == institution_name]
+
+
+def _resolve(raw_data: dict, *, estimated_price=None, **kwargs):
+    return resolve_evaluation_rule_from_raw_data(
+        category="Servc",
+        raw_data=raw_data,
+        estimated_price=estimated_price,
+        **kwargs,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# (가) R1 YAML 값 대조
+# --------------------------------------------------------------------------- #
+
+
+def test_confirmed_institution_band_values_match_yaml() -> None:
+    """확인 기관 10곳의 구간 값과 경계가 R1 YAML 과 같고 빠짐·추가가 없다."""
+    confirmed = _confirmed_institutions()
+    assert len(confirmed) == 10
+
+    expected_total = 0
+    code_total = 0
+    for institution in confirmed:
+        name = institution["institution_name"]
+        rules = _rules_for(name)
+        assert rules, name
+
+        expected: list[tuple] = []
+        for band in institution["bands"]:
+            values = _expected_values(band)
+            if name == "한국수력원자력" and "국외운송주선" in band["band"] and values in expected:
+                # 별표 9·10 은 값이 같아 한 규칙으로 합쳤습니다(각 값은 한 번만 셉니다).
+                continue
+            expected.append(values)
+
+        code = [values for rule in rules for values in _code_values(rule)]
+        assert Counter(expected) == Counter(code), name
+        expected_total += len(expected)
+        code_total += len(code)
+
+    assert expected_total == code_total
+    assert code_total == 140
+
+
+def test_institution_band_labels_and_sources_trace_yaml() -> None:
+    """코드 구간 라벨이 YAML band 이름과 같고 구간 근거가 YAML source 로 시작한다."""
+    for institution in _confirmed_institutions():
+        name = institution["institution_name"]
+        yaml_bands = {band["band"]: band for band in institution["bands"]}
+        for rule in _rules_for(name):
+            for band in rule.price_bands or ():
+                if band.label.startswith(MERGED_LABEL_PREFIX):
+                    assert band.label in (
+                        f"{MERGED_LABEL_PREFIX}국외운송주선용역 · 10억원 미만",
+                        f"{MERGED_LABEL_PREFIX}국외운송주선용역 · 30억원 미만 10억원 이상",
+                        f"{MERGED_LABEL_PREFIX}국외운송주선용역 · 30억원 이상",
+                    )
+                    source_band = next(
+                        yaml_band
+                        for label, yaml_band in yaml_bands.items()
+                        if "국외운송주선" in label and band.label.split(" · ")[-1] in label
+                    )
+                    assert band.source.startswith(source_band["source"])
+                    continue
+                yaml_band = yaml_bands.get(band.label)
+                assert yaml_band is not None, (name, band.label)
+                assert band.source.startswith(yaml_band["source"]), (name, band.label)
+
+
+def test_gas_company_band_score_limit_is_not_guessed() -> None:
+    """B 를 용역 유형별 여러 값으로 인쇄한 한국가스공사 구간은 B 를 확정하지 않는다."""
+    general = _rules_for("한국가스공사")
+    general_rules = [rule for rule in general if rule.service_type == "GENERAL"]
+    assert len(general_rules) == 1
+    rule = general_rules[0]
+    yaml_bands = {
+        band["band"]: band
+        for institution in _confirmed_institutions()
+        if institution["institution_name"] == "한국가스공사"
+        for band in institution["bands"]
+    }
+    assert len(rule.price_bands or ()) == 4
+    for band in rule.price_bands or ():
+        assert band.max_price_score is None
+        assert "B 30/50/70" in (band.source or "")
+        assert isinstance(yaml_bands[band.label]["B"], list)
+    # 시설분야용역은 B 가 단일값이라 확정한다.
+    facility = [rule for rule in general if rule.service_type == "FACILITY"]
+    assert len(facility) == 1
+    assert facility[0].price_bands[0].max_price_score == Decimal("50")
+
+
+def test_institution_effective_dates_codes_and_aliases_match_yaml() -> None:
+    """규칙 시행일·수요기관 코드·name_aliases 가 명세와 결정값에 맞는다."""
+    for institution in _confirmed_institutions():
+        name = institution["institution_name"]
+        rules = _rules_for(name)
+        assert rules
+        aliases = set(institution.get("name_aliases") or ())
+        assert name in aliases
+        for rule in rules:
+            assert rule.effective_date == institution["effective_date"]
+            assert rule.institution_code == EXPECTED_CODES[name]
+            assert rule.institution_scope == RULE_SCOPE_INSTITUTION
+            assert set(rule.institution_aliases) <= aliases - {name}
+            assert rule.source
+            assert rule.score_table_source
+            for band in rule.price_bands or ():
+                assert band.lwlt_rate is not None
+
+
+def test_partial_and_unresolved_institutions_are_not_registered() -> None:
+    """partial·unresolved 기관은 규칙으로 넣지 않아 종전 조달청 경로를 그대로 쓴다."""
+    excluded = {
+        institution["institution_name"]
+        for institution in _yaml_institutions()
+        if institution["status"] != "confirmed"
+    }
+    assert excluded == {
+        "방위사업청",
+        "한국토지주택공사",
+        "한국철도공사",
+        "한국도로공사",
+        "한국전력기술",
+        "한국수자원공사",
+        "한전 전력연구원",
+        "한전KPS",
+    }
+    assert {rule.institution_name for rule in INSTITUTION_RULES}.isdisjoint(excluded)
+
+
+# --------------------------------------------------------------------------- #
+# (나) 수요기관 이름·코드·별칭 매칭
+# --------------------------------------------------------------------------- #
+
+
+def test_demand_agency_name_selects_institution_rule() -> None:
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": IIAC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-07-01",
+            "dminsttNm": "인천국제공항공사",
+        },
+        estimated_price="5533515296",
+    )
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == IIAC_OTHER_ID
+    assert result.scope_stage == RULE_SCOPE_INSTITUTION
+    # 5,553,515,296원은 고시금액 이상 구간이라 별표 9 인쇄 하한율 80.495% 를 쓴다.
+    assert result.effective_lwlt_rate == Decimal("80.495")
+
+
+def test_demand_agency_code_selects_institution_rule() -> None:
+    """이름 없이 코드만 있어도 기관 규칙이 선택된다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": IIAC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-07-01",
+            "dminsttCd": "B551177",
+        },
+        estimated_price="300000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == IIAC_OTHER_ID
+    assert result.scope_stage == RULE_SCOPE_INSTITUTION
+    # 3억원은 고시금액 이상 구간이다.
+    assert result.effective_lwlt_rate == Decimal("80.495")
+
+
+def test_demand_agency_code_and_name_both_present_use_code_only() -> None:
+    """규칙과 공고 양쪽에 코드가 있으면 코드 일치로만 판정한다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": IIAC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-07-01",
+            "dminsttCd": "B999999",
+            "dminsttNm": "인천국제공항공사",
+        },
+    )
+    # 코드가 다른 기관이라 기관 규칙을 쓰지 않고 종전 조달청 경로로 간다(별표 9 기타용역 없음).
+    assert result.scope_stage is None
+    assert result.rule is None
+    assert result.block_reason_code == "RULE_NOT_FOUND"
+
+
+def test_demand_agency_alias_selects_institution_rule() -> None:
+    """name_aliases(문화재청)로도 기관 규칙이 선택된다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-매장유산 조사용역",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-01-01",
+            "dminsttNm": "문화재청",
+        },
+        estimated_price="200000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_INST_KHS_20240517_BURIAL"
+    assert result.effective_lwlt_rate == Decimal("86.745")
+
+
+def test_region_and_local_organizations_are_not_matched() -> None:
+    """지역본부·지사 등 하위 조직 이름은 접두 일치를 쓰지 않아 기관 규칙 대상이 아니다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-05-01",
+            "dminsttNm": "한국지역난방공사 강남지사",
+        },
+        estimated_price="600000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id != KDHC_FACILITY_ID
+    assert result.scope_stage != RULE_SCOPE_INSTITUTION
+
+
+def test_institution_rule_selection_is_by_longest_service_token() -> None:
+    """한국가스공사 공고에서 시설분야용역은 용역보다 긴 표기라 시설분야 규칙이 이긴다."""
+    facility = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-08-01",
+            "dminsttNm": "한국가스공사",
+        },
+        estimated_price="600000000",
+    )
+    assert facility.rule is not None
+    assert facility.rule.rule_id == "SERVC_INST_KOGAS_20260709_FACILITY"
+    general = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-추정가격 2억원 미만인 용역",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-08-01",
+            "dminsttNm": "한국가스공사",
+        },
+        estimated_price="200000000",
+    )
+    assert general.rule is not None
+    assert general.rule.rule_id == "SERVC_INST_KOGAS_20260709_GENERAL"
+
+
+def test_two_variants_at_same_service_token_block_as_ambiguous() -> None:
+    """임대차용역 k=2·k=4 구간은 원문이 구분 근거를 인쇄하지 않아 하나를 고르지 않는다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-임대차 적격심사 추정가격 고시금액 이상",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-07-01",
+            "dminsttNm": "인천국제공항공사",
+        },
+        estimated_price="300000000",
+    )
+    assert result.is_blocked is True
+    assert result.block_reason_code == BLOCK_CODE_RULE_SCOPE_AMBIGUOUS
+    assert result.scope_stage == RULE_SCOPE_INSTITUTION
+    assert result.rule is None
+
+
+def test_institution_rule_effective_date_is_checked() -> None:
+    """기관 규칙 시행일보다 앞선 공고는 RULE_REGIME_MISMATCH 로 차단한다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": IIAC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2024-12-31",
+            "dminsttNm": "인천국제공항공사",
+        },
+    )
+    assert result.is_blocked is True
+    assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
+
+
+def test_band_boundary_uses_upper_band_and_printed_rate() -> None:
+    """고시금액 경계값은 이상 쪽 구간에 속하고 그 구간 인쇄 하한율을 쓴다."""
+    under = _resolve(
+        {
+            "sucsfbidMthdNm": IIAC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-07-01",
+            "dminsttNm": "인천국제공항공사",
+        },
+        estimated_price=str(NOTICE_AMOUNT - 1),
+    )
+    assert under.effective_lwlt_rate == Decimal("84.245")
+    on_boundary = _resolve(
+        {
+            "sucsfbidMthdNm": IIAC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-07-01",
+            "dminsttNm": "인천국제공항공사",
+        },
+        estimated_price=str(NOTICE_AMOUNT),
+    )
+    assert on_boundary.effective_lwlt_rate == Decimal("80.495")
+
+
+def test_announcement_rate_still_wins_over_institution_band_rate() -> None:
+    """공고 하한율이 있으면 기관 규칙 구간 하한율보다 우선한다(종전 규칙 유지)."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "sucsfbidLwltRate": "88.5",
+            "bidNtceDt": "2026-05-01",
+            "dminsttNm": "한국지역난방공사",
+        },
+        estimated_price="600000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == KDHC_FACILITY_ID
+    assert result.effective_lwlt_rate == Decimal("88.5")
+    assert result.rate_source == "ANNOUNCEMENT"
+
+
+def test_bounded_top_rule_blocks_price_above_printed_range() -> None:
+    """원문이 상한(10억원)까지 인쇄한 감리용역 구간은 그보다 큰 추정가격에서 차단된다."""
+    rule = next(
+        item
+        for item in INSTITUTION_RULES
+        if item.rule_id == "SERVC_INST_MOLIT_20180104_SUPERVISION"
+    )
+    assert rule.bounded_price_top is True
+    assert rule.price_bands[0].upper_bound == Decimal("1000000000")
+    inside = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-감리용역 적격심사 추정가격 5억원 미만",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2020-01-01",
+            "dminsttNm": "국토교통부",
+        },
+        estimated_price="500000000",
+    )
+    assert inside.rule is not None
+    assert inside.rule.rule_id == "SERVC_INST_MOLIT_20180104_SUPERVISION"
+    assert inside.effective_lwlt_rate == Decimal("85.495")
+    above = _resolve(
+        {
+            "sucsfbidMthdNm": "적격심사제-감리용역 적격심사 추정가격 5억원 미만",
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2020-01-01",
+            "dminsttNm": "국토교통부",
+        },
+        estimated_price="20000000000",
+    )
+    assert above.rule is not None
+    assert above.effective_lwlt_rate is None
+    assert any("어느 규모 구간에도 들지 않습니다" in warning for warning in above.warnings)
+
+
+# --------------------------------------------------------------------------- #
+# (다) 조달청 대행 공고 배제
+# --------------------------------------------------------------------------- #
+
+
+def test_pps_proxy_excludes_institution_rules() -> None:
+    """공고기관이 조달청 계열이면 같은 수요기관이라도 조달청 규칙을 쓴다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-05-01",
+            "dminsttNm": "한국지역난방공사",
+            "ntceInsttNm": "조달청 서울지방조달청",
+            "ntceInsttCd": "1230121",
+        },
+        estimated_price="600000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id != KDHC_FACILITY_ID
+    assert result.rule.rule_id.startswith("SERVC_QUAL_")
+    assert result.scope_stage == "ALL"
+    assert any("조달청 대행" in warning for warning in result.warnings)
+
+
+def test_pps_proxy_flag_off_selects_institution_rule(monkeypatch: pytest.MonkeyPatch) -> None:
+    """배제 플래그를 끄면 대행 공고라도 기관 규칙을 쓴다."""
+    monkeypatch.setattr(rules_module, "EXCLUDE_INSTITUTION_RULES_FOR_PPS_PROXY", False)
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-05-01",
+            "dminsttNm": "한국지역난방공사",
+            "ntceInsttNm": "조달청 서울지방조달청",
+            "ntceInsttCd": "1230121",
+        },
+        estimated_price="600000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == KDHC_FACILITY_ID
+    assert result.effective_lwlt_rate == KDHC_FACILITY_LWLT
+
+
+def test_self_hosted_announcement_keeps_institution_rule() -> None:
+    """공고기관이 수요기관 자신이면 기관 규칙을 그대로 쓴다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-05-01",
+            "dminsttNm": "한국지역난방공사",
+            "ntceInsttNm": "한국지역난방공사",
+            "ntceInsttCd": "B550373",
+        },
+        estimated_price="600000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == KDHC_FACILITY_ID
+
+
+# --------------------------------------------------------------------------- #
+# (라) 지방계약(LOCAL) 배제
+# --------------------------------------------------------------------------- #
+
+
+def test_local_contract_excludes_institution_rules() -> None:
+    """계약방법에 지방 표기가 있으면 기관 규칙 대신 시·도 규칙을 쓴다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "cntrctCnclsMthdNm": "지방자치단체 제한경쟁",
+            "bidNtceDt": "2026-05-01",
+            "dminsttNm": "한국지역난방공사",
+        },
+        region_code="11",
+        region_name="서울특별시",
+        estimated_price="600000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id.startswith("SERVC_LOCAL_SEOUL")
+    assert result.scope_stage == RULE_SCOPE_REGION
+    assert result.contract_regime == "LOCAL"
+
+
+# --------------------------------------------------------------------------- #
+# (마) partial·unresolved 기관은 조달청 규칙 그대로
+# --------------------------------------------------------------------------- #
+
+
+def test_unresolved_institution_keeps_common_rule() -> None:
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-10-01",
+            "dminsttNm": "한국토지주택공사 경기남부지역본부",
+        },
+        estimated_price="3250144942",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id.startswith("SERVC_QUAL_")
+    assert result.scope_stage == "ALL"
+    assert result.effective_lwlt_rate == KDHC_FACILITY_LWLT
+
+
+def test_partial_institution_keeps_common_rule() -> None:
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-05-01",
+            "dminsttNm": "한국도로공사",
+        },
+        estimated_price="600000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id.startswith("SERVC_QUAL_")
+    assert result.scope_stage == "ALL"
+
+
+def test_non_institution_announcement_resolution_is_unchanged() -> None:
+    """기관 규칙 대상이 아닌 공고는 종전 조달청 판정 그대로다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2025-10-01",
+            "dminsttNm": "테스트 수요기관",
+        },
+        estimated_price="600000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_QUAL_PRE_20250901_ATTACH_01"
+    assert result.scope_stage == "ALL"
+    assert any("별표 기본값(" in warning for warning in result.warnings)
+    assert not any("기관" in warning for warning in result.warnings)
+
+
+# --------------------------------------------------------------------------- #
+# (바) 평가 API 끝단: 최저투찰금액이 기관 규칙 하한율로 계산
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def as_user():
+    def _set_user(user_id: int) -> None:
+        app.dependency_overrides[require_current_user] = lambda: SimpleNamespace(id=user_id)
+
+    yield _set_user
+    app.dependency_overrides.pop(require_current_user, None)
+
+
+@pytest.fixture(autouse=True)
+def auto_stub_prediction(monkeypatch):
+    def _fake_predict(payload, request, db):
+        return PredictPriceResponse(
+            status="success",
+            optimal_price=4_400_000_000,
+            prediction_rate=88.0,
+            model_name="기본 대역 모델",
+            model_id=payload.selected_model or "default-model",
+            requested_model=payload.selected_model or "default-model",
+            fallback_used=False,
+            fallback_reason=None,
+            message="테스트용 예측 대역 응답",
+        )
+
+    monkeypatch.setattr(evaluations, "predict_price_api", _fake_predict)
+
+
+def _create_institution_bid(db, *, presmpt_prce: int) -> BidAnnouncement:
+    bid = BidAnnouncement(
+        bid_ntce_nm="기관 규칙 끝단 시험 공고",
+        bid_ntce_no="EVAL-INST-001",
+        bid_ntce_ord="000",
+        ntce_instt_nm="인천국제공항공사",
+        dminstt_nm="인천국제공항공사",
+        base_amount=presmpt_prce,
+        presmpt_prce=presmpt_prce,
+        bid_ntce_dt=utcnow(),
+        bid_clse_dt=utcnow(),
+        openg_dt=utcnow(),
+        category="Servc",
+        raw_data={
+            "prearngPrceDcsnMthdNm": "복수예가",
+            "sucsfbidMthdNm": IIAC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "dminsttCd": "B551177",
+            "dminsttNm": "인천국제공항공사",
+            "ntceInsttNm": "인천국제공항공사",
+            "ntceInsttCd": "B551177",
+            "totPrdprcNum": "12",
+            "drwtPrdprcNum": "3",
+        },
+    )
+    db.add(bid)
+    db.commit()
+    db.refresh(bid)
+    return bid
+
+
+def test_institution_rule_min_bid_through_analyze_api(client, isolated_db, as_user) -> None:
+    """공고 하한율이 없어도 기관 규칙 구간 하한율로 최저투찰금액이 계산된다."""
+    as_user(10)
+    bid = _create_institution_bid(isolated_db, presmpt_prce=5_000_000_000)
+
+    response = client.post(
+        ANALYZE_URL,
+        json={
+            "bid_id": bid.id,
+            "selected_model": "requested-evaluation-model",
+            "candidate_bid_amount": 4_100_000_000,
+            "qualification_input": {
+                "disqualification": False,
+                # 기관 정량평가 배점표는 아직 미반영이라 정량점수를 직접 입력한다.
+                "manual_non_price_score": 40.0,
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+
+    assert payload["status"] == "success", payload.get("blocked_reason")
+    assert payload["rule_id"] == IIAC_OTHER_ID
+    assert payload["lower_bound_rate"] == pytest.approx(80.495)
+    assert any(
+        "낙찰하한율 80.495% 적용 최저 투찰금액: 4,024,750,000원" in warning
+        for warning in payload["warnings"]
+    )
