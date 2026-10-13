@@ -123,6 +123,11 @@ class EvaluationRule:
     institution_name: str | None = None
     # 원문이 함께 쓰는 기관 이름(예: 국가유산청-문화재청). 공고에 코드가 없을 때만 씁니다.
     institution_aliases: tuple[str, ...] = ()
+    # 원문 적용 범위 조항이 적용 주체에 하위 조직(지역본부·지사·사업소·소속기관)을 명시한
+    # 기관만 선언합니다. 정확 일치가 실패한 뒤의 2차 판정에만 쓰며, 코드 대역을 선언한
+    # 규칙은 코드가 이름보다 우선합니다.
+    subunit_name_prefixes: tuple[str, ...] = ()
+    subunit_code_prefixes: tuple[str, ...] = ()
     region_code: str | None = None
     region_name: str | None = None
 
@@ -169,6 +174,10 @@ class EvaluationRule:
             self.region_code or self.region_name
         ):
             raise ValueError("REGION 규칙은 지역 코드 또는 지역명이 필요합니다.")
+        if (self.subunit_name_prefixes or self.subunit_code_prefixes) and (
+            self.institution_scope != RULE_SCOPE_INSTITUTION
+        ):
+            raise ValueError("하위 조직 확장은 INSTITUTION 규칙에만 선언할 수 있습니다.")
 
 
 # 배점표(B·k·T) 판정표는 원문 별표 문서에서 확정된 값만 담습니다.
@@ -2944,6 +2953,8 @@ def _institution_rule(
     bands: Sequence[_InstitutionBand],
     institution_code: str | None = None,
     institution_aliases: tuple[str, ...] = (),
+    subunit_name_prefixes: tuple[str, ...] = (),
+    subunit_code_prefixes: tuple[str, ...] = (),
 ) -> EvaluationRule:
     """기관 규칙 하나를 구간별 price_bands·threshold_bands 로 만듭니다.
 
@@ -2995,16 +3006,23 @@ def _institution_rule(
         institution_code=institution_code,
         institution_name=institution_name,
         institution_aliases=institution_aliases,
+        subunit_name_prefixes=subunit_name_prefixes,
+        subunit_code_prefixes=subunit_code_prefixes,
     )
 
 
 INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     # 국토교통부 (국토교통부훈령 제965호, 2018-01-04 시행). band 1 은 원문 표기가
     # "고시금액 미만"이고 명세 lower 에 고시금액이 적혀 있어 상한을 고시금액으로 옮겼습니다.
+    # 제2조(적용범위)가 적용 주체를 "국토교통부 본부 및 소속기관"으로 명시해 소속기관
+    # (지방국토관리청·국토관리사무소 등, 코드 대역 1613)까지 확장합니다
+    # (docs/analysis/institution_subunit_scope_20261013.md 5절).
     _institution_rule(
         "SERVC_INST_MOLIT_20180104_GENERAL",
         institution_name="국토교통부",
         institution_code="1613000",
+        subunit_name_prefixes=("국토교통부 ",),
+        subunit_code_prefixes=("1613",),
         service_type="GENERAL",
         table_name="국토교통부 용역적격심사 (일반용역)",
         description="국토교통부훈령 제965호 별표 1 일반용역 4구간",
@@ -3058,6 +3076,8 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         "SERVC_INST_MOLIT_20180104_SUPERVISION",
         institution_name="국토교통부",
         institution_code="1613000",
+        subunit_name_prefixes=("국토교통부 ",),
+        subunit_code_prefixes=("1613",),
         service_type="SUPERVISION",
         table_name="국토교통부 용역적격심사 (감리용역)",
         description="국토교통부훈령 제965호 별표 1 감리용역 (고시금액 이상 10억원 미만)",
@@ -3148,12 +3168,16 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     ),
     # 환경부 (기후에너지환경부훈령 제4호, 2025-11-11 시행). 기술용역 기준입니다.
     # band 1 은 원문 표기가 "고시금액 미만"이고 명세 lower 에 고시금액이 적혀 있어 상한을
-    # 고시금액으로 옮겼습니다.
+    # 고시금액으로 옮겼습니다. 제2조(적용범위)가 적용 주체를 "기후에너지환경부 본부 및
+    # 소속기관"으로 명시해 소속기관(유역환경청·지방환경청 등, 코드 대역 1482)까지
+    # 확장합니다(docs/analysis/institution_subunit_scope_20261013.md 5절).
     _institution_rule(
         "SERVC_INST_ME_20251111_TECH",
         institution_name="환경부",
         institution_code="1482000",
         institution_aliases=("기후에너지환경부",),
+        subunit_name_prefixes=("기후에너지환경부 ", "환경부 "),
+        subunit_code_prefixes=("1482",),
         service_type="TECH",
         table_name="환경부 기술용역 적격심사",
         description="기후에너지환경부훈령 제4호 별표 1 기술용역 4구간",
@@ -4378,11 +4402,16 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         ),
     ),
     # 한국석유공사 (제정 1995-09-18, 12차 개정 2019-09-30). 아래는 일반용역(별표 5~11)입니다.
+    # 제2조⑤⑥이 집행 조직을 "본사 및 지사, 또는 사무소의 부서"로 정의하고 제3조①이 그
+    # 용역에 이 기준을 적용한다고 정해, 지사·사무소 공고를 이름 접두("한국석유공사 ")로
+    # 확장합니다. 공유 코드 대역은 없습니다
+    # (docs/analysis/institution_subunit_scope_20261013.md 5절).
     _institution_rule(
         "SERVC_INST_KNOC_20190930_ACADEMIC",
         institution_name="한국석유공사",
         institution_code="B410005",
         institution_aliases=("KNOC",),
+        subunit_name_prefixes=("한국석유공사 ",),
         service_type="ACADEMIC",
         table_name="한국석유공사 용역 적격심사 (학술연구용역)",
         description="한국석유공사 별표 5 학술연구용역 2구간",
@@ -4417,6 +4446,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_name="한국석유공사",
         institution_code="B410005",
         institution_aliases=("KNOC",),
+        subunit_name_prefixes=("한국석유공사 ",),
         service_type="FACILITY",
         table_name="한국석유공사 용역 적격심사 (시설분야용역)",
         description="한국석유공사 별표 6 시설분야용역 2구간",
@@ -4451,6 +4481,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_name="한국석유공사",
         institution_code="B410005",
         institution_aliases=("KNOC",),
+        subunit_name_prefixes=("한국석유공사 ",),
         service_type="ICT",
         table_name="한국석유공사 용역 적격심사 (정보통신용역 경쟁제품 비대상)",
         description="한국석유공사 별표 7 정보통신용역(경쟁제품 비대상) 2구간",
@@ -4485,6 +4516,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_name="한국석유공사",
         institution_code="B410005",
         institution_aliases=("KNOC",),
+        subunit_name_prefixes=("한국석유공사 ",),
         service_type="ICT_SME",
         table_name="한국석유공사 용역 적격심사 (정보통신용역 경쟁제품 대상)",
         description="한국석유공사 별표 8 정보통신용역(경쟁제품 대상) 2구간",
@@ -4519,6 +4551,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_name="한국석유공사",
         institution_code="B410005",
         institution_aliases=("KNOC",),
+        subunit_name_prefixes=("한국석유공사 ",),
         service_type="WASTE",
         table_name="한국석유공사 용역 적격심사 (폐기물처리용역)",
         description="한국석유공사 별표 9 폐기물처리용역 2구간",
@@ -4553,6 +4586,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_name="한국석유공사",
         institution_code="B410005",
         institution_aliases=("KNOC",),
+        subunit_name_prefixes=("한국석유공사 ",),
         service_type="TRANSPORT",
         table_name="한국석유공사 용역 적격심사 (운송용역 경쟁제품 비대상)",
         description="한국석유공사 별표 10 운송용역(경쟁제품 비대상) 2구간",
@@ -4587,6 +4621,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_name="한국석유공사",
         institution_code="B410005",
         institution_aliases=("KNOC",),
+        subunit_name_prefixes=("한국석유공사 ",),
         service_type="TRANSPORT_SME",
         table_name="한국석유공사 용역 적격심사 (운송용역 경쟁제품 대상)",
         description="한국석유공사 별표 10의2 운송용역(경쟁제품 대상) 2구간",
@@ -4621,6 +4656,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_name="한국석유공사",
         institution_code="B410005",
         institution_aliases=("KNOC",),
+        subunit_name_prefixes=("한국석유공사 ",),
         service_type="GENERAL",
         table_name="한국석유공사 용역 적격심사 (기타용역)",
         description="한국석유공사 별표 11 기타용역 2구간",
@@ -5874,13 +5910,67 @@ def _cleaned_institution_name(value: str | None) -> str:
 def _institution_name_matches(rule: EvaluationRule, institution_name: str | None) -> bool:
     """공고 수요기관명이 규칙 기관명 또는 name_aliases 와 공백 제거 후 같은지 봅니다.
 
-    접두·부분 문자열 일치는 다른 기관 공고를 잘못 집어올 수 있어 쓰지 않습니다.
+    접두·부분 문자열 일치는 다른 기관 공고를 잘못 집어올 수 있어 쓰지 않습니다. 원문이
+    하위 조직 적용을 명시한 기관의 접두 판정은 별도 선언(subunit_name_prefixes)으로만
+    합니다.
     """
     cleaned = _cleaned_institution_name(institution_name)
     if not cleaned:
         return False
     names = (rule.institution_name, *rule.institution_aliases)
     return any(cleaned == _cleaned_institution_name(name) for name in names if name)
+
+
+# 하위 조직으로 인정하는 첫 토막 표기(예: 대전지방국토관리청, 원주지방환경청, 서산지사).
+# 정식명 뒤 첫 토막이 이 말을 포함하거나 청·원·소로 끝날 때만 하위 조직으로 봅니다.
+_SUBUNIT_TOKEN_MARKERS = (
+    "지역본부",
+    "지사",
+    "사업소",
+    "본부",
+    "지방국토관리청",
+    "국토관리사무소",
+    "유역환경청",
+    "지방환경청",
+)
+_SUBUNIT_TOKEN_SUFFIXES = ("청", "원", "소")
+
+
+def _is_subunit_token(token: str) -> bool:
+    """정식명 뒤 첫 토막이 하위 조직 표기인지 봅니다."""
+    return any(marker in token for marker in _SUBUNIT_TOKEN_MARKERS) or any(
+        token.endswith(suffix) for suffix in _SUBUNIT_TOKEN_SUFFIXES
+    )
+
+
+def _institution_subunit_code_matches(rule: EvaluationRule, institution_code: str | None) -> bool:
+    """공고 수요기관 코드가 규칙의 하위 조직 코드 대역에 속하는지 봅니다."""
+    code = (institution_code or "").strip()
+    if not code:
+        return False
+    return any(prefix and code.startswith(prefix) for prefix in rule.subunit_code_prefixes)
+
+
+def _institution_subunit_name_matches(rule: EvaluationRule, institution_name: str | None) -> bool:
+    """공고 수요기관명이 정식명 + 공백 접두이고 접두 뒤 첫 토막이 하위 조직 표기인지 봅니다.
+
+    공백 경계가 없는 부분 문자열(예: 한국석유공사미포함기관)은 다른 기관 오탐을 막기 위해
+    하위 조직으로 보지 않습니다.
+    """
+    if not rule.subunit_name_prefixes or not institution_name:
+        return False
+    name = re.sub(r"\s+", " ", institution_name).strip()
+    for prefix in rule.subunit_name_prefixes:
+        base = prefix.strip()
+        if not base or not name.startswith(base):
+            continue
+        rest = name[len(base) :]
+        if not rest.startswith(" "):
+            continue
+        first_token = rest.strip().split(" ", 1)[0]
+        if _is_subunit_token(first_token):
+            return True
+    return False
 
 
 def _axis_matches(
@@ -5896,10 +5986,20 @@ def _axis_matches(
         return False
     if rule.institution_scope == RULE_SCOPE_INSTITUTION:
         # 규칙과 공고 양쪽에 코드가 있으면 코드 일치로만 판정하고, 한쪽이라도 코드가 없으면
-        # 공백 제거 이름(또는 name_aliases) 일치로 판정합니다.
+        # 공백 제거 이름(또는 name_aliases) 일치로 판정합니다. 정확 일치가 실패하면 원문
+        # 적용 범위 조항이 하위 조직 적용을 명시한 기관만 코드 대역·이름 접두로 2차
+        # 판정합니다. 코드 대역을 선언한 규칙은 대역 밖 코드를 이름 접두로 되돌리지 않습니다.
         if rule.institution_code and institution_code:
-            return rule.institution_code == institution_code
-        return _institution_name_matches(rule, institution_name)
+            if rule.institution_code == institution_code:
+                return True
+            if _institution_subunit_code_matches(rule, institution_code):
+                return True
+            if rule.subunit_code_prefixes:
+                return False
+            return _institution_subunit_name_matches(rule, institution_name)
+        if _institution_name_matches(rule, institution_name):
+            return True
+        return _institution_subunit_name_matches(rule, institution_name)
     if rule.institution_scope == RULE_SCOPE_REGION:
         if rule.region_code:
             return bool(region_code and rule.region_code == region_code)

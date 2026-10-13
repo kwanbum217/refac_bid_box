@@ -8,7 +8,8 @@
 (가) 10개 기관 구간별 값(B·k·기준비율·통과점수·하한율·경계)이 YAML 과 같은지 대조하고,
 (나) 수요기관 이름·코드·name_aliases 로 기관 규칙이 선택되는지, (다) 공고기관이 조달청
 계열이면 같은 수요기관이라도 조달청 규칙이 선택되는지, (라) 지방계약(LOCAL)이면 기관 규칙이
-배제되는지, (마) partial·unresolved 기관은 조달청 규칙 그대로인지, (바) 평가 API 끝단에서
+배제되는지, (마) partial·unresolved 기관은 조달청 규칙 그대로인지, (사) 원문 적용 범위가
+하위 조직을 명시한 3곳만 하위 조직 표기에 기관 규칙이 적용되는지, (바) 평가 API 끝단에서
 기관 공고의 최저투찰금액이 기관 규칙 하한율로 계산되는지를 고정합니다.
 
 평가 API 끝단은 mock 없이 TestClient 로 호출하며, 예측 모델만 이 워크트리에 모델 파일이
@@ -66,6 +67,16 @@ IIAC_OTHER_ID = "SERVC_INST_IIAC_20250101_OTHER"
 KDHC_FACILITY_METHOD = "적격심사제-시설분야용역 적격심사 추정가격 5억원 이상"
 KDHC_FACILITY_ID = "SERVC_INST_KDHC_20260101_FACILITY"
 KDHC_FACILITY_LWLT = Decimal("87.995")
+
+# 원문 적용 범위 조항이 적용 주체에 하위 조직을 명시한 3곳과 그 규칙·시험 표기입니다.
+SUBUNIT_INSTITUTIONS = ("국토교통부", "환경부", "한국석유공사")
+MOLIT_SUPERVISION_ID = "SERVC_INST_MOLIT_20180104_SUPERVISION"
+ME_TECH_ID = "SERVC_INST_ME_20251111_TECH"
+KNOC_OTHER_ID = "SERVC_INST_KNOC_20190930_OTHER"
+MOLIT_SUBUNIT_NAME = "국토교통부 대전지방국토관리청 충주국토관리사무소"
+MOLIT_SUPERVISION_METHOD = "적격심사제-감리용역 적격심사 추정가격 5억원 미만"
+ME_TECH_METHOD = "적격심사제-기술용역 적격심사 추정가격 5억원 미만"
+KNOC_OTHER_METHOD = "적격심사제-기타용역 추정가격 2억원 미만"
 
 
 def _yaml_institutions() -> list[dict]:
@@ -662,6 +673,229 @@ def test_non_institution_announcement_resolution_is_unchanged() -> None:
     assert result.scope_stage == "ALL"
     assert any("별표 기본값(" in warning for warning in result.warnings)
     assert not any("기관" in warning for warning in result.warnings)
+
+
+# --------------------------------------------------------------------------- #
+# (사) 하위 조직(지역본부·지사·사업소·소속기관) 확장
+# --------------------------------------------------------------------------- #
+
+
+def test_subunit_expansion_is_declared_only_for_three_institutions() -> None:
+    """하위 조직 확장은 원문으로 확인된 3곳만 선언하고 나머지는 종전 정확 일치를 유지한다."""
+    declared = {
+        rule.institution_name
+        for rule in INSTITUTION_RULES
+        if rule.subunit_name_prefixes or rule.subunit_code_prefixes
+    }
+    assert declared == set(SUBUNIT_INSTITUTIONS)
+    for rule in INSTITUTION_RULES:
+        if rule.institution_name == "국토교통부":
+            assert rule.subunit_name_prefixes == ("국토교통부 ",)
+            assert rule.subunit_code_prefixes == ("1613",)
+        elif rule.institution_name == "환경부":
+            assert rule.subunit_name_prefixes == ("기후에너지환경부 ", "환경부 ")
+            assert rule.subunit_code_prefixes == ("1482",)
+        elif rule.institution_name == "한국석유공사":
+            assert rule.subunit_name_prefixes == ("한국석유공사 ",)
+            assert rule.subunit_code_prefixes == ()
+        else:
+            assert rule.subunit_name_prefixes == ()
+            assert rule.subunit_code_prefixes == ()
+
+
+def test_molit_subunit_name_prefix_matches_without_code() -> None:
+    """국토교통부 소속기관 표기는 코드가 없어도 공백 접두와 하위 조직 토막으로 매칭된다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": MOLIT_SUPERVISION_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttNm": MOLIT_SUBUNIT_NAME,
+        },
+        estimated_price="500000000",
+    )
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == MOLIT_SUPERVISION_ID
+    assert result.scope_stage == RULE_SCOPE_INSTITUTION
+    assert result.effective_lwlt_rate == Decimal("85.495")
+
+
+def test_molit_subunit_code_band_matches() -> None:
+    """공고 코드가 국토교통부 하위 조직 코드 대역(1613)에 속하면 이름 없이도 매칭된다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": MOLIT_SUPERVISION_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttCd": "1613181",
+        },
+        estimated_price="500000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == MOLIT_SUPERVISION_ID
+    assert result.scope_stage == RULE_SCOPE_INSTITUTION
+
+
+def test_molit_code_out_of_band_is_excluded_even_with_prefix_name() -> None:
+    """코드가 대역 밖이면 이름이 접두와 같아도 하위 조직으로 보지 않는다(오탐 차단)."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": MOLIT_SUPERVISION_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttCd": "1614000",
+            "dminsttNm": MOLIT_SUBUNIT_NAME,
+        },
+        estimated_price="500000000",
+    )
+    assert result.scope_stage != RULE_SCOPE_INSTITUTION
+    assert result.rule is None or result.rule.rule_id != MOLIT_SUPERVISION_ID
+
+
+def test_me_subunit_code_band_and_legacy_name_prefix_match() -> None:
+    """환경부 소속기관은 코드 대역(1482)과 구 표기 접두(환경부 ) 둘 다로 매칭된다."""
+    by_code = _resolve(
+        {
+            "sucsfbidMthdNm": ME_TECH_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttCd": "1482021",
+            "dminsttNm": "기후에너지환경부 원주지방환경청",
+        },
+        estimated_price="500000000",
+    )
+    assert by_code.rule is not None
+    assert by_code.rule.rule_id == ME_TECH_ID
+    assert by_code.scope_stage == RULE_SCOPE_INSTITUTION
+    by_legacy_name = _resolve(
+        {
+            "sucsfbidMthdNm": ME_TECH_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttNm": "환경부 한강유역환경청",
+        },
+        estimated_price="500000000",
+    )
+    assert by_legacy_name.rule is not None
+    assert by_legacy_name.rule.rule_id == ME_TECH_ID
+    assert by_legacy_name.scope_stage == RULE_SCOPE_INSTITUTION
+
+
+def test_knoc_subunit_name_prefix_matches_with_and_without_code() -> None:
+    """한국석유공사는 공유 코드 대역이 없어 지사·사무소 표기를 이름 접두로 판정한다."""
+    without_code = _resolve(
+        {
+            "sucsfbidMthdNm": KNOC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttNm": "한국석유공사 서산지사",
+        },
+        estimated_price="200000000",
+    )
+    assert without_code.rule is not None
+    assert without_code.rule.rule_id == KNOC_OTHER_ID
+    assert without_code.scope_stage == RULE_SCOPE_INSTITUTION
+    with_code = _resolve(
+        {
+            "sucsfbidMthdNm": KNOC_OTHER_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttCd": "Z000650",
+            "dminsttNm": "한국석유공사 서산지사",
+        },
+        estimated_price="200000000",
+    )
+    assert with_code.rule is not None
+    assert with_code.rule.rule_id == KNOC_OTHER_ID
+    assert with_code.scope_stage == RULE_SCOPE_INSTITUTION
+
+
+def test_subunit_prefix_requires_space_boundary_and_subunit_token() -> None:
+    """공백 경계가 없거나 접두 뒤 토막이 하위 조직 표기가 아니면 확장하지 않는다."""
+    cases = (
+        (MOLIT_SUPERVISION_METHOD, "국토교통부대전지방국토관리청", "500000000"),
+        (MOLIT_SUPERVISION_METHOD, "국토교통부 관련기관", "500000000"),
+        (KNOC_OTHER_METHOD, "한국석유공사미포함기관", "200000000"),
+        (KNOC_OTHER_METHOD, "한국석유공사 신규사업", "200000000"),
+    )
+    for method, name, price in cases:
+        result = _resolve(
+            {
+                "sucsfbidMthdNm": method,
+                "srvceDivNm": "일반용역",
+                "bidNtceDt": "2026-01-02",
+                "dminsttNm": name,
+            },
+            estimated_price=price,
+        )
+        assert result.scope_stage != RULE_SCOPE_INSTITUTION, name
+
+
+def test_other_institutions_subunits_stay_out_of_institution_scope() -> None:
+    """원문 근거가 부족한 기관의 하위 조직 표기는 종전 정확 일치 동작을 유지한다."""
+    cases = (
+        {"dminsttNm": "한국농어촌공사 경기지역본부", "dminsttCd": "D150001"},
+        {"dminsttNm": "국가유산청 국립문화유산연구원"},
+        {"dminsttNm": "한국수력원자력(주) 한울원자력본부"},
+    )
+    for extra in cases:
+        result = _resolve(
+            {
+                "sucsfbidMthdNm": KDHC_FACILITY_METHOD,
+                "srvceDivNm": "일반용역",
+                "bidNtceDt": "2026-05-01",
+                **extra,
+            },
+            estimated_price="600000000",
+        )
+        assert result.scope_stage != RULE_SCOPE_INSTITUTION, extra["dminsttNm"]
+
+
+def test_subunit_announcement_still_excludes_pps_proxy_and_local() -> None:
+    """하위 조직 표기라도 조달청 대행 배제와 LOCAL 우선은 그대로 적용된다."""
+    proxy = _resolve(
+        {
+            "sucsfbidMthdNm": MOLIT_SUPERVISION_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttNm": MOLIT_SUBUNIT_NAME,
+            "ntceInsttNm": "조달청 서울지방조달청",
+            "ntceInsttCd": "1230121",
+        },
+        estimated_price="500000000",
+    )
+    assert proxy.scope_stage != RULE_SCOPE_INSTITUTION
+    assert any("조달청 대행" in warning for warning in proxy.warnings)
+    local = _resolve(
+        {
+            "sucsfbidMthdNm": MOLIT_SUPERVISION_METHOD,
+            "srvceDivNm": "일반용역",
+            "cntrctCnclsMthdNm": "지방자치단체 제한경쟁",
+            "bidNtceDt": "2026-01-02",
+            "dminsttNm": MOLIT_SUBUNIT_NAME,
+        },
+        region_code="11",
+        region_name="서울특별시",
+        local_service_type="GENERAL",
+        estimated_price="500000000",
+    )
+    assert local.scope_stage == RULE_SCOPE_REGION
+
+
+def test_subunit_announcement_still_checks_effective_date() -> None:
+    """하위 조직 표기로 기관 규칙이 잡혀도 시행일 대조는 그대로 적용된다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": MOLIT_SUPERVISION_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2017-12-31",
+            "dminsttNm": MOLIT_SUBUNIT_NAME,
+        },
+        estimated_price="500000000",
+    )
+    assert result.is_blocked is True
+    assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
 
 
 # --------------------------------------------------------------------------- #
