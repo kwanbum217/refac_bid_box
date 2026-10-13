@@ -1,0 +1,2008 @@
+schema: INSTITUTION_QUANT_TABLE_SPEC_V1
+version: "1.0.0"
+created_at: "2026-10-13"
+source_task: task_4a45d25ad668
+scope: INSTITUTION
+purpose: >
+  기관 규칙이 확정된 10곳(국토교통부, 국가유산청, 환경부, 한국농어촌공사, 한국가스공사,
+  한국수력원자력, 한국지역난방공사, 한국석유공사, 인천국제공항공사, 인천공항시설관리)의
+  적격심사 세부기준 원문에서 별표별 정량평가 배점표(심사항목 배점한도와 세부 평가기준)를
+  기계 판독 형태로 옮긴 명세다. 운영 코드(src/app/services/evaluation_rules.py)는 바꾸지
+  않는다. 후속 과업이 이 명세를 규칙의 quant_basis=AGENCY_DOCUMENT 로 옮긴다.
+related:
+  rule_registry: "data/reference/institution_rules_20261013.yaml"
+  rule_registry_doc: "docs/analysis/institution_rules_apply_20261013.md"
+  code_quant_format: "src/app/services/evaluation_rules.py QuantScoreTable(6797-6820), QUANT_SCORE_TABLES(7355-7385)"
+  code_quant_reference_doc: "docs/analysis/servc_pre_rules_2025_2026_tables_20260929.md"
+conventions:
+  item_kinds:
+    score: "합계 산입 정량 배점항목"
+    reputation: "신인도. 가점/감점 범위이며 원문 계·합계에는 0으로 산입한다"
+    penalty: "결격사유. 감점 항목이라 합계 검산에서 제외한다"
+    absent: "원문 배점표에 '-' 로 표기된 항목(입력 불가)"
+    range: "원문이 범위(예: 10점 이상 30점 이하)로 표기한 항목"
+  total_rule: "신인도·결격사유를 제외한 배점한도 합 + 입찰가격 배점한도 = 별표 합계(보통 100)"
+  band_axis: "추정가격 구간. 기관 원문 표기가 5억원/고시금액/30억원 등으로 다르면 원문 문구를 band_label 에 그대로 쓴다"
+  money_unit: "KRW"
+  source_notation: "<key>#rows<a>-<b> 는 sources[key] 파일의 표 행 번호다. 행 추출은 scripts/extract_score_params.py 의 extract_document_text 를 썼다"
+  no_guess: "원문에 없는 값은 넣지 않는다. 항목이 원문에 없으면 absent 로 두거나 항목 자체를 적지 않고 사유를 note 에 남긴다"
+sources:
+  molit: ".cache/inst_originals/task_889fe5b87a19/molit/molit_yongyeok_2018-01-04.hwp"
+  molit_txt: ".cache/inst_originals/task_889fe5b87a19/molit/molit_yongyeok_2018-01-04.txt"
+  khs: ".cache/inst_originals/task_889fe5b87a19/khs/khs_yongyeok_2024-05-17.hwpx"
+  khs_table: ".cache/inst_originals/task_ac5c1133322a/extracted_TABLE_국가유산청 매장문화재_조사용역_적격심사_세부기준(개정전문).txt"
+  me: ".cache/inst_originals/task_889fe5b87a19/me/me_byl1_text.txt"
+  me_body: ".cache/inst_originals/task_889fe5b87a19/me/me_techyongyeok_2025-11-11.txt"
+  krc: ".cache/inst_originals/task_4103791c2123/user_files/한국농어촌공사 일반용역 적격심사 한국농어촌공사 세부기준(20260624).hwp"
+  kogas_main: ".cache/inst_originals/task_a61c0e310be3/kogas/cur2026/kogas_cur2026_main.txt"
+  kogas_byul9: ".cache/inst_originals/task_a61c0e310be3/kogas/cur2026/kogas_cur2026_byul9.txt"
+  khnp: ".cache/inst_originals/task_4103791c2123/user_files/한국수력원자력 일반용역적격심사세부기준(11차)(20260619)_전문.hwp"
+  kdhc: ".cache/inst_originals/task_4103791c2123/user_files/한국지역난방공사 260129_일반용역적격심사세부기준(개정전문)(2026.01.01).hwp"
+  knoc: ".cache/inst_originals/task_afb66751579d/knoc/knoc_r26bk01716376_spec.hwp"
+  iiac: ".cache/inst_originals/task_afb66751579d/iia/iia_reawu17529_defense.hwp"
+  iiafm: ".cache/inst_originals/task_4103791c2123/user_files/인천공항시설관리 일반용역 적격심사 세부기준 전문 (1).hwp"
+  doc_central: "docs/analysis/servc_formula_collection_central_20261004.md"
+  doc_agency: "docs/analysis/servc_formula_userfiles_agency_20261004.md"
+  doc_recover: "docs/analysis/servc_formula_recover_a_20261005.md"
+  doc_kogas: "docs/analysis/servc_formula_kogas_qualification_20261004.md"
+institutions:
+  - institution_name: "국토교통부"
+    standard: "용역적격심사 및 협상에 의한 낙찰자 결정기준 (국토교통부훈령 제965호, 2018-01-04)"
+    quant_table_status: confirmed
+    note: >
+      별표 1 은 당해용역수행능력을 건설기술진흥법 시행규칙 별표 2~3 발주청 평가기준으로
+      평가하고, 고시금액 미만 구간만 부표로 세부 심사항목(참여기술자 50, 유사용역수행실적
+      34 또는 경영상태 34, 용역업무 중복정도 12, 신용도 4)을 인쇄한다. 세부 평가기준의
+      등급별 점수는 원문 부표에 있다. 별표 2(제안서 평가)는 협상에 의한 계약의 제안서
+      평가표라 적격심사 정량 배점표가 아니므로 이 명세에서 제외한다.
+    rules:
+      - rule_id: "SERVC_INST_MOLIT_20180104_GENERAL"
+        service_type: "일반용역"
+        attachment: "별표 1"
+        table_name: "적격심사항목 및 배점한도액"
+        source: "molit#rows4-11; molit_txt:83-105"
+        bands:
+          - band_key: "notice_under"
+            band_label: "추정가격 고시금액 미만인 용역"
+            total_limit: 100
+            items:
+              - {name: "당해 용역 수행능력", limit: 30, limit_kind: score, source: "molit#rows5-6"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "molit#rows9,93"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "molit#rows10-11"}
+          - band_key: "notice_1000"
+            band_label: "추정가격 고시금액 이상 10억원 미만인 용역"
+            total_limit: 100
+            items:
+              - {name: "당해 용역 수행능력", limit: 70, limit_kind: score, source: "molit#rows5-6"}
+              - {name: "입찰가격", limit: 30, limit_kind: score, source: "molit#rows9,95"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "molit#rows10-11"}
+          - band_key: "1000_3000"
+            band_label: "추정가격 10억원 이상 30억원 미만인 용역"
+            total_limit: 100
+            items:
+              - {name: "당해 용역 수행능력", limit: 80, limit_kind: score, source: "molit#rows5-6"}
+              - {name: "입찰가격", limit: 20, limit_kind: score, source: "molit#rows9,97"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "molit#rows10-11"}
+          - band_key: "over_3000"
+            band_label: "추정가격 30억원 이상인 용역"
+            total_limit: 100
+            items:
+              - {name: "당해 용역 수행능력", limit: 80, limit_kind: score, source: "molit#rows5-6"}
+              - {name: "입찰가격", limit: 20, limit_kind: score, source: "molit#rows9,99"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "molit#rows10-11"}
+        details:
+          - group: "부표 · 고시금액 미만 용역 당해 용역수행능력 심사항목"
+            source: "molit#rows16-48; molit_txt:130-147"
+            note: "평점 = 30/100 × 평가점수 (소수점 셋째 자리에서 반올림). 참여기술자 50 + (유사용역수행실적 34 또는 경영상태 34) + 용역업무 중복정도 12 + 신용도 4 = 100"
+            grades:
+              - {item: "참여기술자(참여감리원) · 사업책임기술자", limit: 25, sub: "기술자등급 7 + 경력 8 + 용역실적 10", source: "molit#rows18-25"}
+              - {item: "참여기술자(참여감리원) · 분야별 책임기술자", limit: 25, sub: "기술자등급 7 + 경력 8 + 용역실적 10", source: "molit#rows26-32"}
+              - {item: "유사용역 수행실적 (5천만원 이상용역)", limit: 34, sub: "용역수행건수 17 + 용역수행금액 17", source: "molit#rows33-37"}
+              - {item: "경영상태 (5천만원 미만용역)", limit: 34, sub: "자기자본비율 17 + 유동비율 17", source: "molit#rows38-42"}
+              - {item: "용역업무 중복정도", limit: 12, source: "molit#rows43-45"}
+              - {item: "신용도", limit: 4, sub: "입찰참가제한 2 + 기술자(감리원)업무정지 2", source: "molit#rows46-48"}
+      - rule_id: "SERVC_INST_MOLIT_20180104_SUPERVISION"
+        service_type: "감리용역"
+        attachment: "별표 1"
+        table_name: "적격심사항목 및 배점한도액"
+        source: "molit#rows4-11; molit_txt:89,95,102"
+        note: "별표 1 은 일반용역과 같은 표를 쓰고, 고시금액 이상 10억원 미만 구간의 입찰가격 평탄 점수만 감리 25점(일반 20점)이다."
+        bands:
+          - band_key: "notice_1000_supervision"
+            band_label: "추정가격 고시금액 이상 10억원 미만인 감리용역"
+            total_limit: 100
+            items:
+              - {name: "당해 용역 수행능력", limit: 70, limit_kind: score, source: "molit#rows5-6"}
+              - {name: "입찰가격", limit: 30, limit_kind: score, source: "molit#rows9,95", note: "예정가격 90.5% 이상이면 25점(일반용역은 93% 이상 20점)"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "molit#rows10-11"}
+
+  - institution_name: "국가유산청"
+    standard: "매장유산 조사용역 적격심사 세부기준 (국가유산청고시 제2024-6호, 2024-05-17)"
+    quant_table_status: confirmed
+    note: >
+      매장유산 조사용역 전용이다. 원문 별표 1~5 의 평탄 비율에 대응하는 입찰가격 점수를
+      인쇄하지 않아 입찰가격 항목은 배점한도만 확정한다. 세부 평가기준은 별지 1-1~1-5 에 있다.
+    rules:
+      - rule_id: "SERVC_INST_KHS_20240517_BURIAL"
+        service_type: "매장유산 조사용역"
+        attachment: "별표 1~5"
+        table_name: "매장문화재 조사용역 적격심사항목 및 배점기준"
+        source: "khs_table:75-85; khs#rows0-15"
+        bands:
+          - band_key: "over_1000"
+            band_label: "추정가격 10억원 이상"
+            total_limit: 100
+            items:
+              - {name: "Ⅰ. 조사이행능력(전문성)", limit: 50, limit_kind: score, source: "khs#row1"}
+              - {name: "Ⅱ. 경영상태", limit: 20, limit_kind: score, source: "khs#row5"}
+              - {name: "Ⅲ. 입찰가격(경제성)", limit: 30, limit_kind: score, source: "khs#row6"}
+              - {name: "Ⅳ. 신인도", limit: null, limit_kind: reputation, source: "khs#row8"}
+              - {name: "Ⅴ. 결격사유", limit: -20, limit_kind: penalty, source: "khs#row14"}
+          - band_key: "500_1000"
+            band_label: "추정가격 10억원 미만 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "Ⅰ. 조사이행능력(전문성)", limit: 50, limit_kind: score, source: "khs_table:78"}
+              - {name: "Ⅱ. 경영상태", limit: 20, limit_kind: score, source: "khs_table:78"}
+              - {name: "Ⅲ. 입찰가격(경제성)", limit: 30, limit_kind: score, source: "khs_table:78"}
+              - {name: "Ⅳ. 신인도", limit: null, limit_kind: reputation, source: "khs_table:78"}
+              - {name: "Ⅴ. 결격사유", limit: -20, limit_kind: penalty, source: "khs_table:78"}
+          - band_key: "250_500"
+            band_label: "추정가격 5억원 미만 2.5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "Ⅰ. 조사이행능력(전문성)", limit: 40, limit_kind: score, source: "khs_table:80"}
+              - {name: "Ⅱ. 경영상태", limit: 20, limit_kind: score, source: "khs_table:80"}
+              - {name: "Ⅲ. 입찰가격(경제성)", limit: 40, limit_kind: score, source: "khs_table:80"}
+              - {name: "Ⅳ. 신인도", limit: null, limit_kind: reputation, source: "khs_table:80"}
+              - {name: "Ⅴ. 결격사유", limit: -20, limit_kind: penalty, source: "khs_table:80"}
+          - band_key: "100_250"
+            band_label: "추정가격 2.5억원 미만 1억원 이상"
+            total_limit: 100
+            items:
+              - {name: "Ⅰ. 조사이행능력(전문성)", limit: 35, limit_kind: score, source: "khs_table:82"}
+              - {name: "Ⅱ. 경영상태", limit: 20, limit_kind: score, source: "khs_table:82"}
+              - {name: "Ⅲ. 입찰가격(경제성)", limit: 45, limit_kind: score, source: "khs_table:82"}
+              - {name: "Ⅳ. 신인도", limit: null, limit_kind: reputation, source: "khs_table:82"}
+              - {name: "Ⅴ. 결격사유", limit: -20, limit_kind: penalty, source: "khs_table:82"}
+          - band_key: "under_100"
+            band_label: "추정가격 1억원 미만"
+            total_limit: 100
+            items:
+              - {name: "Ⅰ. 조사이행능력(전문성)", limit: 30, limit_kind: score, source: "khs_table:84"}
+              - {name: "Ⅱ. 경영상태", limit: 20, limit_kind: score, source: "khs_table:84"}
+              - {name: "Ⅲ. 입찰가격(경제성)", limit: 50, limit_kind: score, source: "khs_table:84"}
+              - {name: "Ⅳ. 신인도", limit: null, limit_kind: reputation, source: "khs_table:84"}
+              - {name: "Ⅴ. 결격사유", limit: -20, limit_kind: penalty, source: "khs_table:84"}
+        details:
+          - group: "별지 1-1 · 조사이행능력 등급별 점수 (모든 추정가격 적용)"
+            source: "khs_table:87"
+            grades:
+              - {item: "1. 연구조사실적 · 조사실적", grades: ["A 300% 이상 10(5)", "B 200% 이상 9(4)", "C 100% 이상 8(3)", "D 100% 미만 7(2)"], note: "괄호는 2.5억원 미만 구간"}
+              - {item: "2. 연구조사능력 · 조사인력수", grades: ["책임조사원 2명 이상 1.5 / 2명 미만 0.5", "조사원 2명 이상 6 / 2명 미만 5", "준조사원 2명 이상 2.5 / 2명 미만 1.5"]}
+              - {item: "3. 연구조사평가 · 발굴조사보고서 평균점수", grades: ["A 90점 이상 25(20)[15]", "B 88점 이상 24(19)[14]", "C 85점 이상 23(18)[13]", "D 85점 미만 22(17)[12]"], note: "[ ] 는 1억원 미만 구간"}
+              - {item: "4. 연구조사기반 · 수장·보존처리시설 비율", grades: ["A 150% 이상 5", "B 120% 이상 4.7", "C 120% 미만 4.4"]}
+          - group: "별지 1-3 · 경영상태(신용평가등급) 등급별 점수"
+            source: "khs_table:114"
+            grades:
+              - {item: "기업신용평가등급", grades: ["A- 이상 20.0", "BBB+ 19.8", "BBB0 19.6", "BBB- 19.4", "BB+, BB0 19.2", "BB- 19.0", "B+, B0, B- 18.8", "CCC+ 이하 18.0"]}
+          - group: "별지 1-4 · 신인도 항목별 점수"
+            source: "khs_table:123-167"
+            grades:
+              - {item: "1. 용역전문성 (동일지역 동일공종 5건 이상 / 선행용역 수행)", grades: ["+1 / +1"]}
+              - {item: "2. 업무정지(경고)처분", grades: ["업무정지 2회 이상 -2", "업무정지 1회 -1", "경고 1회 이상 -0.5"]}
+              - {item: "3. 안전관리(산업재해율)", grades: ["3% 이상 -1", "1% 이상 3% 미만 -0.5"]}
+              - {item: "4. 공동수급체 구성", grades: ["3개사 +1.0", "2개사 +0.5"]}
+              - {item: "5. 여성고용", grades: ["+0.5 / +0.2"]}
+              - {item: "6. 장애인고용", grades: ["+1.0 / +0.5"]}
+          - group: "별지 1-5 · 결격사유"
+            source: "khs_table:168-170"
+            grades:
+              - {item: "1. 이행위험 (계약보증증권 미제출)", grades: ["-20"]}
+              - {item: "2. 부정당업자제재", grades: ["-20"]}
+
+  - institution_name: "환경부"
+    standard: "기술용역 적격심사 및 협상에 의한 낙찰자 결정기준 (기후에너지환경부훈령 제4호, 2025-11-11)"
+    quant_table_status: confirmed
+    note: >
+      기술용역 기준이다. 별표 1 의 심사항목 배점한도는 국토교통부와 같은 구조이고 값도
+      같다(당해용역수행능력 30/70/80/80, 입찰가격 70/30/20/20, 결격 -20). 고시금액 미만
+      구간은 부표적용이며, 고시금액 이상은 건설기술진흥법 시행규칙 별표 2·3·4 발주청
+      평가기준을 적용한다. 일반용역 자체 배점표는 이 훈령 범위 밖이다.
+    rules:
+      - rule_id: "SERVC_INST_ME_20251111_TECH"
+        service_type: "기술용역"
+        attachment: "별표 1"
+        table_name: "적격심사항목 및 배점한도액"
+        source: "me#lines1-61; me_body:13-17"
+        bands:
+          - band_key: "notice_under"
+            band_label: "추정가격 고시금액 미만인 용역"
+            total_limit: 100
+            items:
+              - {name: "해당 용역 수행능력", limit: 30, limit_kind: score, source: "me#lines14-23"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "me#lines33-40,55"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "me#lines41-52"}
+          - band_key: "notice_1000"
+            band_label: "추정가격 고시금액 이상 10억원 미만인 용역(1억원 이상 고시금액 미만의 정밀안전점검(진단)용역 포함)"
+            total_limit: 100
+            items:
+              - {name: "해당 용역 수행능력", limit: 70, limit_kind: score, source: "me#lines14-23"}
+              - {name: "입찰가격", limit: 30, limit_kind: score, source: "me#lines33-40,56"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "me#lines41-52"}
+          - band_key: "1000_3000"
+            band_label: "추정가격 10억원 이상 30억원 미만인 용역"
+            total_limit: 100
+            items:
+              - {name: "해당 용역 수행능력", limit: 80, limit_kind: score, source: "me#lines14-23"}
+              - {name: "입찰가격", limit: 20, limit_kind: score, source: "me#lines33-40,57"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "me#lines41-52"}
+          - band_key: "over_3000"
+            band_label: "추정가격 30억원 이상인 용역"
+            total_limit: 100
+            items:
+              - {name: "해당 용역 수행능력", limit: 80, limit_kind: score, source: "me#lines14-23"}
+              - {name: "입찰가격", limit: 20, limit_kind: score, source: "me#lines33-40,58"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "me#lines41-52"}
+
+  - institution_name: "한국농어촌공사"
+    standard: "일반용역 적격심사 세부기준 (부칙 2026-06-24 이후 입찰공고분)"
+    quant_table_status: confirmed
+    note: >
+      별표 1~8 전량 확보. 5억원 이상/미만 두 구간을 인쇄한다. 별표 6(보험)은 지급여력비율
+      A 기준이 130% 이상이며 인쇄 점수 40(5억 이상)/30(미만), B(100~130% 미만) 38/30 이다.
+      평탄 비율에 대응하는 입찰가격 점수는 원문이 인쇄하지 않는다.
+    rules:
+      - rule_id: "SERVC_INST_KRC_20260624_ACADEMIC"
+        service_type: "학술연구용역"
+        attachment: "별표 1"
+        source: "krc#rows0-21"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "krc#row5"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row6"}
+              - {name: "3. 기술능력(기술인력 보유)", limit: 10, limit_kind: score, source: "krc#row7"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row8"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row10"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row12"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "krc#row5"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "krc#row6"}
+              - {name: "3. 기술능력(기술인력 보유)", limit: null, limit_kind: absent, source: "krc#row7"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row8"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row10"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row12"}
+        details:
+          - group: "별표 1-1 · 이행실적 등급별 점수"
+            source: "krc#rows17-18"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 100% 이상 20/10", "B 70~100% 18/9", "C 40~70% 16/8", "D 10~40% 14/7", "E 10% 미만 0/0"]}
+              - {item: "나. 유사용역", grades: ["A 6/3", "B 4/2", "C 2/1", "D 1/0.5", "E 0/0"]}
+          - group: "별표 1-2 · 기술인력 보유 등급별 점수"
+            source: "krc#rows20-21"
+            grades:
+              - {item: "입찰참가자 보유 기술인력 수 / 발주부서 산정 기술인력 수", grades: ["A 100% 이상 10", "B 80~100% 9", "C 60~80% 8", "D 60% 미만 7"]}
+      - rule_id: "SERVC_INST_KRC_20260624_FACILITY"
+        service_type: "시설분야용역"
+        attachment: "별표 2"
+        source: "krc#rows23-46"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "krc#row25"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row26"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "krc#row27"}
+              - {name: "근로조건 이행계획의 적정성", limit: 10, limit_kind: score, source: "krc#row29"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row30"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row32"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "krc#row25"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "krc#row26"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "krc#row27"}
+              - {name: "근로조건 이행계획의 적정성", limit: 10, limit_kind: score, source: "krc#row29"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row30"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row32"}
+        details:
+          - group: "별표 2-1 · 이행실적 등급별 점수"
+            source: "krc#rows39-40"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20 (5억 이상)", "B 18", "C 16", "D 14", "E 0"], note: "5억원 미만은 '-'"}
+              - {item: "나. 유사용역", grades: ["A 6", "B 4", "C 2", "D 1", "E 0"]}
+          - group: "별표 2-2 · 근로조건 이행계획의 적정성"
+            source: "krc#rows43-44"
+            grades:
+              - {item: "근로조건 이행확약서 제출 / 미제출", grades: ["제출시 10", "미제출시 0"]}
+      - rule_id: "SERVC_INST_KRC_20260624_SW"
+        service_type: "소프트웨어용역(중소기업간 경쟁제품 비대상)"
+        attachment: "별표 3"
+        source: "krc#rows47-65"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "krc#row49"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row50"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "krc#row51"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row52"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row54"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row56"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "krc#row49"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "krc#row50"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "krc#row51"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row52"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row54"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row56"}
+        details:
+          - group: "별표 3-1 · 이행실적 등급별 점수"
+            source: "krc#rows64-65"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20", "B 18", "C 16", "D 14", "E 0"]}
+              - {item: "나. 유사용역", grades: ["A 6", "B 4", "C 2", "D 1", "E 0"]}
+          - group: "별표 3-1 · 기술인력 보유상황 등급별 점수"
+            source: "krc#rows69-77"
+            grades:
+              - {item: "기술사 또는 기능장", grades: ["2인 이상 10", "1인 8"]}
+              - {item: "기사 또는 산업기사", grades: ["3인 이상 10", "2인 8", "1인 4"]}
+              - {item: "기능사", grades: ["3인 이상 6", "2인 4", "1인 2"]}
+              - {item: "미보유", grades: ["0"]}
+      - rule_id: "SERVC_INST_KRC_20260624_SW_TARGET"
+        service_type: "소프트웨어용역(중소기업간 경쟁제품 대상)"
+        attachment: "별표 3의1"
+        source: "krc#rows78-107"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "krc#row80"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row81"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "krc#row82"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row83"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row85"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row87"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "krc#row80"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "krc#row81"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "krc#row82"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row83"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row85"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row87"}
+        details:
+          - group: "별표 3의1-1 · 이행실적·기술인력 등급별 점수"
+            source: "krc#rows94-107"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20", "B 18", "C 16", "D 14", "E 0"]}
+              - {item: "나. 유사용역", grades: ["A 6", "B 4", "C 2", "D 1", "E 0"]}
+              - {item: "기술사 또는 기능장", grades: ["2인 이상 10", "1인 8"]}
+              - {item: "기사 또는 산업기사", grades: ["3인 이상 10", "2인 8", "1인 4"]}
+              - {item: "기능사", grades: ["3인 이상 6", "2인 4", "1인 2"]}
+              - {item: "미보유", grades: ["0"]}
+      - rule_id: "SERVC_INST_KRC_20260624_WASTE"
+        service_type: "폐기물처리용역"
+        attachment: "별표 4"
+        source: "krc#rows108-131"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "krc#row110"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row111"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "krc#row112"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "krc#row113"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row114"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row116"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row118"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "krc#row110"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row111"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "krc#row112"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "krc#row113"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row114"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row116"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row118"}
+        details:
+          - group: "별표 4-1 · 이행실적·기술능력 등급별 점수"
+            source: "krc#rows126-131"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20/10", "B 18/9", "C 16/8", "D 14/7", "E 0/0"]}
+              - {item: "나. 유사용역", grades: ["A 6/3", "B 4/2", "C 2/1", "D 1/0.5", "E 0/0"]}
+              - {item: "가. 기술인력 보유상황", grades: ["A 폐기물관리법 시행규칙 제28조 기술능력 기준 충족 9", "B 미달 0"]}
+              - {item: "나. 기술보유 상황", grades: ["A 신기술(NET) 1", "B 품질인증(GR) 1"]}
+      - rule_id: "SERVC_INST_KRC_20260624_PASSENGER"
+        service_type: "여객 육상운송용역"
+        attachment: "별표 5"
+        source: "krc#rows133-151"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "krc#row135"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row136"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "krc#row137"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row138"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row140"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row142"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "krc#row135"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row136"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "krc#row137"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row138"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row140"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row142"}
+        details:
+          - group: "별표 5-1 · 이행실적·안전성 등급별 점수"
+            source: "krc#rows146-151"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20/10", "B 18/9", "C 16/8", "D 14/7", "E 0/0"]}
+              - {item: "나. 유사용역", grades: ["A 6/3", "B 4/2", "C 2/1", "D 1/0.5", "E 0/0"]}
+              - {item: "안전성 정도(전세버스 교통안전정보 공시등급)", grades: ["A 1등급 10", "B 2등급 8", "C 3등급 6", "D 4등급 4", "E 5등급 및 공시불응 2"]}
+      - rule_id: "SERVC_INST_KRC_20260624_FREIGHT"
+        service_type: "화물 육상운송용역"
+        attachment: "별표 5의1"
+        source: "krc#rows152-168"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "krc#row154"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "krc#row155"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "krc#row156"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row158"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row160"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "krc#row154"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "krc#row155"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "krc#row156"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row158"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row160"}
+        details:
+          - group: "별표 5-1(화물) · 이행실적 등급별 점수"
+            source: "krc#rows166-168"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20/10", "B 18/9", "C 16/8", "D 14/7", "E 0/0"]}
+              - {item: "나. 유사용역", grades: ["A 6/3", "B 4/2", "C 2/1", "D 1/0.5", "E 0/0"]}
+      - rule_id: "SERVC_INST_KRC_20260624_INSURANCE"
+        service_type: "보험용역"
+        attachment: "별표 6"
+        source: "krc#rows169-181"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 보험금 지급능력(지급여력비율)", limit: 40, limit_kind: score, source: "krc#row171"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "krc#row172"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row174"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row176"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 보험금 지급능력(지급여력비율)", limit: 30, limit_kind: score, source: "krc#row171"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "krc#row172"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row174"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row176"}
+        details:
+          - group: "별표 6 · 지급여력비율 등급별 점수"
+            source: "krc#rows179-180"
+            grades:
+              - {item: "지급여력비율", grades: ["A 130% 이상 40/30", "B 100% 이상 130% 미만 38/30", "100% 미만 점수 없음"]}
+      - rule_id: "SERVC_INST_KRC_20260624_REPAIR"
+        service_type: "수리·점검용역"
+        attachment: "별표 7"
+        source: "krc#rows182-207"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "krc#row184"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "krc#row185"}
+              - {name: "3. 기술능력(기술신용평가등급)", limit: 10, limit_kind: score, source: "krc#row186"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row187"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "krc#row189"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row191"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "krc#row184"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "krc#row185"}
+              - {name: "3. 기술능력(기술신용평가등급)", limit: 0, limit_kind: score, source: "krc#row186"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "krc#row187"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row189"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row191"}
+        details:
+          - group: "별표 7 · 이행실적·기술신용평가등급 등급별 점수"
+            source: "krc#rows197-205"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20/10", "B 18/9", "C 16/8", "D 14/7", "E 0/0"]}
+              - {item: "나. 유사용역", grades: ["A 6/3", "B 4/2", "C 2/1", "D 1/0.5", "E 0/0"]}
+              - {item: "기술신용평가등급", grades: ["T1, T2 10", "T3+, T3, T3- 9.7", "T4+, T4, T4- 9.4", "T5+, T5, T5- 9.1", "T6+, T6, T6-, T7 8.8", "T8, T9, T10 8.0"]}
+      - rule_id: "SERVC_INST_KRC_20260624_LEASE"
+        service_type: "임대차"
+        attachment: "별표 8"
+        source: "krc#rows206-223"
+        bands:
+          - band_key: "single"
+            band_label: "단일 구간"
+            total_limit: 100
+            items:
+              - {name: "1. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "krc#row207"}
+              - {name: "2. 사후관리(A/S)", limit: 10, limit_kind: score, source: "krc#row208"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "krc#row209"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "krc#row211"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "krc#row213"}
+        details:
+          - group: "별표 8 · 임대물품 사후관리(A/S) 등급별 점수"
+            source: "krc#row219"
+            grades:
+              - {item: "사후관리 조치기한", grades: ["A 기한 내 10", "B 기한 경과 후 3일 이내 8", "C 기한 경과 후 5일 이내 6", "D 기한 경과 후 5일 초과 4"]}
+
+  - institution_name: "한국가스공사"
+    standard: "공사·용역 적격심사 세부기준 (시행 2026-07-09)"
+    quant_table_status: partial
+    note: >
+      별표 9 는 심사항목의 배점한도 숫자를 인쇄하지 않고 심사분야 구조만 담는다. 숫자는
+      본문 제16조①(심사분야별 배점한도)에 있다. 입찰가격 배점한도 B 는 추정가격 구간이
+      아니라 용역수행능력 계량화 정도로 갈린다. 그래서 B·k·기준비율을 하나의 추정가격 축으로
+      확정할 수 없어 여기서는 제16조①의 값을 band 로 적고 추정가격별 k(1.5/2/3/5)와
+      기준비율 90(시설분야 92)을 note 에 남긴다. 후속 코드 반영 시 용역 유형 축이 필요하다.
+    rules:
+      - rule_id: "SERVC_INST_KOGAS_20260709_GENERAL"
+        service_type: "용역(시설분야 제외)"
+        attachment: "별표 9"
+        table_name: "용역 적격심사 항목 및 배점 한도(제14조 제2항 관련)"
+        source: "kogas_byul9:1-40; kogas_main:200-217; doc_kogas:93-104"
+        bands:
+          - band_key: "quant_100"
+            band_label: "해당 용역수행능력 100% 계량화 절대평가"
+            total_limit: 100
+            items:
+              - {name: "1. 당해용역 수행능력", limit: 70, limit_kind: score, source: "kogas_main:203"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "kogas_main:203"}
+              - {name: "3. 입찰가격", limit: 30, limit_kind: score, source: "kogas_main:203"}
+          - band_key: "quant_over_70"
+            band_label: "해당 용역수행능력 70% 이상 계량화 절대평가"
+            total_limit: 100
+            items:
+              - {name: "1. 당해용역 수행능력", limit: 50, limit_kind: score, source: "kogas_main:205"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "kogas_main:205"}
+              - {name: "3. 입찰가격", limit: 50, limit_kind: score, source: "kogas_main:205"}
+          - band_key: "quant_under_70"
+            band_label: "해당 용역수행능력 70% 미만 계량화 절대평가"
+            total_limit: 100
+            items:
+              - {name: "1. 당해용역 수행능력", limit: 30, limit_kind: score, source: "kogas_main:207"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "kogas_main:207"}
+              - {name: "3. 입찰가격", limit: 70, limit_kind: score, source: "kogas_main:207"}
+          - band_key: "byul10_reuse"
+            band_label: "별표 10 준용(유사용역 수행실적·경영상태만 평가)"
+            total_limit: 100
+            items:
+              - {name: "1. 당해용역 수행능력", limit: 30, limit_kind: score, source: "kogas_main:211-213"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "kogas_main:211-213"}
+              - {name: "3. 입찰가격", limit: 70, limit_kind: score, source: "kogas_main:211-213"}
+        note: "추정가격 구간별 입찰가격 평점계수 k: 30억원 이상 1.5, 30억원 미만 10억원 이상 2, 10억원 미만 고시금액 이상 3, 고시금액 미만 5. 기준비율 90."
+      - rule_id: "SERVC_INST_KOGAS_20260709_FACILITY"
+        service_type: "시설분야용역(별표 8 2.나)"
+        attachment: "별표 9"
+        table_name: "용역 적격심사 항목 및 배점 한도(제14조 제2항 관련)"
+        source: "kogas_main:209-210; doc_kogas:100"
+        bands:
+          - band_key: "single"
+            band_label: "시설분야용역"
+            total_limit: 100
+            items:
+              - {name: "1. 당해용역 수행능력", limit: 45, limit_kind: score, source: "kogas_main:210"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "kogas_main:210"}
+              - {name: "3. 근로조건 이행계획의 적정성", limit: 5, limit_kind: score, source: "kogas_main:210"}
+              - {name: "4. 입찰가격", limit: 50, limit_kind: score, source: "kogas_main:210"}
+        note: "시설분야용역 입찰가격 평점계수 k=5, 기준비율 92."
+
+  - institution_name: "한국수력원자력"
+    standard: "일반용역적격심사세부기준 (일부개정 2026-06-19)"
+    quant_table_status: confirmed
+    note: >
+      별표 1~10 전량 확보. 별표 1~4 는 준비상태 심사항목을, 별표 9·10(국외운송주선)은
+      추정가격 3구간을 인쇄한다. 별표 9·10 은 값이 같아 규칙은 SERVC_INST_KHNP_20260619_
+      TRANSPORT_AGENCY 하나로 병합한다. 평탄 비율에 대응하는 입찰가격 점수는 원문이
+      인쇄하지 않는다.
+    rules:
+      - rule_id: "SERVC_INST_KHNP_20260619_CLEANING"
+        service_type: "청소용역"
+        attachment: "별표 1"
+        source: "khnp#rows1-26"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "khnp#row3"}
+              - {name: "2. 경영상태", limit: 6, limit_kind: score, source: "khnp#row4"}
+              - {name: "3. 준비상태", limit: 24, limit_kind: score, source: "khnp#rows5-9"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row10"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row12"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row14"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "khnp#row3"}
+              - {name: "2. 경영상태", limit: 6, limit_kind: score, source: "khnp#row4"}
+              - {name: "3. 준비상태", limit: 24, limit_kind: score, source: "khnp#rows5-9"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row10"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row12"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row14"}
+        details:
+          - group: "별표 1-1 · 이행실적·경영상태·준비상태 등급별 점수"
+            source: "khnp#rows18-26"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 100% 이상 10", "B 70~100% 9", "C 40~70% 8", "D 10~40% 7"]}
+              - {item: "나. 유사용역", grades: ["A 3", "B 2", "C 1", "D 0.5"]}
+              - {item: "경영상태 자기자본비율", grades: ["A 120% 이상 3", "B 80~120% 2.5", "C 40~80% 2"]}
+              - {item: "경영상태 유동비율", grades: ["A 120% 이상 3", "B 80~120% 2.5", "C 40~80% 2"]}
+              - {item: "준비상태 가. 발전소 지역주민 채용", grades: ["A 90% 이상 10", "B 80~90% 9", "C 70~80% 8"]}
+              - {item: "준비상태 나. 주된 영업소 지역소재기간", grades: ["A 5년 이상 3", "B 3~5년 2", "C 2~3년 1.5", "D 1~2년 1"]}
+              - {item: "준비상태 다. 대표자 지역거주기간", grades: ["A 5년 이상 4", "B 3~5년 3", "C 2~3년 2", "D 1~2년 1"]}
+              - {item: "준비상태 라. 발전소 주변지역 원주민 사업자", grades: ["A 기존발전소 2", "B 신규건설 1"]}
+              - {item: "준비상태 마. 근로기준법 등 준수확약", grades: ["A 이행확약서 제출 5", "B 미제출 심사제외"]}
+      - rule_id: "SERVC_INST_KHNP_20260619_MAINTENANCE"
+        service_type: "사옥사택 경상보수용역"
+        attachment: "별표 2"
+        source: "khnp#rows27-58"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "khnp#row29"}
+              - {name: "2. 경영상태", limit: 6, limit_kind: score, source: "khnp#row30"}
+              - {name: "3. 준비상태", limit: 24, limit_kind: score, source: "khnp#rows31-38"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row39"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row41"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row43"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "khnp#row29"}
+              - {name: "2. 경영상태", limit: 6, limit_kind: score, source: "khnp#row30"}
+              - {name: "3. 준비상태", limit: 24, limit_kind: score, source: "khnp#rows31-38"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row39"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row41"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row43"}
+        details:
+          - group: "별표 2-1 · 등급별 점수 (이행실적·경영상태·준비상태)"
+            source: "khnp#rows47-58"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 10", "B 9", "C 8", "D 7"]}
+              - {item: "나. 유사용역", grades: ["A 3", "B 2", "C 1", "D 0.5"]}
+              - {item: "다. 기술인력 상태", grades: ["A 10명 이상 4", "B 8~10명 3", "C 6~8명 2", "D 6명 미만 1"]}
+              - {item: "라. 발전소 지역주민 채용", grades: ["A 90% 이상 6", "B 80~90% 5", "C 70~80% 4", "D 60~70% 3"]}
+              - {item: "마. 주된 영업소 지역소재기간", grades: ["A 5년 이상 3", "B 3~5년 2", "C 2~3년 1.5", "D 1~2년 1"]}
+              - {item: "바. 대표자 지역거주기간", grades: ["A 5년 이상 4", "B 3~5년 3", "C 2~3년 2", "D 1~2년 1"]}
+              - {item: "사. 발전소 주변지역 원주민 사업자", grades: ["A 기존발전소 2", "B 신규건설 1"]}
+              - {item: "아. 근로기준법 등 준수확약", grades: ["A 제출 5", "B 미제출 심사제외"]}
+      - rule_id: "SERVC_INST_KHNP_20260619_SECURITY"
+        service_type: "경비용역"
+        attachment: "별표 3"
+        source: "khnp#rows59-76"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 14, limit_kind: score, source: "khnp#row61"}
+              - {name: "2. 경영상태", limit: 16, limit_kind: score, source: "khnp#row62"}
+              - {name: "3. 준비상태(근로기준법 준수확약)", limit: 10, limit_kind: score, source: "khnp#row63"}
+              - {name: "3. 준비상태(경비지도사 보유)", limit: null, limit_kind: absent, source: "khnp#row63", note: "적격/부적격 판정 항목"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row64"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row66"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row68"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "khnp#row61"}
+              - {name: "2. 경영상태", limit: 12, limit_kind: score, source: "khnp#row62"}
+              - {name: "3. 준비상태(근로기준법 준수확약)", limit: 8, limit_kind: score, source: "khnp#row63"}
+              - {name: "3. 준비상태(경비지도사 보유)", limit: null, limit_kind: absent, source: "khnp#row63", note: "적격/부적격 판정 항목"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row64"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row66"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row68"}
+        details:
+          - group: "별표 3-1 · 이행실적 등급별 점수"
+            source: "khnp#rows72-76"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 14/10", "B 13/9", "C 12/8", "D 11/7"]}
+              - {item: "나. 유사용역", grades: ["A 4/3", "B 3.5/2.5", "C 3/2", "D 2.5/1.5"]}
+              - {item: "나. 경비지도사 보유", grades: ["기준 이상 적격 / 미확보 부적격"]}
+      - rule_id: "SERVC_INST_KHNP_20260619_SEWAGE"
+        service_type: "하수처리시설 관리용역"
+        attachment: "별표 4"
+        source: "khnp#rows77-100"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "khnp#row79"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row80"}
+              - {name: "3. 준비상태", limit: 10, limit_kind: score, source: "khnp#row81", note: "기술인력 보유상황 5 + 장비 적격여부(판정) + 근로기준법 준수확약 5"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row82"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row84"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row86"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "khnp#row79"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row80"}
+              - {name: "3. 준비상태", limit: 10, limit_kind: score, source: "khnp#row81"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row82"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row84"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row86"}
+        details:
+          - group: "별표 4-1 · 이행실적 등급별 점수 (처리용량·운영기간)"
+            source: "khnp#rows90-100"
+            grades:
+              - {item: "가. 동등이상용역 (500톤/일 이상)", grades: ["A 1년 이상 20/10", "B 6개월~1년 18/9"]}
+              - {item: "가. 동등이상용역 (50~500톤/일)", grades: ["C 1년 이상 16/8", "D 6개월~1년 14/7"]}
+              - {item: "나. 유사용역 (500톤/일 이상)", grades: ["A 10/5", "B 8/3"]}
+              - {item: "나. 유사용역 (50~500톤/일)", grades: ["C 6/2", "D 4/1"]}
+              - {item: "가. 기술인력 보유상황", grades: ["A 하수처리시설 설계·시공업 및 관리업 등록 5", "B 관리업만 등록 3"]}
+              - {item: "나. 장비보유 상황", grades: ["A 보유시 적격", "B 미보유시 부적격"]}
+              - {item: "다. 근로기준법 등 준수확약", grades: ["A 제출 5", "B 미제출 심사제외"]}
+      - rule_id: "SERVC_INST_KHNP_20260619_ACADEMIC"
+        service_type: "학술연구용역"
+        attachment: "별표 5"
+        source: "khnp#rows101-118"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 30, limit_kind: score, source: "khnp#row103"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row104"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "khnp#row105"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row107"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row109"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "khnp#row103"}
+              - {name: "2. 경영상태", limit: 20, limit_kind: score, source: "khnp#row104"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "khnp#row105"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row107"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row109"}
+        details:
+          - group: "별표 5-1 · 이행실적·경영상태 등급별 점수"
+            source: "khnp#rows116-121"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 30/10", "B 27/9", "C 24/8", "D 21/7"]}
+              - {item: "나. 유사용역", grades: ["A 9/3", "B 6/2", "C 3/1", "D 2/0.5"]}
+      - rule_id: "SERVC_INST_KHNP_20260619_SW"
+        service_type: "소프트웨어용역(중소기업자간 경쟁제품 비대상)"
+        attachment: "별표 6-㉮"
+        source: "khnp#rows119-132"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "khnp#row121"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row122"}
+              - {name: "3. 기술능력", limit: 10, limit_kind: score, source: "khnp#row123"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row124"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row126"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row128"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "khnp#row121"}
+              - {name: "2. 경영상태", limit: 20, limit_kind: score, source: "khnp#row122"}
+              - {name: "3. 기술능력", limit: 10, limit_kind: score, source: "khnp#row123"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row124"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row126"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row128"}
+        details:
+          - group: "별표 6-1 · 기술인력 보유상황 등급별 점수"
+            source: "khnp#rows149-157"
+            grades:
+              - {item: "기술사 또는 기능장", grades: ["2인 이상 10", "1인 8"]}
+              - {item: "기사 또는 산업기사", grades: ["3인 이상 10", "2인 8", "1인 4"]}
+              - {item: "기능사", grades: ["3인 이상 6", "2인 4", "1인 2"]}
+              - {item: "미보유", grades: ["0"]}
+      - rule_id: "SERVC_INST_KHNP_20260619_SW_TARGET"
+        service_type: "소프트웨어용역(중소기업자간 경쟁제품 대상)"
+        attachment: "별표 6-㉯"
+        source: "khnp#rows133-160"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "khnp#row135"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row136"}
+              - {name: "3. 기술능력", limit: 10, limit_kind: score, source: "khnp#row137"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row138"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row140"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row142"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "khnp#row135"}
+              - {name: "2. 경영상태", limit: 20, limit_kind: score, source: "khnp#row136"}
+              - {name: "3. 기술능력", limit: 10, limit_kind: score, source: "khnp#row137"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row138"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row140"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row142"}
+      - rule_id: "SERVC_INST_KHNP_20260619_WASTE"
+        service_type: "폐기물처리용역"
+        attachment: "별표 7"
+        source: "khnp#rows161-179"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "khnp#row160"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row161"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "khnp#row162"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "khnp#row163"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row164"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row166"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row168"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "khnp#row160"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row161"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "khnp#row162"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "khnp#row163"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row164"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row166"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row168"}
+        details:
+          - group: "별표 7-1 · 등급별 점수"
+            source: "khnp#rows175-179"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20/10", "B 18/9", "C 16/8", "D 14/7"]}
+              - {item: "나. 유사용역", grades: ["A 6/3", "B 4/2", "C 2/1", "D 1/0.5"]}
+              - {item: "가. 기술인력 보유상황", grades: ["A 폐기물관리법 시행규칙 제28조 기준 충족 9", "B 미달 0"]}
+              - {item: "나. 기술보유 상황", grades: ["A 신기술(NET) 1", "B 품질인증(GR) 1"]}
+      - rule_id: "SERVC_INST_KHNP_20260619_PASSENGER"
+        service_type: "여객 육상운송용역"
+        attachment: "별표 8-㉮"
+        source: "khnp#rows180-196"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "khnp#row182"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row183"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "khnp#row184"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row185"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row187"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row189"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "khnp#row182"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "khnp#row183"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "khnp#row184"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row185"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row187"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row189"}
+        details:
+          - group: "별표 8-1 · 이행실적·안전성 등급별 점수"
+            source: "khnp#rows193-196"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 20/10", "B 18/9", "C 16/8", "D 14/7"]}
+              - {item: "나. 유사용역", grades: ["A 6/3", "B 4/2", "C 2/1", "D 1/0.5"]}
+              - {item: "안전성 정도", grades: ["A 1등급 10", "B 2등급 8", "C 3등급 6", "D 4등급 4", "E 5등급 및 공시불응 2"]}
+      - rule_id: "SERVC_INST_KHNP_20260619_FREIGHT"
+        service_type: "화물 육상운송용역"
+        attachment: "별표 8-㉯"
+        source: "khnp#rows197-214"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "khnp#row199"}
+              - {name: "2. 경영상태", limit: 20, limit_kind: score, source: "khnp#row200"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "khnp#row201"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "khnp#row203"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row205"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "khnp#row199"}
+              - {name: "2. 경영상태", limit: 20, limit_kind: score, source: "khnp#row200"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "khnp#row201"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "khnp#row203"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row205"}
+      - rule_id: "SERVC_INST_KHNP_20260619_TRANSPORT_AGENCY"
+        service_type: "국외운송주선용역(정비자재·원전연료)"
+        attachment: "별표 9·10"
+        source: "khnp#rows215-254"
+        note: "별표 9(정비자재)와 별표 10(원전연료)의 배점한도가 같아 한 규칙으로 병합한다."
+        bands:
+          - band_key: "over_3000"
+            band_label: "추정가격 30억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 수행실적", limit: 25, limit_kind: score, source: "khnp#row220"}
+              - {name: "2. 기술능력", limit: 35, limit_kind: score, source: "khnp#row221"}
+              - {name: "3. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "khnp#row222"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row223"}
+              - {name: "입찰가격", limit: 30, limit_kind: score, source: "khnp#row225"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row227"}
+          - band_key: "1000_3000"
+            band_label: "추정가격 30억원 미만 10억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 수행실적", limit: 25, limit_kind: score, source: "khnp#row220"}
+              - {name: "2. 기술능력", limit: 25, limit_kind: score, source: "khnp#row221"}
+              - {name: "3. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "khnp#row222"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row223"}
+              - {name: "입찰가격", limit: 40, limit_kind: score, source: "khnp#row225"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row227"}
+          - band_key: "under_1000"
+            band_label: "추정가격 10억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 수행실적", limit: 20, limit_kind: score, source: "khnp#row220"}
+              - {name: "2. 기술능력", limit: 20, limit_kind: score, source: "khnp#row221"}
+              - {name: "3. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "khnp#row222"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "khnp#row223"}
+              - {name: "입찰가격", limit: 50, limit_kind: score, source: "khnp#row225"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "khnp#row227"}
+        details:
+          - group: "별표 9-1 · 이행실적·기술능력 등급별 점수 (구간 1/2/3)"
+            source: "khnp#rows228-235"
+            grades:
+              - {item: "가. 국외운송주선 수행실적", grades: ["A 100% 이상 25/25/20", "B 80~100% 23/23/18", "C 60~80% 21/21/16", "D 40~60% 19/19/14", "E 20~40% 17/17/12"]}
+              - {item: "가. 영업년수", grades: ["A 10년 이상 15/10/10", "B 5~10년 13/8/8", "C 5년 미만 11/6/6"]}
+              - {item: "나. 수행 전문 인력", grades: ["A 3명 이상 18/13/8", "B 2명 15/9/5", "C 1명 이하 12/6/2"]}
+              - {item: "다. 품질 보증(ISO)", grades: ["2/2/2"]}
+  - institution_name: "한국지역난방공사"
+    standard: "일반용역적격심사세부기준 (개정 2026-01-01)"
+    quant_table_status: confirmed
+    note: >
+      별표 1~9 전량 확보. 별표 6(보험)은 지급여력비율 A 기준이 150% 이상이며 인쇄 점수는
+      40(5억 이상)/30(미만), B(100~150% 미만) 38/30 이다. 별표 8(임대차)은 단일 구간이고,
+      별표 9(기타)는 추정가격 고시금액 이상/미만 구간에 입찰가격 50/80 을 인쇄한다.
+    rules:
+      - rule_id: "SERVC_INST_KDHC_20260101_ACADEMIC"
+        service_type: "학술연구용역"
+        attachment: "별표 1"
+        source: "kdhc#rows2-9"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row2"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row3"}
+              - {name: "3. 기술능력(기술인력 보유)", limit: 10, limit_kind: score, source: "kdhc#row4"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row5"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row7"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row9"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "kdhc#row2"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "kdhc#row3"}
+              - {name: "3. 기술능력(기술인력 보유)", limit: null, limit_kind: absent, source: "kdhc#row4"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row5"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row7"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row9"}
+      - rule_id: "SERVC_INST_KDHC_20260101_FACILITY"
+        service_type: "시설분야용역"
+        attachment: "별표 2"
+        source: "kdhc#rows23-34"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row25"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row26"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row27"}
+              - {name: "근로조건 이행계획의 적정성", limit: 10, limit_kind: score, source: "kdhc#row28"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row30"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "kdhc#row25"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "kdhc#row26"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row27"}
+              - {name: "근로조건 이행계획의 적정성", limit: 10, limit_kind: score, source: "kdhc#row28"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row30"}
+      - rule_id: "SERVC_INST_KDHC_20260101_SW"
+        service_type: "소프트웨어용역(중소기업자간 경쟁제품 비대상)"
+        attachment: "별표 3"
+        source: "kdhc#rows47-54"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row47"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row48"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "kdhc#row49"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row50"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row52"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row54"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "kdhc#row47"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "kdhc#row48"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "kdhc#row49"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row50"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row52"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row54"}
+      - rule_id: "SERVC_INST_KDHC_20260101_SW_TARGET"
+        service_type: "소프트웨어용역(중소기업자간 경쟁제품 대상)"
+        attachment: "별표 3의2"
+        source: "kdhc#rows78-85"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row78"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row79"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "kdhc#row80"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row81"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row83"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row85"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "kdhc#row78"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "kdhc#row79"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "kdhc#row80"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row81"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row83"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row85"}
+      - rule_id: "SERVC_INST_KDHC_20260101_WASTE"
+        service_type: "폐기물처리용역"
+        attachment: "별표 4"
+        source: "kdhc#rows109-120"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row109"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row110"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "kdhc#row111"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "kdhc#row112"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row113"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row115"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row117"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "kdhc#row109"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row110"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "kdhc#row111"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "kdhc#row112"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row113"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row115"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row117"}
+      - rule_id: "SERVC_INST_KDHC_20260101_PASSENGER"
+        service_type: "여객 육상운송용역"
+        attachment: "별표 5"
+        source: "kdhc#rows134-144"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row134"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row135"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "kdhc#row136"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row137"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row139"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row141"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "kdhc#row134"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row135"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "kdhc#row136"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row137"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row139"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row141"}
+      - rule_id: "SERVC_INST_KDHC_20260101_FREIGHT"
+        service_type: "화물 육상운송용역"
+        attachment: "별표 5의2"
+        source: "kdhc#rows153-163"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row153"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "kdhc#row154"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row155"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row157"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row159"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "kdhc#row153"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "kdhc#row154"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row155"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row157"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row159"}
+      - rule_id: "SERVC_INST_KDHC_20260101_INSURANCE"
+        service_type: "보험용역"
+        attachment: "별표 6"
+        source: "kdhc#rows170-180"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 보험금 지급능력(지급여력비율)", limit: 40, limit_kind: score, source: "kdhc#row170"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row171"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row173"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row175"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 보험금 지급능력(지급여력비율)", limit: 30, limit_kind: score, source: "kdhc#row170"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row171"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row173"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row175"}
+        details:
+          - group: "별표 6 · 지급여력비율 등급별 점수"
+            source: "kdhc#rows178-179"
+            grades:
+              - {item: "지급여력비율", grades: ["A 150% 이상 40/30", "B 100% 이상 150% 미만 38/30", "100% 미만 점수 없음"]}
+      - rule_id: "SERVC_INST_KDHC_20260101_REPAIR"
+        service_type: "수리·점검용역"
+        attachment: "별표 7"
+        source: "kdhc#rows183-205"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row183"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row184"}
+              - {name: "3. 기술능력(기술신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row185"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row186"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "kdhc#row188"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row190"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "kdhc#row183"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "kdhc#row184"}
+              - {name: "3. 기술능력(기술신용평가등급)", limit: 0, limit_kind: score, source: "kdhc#row185"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row186"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row188"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row190"}
+        details:
+          - group: "별표 7 · 기술신용평가등급 등급별 점수"
+            source: "kdhc#rows202-208"
+            grades:
+              - {item: "기술신용평가등급", grades: ["T1, T2 10", "T3+, T3, T3- 9.7", "T4+, T4, T4- 9.4", "T5+, T5, T5- 9.1", "T6+, T6, T6-, T7 8.8", "T8, T9, T10 8.0"]}
+      - rule_id: "SERVC_INST_KDHC_20260101_LEASE"
+        service_type: "임대차"
+        attachment: "별표 8"
+        source: "kdhc#rows206-223"
+        bands:
+          - band_key: "single"
+            band_label: "단일 구간"
+            total_limit: 100
+            items:
+              - {name: "1. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "kdhc#row207"}
+              - {name: "2. 사후관리(A/S)", limit: 10, limit_kind: score, source: "kdhc#row208"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row209"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "kdhc#row211"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row213"}
+        details:
+          - group: "별표 8 · 임대물품 사후관리(A/S) 등급별 점수"
+            source: "kdhc#row219"
+            grades:
+              - {item: "사후관리 조치기한", grades: ["A 기한 내 10", "B 기한 경과 후 3일 이내 8", "C 기한 경과 후 5일 이내 6", "D 기한 경과 후 5일 초과 4"]}
+      - rule_id: "SERVC_INST_KDHC_20260101_OTHER"
+        service_type: "기타용역"
+        attachment: "별표 9"
+        source: "kdhc#rows222-231"
+        bands:
+          - band_key: "notice_over"
+            band_label: "추정가격 고시금액 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "kdhc#row223"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "kdhc#row224"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row225"}
+              - {name: "입찰가격", limit: 50, limit_kind: score, source: "kdhc#row227"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row229"}
+          - band_key: "notice_under"
+            band_label: "추정가격 고시금액 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "kdhc#row223"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "kdhc#row224"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "kdhc#row225"}
+              - {name: "입찰가격", limit: 80, limit_kind: score, source: "kdhc#row227"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "kdhc#row229"}
+
+  - institution_name: "한국석유공사"
+    standard: "용역 적격심사 세부기준 (12차 개정 2019-09-30)"
+    quant_table_status: confirmed
+    note: >
+      통합 용역 적격심사 세부기준의 일반용역 부분(별표 5~11)이다. 별표 5·11 은 추정가격
+      2억원 이상/미만, 별표 6~10의2 는 5억원 이상/미만 구간을 인쇄한다. 별표 6(시설분야)는
+      근로조건 이행계획의 적정성 5 를 포함한다. 신인도는 별표 13 적용이며 배점 범위가
+      별표마다 다르다.
+    rules:
+      - rule_id: "SERVC_INST_KNOC_20190930_ACADEMIC"
+        service_type: "학술연구용역"
+        attachment: "별표 5"
+        source: "knoc#rows28-34"
+        bands:
+          - band_key: "over_200m"
+            band_label: "추정가격 2억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 30, limit_kind: score, source: "knoc#row28"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "knoc#row29"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "knoc#row30"}
+              - {name: "입찰가격", limit: 40, limit_kind: score, source: "knoc#row32"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row34"}
+          - band_key: "under_200m"
+            band_label: "추정가격 2억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "knoc#row28"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "knoc#row29"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "knoc#row30"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "knoc#row32"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row34"}
+        details:
+          - group: "별표 5 · 이행실적 등급별 점수"
+            source: "knoc#rows41-42"
+            grades:
+              - {item: "가. 동등이상용역", grades: ["A 100% 이상 30", "B 70~100% 27", "C 40~70% 24", "D 10~40% 21"]}
+              - {item: "나. 유사용역", grades: ["A 9", "B 6", "C 3", "D 2"]}
+      - rule_id: "SERVC_INST_KNOC_20190930_FACILITY"
+        service_type: "시설분야용역"
+        attachment: "별표 6"
+        source: "knoc#rows44-53"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "knoc#row45"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 25, limit_kind: score, source: "knoc#row46"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "knoc#row47"}
+              - {name: "근로조건 이행계획의 적정성", limit: 5, limit_kind: score, source: "knoc#row49"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "knoc#row50"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row52"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "knoc#row45"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 25, limit_kind: score, source: "knoc#row46"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "knoc#row47"}
+              - {name: "근로조건 이행계획의 적정성", limit: 5, limit_kind: score, source: "knoc#row49"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "knoc#row50"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row52"}
+      - rule_id: "SERVC_INST_KNOC_20190930_ICT"
+        service_type: "정보통신용역(중소기업자간 경쟁 비대상)"
+        attachment: "별표 7"
+        source: "knoc#rows69-76"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 9, limit_kind: score, source: "knoc#row69"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "knoc#row70"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 1, limit_kind: score, source: "knoc#row71"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row72"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "knoc#row74"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row76"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "knoc#row69"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "knoc#row70"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: null, limit_kind: absent, source: "knoc#row71"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row72"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "knoc#row74"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row76"}
+      - rule_id: "SERVC_INST_KNOC_20190930_ICT_TARGET"
+        service_type: "정보통신용역(중소기업자간 경쟁대상)"
+        attachment: "별표 8"
+        source: "knoc#rows90-97"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 9, limit_kind: score, source: "knoc#row90"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "knoc#row91"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 1, limit_kind: score, source: "knoc#row92"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row93"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "knoc#row95"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row97"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "knoc#row90"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "knoc#row91"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: null, limit_kind: absent, source: "knoc#row92"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row93"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "knoc#row95"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row97"}
+      - rule_id: "SERVC_INST_KNOC_20190930_WASTE"
+        service_type: "폐기물처리용역"
+        attachment: "별표 9"
+        source: "knoc#rows111-119"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "knoc#row111"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "knoc#row112"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "knoc#row113"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "knoc#row114"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row115"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "knoc#row117"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row119"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "knoc#row111"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "knoc#row112"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "knoc#row113"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "knoc#row114"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row115"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "knoc#row117"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row119"}
+      - rule_id: "SERVC_INST_KNOC_20190930_TRANSPORT"
+        service_type: "운송용역(중소기업자간 경쟁 비대상)"
+        attachment: "별표 10"
+        source: "knoc#rows135-142"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "knoc#row135"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "knoc#row136"}
+              - {name: "3. 기술능력(장비 보유상황)", limit: 10, limit_kind: score, source: "knoc#row137"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row138"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "knoc#row140"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row142"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "knoc#row135"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "knoc#row136"}
+              - {name: "3. 기술능력(장비 보유상황)", limit: 10, limit_kind: score, source: "knoc#row137"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row138"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "knoc#row140"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row142"}
+      - rule_id: "SERVC_INST_KNOC_20190930_TRANSPORT_TARGET"
+        service_type: "운송용역(중소기업자간 경쟁대상)"
+        attachment: "별표 10의2"
+        source: "knoc#rows157-164"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "knoc#row157"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "knoc#row158"}
+              - {name: "3. 기술능력(장비 보유상황)", limit: 10, limit_kind: score, source: "knoc#row159"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row160"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "knoc#row162"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row164"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "knoc#row157"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "knoc#row158"}
+              - {name: "3. 기술능력(장비 보유상황)", limit: 10, limit_kind: score, source: "knoc#row159"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "knoc#row160"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "knoc#row162"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row164"}
+      - rule_id: "SERVC_INST_KNOC_20190930_OTHER"
+        service_type: "기타용역"
+        attachment: "별표 11"
+        source: "knoc#rows172-178"
+        bands:
+          - band_key: "over_200m"
+            band_label: "추정가격 2억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 30, limit_kind: score, source: "knoc#row172"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "knoc#row173"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "knoc#row174"}
+              - {name: "입찰가격", limit: 40, limit_kind: score, source: "knoc#row176"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row178"}
+          - band_key: "under_200m"
+            band_label: "추정가격 2억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "knoc#row172"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "knoc#row173"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "knoc#row174"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "knoc#row176"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "knoc#row178"}
+
+  - institution_name: "인천국제공항공사"
+    standard: "일반용역 적격심사 세부기준 (재무처-17529호, 2024-12-23, 시행 2025-01-01)"
+    quant_table_status: confirmed
+    note: >
+      별표 1~9 확보. 별표 2·3(아웃소싱)·별표 8(임대차)은 단일 구간이다. 별표 2·3 은 일반
+      별표와 달리 이행실적·매출액·경영상태·근로조건·사업관리능력을 항목으로 두고 입찰가격을
+      30/55 로 인쇄한다. 별표 5(여객)만 원문이 추정가격 5억원 이상/미만 두 열에 하나의
+      계산식을 인쇄한다.
+    rules:
+      - rule_id: "SERVC_INST_IIAC_20250101_ACADEMIC"
+        service_type: "학술연구용역"
+        attachment: "별표 1"
+        source: "iiac#rows2-11"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 고시금액 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 30, limit_kind: score, source: "iiac#row2"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiac#row3"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row4"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiac#row6"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row7"}
+          - band_key: "under_500m"
+            band_label: "추정가격 고시금액 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiac#row2"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiac#row3"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row4"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiac#row6"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row7"}
+      - rule_id: "SERVC_INST_IIAC_20250101_OUTSOURCING_TECH"
+        service_type: "기술분야 아웃소싱용역"
+        attachment: "별표 2"
+        source: "iiac#rows22-34"
+        bands:
+          - band_key: "single"
+            band_label: "단일 구간"
+            total_limit: 100
+            items:
+              - {name: "1. 사업경험 가. 이행실적", limit: 28, limit_kind: score, source: "iiac#row23"}
+              - {name: "1. 사업경험 나. 매출액", limit: 3.5, limit_kind: score, source: "iiac#row24"}
+              - {name: "2. 경영상태", limit: 28, limit_kind: score, source: "iiac#row25"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row26"}
+              - {name: "근로조건 이행계획의 적정성", limit: 3.5, limit_kind: score, source: "iiac#row28"}
+              - {name: "사업관리능력", limit: 7, limit_kind: score, source: "iiac#row29"}
+              - {name: "입찰가격", limit: 30, limit_kind: score, source: "iiac#row31"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row32"}
+        details:
+          - group: "별표 2 · 등급별 점수"
+            source: "iiac#rows39-52"
+            grades:
+              - {item: "가. 이행실적(동등이상)", grades: ["A 100% 이상 28", "B 70~100% 24.5", "C 40~70% 21", "D 10~40% 17.5", "E 10% 미만 0"]}
+              - {item: "나. 이행실적(유사)", grades: ["A 14", "B 12.25", "C 10.5", "D 8.75", "E 0"]}
+              - {item: "다. 매출액(평균매출액/추정가격)", grades: ["A 300% 이상 3.5", "B 200~300% 2.8", "C 100~200% 2.1", "D 100% 미만 1.4"]}
+              - {item: "라. 근로조건 이행확약서", grades: ["제출 3.5", "미제출 0"]}
+              - {item: "마. 사업관리능력", grades: ["사업수행조직·사업관리계획·본사 지원계획 합계 10"]}
+      - rule_id: "SERVC_INST_IIAC_20250101_OUTSOURCING_GENERAL"
+        service_type: "일반분야 아웃소싱용역"
+        attachment: "별표 3"
+        source: "iiac#rows53-62"
+        bands:
+          - band_key: "single"
+            band_label: "단일 구간"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiac#row53"}
+              - {name: "2. 경영상태", limit: 25, limit_kind: score, source: "iiac#row54"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row55"}
+              - {name: "근로조건 이행계획의 적정성", limit: 3, limit_kind: score, source: "iiac#row57"}
+              - {name: "사업관리능력", limit: 7, limit_kind: score, source: "iiac#row58"}
+              - {name: "입찰가격", limit: 55, limit_kind: score, source: "iiac#row60"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row61"}
+      - rule_id: "SERVC_INST_IIAC_20250101_WASTE"
+        service_type: "폐기물처리용역"
+        attachment: "별표 4"
+        source: "iiac#rows81-89"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 고시금액 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiac#row81"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "iiac#row82"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "iiac#row83"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "iiac#row84"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiac#row85"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiac#row87"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row89"}
+          - band_key: "under_500m"
+            band_label: "추정가격 고시금액 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiac#row81"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "iiac#row82"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "iiac#row83"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "iiac#row84"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiac#row85"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiac#row87"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row89"}
+      - rule_id: "SERVC_INST_IIAC_20250101_PASSENGER"
+        service_type: "여객 육상운송용역"
+        attachment: "별표 5"
+        source: "iiac#rows109-119"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiac#row109"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "iiac#row110"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "iiac#row111"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiac#row112"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiac#row114"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiac#row109"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "iiac#row110"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "iiac#row111"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiac#row112"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiac#row114"}
+      - rule_id: "SERVC_INST_IIAC_20250101_FREIGHT"
+        service_type: "화물 육상운송용역"
+        attachment: "별표 5의2"
+        source: "iiac#rows128-137"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 고시금액 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiac#row128"}
+              - {name: "2. 경영상태", limit: 20, limit_kind: score, source: "iiac#row129"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row130"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiac#row132"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row134"}
+          - band_key: "under_500m"
+            band_label: "추정가격 고시금액 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiac#row128"}
+              - {name: "2. 경영상태", limit: 20, limit_kind: score, source: "iiac#row129"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row130"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiac#row132"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row134"}
+      - rule_id: "SERVC_INST_IIAC_20250101_INSURANCE"
+        service_type: "보험용역"
+        attachment: "별표 6"
+        source: "iiac#rows149-164"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 고시금액 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 보험금 지급능력(지급여력비율)", limit: 40, limit_kind: score, source: "iiac#row149"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "iiac#row150"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiac#row152"}
+          - band_key: "under_500m"
+            band_label: "추정가격 고시금액 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 보험금 지급능력(지급여력비율)", limit: 30, limit_kind: score, source: "iiac#row149"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "iiac#row150"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiac#row152"}
+        details:
+          - group: "별표 6 · 지급여력비율 등급별 점수"
+            source: "iiac#rows163-164"
+            grades:
+              - {item: "지급여력비율", grades: ["A 150% 이상 40/30", "B 100% 이상 150% 미만 38/30"]}
+            note: "원문에 최저평점 문구가 없다."
+      - rule_id: "SERVC_INST_IIAC_20250101_REPAIR"
+        service_type: "수리·점검용역"
+        attachment: "별표 7"
+        source: "iiac#rows165-175"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 고시금액 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiac#row165"}
+              - {name: "2. 경영상태", limit: 10, limit_kind: score, source: "iiac#row166"}
+              - {name: "3. 기술능력(기술신용평가등급)", limit: 10, limit_kind: score, source: "iiac#row167"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiac#row168"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiac#row170"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row172"}
+          - band_key: "under_500m"
+            band_label: "추정가격 고시금액 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiac#row165"}
+              - {name: "2. 경영상태", limit: 20, limit_kind: score, source: "iiac#row166"}
+              - {name: "3. 기술능력(기술신용평가등급)", limit: 0, limit_kind: score, source: "iiac#row167"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiac#row168"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiac#row170"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row172"}
+      - rule_id: "SERVC_INST_IIAC_20250101_LEASE"
+        service_type: "임대차용역"
+        attachment: "별표 8"
+        source: "iiac#rows188-198"
+        bands:
+          - band_key: "single"
+            band_label: "단일 구간"
+            total_limit: 100
+            items:
+              - {name: "1. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiac#row189"}
+              - {name: "2. 사후관리(A/S)", limit: 10, limit_kind: score, source: "iiac#row190"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row191"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiac#row193"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row195"}
+      - rule_id: "SERVC_INST_IIAC_20250101_OTHER"
+        service_type: "기타용역"
+        attachment: "별표 9"
+        source: "iiac#rows205-214"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 고시금액 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiac#row205"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "iiac#row206"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row207"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiac#row209"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row210"}
+          - band_key: "under_500m"
+            band_label: "추정가격 고시금액 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "iiac#row205"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 30, limit_kind: score, source: "iiac#row206"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiac#row207"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiac#row209"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiac#row210"}
+
+  - institution_name: "인천공항시설관리"
+    standard: "일반용역 적격심사 세부기준 (경영기획그룹-15248호, 2025-08-27, 시행 2025-09-01)"
+    quant_table_status: confirmed
+    note: >
+      인천공항시설관리(주)는 인천국제공항공사와 별개 법인이다. 별표 1~9 확보. 별표 2(시설분야)는
+      근로조건 이행계획의 적정성 10 을 포함하고, 별표 6(보험)은 지급여력비율 A 기준 150% 이상,
+      별표 8(임대차)은 단일 구간이다.
+    rules:
+      - rule_id: "SERVC_INST_IIAFM_20250901_ACADEMIC"
+        service_type: "학술연구용역"
+        attachment: "별표 1"
+        source: "iiafm#rows2-12"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row2"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row3"}
+              - {name: "3. 기술능력(기술인력 보유)", limit: 10, limit_kind: score, source: "iiafm#row4"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row5"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row7"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row9"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiafm#row2"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row3"}
+              - {name: "3. 기술능력(기술인력 보유)", limit: null, limit_kind: absent, source: "iiafm#row4"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row5"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row7"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row9"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_FACILITY"
+        service_type: "시설분야용역"
+        attachment: "별표 2"
+        source: "iiafm#rows23-34"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row24"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row25"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row26"}
+              - {name: "근로조건 이행계획의 적정성", limit: 10, limit_kind: score, source: "iiafm#row28"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row29"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row31"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "iiafm#row24"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row25"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row26"}
+              - {name: "근로조건 이행계획의 적정성", limit: 10, limit_kind: score, source: "iiafm#row28"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row29"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row31"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_SW"
+        service_type: "소프트웨어용역(중소기업자간 경쟁제품 비대상)"
+        attachment: "별표 3"
+        source: "iiafm#rows43-53"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row43"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row44"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "iiafm#row45"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row46"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row48"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row50"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "iiafm#row43"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row44"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "iiafm#row45"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row46"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row48"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row50"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_SW_TARGET"
+        service_type: "소프트웨어용역(중소기업자간 경쟁제품 대상)"
+        attachment: "별표 3의2"
+        source: "iiafm#rows72-82"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row72"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row73"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "iiafm#row74"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row75"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row77"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row79"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: null, limit_kind: absent, source: "iiafm#row72"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row73"}
+              - {name: "3. 기술능력(기술인력 보유 상황)", limit: 10, limit_kind: score, source: "iiafm#row74"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row75"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row77"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row79"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_WASTE"
+        service_type: "폐기물처리용역"
+        attachment: "별표 4"
+        source: "iiafm#rows98-109"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row98"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row99"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "iiafm#row100"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "iiafm#row101"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row102"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row104"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row106"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiafm#row98"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row99"}
+              - {name: "3. 기술능력 가. 기술인력 보유상황", limit: 9, limit_kind: score, source: "iiafm#row100"}
+              - {name: "3. 기술능력 나. 기술 보유상황", limit: 1, limit_kind: score, source: "iiafm#row101"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row102"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row104"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row106"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_PASSENGER"
+        service_type: "여객 육상운송용역"
+        attachment: "별표 5"
+        source: "iiafm#rows122-132"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row122"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row123"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "iiafm#row124"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row125"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row127"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row129"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiafm#row122"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row123"}
+              - {name: "3. 기술능력(안전성 정도)", limit: 10, limit_kind: score, source: "iiafm#row124"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row125"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row127"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row129"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_FREIGHT"
+        service_type: "화물 육상운송용역"
+        attachment: "별표 5의2"
+        source: "iiafm#rows141-150"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row141"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row142"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row143"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row145"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row147"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiafm#row141"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row142"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row143"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row145"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row147"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_INSURANCE"
+        service_type: "보험용역"
+        attachment: "별표 6"
+        source: "iiafm#rows158-170"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 보험금 지급능력(지급여력비율)", limit: 40, limit_kind: score, source: "iiafm#row158"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row159"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row161"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row163"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 보험금 지급능력(지급여력비율)", limit: 30, limit_kind: score, source: "iiafm#row158"}
+              - {name: "2. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row159"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row161"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row163"}
+        details:
+          - group: "별표 6 · 지급여력비율 등급별 점수"
+            source: "iiafm#rows169-170"
+            grades:
+              - {item: "지급여력비율", grades: ["A 150% 이상 40/30", "B 100% 이상 150% 미만 38/30"]}
+      - rule_id: "SERVC_INST_IIAFM_20250901_REPAIR"
+        service_type: "수리·점검용역"
+        attachment: "별표 7"
+        source: "iiafm#rows171-181"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row171"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row172"}
+              - {name: "3. 기술능력(기술신용평가등급)", limit: 10, limit_kind: score, source: "iiafm#row173"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row174"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row176"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row178"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiafm#row171"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row172"}
+              - {name: "3. 기술능력(기술신용평가등급)", limit: null, limit_kind: absent, source: "iiafm#row173"}
+              - {name: "4. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row174"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row176"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row178"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_LEASE"
+        service_type: "임대차"
+        attachment: "별표 8"
+        source: "iiafm#rows195-204"
+        bands:
+          - band_key: "single"
+            band_label: "단일 구간"
+            total_limit: 100
+            items:
+              - {name: "1. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row195"}
+              - {name: "2. 사후관리(A/S)", limit: 10, limit_kind: score, source: "iiafm#row196"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row197"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row199"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row201"}
+      - rule_id: "SERVC_INST_IIAFM_20250901_OTHER"
+        service_type: "기타용역"
+        attachment: "별표 9"
+        source: "iiafm#rows211-220"
+        bands:
+          - band_key: "over_500m"
+            band_label: "추정가격 5억원 이상"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 20, limit_kind: score, source: "iiafm#row211"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row212"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row213"}
+              - {name: "입찰가격", limit: 60, limit_kind: score, source: "iiafm#row215"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row217"}
+          - band_key: "under_500m"
+            band_label: "추정가격 5억원 미만"
+            total_limit: 100
+            items:
+              - {name: "1. 이행실적", limit: 10, limit_kind: score, source: "iiafm#row211"}
+              - {name: "2. 경영상태(신용평가등급)", limit: 20, limit_kind: score, source: "iiafm#row212"}
+              - {name: "3. 신인도", limit: null, limit_kind: reputation, source: "iiafm#row213"}
+              - {name: "입찰가격", limit: 70, limit_kind: score, source: "iiafm#row215"}
+              - {name: "결격사유", limit: -20, limit_kind: penalty, source: "iiafm#row217"}
