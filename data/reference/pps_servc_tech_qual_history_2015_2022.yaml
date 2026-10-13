@@ -1,0 +1,558 @@
+schema: PPS_SERVC_TECH_QUAL_HISTORY_V1
+version: 1.0.0
+created_at: '2026-10-13'
+source_task: task_450b1a628008
+scope: PPS_SERVC_TECH_QUAL_HISTORY
+title: 조달청 기술용역 적격심사 세부기준 입찰가격 평점 별표 개정판 명세 (2015~2022 시행)
+conventions:
+  score_formula: P = B - k * |base_ratio/100 - bid_price/estimated_price| * 100
+  lwlt_formula: base_ratio - (100 - pass_score) / k
+  lwlt_notation: '계산값을 소수 둘째 자리까지 버린 뒤 0.005 를 뺀 .995 표기 관행. 예: 80.000 -> 79.995, 85.500 -> 85.495, 86.750 -> 86.745'
+  lwlt_basis: 낙찰하한율은 고시 조문·별표에 인쇄되어 있지 않다. 이 명세의 lwlt_rate 는 위 lwlt_formula 로 역산한 파생값이다.
+  lower_inclusive: true
+  upper_exclusive: true
+  boundary_token: 고시금액(용역)은 국가계약법 시행령에 따른 연도별 고시금액이다. 추정가격 구간 경계는 문자열 '고시금액' 으로 적는다.
+  money_unit: KRW
+  band_axes: 기술용역 별표1 은 배점한도 B 와 평점계수 k 가 같은 추정가격 구간(10억원 이상 / 10억원 미만 5억원 이상 / 5억원 미만 고시금액 이상 / 고시금액 미만)을 쓴다. 다만 통과점수는 본문에서 별표와 다른 축(2015~2017 시행판은 30억원, 2018 시행판부터는 10억원)으로 갈린다. bands 의 price_lower/price_upper 는 두 축의 교차 구간이며, source_band/source_label 이 별표 원문 구간을 가리킨다.
+  flat_ratio: 별표 예외사항이 '입찰가격이 예정가격 이하로서 예정가격의 N% 이상인 경우의 평점은 M점' 으로 인쇄한 평탄값이다. 2019 시행판까지는 30억원 미만 10억원 이상 구간에만 인쇄되어 30억원 이상 구간의 flat_ratio 는 null 이다.
+source:
+  archive: 국가법령정보센터 행정규칙 연혁
+  archive_url: https://www.law.go.kr/admRulLsInfoP.do?admRulId=33229&efYd=0
+  admin_rule_id: '33229'
+  retrieved_at: '2026-10-13'
+  read_method: scripts/extract_score_params.py 의 HWP 5.x(OLE) 판독기를 재사용해 BodyText/Section0 레코드에서 표·수식 개체를 읽었다. 원문 파일은 .cache/pps_tech_history/ 에만 두고 커밋하지 않는다.
+revisions:
+- notice_no: 조달청지침 제5290호
+  notice_key: 2015-5290
+  admrul_seq: '2100000074649'
+  promulgated: '2015-11-13'
+  effective_from: '2015-11-19'
+  effective_to: '2017-10-31'
+  change_type: 일부개정
+  pass_score_evidence: 종합평점이 용역규모별 적격통과점수(추정가격이 30억원이상인 용역은 85점, 추정가격이 30억원미만 10억원이상인 용역은 90점, 10억원미만인 용역은 95점)이상인 최저가 입찰자를 낙찰자로 결정한다. ② 제1항에 따라 낙찰자를 결
+  attachments:
+  - attachment: 별표
+    title: 적격심사항목 및 배점한도
+    fl_seq: '28631246'
+    evidence:
+      band_labels:
+      - 추정가격 10억원 이상
+      - 추정가격 10억원 미만 5억원 이상
+      - 추정가격 5억원 미만 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '30'
+      - '50'
+      - '70'
+      - '90'
+      formula:
+      - '* 평점=30-｜( - )×100｜'
+      - '*평점=50-2×｜( - )×100｜'
+      - '*평점=70-4×｜( - )×100｜'
+      - 평점=90-20×｜( - )×100｜
+      exceptions:
+      - '* 추정가격이 30억원미만 10억원이상인 용역에서 입찰가격이 예정가격이하로서 100분의 98이상인 경우의 평점은 20점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 90.5이상인 경우의 평점은 45점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 89.25이상인 경우의 평점은 65점으로 한다.'
+      - 입찰가격이 예정가격이하로서 예정가격의 100분의 88.25이상인 경우의 평점은 85점으로 한다.
+    bands:
+    - price_lower: 1000000000
+      price_upper: 3000000000
+      B: 30
+      source_band: 1
+      source_label: 추정가격 10억원 이상
+      score_tiers:
+      - k: 1.0
+        base_ratio: 88.0
+        flat_ratio: 98.0
+        pass_score: 90
+        lwlt_rate: 77.995
+        evidence: '* 평점=30-｜( - )×100｜'
+    - price_lower: 3000000000
+      price_upper: null
+      B: 30
+      source_band: 1
+      source_label: 추정가격 10억원 이상
+      score_tiers:
+      - k: 1.0
+        base_ratio: 88.0
+        flat_ratio: null
+        pass_score: 85
+        lwlt_rate: 72.995
+        evidence: '* 평점=30-｜( - )×100｜'
+        flat_ratio_note: 원문 평탄 문구는 '30억원 미만 10억원 이상' 구간에만 있다
+    - price_lower: 500000000
+      price_upper: 1000000000
+      B: 50
+      source_band: 2
+      source_label: 추정가격 10억원 미만 5억원 이상
+      score_tiers:
+      - k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 90.5
+        pass_score: 95
+        lwlt_rate: 85.495
+        evidence: '*평점=50-2×｜( - )×100｜'
+    - price_lower: 고시금액
+      price_upper: 500000000
+      B: 70
+      source_band: 3
+      source_label: 추정가격 5억원 미만 고시금액 이상
+      score_tiers:
+      - k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 89.25
+        pass_score: 95
+        lwlt_rate: 86.745
+        evidence: '*평점=70-4×｜( - )×100｜'
+    - price_lower: null
+      price_upper: 고시금액
+      B: 90
+      source_band: 4
+      source_label: 추정가격 고시금액 미만
+      score_tiers:
+      - k: 20.0
+        base_ratio: 88.0
+        flat_ratio: 88.25
+        pass_score: 95
+        lwlt_rate: 87.745
+        evidence: 평점=90-20×｜( - )×100｜
+- notice_no: 조달청지침 제5460호
+  notice_key: 2017-5460
+  admrul_seq: '2100000099611'
+  promulgated: '2017-09-29'
+  effective_from: '2017-11-01'
+  effective_to: '2018-03-31'
+  change_type: 일부개정
+  pass_score_evidence: 종합평점이 용역규모별 적격통과점수(추정가격이 30억원 이상인 용역은 85점, 추정가격이 30억원 미만 10억원 이상인 용역은 90점, 추정가격이 10억원 미만인 용역은 95점) 이상인 최저가 입찰자를 낙찰자로 결정한다. ② 제1항에 따라 낙찰자를
+  attachments:
+  - attachment: 별표 1
+    title: 적격심사항목 및 배점한도
+    fl_seq: '31775124'
+    evidence:
+      band_labels:
+      - 추정가격 10억원 이상
+      - 추정가격 10억원 미만 5억원 이상
+      - 추정가격 5억원 미만 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '30'
+      - '50'
+      - '70'
+      - '90'
+      formula:
+      - '* 평점=30-｜( - )×100｜'
+      - '*평점=50-2×｜( - )×100｜'
+      - '*평점=70-4×｜( - )×100｜'
+      - '*평점=90-20×｜( - )×100｜'
+      exceptions:
+      - '* 추정가격이 30억원 미만 10억원 이상인 용역에서 입찰가격이 예정가격이하로서 100분의 98이상인 경우의 평점은 20점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 90.5이상인 경우의 평점은 45점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 89.25이상인 경우의 평점은 65점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 예정가격의 100분의 88.25이상인 경우의 평점은 85점으로 한다.'
+    bands:
+    - price_lower: 1000000000
+      price_upper: 3000000000
+      B: 30
+      source_band: 1
+      source_label: 추정가격 10억원 이상
+      score_tiers:
+      - k: 1.0
+        base_ratio: 88.0
+        flat_ratio: 98.0
+        pass_score: 90
+        lwlt_rate: 77.995
+        evidence: '* 평점=30-｜( - )×100｜'
+    - price_lower: 3000000000
+      price_upper: null
+      B: 30
+      source_band: 1
+      source_label: 추정가격 10억원 이상
+      score_tiers:
+      - k: 1.0
+        base_ratio: 88.0
+        flat_ratio: null
+        pass_score: 85
+        lwlt_rate: 72.995
+        evidence: '* 평점=30-｜( - )×100｜'
+        flat_ratio_note: 원문 평탄 문구는 '30억원 미만 10억원 이상' 구간에만 있다
+    - price_lower: 500000000
+      price_upper: 1000000000
+      B: 50
+      source_band: 2
+      source_label: 추정가격 10억원 미만 5억원 이상
+      score_tiers:
+      - k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 90.5
+        pass_score: 95
+        lwlt_rate: 85.495
+        evidence: '*평점=50-2×｜( - )×100｜'
+    - price_lower: 고시금액
+      price_upper: 500000000
+      B: 70
+      source_band: 3
+      source_label: 추정가격 5억원 미만 고시금액 이상
+      score_tiers:
+      - k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 89.25
+        pass_score: 95
+        lwlt_rate: 86.745
+        evidence: '*평점=70-4×｜( - )×100｜'
+    - price_lower: null
+      price_upper: 고시금액
+      B: 90
+      source_band: 4
+      source_label: 추정가격 고시금액 미만
+      score_tiers:
+      - k: 20.0
+        base_ratio: 88.0
+        flat_ratio: 88.25
+        pass_score: 95
+        lwlt_rate: 87.745
+        evidence: '*평점=90-20×｜( - )×100｜'
+- notice_no: 조달청지침 제1824호
+  notice_key: 2018-1824
+  admrul_seq: '2100000119129'
+  promulgated: '2018-03-30'
+  effective_from: '2018-04-01'
+  effective_to: '2019-03-31'
+  change_type: 일부개정
+  pass_score_evidence: 종합평점이 용역규모별 적격통과점수(추정가격이 10억원 이상인 용역은 92점, 추정가격이 10억원 미만인 용역은 95점) 이상인 최저가 입찰자를 낙찰자로 결정한다. ② 제1항에 따라 낙찰자를
+  attachments:
+  - attachment: 별표 1
+    title: 적격심사항목 및 배점한도
+    fl_seq: '33994488'
+    evidence:
+      band_labels:
+      - 추정가격 10억원 이상
+      - 추정가격 10억원 미만 5억원 이상
+      - 추정가격 5억원 미만 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '30'
+      - '50'
+      - '70'
+      - '90'
+      formula:
+      - '* 평점=30-｜( - )×100｜'
+      - '*평점=50-2×｜( - )×100｜'
+      - '*평점=70-4×｜( - )×100｜'
+      - '*평점=90-20×｜( - )×100｜'
+      exceptions:
+      - '* 추정가격이 30억원 미만 10억원 이상인 용역에서 입찰가격이 예정가격이하로서 100분의 98이상인 경우의 평점은 20점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 90.5이상인 경우의 평점은 45점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 89.25이상인 경우의 평점은 65점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 예정가격의 100분의 88.25이상인 경우의 평점은 85점으로 한다.'
+    bands:
+    - price_lower: 1000000000
+      price_upper: null
+      B: 30
+      source_band: 1
+      source_label: 추정가격 10억원 이상
+      score_tiers:
+      - k: 1.0
+        base_ratio: 88.0
+        flat_ratio: 98.0
+        pass_score: 92
+        lwlt_rate: 79.995
+        evidence: '* 평점=30-｜( - )×100｜'
+    - price_lower: 500000000
+      price_upper: 1000000000
+      B: 50
+      source_band: 2
+      source_label: 추정가격 10억원 미만 5억원 이상
+      score_tiers:
+      - k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 90.5
+        pass_score: 95
+        lwlt_rate: 85.495
+        evidence: '*평점=50-2×｜( - )×100｜'
+    - price_lower: 고시금액
+      price_upper: 500000000
+      B: 70
+      source_band: 3
+      source_label: 추정가격 5억원 미만 고시금액 이상
+      score_tiers:
+      - k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 89.25
+        pass_score: 95
+        lwlt_rate: 86.745
+        evidence: '*평점=70-4×｜( - )×100｜'
+    - price_lower: null
+      price_upper: 고시금액
+      B: 90
+      source_band: 4
+      source_label: 추정가격 고시금액 미만
+      score_tiers:
+      - k: 20.0
+        base_ratio: 88.0
+        flat_ratio: 88.25
+        pass_score: 95
+        lwlt_rate: 87.745
+        evidence: '*평점=90-20×｜( - )×100｜'
+- notice_no: 조달청지침 제919호
+  notice_key: 2019-919
+  admrul_seq: '2100000176472'
+  promulgated: '2019-02-21'
+  effective_from: '2019-04-01'
+  effective_to: '2020-10-14'
+  change_type: 일부개정
+  pass_score_evidence: 종합평점이 용역규모별 적격통과점수(추정가격이 10억원 이상인 용역은 92점, 추정가격이 10억원 미만인 용역은 95점) 이상인 최저가 입찰자를 낙찰자로 결정한다. ② 제1항에 따라 낙찰자를
+  attachments:
+  - attachment: 별표 1
+    title: 적격심사항목 및 배점한도
+    fl_seq: '40912281'
+    evidence:
+      band_labels:
+      - 추정가격 10억원 이상
+      - 추정가격 10억원 미만 5억원 이상
+      - 추정가격 5억원 미만 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '30'
+      - '50'
+      - '70'
+      - '90'
+      formula:
+      - '* 평점=30-｜( - )×100｜'
+      - '*평점=50-2×｜( - )×100｜'
+      - '*평점=70-4×｜( - )×100｜'
+      - '*평점=90-20×｜( - )×100｜'
+      exceptions:
+      - '* 추정가격이 30억원 미만 10억원 이상인 용역에서 입찰가격이 예정가격이하로서 100분의 98이상인 경우의 평점은 20점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 90.5이상인 경우의 평점은 45점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 89.25이상인 경우의 평점은 65점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 예정가격의 100분의 88.25이상인 경우의 평점은 85점으로 한다.'
+    bands:
+    - price_lower: 1000000000
+      price_upper: null
+      B: 30
+      source_band: 1
+      source_label: 추정가격 10억원 이상
+      score_tiers:
+      - k: 1.0
+        base_ratio: 88.0
+        flat_ratio: 98.0
+        pass_score: 92
+        lwlt_rate: 79.995
+        evidence: '* 평점=30-｜( - )×100｜'
+    - price_lower: 500000000
+      price_upper: 1000000000
+      B: 50
+      source_band: 2
+      source_label: 추정가격 10억원 미만 5억원 이상
+      score_tiers:
+      - k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 90.5
+        pass_score: 95
+        lwlt_rate: 85.495
+        evidence: '*평점=50-2×｜( - )×100｜'
+    - price_lower: 고시금액
+      price_upper: 500000000
+      B: 70
+      source_band: 3
+      source_label: 추정가격 5억원 미만 고시금액 이상
+      score_tiers:
+      - k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 89.25
+        pass_score: 95
+        lwlt_rate: 86.745
+        evidence: '*평점=70-4×｜( - )×100｜'
+    - price_lower: null
+      price_upper: 고시금액
+      B: 90
+      source_band: 4
+      source_label: 추정가격 고시금액 미만
+      score_tiers:
+      - k: 20.0
+        base_ratio: 88.0
+        flat_ratio: 88.25
+        pass_score: 95
+        lwlt_rate: 87.745
+        evidence: '*평점=90-20×｜( - )×100｜'
+- notice_no: 조달청지침 제7701호
+  notice_key: 2020-7701
+  admrul_seq: '2100000193418'
+  promulgated: '2020-09-29'
+  effective_from: '2020-10-15'
+  effective_to: '2022-10-31'
+  change_type: 일부개정
+  pass_score_evidence: 종합평점이 용역규모별 적격통과점수(추정가격이 10억원 이상인 용역은 92점, 추정가격이 10억원 미만인 용역은 95점) 이상인 최저가 입찰자를 낙찰자로 결정한다. ② 제1항에 따라 낙찰자를
+  attachments:
+  - attachment: 별표 1
+    title: 적격심사항목 및 배점한도
+    fl_seq: '78801343'
+    evidence:
+      band_labels:
+      - 추정가격 10억원 이상
+      - 추정가격 10억원 미만 5억원 이상
+      - 추정가격 5억원 미만 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '30'
+      - '50'
+      - '70'
+      - '90'
+      formula:
+      - '* 평점=30-｜( - )×100｜'
+      - '*평점=50-2×｜( - )×100｜'
+      - '*평점=70-4×｜( - )×100｜'
+      - '*평점=90-20×｜( - )×100｜'
+      exceptions:
+      - '* 추정가격이 10억원 이상인 용역에서 입찰가격이 예정가격이하로서 100분의 96이상인 경우의 평점은 22점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 90.5이상인 경우의 평점은 45점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 89.25이상인 경우의 평점은 65점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 예정가격의 100분의 88.25이상인 경우의 평점은 85점으로 한다.'
+    bands:
+    - price_lower: 1000000000
+      price_upper: null
+      B: 30
+      source_band: 1
+      source_label: 추정가격 10억원 이상
+      score_tiers:
+      - k: 1.0
+        base_ratio: 88.0
+        flat_ratio: 96.0
+        pass_score: 92
+        lwlt_rate: 79.995
+        evidence: '* 평점=30-｜( - )×100｜'
+    - price_lower: 500000000
+      price_upper: 1000000000
+      B: 50
+      source_band: 2
+      source_label: 추정가격 10억원 미만 5억원 이상
+      score_tiers:
+      - k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 90.5
+        pass_score: 95
+        lwlt_rate: 85.495
+        evidence: '*평점=50-2×｜( - )×100｜'
+    - price_lower: 고시금액
+      price_upper: 500000000
+      B: 70
+      source_band: 3
+      source_label: 추정가격 5억원 미만 고시금액 이상
+      score_tiers:
+      - k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 89.25
+        pass_score: 95
+        lwlt_rate: 86.745
+        evidence: '*평점=70-4×｜( - )×100｜'
+    - price_lower: null
+      price_upper: 고시금액
+      B: 90
+      source_band: 4
+      source_label: 추정가격 고시금액 미만
+      score_tiers:
+      - k: 20.0
+        base_ratio: 88.0
+        flat_ratio: 88.25
+        pass_score: 95
+        lwlt_rate: 87.745
+        evidence: '*평점=90-20×｜( - )×100｜'
+- notice_no: 조달청지침 제8983호
+  notice_key: 2022-8983
+  admrul_seq: '2100000215145'
+  promulgated: '2022-10-14'
+  effective_from: '2022-11-01'
+  effective_to: '2025-08-31'
+  change_type: 일부개정
+  pass_score_evidence: 종합평점이 용역규모별 적격통과점수(추정가격이 10억원 이상인 용역은 92점, 추정가격이 10억원 미만인 용역은 95점) 이상인 최저가 입찰자를 낙찰자로 결정한다. ② 제1항에 따라 낙찰자를
+  attachments:
+  - attachment: 별표 1
+    title: 적격심사항목 및 배점한도
+    fl_seq: '120221479'
+    evidence:
+      band_labels:
+      - 추정가격 10억원 이상
+      - 추정가격 10억원 미만 5억원 이상
+      - 추정가격 5억원 미만 고시금액 이상
+      - 추정가격 고시금액 미만
+      B_row:
+      - '30'
+      - '50'
+      - '70'
+      - '90'
+      formula:
+      - '* 평점=30-｜( - )×100｜'
+      - '*평점=50-2×｜( - )×100｜'
+      - '*평점=70-4×｜( - )×100｜'
+      - '*평점=90-20×｜( - )×100｜'
+      exceptions:
+      - '* 추정가격이 10억원 이상인 용역에서 입찰가격이 예정가격이하로서 100분의 96이상인 경우의 평점은 22점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 90.5이상인 경우의 평점은 45점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 100분의 89.25이상인 경우의 평점은 65점으로 한다.'
+      - '* 입찰가격이 예정가격이하로서 예정가격의 100분의 88.25이상인 경우의 평점은 85점으로 한다.'
+    bands:
+    - price_lower: 1000000000
+      price_upper: null
+      B: 30
+      source_band: 1
+      source_label: 추정가격 10억원 이상
+      score_tiers:
+      - k: 1.0
+        base_ratio: 88.0
+        flat_ratio: 96.0
+        pass_score: 92
+        lwlt_rate: 79.995
+        evidence: '* 평점=30-｜( - )×100｜'
+    - price_lower: 500000000
+      price_upper: 1000000000
+      B: 50
+      source_band: 2
+      source_label: 추정가격 10억원 미만 5억원 이상
+      score_tiers:
+      - k: 2.0
+        base_ratio: 88.0
+        flat_ratio: 90.5
+        pass_score: 95
+        lwlt_rate: 85.495
+        evidence: '*평점=50-2×｜( - )×100｜'
+    - price_lower: 고시금액
+      price_upper: 500000000
+      B: 70
+      source_band: 3
+      source_label: 추정가격 5억원 미만 고시금액 이상
+      score_tiers:
+      - k: 4.0
+        base_ratio: 88.0
+        flat_ratio: 89.25
+        pass_score: 95
+        lwlt_rate: 86.745
+        evidence: '*평점=70-4×｜( - )×100｜'
+    - price_lower: null
+      price_upper: 고시금액
+      B: 90
+      source_band: 4
+      source_label: 추정가격 고시금액 미만
+      score_tiers:
+      - k: 20.0
+        base_ratio: 88.0
+        flat_ratio: 88.25
+        pass_score: 95
+        lwlt_rate: 87.745
+        evidence: '*평점=90-20×｜( - )×100｜'
+gaps:
+- revision: 2015-11-19 직전
+  item: 조달청지침 제7037호 (시행 2014-08-08)
+  reason: 2015-01-01~2015-11-18 구간을 담당하나 시행일이 2014년이라 이 명세(2015~2022 시행) 범위 밖이다. 연혁 목록상 이 판이 직전 판이다.
+- revision: 2015-11-19, 2017-11-01, 2018-04-01, 2019-04-01
+  item: 구간1(추정가격 10억원 이상) 30억원 이상 하위 구간의 평탄 비율
+  reason: 원문 평탄 문구가 '추정가격이 30억원 미만 10억원 이상인 용역' 으로만 인쇄되어 30억원 이상 구간에는 평탄 문구가 없다. flat_ratio 를 null 로 두었다(추정하지 않음).
+- revision: 2016, 2021
+  item: 시행 개정판 없음
+  reason: 연혁 목록상 2015-11-19 다음 시행판은 2017-11-01, 2020-10-15 다음은 2022-11-01 이다. 2016년과 2021년에는 시행된 개정판이 없다.
+- revision: 2022-11-01 이후
+  item: 2022-11-01 시행판의 종료
+  reason: 다음 시행판은 조달청지침 제6352호(시행 2025-09-01)라 이 판의 종료일을 2025-08-31 로 적었다. 2023~2025-08 구간은 이 명세(2015~2022 시행)에 담지 않는다.
+- revision: 전 판
+  item: 낙찰하한율 원문
+  reason: 낙찰하한율은 고시 조문·별표에 인쇄되어 있지 않다. lwlt_rate 는 기준비율·평점계수·통과점수로 역산한 파생값이다.
