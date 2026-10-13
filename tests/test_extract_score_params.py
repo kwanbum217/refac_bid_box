@@ -18,9 +18,13 @@ import zipfile
 from decimal import Decimal
 
 from scripts.extract_score_params import (
+    _HWP_KEEP_RE,
+    _WHITESPACE_RE,
     BandValue,
     DocumentText,
     ScoreParams,
+    _hwp_formula_rows,
+    _hwp_record_text,
     _hwp_records,
     _hwp_table_rows,
     band_matches,
@@ -397,3 +401,60 @@ def test_extract_document_text_promotes_formula_paragraph_to_row() -> None:
     document = extract_document_text(text)
     assert document.ok
     assert [formula.multiplier for formula in parse_price_formula(document.rows)] == [Decimal("4")]
+
+
+# ----------------------------------------------------------------------------
+# 수식 개체(EQEDIT) 및 레코드 텍스트 판독 (합성 레코드)
+# ----------------------------------------------------------------------------
+
+_HWP_TAG_EQEDIT = 0x58
+
+# 실측 바이너리 HWP 수식 개체 스크립트. 실제 payload 처럼 앞에 이진 속성 필드가 있고
+# 그 뒤에 스크립트 문자열이 UTF-16LE 로 온다.
+_EQEDIT_SCRIPT = (
+    "평점(점)=배점한도-2 TIMES |( {88} over {100} - {입찰가격} over {예정가격} ) TIMES 100|"
+)
+_EQUATION_PARAGRAPH = "3) 입찰가격(90점) : 평점 = 90-20\u00d788/100-입찰가격/예정가격)\u00d7100"
+
+
+def _eqedit_record(script: str, level: int = 2) -> bytes:
+    payload = (0).to_bytes(2, "little") + script.encode("utf-16le") + b"\x00\x00"
+    return _record(_HWP_TAG_EQEDIT, level, payload)
+
+
+def test_hwp_record_text_reads_eqedit_script() -> None:
+    records = _hwp_records(_eqedit_record(_EQEDIT_SCRIPT))
+    text = _hwp_record_text(records)
+    assert "배점한도-2 TIMES" in text
+    assert "입찰가격" in text
+    assert "예정가격" in text
+
+
+def test_hwp_formula_rows_recovers_eqedit_price_formula() -> None:
+    rows = _hwp_formula_rows(_hwp_records(_eqedit_record(_EQEDIT_SCRIPT)))
+    assert [formula.multiplier for formula in parse_price_formula(rows)] == [Decimal("2")]
+
+
+def test_hwp_formula_rows_reads_backticked_eqedit_script() -> None:
+    # 실측 수식 개체는 조판에 따라 백틱이 낀다("평점(점)`=`배점한도-`2`").
+    script = (
+        "평점(점)`=`배점한도-`2` TIMES |( {88} over {100} - {입찰가격} over {예정가격} ) TIMES 100|"
+    )
+    rows = _hwp_formula_rows(_hwp_records(_eqedit_record(script)))
+    assert [formula.multiplier for formula in parse_price_formula(rows)] == [Decimal("2")]
+
+
+def test_hwp_formula_rows_recovers_paragraph_lost_by_flat_decode() -> None:
+    """홀수 크기 레코드 뒤 문단은 전체 스트림 디코딩에서 정렬이 어긋나 유실된다.
+
+    레코드 단위 판독은 이를 회수한다(실측 공고 20220626311 의 유실 유형).
+    """
+    odd = _record(_HWP_TAG_PARA_HEADER, 1, b"\x00" * 21)  # payload 길이 21(홀수)
+    paragraph = _record(_HWP_TAG_PARA_TEXT, 1, _EQUATION_PARAGRAPH.encode("utf-16le"))
+    section = odd + paragraph
+
+    whole = _WHITESPACE_RE.sub("", _HWP_KEEP_RE.sub("", section.decode("utf-16le", "ignore")))
+    assert "평점=90-20" not in whole  # 전체 스트림 디코딩에서는 유실
+
+    rows = _hwp_formula_rows(_hwp_records(section))
+    assert [formula.multiplier for formula in parse_price_formula(rows)] == [Decimal("20")]
