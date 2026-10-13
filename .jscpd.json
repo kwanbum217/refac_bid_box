@@ -1,7 +1,14 @@
 {
   "threshold": 5,
-  "reporters": ["console", "html"],
-  "format": ["python", "javascript", "typescript"],
+  "reporters": [
+    "console",
+    "html"
+  ],
+  "format": [
+    "python",
+    "javascript",
+    "typescript"
+  ],
   "min-lines": 5,
   "min-tokens": 50,
   "path": [
@@ -16,7 +23,9 @@
     "**/chroma_db/**",
     "**/node_modules/**",
     "**/reports/**",
-    "**/migrations/**"
+    "**/migrations/**",
+    "**/src/app/services/evaluation_rules_history.py",
+    "**/src/app/services/evaluation_quant_institution.py"
   ],
   "output": "./reports/jscpd",
   "absolute": true

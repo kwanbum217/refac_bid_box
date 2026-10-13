@@ -168,6 +168,7 @@ def _use_engine(monkeypatch, engine: _FakeEngine) -> _FakeEngine:
 
 
 def test_scanned_pdf_is_unrecognized_without_ocr_toggle(api, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "DOCUMENT_OCR_ENABLED", False)
     monkeypatch.setattr(
         ocr, "get_engine", lambda: pytest.fail("토글이 꺼져 있으면 OCR 을 부르면 안 됩니다")
     )
