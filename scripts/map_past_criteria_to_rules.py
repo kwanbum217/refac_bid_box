@@ -1,4 +1,4 @@
-"""과거(2015~2024) 용역 공고의 기준명을 evaluation_rules 기존 규칙에 대응시켜 본다.
+"""과거(2015~2024) 용역 공고의 기준명을 적격심사 규칙에 대응시켜 본다.
 
 배경
 ----
@@ -6,17 +6,24 @@
 별표가 없어 B·k 를 못 뽑는 경우가 많다. 다만 `scripts/pilot_past_notice_method_extract.py`
 가 첨부 본문에서 **기준명**(예: `시설분야용역 적격심사`)을 뽑아낸 공고가 248건 있다.
 
-이 스크립트는 그 기준명과 공고일·추정가격·수요기관을 `src/app/services/evaluation_rules.py`
-의 기존 규칙(조달청 PRE/POST, LOCAL, 기관)에 대응시켜 B·k·통과점수(T)·낙찰하한율을
-채울 수 있는지 **실측**한다. 운영 코드는 고치지 않으며 규칙 레지스트리를 읽기만 한다.
+이 스크립트는 그 기준명과 공고일·추정가격·수요기관을 다음 두 레지스트리에 대응시켜
+B·k·통과점수(T)·낙찰하한율을 채울 수 있는지 **실측**한다.
+
+- 공고일이 2023-05-01 **이전**: `src/app/services/evaluation_rules_history.py`
+  (P2 명세 YAML 에서 생성한 과거 공고 전용 이력 레지스트리)
+- 공고일이 2023-05-01 **이후**: `src/app/services/evaluation_rules.py` (서빙 레지스트리)
+
+운영 코드는 고치지 않으며 규칙 레지스트리를 읽기만 한다. 서빙 판별기
+(`resolve_evaluation_rule`)는 이 스크립트를 쓰지 않으므로 현행 공고 매칭은 바뀌지 않는다.
 
 대응 절차
 --------
 1. 기준명을 용역 세부유형 집합으로 정규화한다(`_service_types_from_criteria`).
 2. 규칙 후보를 운영과 같은 우선순위(기관 > 시·도(LOCAL) > 조달청)로 고른다.
 3. **공고일보다 늦게 시행된 규칙은 후보에서 제외한다**(미래 규칙 금지).
-4. 같은 유형의 후보가 여럿이면 추정가격 구간으로 하나를 확정한다.
-5. 확정 규칙에 `resolve_score_params` 를 적용해 B·k·T 를, 구간 하한율로 낙찰하한율을 구한다.
+4. 조달청 축은 공고일로 이력 레지스트리와 서빙 레지스트리를 가른다.
+5. 같은 유형의 후보가 여럿이면 추정가격 구간으로 하나를 확정한다.
+6. 확정 규칙에 값을 물어 B·k·T 를, 구간 하한율로 낙찰하한율을 구한다.
 
 산출 CSV 의 각 행은 재계산 가능하도록 대응 결과와 사유를 모두 담는다. 검증 집합은
 별표에서 실제로 B·k 를 뽑은 공고이며, 대응 결과가 그 값과 일치하는지 함께 집계한다.
@@ -46,9 +53,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.app.services import evaluation_rules as er  # noqa: E402
+from src.app.services import evaluation_rules_history as erhist  # noqa: E402
 from src.ml.notice_amount import notice_amount_for_year  # noqa: E402
 
 _WHITESPACE_RE = re.compile(r"\s+")
+
+# 이력 레지스트리와 서빙 레지스트리의 조달청 축 분기점. 서빙 레지스트리의 가장 이른
+# 시행 구간 시작일과 같은 값이다(`er.RULE_REGIME_BOUNDARIES` 마지막 항목).
+HISTORY_REGIME_FROM = date(2023, 5, 1)
+HISTORY_SCOPE = "PPS_HISTORY"
 
 # 기준명 표기 변형 -> 규칙 레지스트리 용역 세부유형 집합.
 # 조달청 규칙과 LOCAL·기관 규칙이 같은 용역을 다른 코드로 표현하므로 집합으로 둔다.
@@ -269,6 +282,50 @@ def _resolve_values(
     return b_text, k_text, t_text, _decimal_text(band_rate)
 
 
+# ============================================================================
+# 이력 레지스트리 대응 (공고일 < 2023-05-01)
+# ============================================================================
+
+
+def map_history_criteria(
+    announced: date | None, service_types: tuple[str, ...], price: Decimal | None
+) -> MappingResult:
+    """과거 공고를 이력 레지스트리(P2 명세)에 대응시킵니다.
+
+    용역 세부유형 후보를 차례로 물어 하나만 확정되면 그 값을, 여럿이면 모호로,
+    하나도 없으면 첫 사유를 남기고 값을 비웁니다. 값을 추정하지 않습니다.
+    """
+    typed_service = service_types[0]
+    if announced is None:
+        return _unmapped(typed_service, "공고일이 없어 시행 중인 이력 개정판을 고르지 못함")
+    notice_amount = erhist.history_notice_amount_for_year(announced.year)
+    resolutions: list[erhist.HistoryBandResolution] = []
+    misses: list[str] = []
+    for service_type in service_types:
+        resolution, reason = erhist.resolve_history_band(
+            announced, service_type, price, notice_amount
+        )
+        if resolution is not None:
+            resolutions.append(resolution)
+        elif reason:
+            misses.append(reason)
+    if len(resolutions) > 1:
+        return _unmapped(typed_service, "이력 별표 후보가 둘 이상")
+    if not resolutions:
+        return _unmapped(typed_service, misses[0] if misses else "이력 별표에서 대응을 찾지 못함")
+    resolution = resolutions[0]
+    return MappingResult(
+        service_type=resolution.service_type,
+        scope=HISTORY_SCOPE,
+        rule_id=resolution.rule_id,
+        max_price_score=_decimal_text(resolution.max_price_score),
+        multiplier=_decimal_text(resolution.multiplier),
+        pass_threshold=_decimal_text(resolution.pass_score),
+        lwlt_rate=_decimal_text(resolution.lwlt_rate),
+        reason="",
+    )
+
+
 def map_criteria_to_rule(
     criteria_name: str | None,
     announced: date | str | None,
@@ -294,6 +351,9 @@ def map_criteria_to_rule(
         region_rules = _region_candidates(institution_name)
         if region_rules:
             pool, scope = region_rules, "LOCAL"
+        elif announced_date is not None and announced_date < HISTORY_REGIME_FROM:
+            # 시행 중인 서빙 규칙이 없는 구간은 이력 레지스트리로 되짚는다.
+            return map_history_criteria(announced_date, service_types, price)
         else:
             pool, scope = _regime_rules(announced_date), "PPS"
 
