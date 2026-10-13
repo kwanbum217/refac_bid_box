@@ -25,6 +25,9 @@ RULE_SCOPE_VALUES = frozenset({RULE_SCOPE_ALL, RULE_SCOPE_INSTITUTION, RULE_SCOP
 
 QUANT_BASIS_REGISTRY = "REGISTRY"
 QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED = "AGENCY_DOCUMENT_NOT_LOADED"
+# 기관(중앙부처·공기업·공단) 자체 적격심사 세부기준의 정량평가 배점표를 반영한 규칙입니다.
+# 배점표 값은 src/app/services/evaluation_quant_institution.py(생성본)에 rule_id 키로 둡니다.
+QUANT_BASIS_INSTITUTION = "INSTITUTION"
 
 
 @dataclass(frozen=True)
@@ -2955,12 +2958,15 @@ def _institution_rule(
     institution_aliases: tuple[str, ...] = (),
     subunit_name_prefixes: tuple[str, ...] = (),
     subunit_code_prefixes: tuple[str, ...] = (),
+    quant_table: bool = True,
 ) -> EvaluationRule:
     """기관 규칙 하나를 구간별 price_bands·threshold_bands 로 만듭니다.
 
-    명세(YAML) 순서와 무관하게 구간을 추정가격 오름차순으로 정렬해 선언합니다. 기관 정량평가
-    배점표는 아직 반영하지 않았으므로 quant_basis 는 기관 원문 미반영이며, 구간 하한율은 원문
-    인쇄값을 그대로 씁니다. 규칙 대표 하한율·기준비율은 가장 낮은 구간 값을 쓰고, 실제 계산은
+    명세(YAML) 순서와 무관하게 구간을 추정가격 오름차순으로 정렬해 선언합니다. 정량평가
+    배점표가 확정된 규칙은 quant_basis=INSTITUTION 으로 두어 evaluation_quant_institution 의
+    기관 배점표를 씁니다. 명세가 부분이라 배점표를 반영할 수 없는 규칙(한국가스공사)은
+    quant_table=False 로 두어 종전처럼 정량점수 직접 입력을 유지합니다. 구간 하한율은 원문
+    인쇄값을 그대로 쓰고, 규칙 대표 하한율·기준비율은 가장 낮은 구간 값을 쓰며 실제 계산은
     추정가격으로 고른 구간값이 정합니다.
     """
     ordered = sorted(bands, key=_institution_band_order)
@@ -3000,7 +3006,9 @@ def _institution_rule(
         price_bands=tuple(price_bands),
         threshold_bands=tuple(threshold_bands),
         bounded_price_top=ordered[-1][0] is not None,
-        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        quant_basis=(
+            QUANT_BASIS_INSTITUTION if quant_table else QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED
+        ),
         score_table_source=source,
         institution_scope=RULE_SCOPE_INSTITUTION,
         institution_code=institution_code,
@@ -3582,6 +3590,9 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국가스공사 용역 적격심사 (종합심사낙찰제 3유형 외)",
         description="한국가스공사 제17조 용역 4구간 (B 30/50/70 미확정)",
         effective_date="2026-07-09",
+        # 별표 9 가 배점한도 숫자를 인쇄하지 않고 B 가 용역유형 축으로 갈려 배점표를 확정할
+        # 수 없습니다. 종전처럼 정량점수 직접 입력을 유지합니다.
+        quant_table=False,
         source=f"{_SRC_INST_KOGAS}:4-8",
         patterns=("용역",),
         bands=(
@@ -3636,6 +3647,8 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국가스공사 용역 적격심사 (시설분야용역)",
         description="한국가스공사 제17조② 시설분야용역 단일 구간",
         effective_date="2026-07-09",
+        # 시설분야도 별표 9 의 배점한도 미확정이라 정량점수 직접 입력을 유지합니다.
+        quant_table=False,
         source=f"{_SRC_INST_KOGAS}:4-8",
         patterns=("시설분야용역", "시설분야"),
         bands=(
@@ -6807,6 +6820,10 @@ class QuantScoreBand:
     items: tuple[QuantScoreItem, ...]
     total_limit: Decimal
     total_is_fixed: bool = True
+    # 기관 배점표처럼 구간 경계가 추정가격(고시금액·5억·10억 등)으로 정해진 경우의 상한(원)
+    # 입니다. 이 값 미만이 이 구간에 들어갑니다. None 이면 상한 없음(마지막 구간)이며, 조달청
+    # 별표처럼 5억원 이상/미만 두 구간만 쓰는 표는 경계를 따로 두지 않습니다.
+    upper_bound: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -6818,6 +6835,10 @@ class QuantScoreTable:
     source: str
     bands: tuple[QuantScoreBand, ...]
     note: str | None = None
+    # 기관 자체 세부기준 배점표(quant_basis=INSTITUTION)면 True 입니다. 경영상태·신인도는
+    # 조달청 별표 10·11 이 아니라 기관 원문 등급표·신인도표를 쓰므로, 조달청 등급 선택·신인도
+    # 항목 입력 경로를 타지 않도록 이 값으로 구분합니다.
+    is_institution: bool = False
 
 
 def _qi(
@@ -7389,9 +7410,18 @@ def quant_score_table_for_rule(rule: EvaluationRule) -> QuantScoreTable | None:
     """규칙이 어느 별표인지에 따라 정량평가 배점표를 돌려줍니다.
 
     별표 귀속이 미확인인 규칙(일반 띠)은 표를 만들지 않고 None 을 돌려줍니다.
-    LOCAL 시·도 규칙처럼 기관 정량 배점표를 아직 반영하지 않은 규칙(quant_basis != REGISTRY)은
+    기관 규칙(quant_basis=INSTITUTION)은 rule_id 로 기관 배점표를 찾습니다. LOCAL 시·도 규칙이나
+    배점표가 확정되지 않은 기관 규칙(한국가스공사)처럼 기관 정량 배점표를 반영하지 않은 규칙은
     조달청 배점표를 잘못 적용하지 않도록 무조건 None 을 돌려줍니다.
     """
+    if rule.quant_basis == QUANT_BASIS_INSTITUTION:
+        # evaluation_quant_institution 은 이 모듈의 배점표 자료형을 쓰므로 모듈 최상단에서
+        # 가져오면 순환 임포트가 됩니다. 조회 시점에 지연 임포트합니다.
+        from src.app.services.evaluation_quant_institution import (
+            INSTITUTION_QUANT_SCORE_TABLES,
+        )
+
+        return INSTITUTION_QUANT_SCORE_TABLES.get(rule.rule_id)
     if rule.quant_basis != QUANT_BASIS_REGISTRY:
         return None
     suffix = "_".join(rule.rule_id.rsplit("_", 2)[-2:])
@@ -7447,6 +7477,40 @@ def quant_score_tables_total_audit() -> tuple[QuantTotalAuditRow, ...]:
     )
 
 
+def _select_institution_quant_band(
+    table: QuantScoreTable,
+    estimated_price: Decimal | int | float | str | None,
+) -> tuple[QuantScoreBand | None, str | None]:
+    """추정가격 상한(upper_bound)으로 기관 배점표 구간을 고릅니다.
+
+    기관 배점표는 조달청 별표처럼 5억원 이상/미만 두 구간이 아니라 고시금액·2억·2.5억·
+    10억·30억 등 기관 원문 구간을 씁니다. 각 구간에 원문 표기에서 옮긴 상한이 있으므로
+    추정가격이 처음으로 상한 미만이 되는 구간을, 어느 상한에도 들지 않으면 상한 없는
+    마지막 구간을 고릅니다. 구간이 하나면 추정가격과 무관하게 그 구간을 씁니다.
+    """
+    if len(table.bands) == 1:
+        return table.bands[0], None
+    price: Decimal | None = None
+    try:
+        price = Decimal(str(estimated_price)) if estimated_price not in (None, "") else None
+        if price is not None and price <= 0:
+            price = None
+    except (ArithmeticError, TypeError, ValueError):
+        price = None
+    if price is None:
+        return (
+            None,
+            "공고 추정가격이 없어 기관 배점표 구간을 정할 수 없습니다. 공고서의 추정가격을 확인하십시오.",
+        )
+    for band in table.bands:
+        if band.upper_bound is not None and price < band.upper_bound:
+            return band, None
+    for band in table.bands:
+        if band.upper_bound is None:
+            return band, None
+    return None, "추정가격에 대응하는 기관 배점표 구간이 없습니다."
+
+
 def select_quant_band(
     table: QuantScoreTable,
     estimated_price: Decimal | int | float | str | None,
@@ -7455,8 +7519,11 @@ def select_quant_band(
     """공식 기준인 추정가격 또는 낙찰방법명 표기로 5억원 구간을 고릅니다.
 
     구간이 하나면 추정가격과 무관하게 그 구간을 쓰고, 구간이 둘인데 추정가격을 읽을
-    수 없으면 임의로 고르지 않고 사유와 함께 None 을 돌려줍니다.
+    수 없으면 임의로 고르지 않고 사유와 함께 None 을 돌려줍니다. 기관 배점표
+    (is_institution)는 기관 원문 추정가격 구간을 쓰므로 별도 판정을 씁니다.
     """
+    if table.is_institution:
+        return _select_institution_quant_band(table, estimated_price)
     if len(table.bands) == 1:
         return table.bands[0], None
     method_side = method_name_500m_side(method_name)

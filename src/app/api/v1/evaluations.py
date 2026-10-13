@@ -616,27 +616,37 @@ def _quant_table_payload(
         ],
         active_band_key=band.band_key if band is not None else None,
         band_note=band_note,
-        credit_grades=[
-            CreditGradePayload(
-                grade_group=grade.grade_group,
-                grade_codes=list(grade.grade_codes),
-                score_at_20=format_decimal_plain(grade.score_at_20),
-                score_at_10=format_decimal_plain(grade.score_at_10),
-                source=grade.source,
-            )
-            for grade in CREDIT_GRADE_SCORES
-        ],
-        reputation_items=[
-            ReputationItemPayload(
-                item_code=item.item_code,
-                item_name=item.item_name,
-                option_kind=item.option_kind,
-                options=[format_decimal_plain(value) for value in item.options],
-                source=item.source,
-                note=item.note,
-            )
-            for item in REPUTATION_ITEMS
-        ],
+        # 기관 배점표는 경영상태·신인도를 기관 원문 등급표·신인도표로 평가하므로 조달청
+        # 별표 10·11 입력표를 노출하지 않습니다. 배점표 항목을 숫자로 입력합니다.
+        credit_grades=(
+            []
+            if table.is_institution
+            else [
+                CreditGradePayload(
+                    grade_group=grade.grade_group,
+                    grade_codes=list(grade.grade_codes),
+                    score_at_20=format_decimal_plain(grade.score_at_20),
+                    score_at_10=format_decimal_plain(grade.score_at_10),
+                    source=grade.source,
+                )
+                for grade in CREDIT_GRADE_SCORES
+            ]
+        ),
+        reputation_items=(
+            []
+            if table.is_institution
+            else [
+                ReputationItemPayload(
+                    item_code=item.item_code,
+                    item_name=item.item_name,
+                    option_kind=item.option_kind,
+                    options=[format_decimal_plain(value) for value in item.options],
+                    source=item.source,
+                    note=item.note,
+                )
+                for item in REPUTATION_ITEMS
+            ]
+        ),
         reputation_max_bonus=format_decimal_plain(REPUTATION_MAX_BONUS),
         reputation_max_penalty=format_decimal_plain(REPUTATION_MAX_PENALTY),
     )
@@ -817,6 +827,67 @@ def _reputation_quant_score(
     return min(max(total, REPUTATION_MAX_PENALTY), bonus_cap)
 
 
+def _resolve_institution_quant_inputs(
+    qualification: QualificationInput,
+    band: QuantScoreBand,
+    limits: dict[str, QuantScoreItem],
+    items: dict[str, float],
+) -> tuple[QuantInputScores | None, list[tuple[str, str]]]:
+    """기관 배점표 입력을 심사항목 배점한도로 검증하고 합산합니다.
+
+    기관 원문의 경영상태 등급표·신인도표는 아직 반영하지 않았습니다. 그래서 조달청 별표
+    10·11 을 쓰는 등급 선택(management_grade)·신인도 항목(reputation_items)은 받지 않고,
+    배점표에 적힌 경영상태·기술능력 등의 항목을 숫자로 직접 받아 배점한도로 검증합니다.
+    신인도 항목은 명세에 배점한도(숫자)가 없어 입력을 막고 합계에서 제외합니다(추정 금지).
+    """
+    violations: list[tuple[str, str]] = []
+    if qualification.management_grade:
+        _append_quant_violation(
+            violations,
+            BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+            "경영상태: 기관 원문 등급표가 반영되지 않아 신용평가등급 선택을 적용할 수 "
+            "없습니다. 배점표 항목에 점수를 직접 입력하십시오.",
+        )
+    if qualification.management_score:
+        _append_quant_violation(
+            violations,
+            BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+            "경영상태: 기관 배점표는 항목 점수로 입력해야 하며 management_score 를 쓸 수 없습니다.",
+        )
+    if qualification.reputation_items or qualification.credibility_score:
+        _append_quant_violation(
+            violations,
+            BLOCK_CODE_QUANT_ITEM_NOT_IN_TABLE,
+            "신인도: 기관 원문 신인도표가 반영되지 않아 항목 입력을 적용할 수 없습니다.",
+        )
+
+    performance = Decimal("0")
+    labor_plan = Decimal("0")
+    for item_key, raw_value in items.items():
+        value = _quant_value(raw_value)
+        _check_quant_item(limits, item_key, value, item_key, band.band_label, violations)
+        if item_key == QUANT_ITEM_LABOR_PLAN:
+            labor_plan += value
+        else:
+            performance += value
+
+    has_labor_item = any(
+        item.item_key == QUANT_ITEM_LABOR_PLAN and item.limit_kind in _QUANT_INPUT_KINDS
+        for item in band.items
+    )
+    if violations:
+        return None, violations
+    return (
+        QuantInputScores(
+            performance=performance,
+            labor_plan=labor_plan,
+            reputation=Decimal("0"),
+            has_labor_item=has_labor_item,
+        ),
+        [],
+    )
+
+
 def _resolve_quant_inputs(
     qualification: QualificationInput,
     table: QuantScoreTable,
@@ -836,6 +907,9 @@ def _resolve_quant_inputs(
         items[QUANT_ITEM_PERFORMANCE] = qualification.performance_score
     if QUANT_ITEM_LABOR_PLAN not in items and qualification.labor_plan_score:
         items[QUANT_ITEM_LABOR_PLAN] = qualification.labor_plan_score
+
+    if table.is_institution:
+        return _resolve_institution_quant_inputs(qualification, band, limits, items)
 
     performance = Decimal("0")
     labor_plan = Decimal("0")

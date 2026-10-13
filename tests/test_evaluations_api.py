@@ -1541,3 +1541,145 @@ def test_reputation_items_penalty_cap(client, isolated_db, as_user):
     # 감점 합계 -6.0 -> 감점 상한 -5.0, Q = 20 + 10 - 5 = 25
     base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
     assert base["qualification_score"] == pytest.approx(25.0)
+
+
+# --------------------------------------------------------------------------- #
+# 9. 기관(중앙부처·공기업) 자체 정량평가 배점표 반영
+# --------------------------------------------------------------------------- #
+
+
+def _institution_bid(
+    db,
+    *,
+    institution_name: str,
+    institution_code: str,
+    method_name: str,
+    base_amount: int = 600_000_000,
+):
+    """수요기관·낙찰방법명이 기관 규칙과 맞는 공고를 만든다."""
+    return _create_bid(
+        db,
+        base_amount=base_amount,
+        raw_overrides={
+            "sucsfbidMthdNm": method_name,
+            "dminsttNm": institution_name,
+            "dminsttCd": institution_code,
+            "ntceInsttNm": institution_name,
+        },
+    )
+
+
+def test_institution_quant_table_drives_input_and_sum(client, isolated_db, as_user):
+    """한국농어촌공사 공고는 기관 배점표 항목을 직접 입력받아 그대로 합산한다."""
+    as_user(10)
+    bid = _institution_bid(
+        isolated_db,
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        method_name="학술연구용역 적격심사",
+    )
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            qualification={
+                "quant_items": {"performance": 20, "management": 10, "technical_capacity": 10},
+                "management_grade": None,
+            },
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["blocked"] is False, payload.get("blocked_reason")
+    table = payload["quant_score_table"]
+    assert table["attachment"] == "별표 1"
+    assert table["active_band_key"] == "over_500m"
+    # 기관 표는 조달청 별표 10·11 입력표를 노출하지 않는다.
+    assert table["credit_grades"] == []
+    assert table["reputation_items"] == []
+    items = {item["item_key"]: item for item in _active_band(payload)["items"]}
+    assert items["performance"]["limit"] == "20"
+    assert items["management"]["limit_kind"] == "score"
+    assert items["reputation"]["limit_kind"] == "reputation"
+    # 이행실적 20 + 경영상태 10 + 기술능력 10 = 40
+    base = {s["scenario_name"]: s for s in payload["scenario_results"]}["기준"]
+    assert base["qualification_score"] == pytest.approx(40.0)
+
+
+def test_institution_quant_item_exceeding_limit_blocks(client, isolated_db, as_user):
+    """기관 배점표 항목도 배점한도를 넘기면 자르지 않고 계산을 막는다."""
+    as_user(10)
+    bid = _institution_bid(
+        isolated_db,
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        method_name="학술연구용역 적격심사",
+    )
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            qualification={
+                "quant_items": {"performance": 21, "management": 10, "technical_capacity": 10},
+                "management_grade": None,
+            },
+        ),
+    )
+
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "QUANT_LIMIT_EXCEEDED" in payload["blocked_reason"]
+    assert "이행실적" in payload["blocked_reason"]
+
+
+def test_institution_management_grade_selection_is_rejected(client, isolated_db, as_user):
+    """기관 표는 조달청 별표 10 등급 선택을 받지 않고 항목 점수만 받는다."""
+    as_user(10)
+    bid = _institution_bid(
+        isolated_db,
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        method_name="학술연구용역 적격심사",
+    )
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            qualification={
+                "quant_items": {"performance": 20, "management": 10, "technical_capacity": 10},
+                "management_grade": DEFAULT_MANAGEMENT_GRADE,
+            },
+        ),
+    )
+
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "QUANT_ITEM_NOT_IN_TABLE" in payload["blocked_reason"]
+
+
+def test_partial_kogas_rule_keeps_manual_quant_input(client, isolated_db, as_user):
+    """한국가스공사는 배점표가 확정되지 않아 종전처럼 정량점수 직접 입력을 요구한다."""
+    as_user(10)
+    bid = _institution_bid(
+        isolated_db,
+        institution_name="한국가스공사",
+        institution_code="B551210",
+        method_name="용역 적격심사",
+    )
+
+    response = client.post(
+        ANALYZE_URL,
+        json=_analysis_payload(
+            bid.id,
+            qualification={"quant_items": {}, "management_grade": None},
+        ),
+    )
+
+    payload = response.json()
+    assert payload["blocked"] is True
+    assert "LOCAL_QUANT_REQUIRED" in payload["blocked_reason"]
+    assert payload["quant_score_table"] is None

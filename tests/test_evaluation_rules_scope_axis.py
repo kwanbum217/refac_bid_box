@@ -263,3 +263,19 @@ def test_registered_institution_rules_declare_scope_and_axis() -> None:
         assert rule.patterns
         assert rule.price_bands
         assert rule.threshold_bands
+
+
+def test_institution_rule_quant_basis_matches_table_registry() -> None:
+    """배점표가 있는 기관 규칙만 INSTITUTION basis 이고, 없는 규칙은 직접 입력을 유지한다."""
+    from src.app.services.evaluation_quant_institution import INSTITUTION_QUANT_SCORE_TABLES
+    from src.app.services.evaluation_rules import (
+        INSTITUTION_RULES,
+        QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        QUANT_BASIS_INSTITUTION,
+    )
+
+    for rule in INSTITUTION_RULES:
+        if rule.rule_id in INSTITUTION_QUANT_SCORE_TABLES:
+            assert rule.quant_basis == QUANT_BASIS_INSTITUTION
+        else:
+            assert rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED
