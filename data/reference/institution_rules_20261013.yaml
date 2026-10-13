@@ -1,0 +1,2709 @@
+schema: INSTITUTION_RULE_INVENTORY_V1
+version: "1.0.0"
+created_at: "2026-10-13"
+source_task: task_00564acc363a
+scope: INSTITUTION
+conventions:
+  score_formula: "P = B - k * |base_ratio/100 - bid_price/estimated_price| * 100"
+  lwlt_formula: "base_ratio - (100 - pass_score) / k"
+  lwlt_notation: "계산값을 소수 둘째 자리까지 버린 뒤 0.005 를 빼 .995 표기 관행을 따른다 (예: 48.000 -> 47.995)"
+  lower_inclusive: true
+  upper_exclusive: true
+  boundary_token: "고시금액(용역)은 국가계약법 시행령에 따른 연도별 고시금액을 뜻한다"
+  money_unit: "KRW"
+  b_list_note: "B 가 배열이면 추정가격 구간이 아니라 용역 유형(계량화 정도 등)으로 배점한도가 갈리는 경우다"
+region_rules_out_of_scope:
+  note: "시·도 및 행정안전부 예규는 institution_scope=REGION 규칙(LOCAL_RULES)으로 이미 코드에 등록되어 있어 이 명세의 INSTITUTION 범위에서 제외한다."
+  mapped_institutions:
+    - "행정안전부"
+    - "인천광역시"
+    - "제주특별자치도"
+    - "강원특별자치도"
+    - "대구광역시"
+    - "세종특별자치시"
+    - "경상북도"
+    - "울산광역시"
+    - "충청북도"
+    - "전남광주통합특별시"
+    - "경상남도"
+    - "경기도"
+    - "서울특별시"
+    - "부산광역시"
+    - "대전광역시"
+    - "충청남도"
+    - "전북특별자치도"
+  sources: ["docs/analysis/servc_formula_collection_local_20261004.md", "docs/analysis/servc_formula_userfiles_local_20261004.md", "docs/analysis/servc_formula_recover_c_20261005.md"]
+institutions:
+  - institution_name: "국토교통부"
+    name_aliases: ["국토교통부"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "용역적격심사 및 협상에 의한 낙찰자 결정기준 (국토교통부훈령 제965호, 2018-01-04 일부개정·시행)"
+    effective_date: "2018-01-04"
+    service_types: ["일반용역", "감리용역"]
+    note: "건설엔지니어링 전용 훈령 제1953호(2026-06-05)의 별표 1 은 기준율 90 이며 검산을 통과하나 적용범위가 설계·건설사업관리·정밀안전진단이므로 이 일반용역 계수로 쓰지 않는다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 · 고시금액 미만 일반용역"
+        service_type: "일반용역"
+        lower: "고시금액"
+        upper: null
+        B: 70
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:88,100,104"
+      - band: "별표 1 · 고시금액 이상 10억원 미만 일반용역"
+        service_type: "일반용역"
+        lower: "고시금액"
+        upper: 1000000000
+        B: 30
+        k: 2
+        base_ratio: 88
+        pass_score: 90
+        lwlt_rate: 82.995
+        price_cap_rate: 93
+        flat_score: 20
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:89,101,103"
+      - band: "별표 1 · 고시금액 이상 10억원 미만 감리용역"
+        service_type: "감리용역"
+        lower: "고시금액"
+        upper: 1000000000
+        B: 30
+        k: 2
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 85.495
+        price_cap_rate: 90.5
+        flat_score: 25
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:89,102,103"
+      - band: "별표 1 · 10억원 이상 30억원 미만 일반용역"
+        service_type: "일반용역"
+        lower: 1000000000
+        upper: 3000000000
+        B: 20
+        k: 2
+        base_ratio: 88
+        pass_score: 90
+        lwlt_rate: 82.995
+        price_cap_rate: 93
+        flat_score: 10
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:90,103,104"
+      - band: "별표 1 · 30억원 이상 일반용역"
+        service_type: "일반용역"
+        lower: 3000000000
+        upper: null
+        B: 20
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: 5
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:91,104"
+    sources: ["docs/analysis/servc_formula_collection_central_20261004.md:66-111"]
+  - institution_name: "국가유산청"
+    name_aliases: ["국가유산청", "문화재청"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "매장유산 조사용역 적격심사 세부기준 (국가유산청고시 제2024-6호, 2024-05-17 개정·시행)"
+    effective_date: "2024-05-17"
+    service_types: ["매장유산 조사용역"]
+    note: "매장유산 조사용역 전용이다. 일반용역 자체 산식은 확인되지 않았다. 원문이 평탄 비율만 인쇄하고 대응 점수를 인쇄하지 않아 검산 통과 행은 0개다(규칙 7)."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 · 10억원 이상 매장유산 조사용역"
+        service_type: "매장유산 조사용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: 1.875
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 79.995
+        price_cap_rate: 90
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:138,146"
+      - band: "별표 2 · 10억원 미만 5억원 이상 매장유산 조사용역"
+        service_type: "매장유산 조사용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 30
+        k: 2.5
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 81.995
+        price_cap_rate: 90
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:139,147"
+      - band: "별표 3 · 5억원 미만 2.5억원 이상 매장유산 조사용역"
+        service_type: "매장유산 조사용역"
+        lower: 250000000
+        upper: 500000000
+        B: 40
+        k: 3
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 82.995
+        price_cap_rate: 90
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:140,148"
+      - band: "별표 4 · 2.5억원 미만 1억원 이상 매장유산 조사용역"
+        service_type: "매장유산 조사용역"
+        lower: 100000000
+        upper: 250000000
+        B: 45
+        k: 9.6
+        base_ratio: 88
+        pass_score: 88
+        lwlt_rate: 86.745
+        price_cap_rate: 89.25
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:141,149"
+      - band: "별표 5 · 1억원 미만 매장유산 조사용역"
+        service_type: "매장유산 조사용역"
+        lower: null
+        upper: 100000000
+        B: 50
+        k: 48
+        base_ratio: 88
+        pass_score: 88
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:142,150"
+    sources: ["docs/analysis/servc_formula_collection_central_20261004.md:115-158", "docs/analysis/servc_formula_userfiles_existing_20261004.md:5"]
+  - institution_name: "환경부"
+    name_aliases: ["환경부", "기후에너지환경부"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "기술용역 적격심사 및 협상에 의한 낙찰자 결정기준 (기후에너지환경부훈령 제4호, 2025-11-11 시행)"
+    effective_date: "2025-11-11"
+    service_types: ["기술용역"]
+    note: "기술용역 기준이다. 환경부 발주 일반용역은 이 훈령 범위 밖이며 자체 산식이 확인되지 않았다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 · 고시금액 미만 기술용역"
+        service_type: "기술용역"
+        lower: "고시금액"
+        upper: null
+        B: 70
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:188"
+      - band: "별표 1 · 고시금액 이상 10억원 미만 기술용역"
+        service_type: "기술용역"
+        lower: "고시금액"
+        upper: 1000000000
+        B: 30
+        k: 2
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 85.495
+        price_cap_rate: 90.5
+        flat_score: 25
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:189"
+      - band: "별표 1 · 10억원 이상 30억원 미만 기술용역"
+        service_type: "기술용역"
+        lower: 1000000000
+        upper: 3000000000
+        B: 20
+        k: 2
+        base_ratio: 88
+        pass_score: 90
+        lwlt_rate: 82.995
+        price_cap_rate: 93
+        flat_score: 10
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:190"
+      - band: "별표 1 · 30억원 이상 기술용역"
+        service_type: "기술용역"
+        lower: 3000000000
+        upper: null
+        B: 20
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: 5
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:191"
+    sources: ["docs/analysis/servc_formula_collection_central_20261004.md:160-196"]
+  - institution_name: "방위사업청"
+    name_aliases: ["방위사업청", "DAPA"]
+    institution_code: null
+    status: partial
+    scope: INSTITUTION
+    standard: "용역 적격심사 기준 (방위사업청예규 제1082호, 2026-09-21 개정·시행)"
+    effective_date: "2026-09-21"
+    service_types: ["용역"]
+    note: "10억원 이상 구간은 수식에 계수가 생략되고 평탄 문장이 없어 k 미확정이다(규칙 5). 통과점수는 별표 1 의 추정가격 구간이 아니라 제9조① 의 30억원·10억원 경계로 정해진다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 · 10억원 이상 30억원 미만 용역"
+        service_type: "용역"
+        lower: 1000000000
+        upper: 3000000000
+        B: 30
+        k: null
+        base_ratio: 88
+        pass_score: 90
+        lwlt_rate: null
+        price_cap_rate: null
+        flat_score: null
+        status: partial
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:222,231,235"
+      - band: "별표 1 · 30억원 이상 용역"
+        service_type: "용역"
+        lower: 3000000000
+        upper: null
+        B: 30
+        k: null
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: null
+        price_cap_rate: null
+        flat_score: null
+        status: partial
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:222,231,235"
+      - band: "별표 1 · 5억원 이상 10억원 미만 용역"
+        service_type: "용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 85.495
+        price_cap_rate: 90.5
+        flat_score: 45
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:223,232,235"
+      - band: "별표 1 · 고시금액 이상 5억원 미만 용역"
+        service_type: "용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 86.745
+        price_cap_rate: 89.25
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:224,233,235"
+      - band: "별표 1 · 고시금액 미만 용역"
+        service_type: "용역"
+        lower: null
+        upper: "고시금액"
+        B: 90
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 85
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_central_20261004.md:225,234,235"
+    sources: ["docs/analysis/servc_formula_collection_central_20261004.md:199-243", "docs/analysis/servc_formula_userfiles_existing_20261004.md:7", "docs/analysis/servc_formula_resolve_daegu_dapa_gg_20261005.md:4"]
+  - institution_name: "한국토지주택공사"
+    name_aliases: ["한국토지주택공사", "LH"]
+    institution_code: null
+    status: unresolved
+    scope: INSTITUTION
+    standard: "(자체 용역적격심사 세부기준 원문 미확보. 나라장터 LH 일반용역 공고문은 조달청 일반용역 적격심사 세부기준을 준용)"
+    effective_date: null
+    service_types: []
+    note: "자체 세부기준 원문은 확보하지 못했다(ebid 자료실 보안모듈, 사규 목록 부재). 나라장터에 올라온 LH 일반용역 공고는 조달청 명의로 집행되며 조달청 기준을 적용한다. 규칙 3에 따라 조달청 별표 숫자를 이 기관 계수로 옮기지 않는다."
+    non_qual_methods: []
+    bands: []
+    sources: ["docs/analysis/servc_formula_recover_a_20261005.md:6", "docs/analysis/servc_formula_collection_central_20261004.md:247-260"]
+  - institution_name: "한국철도공사"
+    name_aliases: ["한국철도공사", "코레일", "KORAIL"]
+    institution_code: null
+    status: partial
+    scope: INSTITUTION
+    standard: "승강기 점검보수 일반용역 적격심사 세부기준 (한국철도공사 건축기술단 공고 제2026-01호, 2026-09-14 개정). 일반용역은 조달청 일반용역 적격심사 세부기준 준용"
+    effective_date: "2026-09-14"
+    service_types: ["승강기 점검보수용역"]
+    note: "전사 일반용역은 자체 세부기준이 아니라 조달청 기준을 적용한다(공식 계약절차 안내). 자체 기준은 기술용역·철도궤도/신호/전차선로 공사·승강기 점검보수용역에 한정된다. 아래 bands 는 승강기 점검보수용역 한정이다."
+    non_qual_methods: []
+    bands:
+      - band: "승강기 점검보수 · 10억원 이상"
+        service_type: "승강기 점검보수용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: 1
+        base_ratio: 90
+        pass_score: 92
+        lwlt_rate: 81.995
+        price_cap_rate: 98
+        flat_score: 22
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:7.2"
+      - band: "승강기 점검보수 · 10억원 미만 5억원 이상"
+        service_type: "승강기 점검보수용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 90
+        pass_score: 95
+        lwlt_rate: 87.495
+        price_cap_rate: 92.5
+        flat_score: 45
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:7.2"
+      - band: "승강기 점검보수 · 5억원 미만"
+        service_type: "승강기 점검보수용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 95
+        lwlt_rate: 88.745
+        price_cap_rate: 91.25
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:7.2"
+      - band: "승강기 점검보수 · 고시금액 미만"
+        service_type: "승강기 점검보수용역"
+        lower: null
+        upper: "고시금액"
+        B: 90
+        k: 20
+        base_ratio: 90
+        pass_score: 95
+        lwlt_rate: 89.745
+        price_cap_rate: 90.25
+        flat_score: 85
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:7.2"
+    sources: ["docs/analysis/servc_formula_recover_b_20261005.md:5", "docs/analysis/servc_formula_userfiles_agency_20261004.md:7"]
+  - institution_name: "한국농어촌공사"
+    name_aliases: ["한국농어촌공사", "KRC"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "일반용역 적격심사 세부기준 (문서번호 원문 부재, 부칙 2026-06-24 이후 입찰공고분 적용)"
+    effective_date: "2026-06-24"
+    service_types: ["학술연구용역", "시설분야용역", "소프트웨어용역", "폐기물처리용역", "여객육상운송용역", "화물육상운송용역", "보험용역", "수리점검용역", "임대차용역"]
+    note: "B 는 5억원 이상/미만 열, k·기준비율·평탄은 고시금액 이상/미만 행에서 읽었다(규칙 8). 평탄 문장이 점수를 인쇄하지 않아 검산 통과 행은 0개다(규칙 7). 기술용역은 조달청 기술용역 적격심사세부기준을 준용한다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 학술연구용역 · 5억원 이상"
+        service_type: "학술연구용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 1 학술연구용역 · 5억원 미만"
+        service_type: "학술연구용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 2 시설분야용역 · 5억원 이상"
+        service_type: "시설분야용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 2 시설분야용역 · 5억원 미만"
+        service_type: "시설분야용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 이상"
+        service_type: "소프트웨어용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 3의1 소프트웨어용역(경쟁제품 대상) · 5억원 이상"
+        service_type: "소프트웨어용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 3의1 소프트웨어용역(경쟁제품 대상) · 5억원 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 4 폐기물처리용역 · 5억원 이상"
+        service_type: "폐기물처리용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 4 폐기물처리용역 · 5억원 미만"
+        service_type: "폐기물처리용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 5 여객 육상운송용역 · 5억원 이상"
+        service_type: "여객육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 5 여객 육상운송용역 · 5억원 미만"
+        service_type: "여객육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 5의1 화물 육상운송용역 · 5억원 이상"
+        service_type: "화물육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 5의1 화물 육상운송용역 · 5억원 미만"
+        service_type: "화물육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 6 보험용역 · 5억원 이상"
+        service_type: "보험용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 6 보험용역 · 5억원 미만"
+        service_type: "보험용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 7 수리·점검용역 · 5억원 이상"
+        service_type: "수리점검용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 7 수리·점검용역 · 5억원 미만"
+        service_type: "수리점검용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 8 임대차 · 5억원 이상"
+        service_type: "임대차용역"
+        lower: 500000000
+        upper: null
+        B: 70
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+      - band: "별표 8 임대차 · 5억원 미만"
+        service_type: "임대차용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:4.2"
+    sources: ["docs/analysis/servc_formula_userfiles_agency_20261004.md:4"]
+  - institution_name: "한국도로공사"
+    name_aliases: ["한국도로공사", "도로공사"]
+    institution_code: null
+    status: partial
+    scope: INSTITUTION
+    standard: "용역적격심사 세부기준 (2022-10-01 개정·시행. 저장소 확보본은 2021-03-02 시행판)"
+    effective_date: "2022-10-01"
+    service_types: ["일반용역", "시설분야용역", "기술용역"]
+    note: "현행 2022-10-01 판 원문은 확보하지 못했고, 저장소에는 사용자 제공 2021-03-02 시행판 원문만 있다. 별표 1·2 값은 선행 재계산 문서 인용과 일치한다. 별표 1-1(일반 10억원 이상)과 별표 2(시설분야)는 각각 계수 생략·평탄 점수 미인쇄로 미확정이다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1-1 일반용역 10억원 이상"
+        service_type: "일반용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: null
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: null
+        price_cap_rate: null
+        flat_score: null
+        status: partial
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 1-2 일반용역 5억원 이상 10억원 미만"
+        service_type: "일반용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: 35
+        status: confirmed
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 1-3 일반용역 고시금액 이상 5억원 미만"
+        service_type: "일반용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 3
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 82.995
+        price_cap_rate: 93
+        flat_score: 55
+        status: confirmed
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 1-4 일반용역 고시금액 미만"
+        service_type: "일반용역"
+        lower: null
+        upper: "고시금액"
+        B: 80
+        k: 5
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.995
+        price_cap_rate: 91
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 2 시설분야용역 고시금액 이상"
+        service_type: "시설분야용역"
+        lower: "고시금액"
+        upper: null
+        B: 70
+        k: 60
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: null
+        status: partial
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 2 시설분야용역 고시금액 미만"
+        service_type: "시설분야용역"
+        lower: null
+        upper: "고시금액"
+        B: 80
+        k: 60
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: null
+        status: partial
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 3-1 기술용역 10억원 이상"
+        service_type: "기술용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: 1
+        base_ratio: 88
+        pass_score: 92
+        lwlt_rate: 79.995
+        price_cap_rate: 96
+        flat_score: 22
+        status: confirmed
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 3-2 기술용역 5억원 이상 10억원 미만"
+        service_type: "기술용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 85.495
+        price_cap_rate: 90.5
+        flat_score: 45
+        status: confirmed
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 3-3 기술용역 고시금액 이상 5억원 미만"
+        service_type: "기술용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 86.745
+        price_cap_rate: 89.25
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+      - band: "별표 3-4 기술용역 고시금액 미만"
+        service_type: "기술용역"
+        lower: null
+        upper: "고시금액"
+        B: 90
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 85
+        status: confirmed
+        source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
+    sources: ["docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4", "docs/analysis/servc_formula_userfiles_existing_20261004.md:4", "docs/analysis/servc_formula_collection_central_20261004.md:298-320"]
+  - institution_name: "한국가스공사"
+    name_aliases: ["한국가스공사", "KOGAS"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "공사·용역 적격심사 세부기준 (개정 2026-07-08, 시행 2026-07-09)"
+    effective_date: "2026-07-09"
+    service_types: ["용역(종합심사낙찰제 3유형 외)", "시설분야용역"]
+    note: "k 는 추정가격 구간(제17조)으로, B 는 용역수행능력 계량화 정도(제16조①)로 정해진다. 따라서 한 추정가격 구간에 B 30/50/70 이 병존한다. 제17조④가 90%(시설 92%) 초과 시 별표11 하한선과 계산식 점수 중 높은 점수를 인정한다."
+    non_qual_methods: ["종합심사낙찰제: 건설공사기본계획·기본설계 30억원 이상, 실시설계 40억원 이상, 건설사업관리 50억원 이상 용역은 「용역계약 종합심사낙찰제 심사세부기준」(시행 2024-09-09)을 적용한다."]
+    bands:
+      - band: "제17조 · 30억원 이상"
+        service_type: "용역(종심제 3유형 외)"
+        lower: 3000000000
+        upper: null
+        B: [30, 50, 70]
+        k: 1.5
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 79.995
+        price_cap_rate: 90
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_kogas_qualification_20261004.md:5.3,5.4"
+      - band: "제17조 · 30억원 미만 10억원 이상"
+        service_type: "용역(종심제 3유형 외)"
+        lower: 1000000000
+        upper: 3000000000
+        B: [30, 50, 70]
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 90
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_kogas_qualification_20261004.md:5.3,5.4"
+      - band: "제17조 · 10억원 미만 고시금액 이상"
+        service_type: "용역(종심제 3유형 외)"
+        lower: "고시금액"
+        upper: 1000000000
+        B: [30, 50, 70]
+        k: 3
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 84.995
+        price_cap_rate: 90
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_kogas_qualification_20261004.md:5.3,5.4"
+      - band: "제17조 · 고시금액 미만"
+        service_type: "용역(종심제 3유형 외)"
+        lower: null
+        upper: "고시금액"
+        B: [30, 50, 70]
+        k: 5
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.995
+        price_cap_rate: 90
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_kogas_qualification_20261004.md:5.3,5.4"
+      - band: "제17조② 시설분야용역"
+        service_type: "시설분야용역"
+        lower: null
+        upper: null
+        B: 50
+        k: 5
+        base_ratio: 92
+        pass_score: 90
+        lwlt_rate: 89.995
+        price_cap_rate: 92
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_kogas_qualification_20261004.md:5.3,5.4"
+    sources: ["docs/analysis/servc_formula_kogas_qualification_20261004.md:4-8"]
+  - institution_name: "한국전력기술"
+    name_aliases: ["한국전력기술", "한전기술", "KEPCO E&C"]
+    institution_code: null
+    status: partial
+    scope: INSTITUTION
+    standard: "용역적격심사기준 (최종공포 2025-08-20)"
+    effective_date: "2025-08-20"
+    service_types: ["기술용역", "학술연구용역", "시설분야용역", "소프트웨어용역", "차량용역", "홍보용역", "여객육상운송용역", "화물육상운송용역", "수주계약 하도급용역"]
+    note: "별표 1-1(기술 10억원 이상)과 별표 1-5(수주계약 하도급)는 계수가 인쇄되지 않고 평탄 문장도 없어 k 미확정이다(규칙 5). 여러 별표의 평탄 문장이 점수를 인쇄하지 않아 그 행은 검산 통과로 세지 않았다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1-2 기술용역 10억원 미만 5억원 이상"
+        service_type: "기술용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: 35
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 1-3 기술용역 5억원 미만 고시금액 이상"
+        service_type: "기술용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: 55
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 1-4 기술용역 고시금액 미만"
+        service_type: "기술용역"
+        lower: null
+        upper: "고시금액"
+        B: 90
+        k: 20
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 87.245
+        price_cap_rate: 88.75
+        flat_score: 75
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 1-1 기술용역 10억원 이상"
+        service_type: "기술용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: null
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: null
+        price_cap_rate: null
+        flat_score: null
+        status: partial
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 1-5 수주계약 하도급 조건"
+        service_type: "수주계약 하도급용역"
+        lower: null
+        upper: null
+        B: 40
+        k: null
+        base_ratio: 92
+        pass_score: 92
+        lwlt_rate: null
+        price_cap_rate: null
+        flat_score: null
+        status: partial
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 2 학술연구용역 고시금액 이상"
+        service_type: "학술연구용역"
+        lower: "고시금액"
+        upper: null
+        B: 40
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 2 학술연구용역 고시금액 미만"
+        service_type: "학술연구용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 3 시설분야용역"
+        service_type: "시설분야용역"
+        lower: null
+        upper: null
+        B: [60, 70]
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 4 소프트웨어용역(경쟁제품 비대상) 고시금액 이상"
+        service_type: "소프트웨어용역"
+        lower: "고시금액"
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 4 소프트웨어용역(경쟁제품 비대상) 고시금액 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 4의2 소프트웨어용역(경쟁제품 대상)"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: null
+        B: [60, 70]
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 5 차량용역"
+        service_type: "차량용역"
+        lower: null
+        upper: null
+        B: [60, 70]
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 6 홍보용역"
+        service_type: "홍보용역"
+        lower: null
+        upper: null
+        B: [60, 70]
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 7 여객 육상운송용역"
+        service_type: "여객육상운송용역"
+        lower: null
+        upper: null
+        B: [60, 70]
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 7의1 화물 육상운송용역 고시금액 이상"
+        service_type: "화물육상운송용역"
+        lower: "고시금액"
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+      - band: "별표 7의1 화물 육상운송용역 고시금액 미만"
+        service_type: "화물육상운송용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
+    sources: ["docs/analysis/servc_formula_collection_energy_20261004.md:3.1"]
+  - institution_name: "한국수자원공사"
+    name_aliases: ["한국수자원공사", "K-water", "Kwater"]
+    institution_code: null
+    status: partial
+    scope: INSTITUTION
+    standard: "용역적격심사 세부기준 (40차/개정 2026-06-29, 시행 2026-06-30)"
+    effective_date: "2026-06-30"
+    service_types: ["기술용역", "점검정비용역", "학술연구용역", "시설분야용역", "기타용역"]
+    note: "별표 5·6·7의2·7의3·8 은 평탄 대입값이 인쇄 점수와 0.010~0.025점 달라 미확정이다(규칙 7). 별표 7의1 은 계수 생략 + 평탄 문장 부재로 k 미확정이다(규칙 5). 최저평점은 원문에 없다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 기술용역 10억원 이상"
+        service_type: "기술용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: 1
+        base_ratio: 88
+        pass_score: 92
+        lwlt_rate: 79.995
+        price_cap_rate: 96
+        flat_score: 22
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 1의1 점검정비용역 10억원 이상"
+        service_type: "점검정비용역"
+        lower: 1000000000
+        upper: null
+        B: 40
+        k: 1
+        base_ratio: 88
+        pass_score: 92
+        lwlt_rate: 79.995
+        price_cap_rate: 96
+        flat_score: 32
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 2 기술용역 10억원 미만 5억원 이상"
+        service_type: "기술용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 85.495
+        price_cap_rate: 90.5
+        flat_score: 45
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 3 기술용역 5억원 미만 고시금액 이상"
+        service_type: "기술용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 86.745
+        price_cap_rate: 89.25
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 4 기술용역 고시금액 미만"
+        service_type: "기술용역"
+        lower: null
+        upper: "고시금액"
+        B: 80
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 75
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 5 학술연구용역"
+        service_type: "학술연구용역"
+        lower: null
+        upper: null
+        B: 40
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.495
+        flat_score: 25
+        status: partial
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 6 시설분야용역"
+        service_type: "시설분야용역"
+        lower: null
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 93.995
+        flat_score: 45
+        status: partial
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 7의1 기타용역 10억원 이상"
+        service_type: "기타용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: null
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: null
+        price_cap_rate: null
+        flat_score: null
+        status: partial
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 7의2 기타용역 10억원 미만 5억원 이상"
+        service_type: "기타용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.505
+        flat_score: 35
+        status: partial
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 7의3 기타용역 5억원 미만 고시금액 이상"
+        service_type: "기타용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 3
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 82.995
+        price_cap_rate: 93.005
+        flat_score: 55
+        status: partial
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+      - band: "별표 8 기타용역 고시금액 미만"
+        service_type: "기타용역"
+        lower: null
+        upper: "고시금액"
+        B: 80
+        k: 5
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.995
+        price_cap_rate: 91.005
+        flat_score: 65
+        status: partial
+        source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
+    sources: ["docs/analysis/servc_formula_userfiles_existing_20261004.md:8", "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:3", "docs/analysis/institution_formula_unresolved_20261012.md", "docs/analysis/institution_formula_g2b_attachment_sweep_20261012.md"]
+  - institution_name: "한국수력원자력"
+    name_aliases: ["한국수력원자력", "한수원", "KHNP"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "일반용역적격심사세부기준 (일부개정 2026-06-19)"
+    effective_date: "2026-06-19"
+    service_types: ["청소용역", "경상보수용역", "경비용역", "하수처리시설 관리용역", "학술연구용역", "소프트웨어용역", "폐기물처리용역", "육상운송용역", "국외운송주선용역"]
+    note: "평탄 문장이 점수를 인쇄하지 않아 검산 통과 행은 0개다(규칙 7). 별표 9·10 은 B 열 머리와 달리 운송주선용역 규모 구간(30억/10억)으로 B 를 세 단 둔다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 청소용역 · 5억원 이상"
+        service_type: "청소용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 1 청소용역 · 5억원 미만"
+        service_type: "청소용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 2 사옥사택 경상보수용역 · 5억원 이상"
+        service_type: "경상보수용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 2 사옥사택 경상보수용역 · 5억원 미만"
+        service_type: "경상보수용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 3 경비용역 · 5억원 이상"
+        service_type: "경비용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 3 경비용역 · 5억원 미만"
+        service_type: "경비용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 4 하수처리시설 관리용역 · 5억원 이상"
+        service_type: "하수처리시설 관리용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 4 하수처리시설 관리용역 · 5억원 미만"
+        service_type: "하수처리시설 관리용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 5 학술연구용역 · 5억원 이상"
+        service_type: "학술연구용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 5 학술연구용역 · 5억원 미만"
+        service_type: "학술연구용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 6-㉮ 소프트웨어용역(경쟁제품 비대상) · 5억원 이상"
+        service_type: "소프트웨어용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 6-㉮ 소프트웨어용역(경쟁제품 비대상) · 5억원 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 6-㉯ 소프트웨어용역(경쟁제품 대상) · 5억원 이상"
+        service_type: "소프트웨어용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 6-㉯ 소프트웨어용역(경쟁제품 대상) · 5억원 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 7 폐기물처리용역 · 5억원 이상"
+        service_type: "폐기물처리용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 7 폐기물처리용역 · 5억원 미만"
+        service_type: "폐기물처리용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 8-㉮ 여객 육상운송용역 · 5억원 이상"
+        service_type: "여객육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 8-㉮ 여객 육상운송용역 · 5억원 미만"
+        service_type: "여객육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 8-㉯ 화물 육상운송용역 · 5억원 이상"
+        service_type: "화물육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 8-㉯ 화물 육상운송용역 · 5억원 미만"
+        service_type: "화물육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 9 정비자재 국외운송주선용역 · 30억원 이상"
+        service_type: "국외운송주선용역"
+        lower: 3000000000
+        upper: null
+        B: 30
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 9 정비자재 국외운송주선용역 · 30억원 미만 10억원 이상"
+        service_type: "국외운송주선용역"
+        lower: 1000000000
+        upper: 3000000000
+        B: 40
+        k: 2
+        base_ratio: 90
+        pass_score: 90
+        lwlt_rate: 84.995
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 9 정비자재 국외운송주선용역 · 10억원 미만"
+        service_type: "국외운송주선용역"
+        lower: null
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 90
+        pass_score: 95
+        lwlt_rate: 87.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 10 원전연료 국외운송주선용역 · 30억원 이상"
+        service_type: "국외운송주선용역"
+        lower: 3000000000
+        upper: null
+        B: 30
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 10 원전연료 국외운송주선용역 · 30억원 미만 10억원 이상"
+        service_type: "국외운송주선용역"
+        lower: 1000000000
+        upper: 3000000000
+        B: 40
+        k: 2
+        base_ratio: 90
+        pass_score: 90
+        lwlt_rate: 84.995
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+      - band: "별표 10 원전연료 국외운송주선용역 · 10억원 미만"
+        service_type: "국외운송주선용역"
+        lower: null
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 90
+        pass_score: 95
+        lwlt_rate: 87.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:6.2"
+    sources: ["docs/analysis/servc_formula_userfiles_agency_20261004.md:6"]
+  - institution_name: "한국지역난방공사"
+    name_aliases: ["한국지역난방공사", "KDHC"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "일반용역적격심사세부기준 (개정 2026-01-01, 시행 2026-01-01)"
+    effective_date: "2026-01-01"
+    service_types: ["학술연구용역", "시설분야용역", "소프트웨어용역", "폐기물처리용역", "육상운송용역", "보험용역", "수리점검용역", "임대차용역", "기타용역"]
+    note: "별표 9(기타용역)만 평탄 문장이 점수(35·65)를 인쇄해 검산을 통과한다. 나머지 별표는 비율만 인쇄되어 검산 통과로 세지 않았다(규칙 7). 별표 6 보험은 평탄 문장·최저평점이 원문에 없다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 학술연구용역 · 5억원 이상"
+        service_type: "학술연구용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 1 학술연구용역 · 5억원 미만"
+        service_type: "학술연구용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 2 시설분야용역 · 5억원 이상"
+        service_type: "시설분야용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 2 시설분야용역 · 5억원 미만"
+        service_type: "시설분야용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 이상"
+        service_type: "소프트웨어용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 이상"
+        service_type: "소프트웨어용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 4 폐기물처리용역 · 5억원 이상"
+        service_type: "폐기물처리용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 4 폐기물처리용역 · 5억원 미만"
+        service_type: "폐기물처리용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 5 여객 육상운송용역 · 5억원 이상"
+        service_type: "여객육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 5 여객 육상운송용역 · 5억원 미만"
+        service_type: "여객육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 5의2 화물 육상운송용역 · 5억원 이상"
+        service_type: "화물육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 5의2 화물 육상운송용역 · 5억원 미만"
+        service_type: "화물육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 6 보험용역 · 5억원 이상"
+        service_type: "보험용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 6 보험용역 · 5억원 미만"
+        service_type: "보험용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 7 수리·점검용역 · 5억원 이상"
+        service_type: "수리점검용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 7 수리·점검용역 · 5억원 미만"
+        service_type: "수리점검용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 8 임대차 · 5억원 이상"
+        service_type: "임대차용역"
+        lower: 500000000
+        upper: null
+        B: 70
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 8 임대차 · 5억원 미만"
+        service_type: "임대차용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2"
+      - band: "별표 9 기타용역 고시금액 이상"
+        service_type: "기타용역"
+        lower: "고시금액"
+        upper: null
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: 35
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2,5.3"
+      - band: "별표 9 기타용역 고시금액 미만"
+        service_type: "기타용역"
+        lower: null
+        upper: "고시금액"
+        B: 80
+        k: 5
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.995
+        price_cap_rate: 91
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:5.2,5.3"
+    sources: ["docs/analysis/servc_formula_userfiles_agency_20261004.md:5"]
+  - institution_name: "한국석유공사"
+    name_aliases: ["한국석유공사", "KNOC"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "용역 적격심사 세부기준 (제정 1995-09-18, 12차 개정 2019-09-30)"
+    effective_date: "2019-09-30"
+    service_types: ["학술연구용역", "시설분야용역", "정보통신용역", "폐기물처리용역", "운송용역", "기타용역"]
+    note: "기술용역(별표 1~4)과 일반용역(별표 5~11)을 한 문서에서 다룬다. 아래 bands 는 일반용역이다. 평탄 문장이 점수를 인쇄하지 않아 검산 통과 행은 0개다(규칙 7). 부칙·시행일 원문이 없어 표제 개정일을 시행일로 둔다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 5 학술연구용역 · 2억원 이상"
+        service_type: "학술연구용역"
+        lower: 200000000
+        upper: null
+        B: 40
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 5 학술연구용역 · 2억원 미만"
+        service_type: "학술연구용역"
+        lower: null
+        upper: 200000000
+        B: 70
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 6 시설분야용역 · 5억원 이상"
+        service_type: "시설분야용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 6 시설분야용역 · 5억원 미만"
+        service_type: "시설분야용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 7 정보통신용역(경쟁제품 비대상) · 5억원 이상"
+        service_type: "정보통신용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 7 정보통신용역(경쟁제품 비대상) · 5억원 미만"
+        service_type: "정보통신용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 8 정보통신용역(경쟁제품 대상) · 5억원 이상"
+        service_type: "정보통신용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 8 정보통신용역(경쟁제품 대상) · 5억원 미만"
+        service_type: "정보통신용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 9 폐기물처리용역 · 5억원 이상"
+        service_type: "폐기물처리용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 9 폐기물처리용역 · 5억원 미만"
+        service_type: "폐기물처리용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 10 운송용역(경쟁제품 비대상) · 5억원 이상"
+        service_type: "운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 10 운송용역(경쟁제품 비대상) · 5억원 미만"
+        service_type: "운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 10의2 운송용역(경쟁제품 대상) · 5억원 이상"
+        service_type: "운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 10의2 운송용역(경쟁제품 대상) · 5억원 미만"
+        service_type: "운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 11 기타용역 · 2억원 이상"
+        service_type: "기타용역"
+        lower: 200000000
+        upper: null
+        B: 40
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+      - band: "별표 11 기타용역 · 2억원 미만"
+        service_type: "기타용역"
+        lower: null
+        upper: 200000000
+        B: 70
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:5.2"
+    sources: ["docs/analysis/servc_formula_recover_a_20261005.md:5"]
+  - institution_name: "한전 전력연구원"
+    name_aliases: ["한전 전력연구원", "전력연구원", "KEPRI"]
+    institution_code: null
+    status: unresolved
+    scope: INSTITUTION
+    standard: "(자체 일반용역 적격심사 원문 미확보)"
+    effective_date: null
+    service_types: []
+    note: "나라장터 발주는 조달청 경유 협상계약이라 적격심사 단서가 없다. 자체 SRM 은 DNS 실패, 홈페이지에는 문서가 확인되지 않았다. 모회사 한전 본사 기준은 확보했으나 전력연구원 적용 근거가 확인되지 않아 그 계수를 옮기지 않는다."
+    non_qual_methods: []
+    bands: []
+    sources: ["docs/analysis/servc_formula_recover_b_20261005.md:6", "docs/analysis/servc_formula_collection_energy_20261004.md:5.3"]
+  - institution_name: "한전KPS"
+    name_aliases: ["한전KPS", "한전케이피에스주식회사", "KPS"]
+    institution_code: null
+    status: unresolved
+    scope: INSTITUTION
+    standard: "(자체 용역 적격심사 세부기준 원문 미확보)"
+    effective_date: null
+    service_types: []
+    note: "나라장터 Servc 공고 5건에 적격심사 첨부가 없고, 사규 목록 404·알리오 스크립트 렌더링으로 원문을 확보하지 못했다. 접속 실패는 문서 부재의 증거가 아니다(규칙 9)."
+    non_qual_methods: []
+    bands: []
+    sources: ["docs/analysis/servc_formula_recover_a_20261005.md:7", "docs/analysis/servc_formula_collection_energy_20261004.md:5.4"]
+  - institution_name: "인천국제공항공사"
+    name_aliases: ["인천국제공항공사", "IIAC"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "일반용역 적격심사 세부기준 (재무처-17529호, 2024-12-23 제정, 2025-01-01 시행)"
+    effective_date: "2025-01-01"
+    service_types: ["학술연구용역", "아웃소싱용역", "폐기물처리용역", "여객육상운송용역", "화물육상운송용역", "보험용역", "수리점검용역", "임대차용역", "기타용역"]
+    note: "원문이 평탄 비율만 인쇄하고 대응 점수를 인쇄하지 않아 검산 통과 행은 0개다(규칙 7). 별표 5 만 추정가격 5억원 이상/미만 두 열에 하나의 식을 인쇄한다. 인천공항시설관리(주)와 별개 법인이다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 학술연구용역 고시금액 이상"
+        service_type: "학술연구용역"
+        lower: "고시금액"
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 1 학술연구용역 고시금액 미만"
+        service_type: "학술연구용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 2 기술분야 아웃소싱용역"
+        service_type: "아웃소싱용역"
+        lower: null
+        upper: null
+        B: 30
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 3 일반분야 아웃소싱용역"
+        service_type: "아웃소싱용역"
+        lower: null
+        upper: null
+        B: 55
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 4 폐기물처리용역 고시금액 이상"
+        service_type: "폐기물처리용역"
+        lower: "고시금액"
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 4 폐기물처리용역 고시금액 미만"
+        service_type: "폐기물처리용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 5 여객 육상운송용역 · 5억원 이상"
+        service_type: "여객육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 5 여객 육상운송용역 · 5억원 미만"
+        service_type: "여객육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 5의2 화물 육상운송용역 고시금액 이상"
+        service_type: "화물육상운송용역"
+        lower: "고시금액"
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 5의2 화물 육상운송용역 고시금액 미만"
+        service_type: "화물육상운송용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 6 보험용역 고시금액 이상"
+        service_type: "보험용역"
+        lower: "고시금액"
+        upper: null
+        B: 60
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 6 보험용역 고시금액 미만"
+        service_type: "보험용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 7 수리·점검용역 고시금액 이상"
+        service_type: "수리점검용역"
+        lower: "고시금액"
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 7 수리·점검용역 고시금액 미만"
+        service_type: "수리점검용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 8 임대차용역"
+        service_type: "임대차용역"
+        lower: null
+        upper: null
+        B: 70
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 8 임대차용역 (k=4 구간)"
+        service_type: "임대차용역"
+        lower: null
+        upper: null
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 9 기타용역 고시금액 이상"
+        service_type: "기타용역"
+        lower: "고시금액"
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+      - band: "별표 9 기타용역 고시금액 미만"
+        service_type: "기타용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
+    sources: ["docs/analysis/servc_formula_recover_a_20261005.md:4", "docs/analysis/20260930_servc_formula_recalc_ince_molit.md:2"]
+  - institution_name: "인천공항시설관리"
+    name_aliases: ["인천공항시설관리(주)", "인천공항시설관리"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "일반용역 적격심사 세부기준 (최종 개정 [경영기획그룹-15248호, 2025-08-27], 2025-09-01 이후 입찰공고분)"
+    effective_date: "2025-09-01"
+    service_types: ["학술연구용역", "시설분야용역", "소프트웨어용역", "폐기물처리용역", "육상운송용역", "보험용역", "수리점검용역", "임대차용역", "기타용역"]
+    note: "평탄 문장이 점수를 인쇄하지 않아 검산 통과 행은 0개다(규칙 7). 인천국제공항공사와 별개 법인이며, 인천국제공항공사의 미확인 판정을 이 문서로 바꾸지 않는다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 학술연구용역 · 5억원 이상"
+        service_type: "학술연구용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 1 학술연구용역 · 5억원 미만"
+        service_type: "학술연구용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 2 시설분야용역 · 5억원 이상"
+        service_type: "시설분야용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 2 시설분야용역 · 5억원 미만"
+        service_type: "시설분야용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 91
+        pass_score: 85
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 이상"
+        service_type: "소프트웨어용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 이상"
+        service_type: "소프트웨어용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 미만"
+        service_type: "소프트웨어용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 4 폐기물처리용역 · 5억원 이상"
+        service_type: "폐기물처리용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 4 폐기물처리용역 · 5억원 미만"
+        service_type: "폐기물처리용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 5 여객 육상운송용역 · 5억원 이상"
+        service_type: "여객육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 5 여객 육상운송용역 · 5억원 미만"
+        service_type: "여객육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 91
+        pass_score: 88
+        lwlt_rate: 87.995
+        price_cap_rate: 94
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 5의2 화물 육상운송용역 · 5억원 이상"
+        service_type: "화물육상운송용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 5의2 화물 육상운송용역 · 5억원 미만"
+        service_type: "화물육상운송용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 6 보험용역 · 5억원 이상"
+        service_type: "보험용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 6 보험용역 · 5억원 미만"
+        service_type: "보험용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 7 수리·점검용역 · 5억원 이상"
+        service_type: "수리점검용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 7 수리·점검용역 · 5억원 미만"
+        service_type: "수리점검용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 8 임대차용역"
+        service_type: "임대차용역"
+        lower: null
+        upper: null
+        B: 70
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 8 임대차용역 (k=4 구간)"
+        service_type: "임대차용역"
+        lower: null
+        upper: null
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 9 기타용역 · 5억원 이상"
+        service_type: "기타용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 80.495
+        price_cap_rate: 95.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+      - band: "별표 9 기타용역 · 5억원 미만"
+        service_type: "기타용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 84.245
+        price_cap_rate: 91.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
+    sources: ["docs/analysis/servc_formula_userfiles_agency_20261004.md:9"]
