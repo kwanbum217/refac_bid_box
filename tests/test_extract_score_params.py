@@ -337,3 +337,63 @@ def test_parse_price_formula_reads_binary_renderings() -> None:
 def test_parse_price_limit_reads_point_suffixed_b_values() -> None:
     limits = parse_price_limit(HWP_PRICE_FORMULA_ROWS)
     assert [(limit.label, limit.value) for limit in limits] == [("", Decimal("50"))]
+
+
+# ----------------------------------------------------------------------------
+# 계산식 서식 확장 (실측 바이너리 HWP 렌더링)
+# ----------------------------------------------------------------------------
+
+
+def test_parse_price_formula_reads_placeholder_with_soft_hyphen() -> None:
+    rows = (("입찰가격 평점산식", "ㅇ평점(점) = 배점한도\u00ad4\u00d7"),)
+    formulas = parse_price_formula(rows)
+    assert [formula.multiplier for formula in formulas] == [Decimal("4")]
+
+
+def test_parse_price_formula_reads_numeric_style_with_point_suffix() -> None:
+    rows = (
+        ("입찰가격 평점산식", "평점(점) = 60 - 2 \u00d7 ( 100 - 예정가격 ) \u00d7 100"),
+        ("입찰가격 평점산식", "평점 = 90 - 20 \u00d7 ( 100 - 예정가격 ) \u00d7 100"),
+    )
+    assert [formula.multiplier for formula in parse_price_formula(rows)] == [
+        Decimal("2"),
+        Decimal("20"),
+    ]
+
+
+def test_parse_price_formula_reads_numeric_style_without_multiplier() -> None:
+    rows = (("입찰가격 평점산식", "평점 = 30 - ( 100 - 예정가격 ) \u00d7 100"),)
+    assert [formula.multiplier for formula in parse_price_formula(rows)] == [Decimal("1")]
+
+
+def test_parse_price_formula_reads_bare_limit_style() -> None:
+    rows = (("입찰가격 평점산식", "배점한도-60\u00d7 예정가격"),)
+    assert [formula.multiplier for formula in parse_price_formula(rows)] == [Decimal("60")]
+
+
+def test_parse_price_formula_requires_price_context() -> None:
+    # 실적계수 계산식은 입찰가격·예정가격 문맥이 없으므로 입찰가격 계산식이 아니다.
+    assert parse_price_formula((("▪평점 = 11 \u00d7 실적계수 (실적계수의 상한은 1)",),)) == []
+    assert parse_price_formula((("▪평점 = 11 \u00d7 예정가격 (실적계수의 상한은 1)",),))
+
+
+def test_parse_price_formula_reads_text_base_rate() -> None:
+    rows = (
+        (
+            "입찰가격 평점산식 88 입찰가격 평점(점) = 60 - 2 \u00d7( --- - -------- ) \u00d7 100 "
+            "단, 투찰율이 95.5% 초과시 45점 평점 100 예정가격",
+        ),
+    )
+    formulas = parse_price_formula(rows)
+    assert [formula.multiplier for formula in formulas] == [Decimal("2")]
+    assert formulas[0].base_rate == Decimal("0.88")
+
+
+def test_extract_document_text_promotes_formula_paragraph_to_row() -> None:
+    text = (
+        '<?xml version="1.0"?><HWPML><BODY><P>입찰가격 평점산식</P>'
+        "<P>ㅇ평점(점) = 배점한도\u00ad4\u00d7 100 예정가격</P></BODY></HWPML>"
+    ).encode("utf-8")
+    document = extract_document_text(text)
+    assert document.ok
+    assert [formula.multiplier for formula in parse_price_formula(document.rows)] == [Decimal("4")]

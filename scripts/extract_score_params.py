@@ -54,19 +54,39 @@ BROWSER_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
-# 적격심사 세부기준 [별표] 의 입찰가격 평점 계산식.
-# 실측 예: "수식입니다.BIGCIRC `평점(점)`=`배점한도-`2` TIMES vert ( {90} over {100} - ..."
-_PRICE_FORMULA_RE = re.compile(
-    r"평점\s*\(\s*점\s*\)\s*=\s*배점한도\s*[-\u2013]\s*(\d+(?:\.\d+)?)\s*TIMES", re.I
+# 적격심사 세부기준 [별표] 의 입찰가격 평점 계산식. 실측 서식 세 갈래를 모두 읽는다.
+#
+# 1) 배점한도 자리표시자 + 계수. HWPX·HWPML·바이너리 공통이며 평점(점) 접두와
+#    TIMES 또는 곱셈 기호가 붙는다.
+#    실측 예: "수식입니다.BIGCIRC `평점(점)`=`배점한도-`2` TIMES vert ( {90} over ..."
+#             "ㅇ평점(점) = 배점한도\u00ad4\u00d7"
+_PLACEHOLDER_PRICE_FORMULA_RE = re.compile(
+    r"평점\s*(?:\(\s*점\s*\))?\s*=\s*배점한도\s*[-\u2013\u2212\u00ad]\s*"
+    r"(\d+(?:\.\d+)?)\s*(?:TIMES|[\u00d7xX*])"
 )
-# 바이너리 HWP 의 수식 개체는 위 HWPX/HWPML 평문화와 달리 배점한도와 계수를
-# 숫자로 바꿔 평점=배점한도-계수 형태로 남긴다. 계수가 1 이면 생략된다.
-# group(1) 은 배점한도(B), group(2) 는 평점계수(k, 없으면 1)이다.
-_HWP_PRICE_FORMULA_RE = re.compile(
-    r"평점\s*=\s*(\d+(?:\.\d+)?)\s*(?:[-\u2013\u2212]\s*(\d+(?:\.\d+)?)?\s*[\u00d7xX*])?"
+# 2) 배점한도가 숫자로 풀린 서식. group(1) 은 배점한도(B), group(2) 는 계수(k)이며
+#    계수가 1 이면 곱셈 항이 통째로 생략된다("평점=30 -|").
+#    실측 예: "평점(점) = 60 - 2 \u00d7", "평점 = 90 - 20 \u00d7", "*평점=50-2\u00d7"
+_NUMERIC_PRICE_FORMULA_RE = re.compile(
+    r"평점\s*(?:\(\s*점\s*\))?\s*=\s*(\d+(?:\.\d+)?)\s*"
+    r"(?:[-\u2013\u2212\u00ad]\s*(\d+(?:\.\d+)?)?\s*[\u00d7xX*])?"
+)
+# 3) 평점 접두가 없고 배점한도 자리표시자만 남은 서식. 시설분야용역 별표가 이렇게
+#    렌더링되며 계수는 곱셈 기호 앞 숫자다. 실측 예: "배점한도-60\u00d7"
+_BARE_LIMIT_PRICE_FORMULA_RE = re.compile(
+    r"배점한도\s*[-\u2013\u2212\u00ad]\s*(\d+(?:\.\d+)?)\s*[\u00d7xX*]"
 )
 # 기준비율. HWP 수식 개체는 "{90} over {100}" 형태로 평문화된다.
 _BASE_RATE_RE = re.compile(r"\{\s*(\d+(?:\.\d+)?)\s*\}\s*over\s*\{\s*(\d+(?:\.\d+)?)\s*\}")
+# 기준비율의 바이너리 HWP 서식. 분수 성분이 조판 순서로 흩어져 "적용 88 입찰가격"
+# 처럼 남는다. 실측 예: "입찰가격 평점산식 88 입찰가격 평점(점) = 60 - 2 \u00d7"
+_BASE_RATE_TEXT_RE = re.compile(r"(?:적용|평점산식)\s*(\d+(?:\.\d+)?)\s*입찰가격")
+# 계산식이 표 셀이 아니라 문단(수식 개체)으로만 남은 문서를 문단 단위로 찾는다.
+# HWPX·HWPML 수식 개체와 바이너리 HWP 수식 개체가 모두 이 형태로 평문화된다.
+_FORMULA_HINT_RE = re.compile(
+    r"평점\s*(?:\(\s*점\s*\))?\s*=\s*(?:배점한도|\d+(?:\.\d+)?)"
+    r"|배점한도\s*[-\u2013\u2212\u00ad]\s*\d+(?:\.\d+)?\s*[\u00d7xX*]"
+)
 # 통과점수 문구. 실측 예: "종합평점이 85점(다만, 소프트웨어용역의 ...은 88점)이상이면"
 _PASS_THRESHOLD_RE = re.compile(r"종합평점[이가은는]?\s*(\d+(?:\.\d+)?)\s*점")
 _BAND_THRESHOLD_RE = re.compile(r"(\d+(?:\.\d+)?)\s*억")
@@ -129,6 +149,23 @@ def _strip_tags(fragment: str) -> str:
     return _WHITESPACE_RE.sub(" ", html.unescape(text)).strip()
 
 
+def _formula_text_rows(text: str) -> tuple[tuple[str, ...], ...]:
+    """평문에서 입찰가격 평점 계산식 문단을 1열 행으로 승격한다.
+
+    계산식이 표 셀이 아니라 수식 개체 문단으로만 남은 문서가 있다. 그 문단을
+    행으로 올려 두면 `parse_price_formula` 가 표 행과 같은 방식으로 읽는다.
+    문맥에 '입찰가격' 또는 '예정가격'이 있어야 입찰가격 계산식으로 인정한다.
+    """
+    rows: list[tuple[str, ...]] = []
+    for match in _FORMULA_HINT_RE.finditer(text or ""):
+        start = max(0, match.start() - 60)
+        end = min(len(text), match.end() + 240)
+        window = text[start:end]
+        if "입찰가격" in window or "예정가격" in window:
+            rows.append((window,))
+    return tuple(rows)
+
+
 def _hwpx_document(data: bytes) -> DocumentText:
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
@@ -157,14 +194,16 @@ def _hwpx_document(data: bytes) -> DocumentText:
                 rows.append(tuple(cells))
     if not paragraphs and not rows:
         return DocumentText(reason="HWPX 본문 텍스트 없음")
-    return DocumentText(rows=tuple(rows), flat="\n".join(paragraphs))
+    flat = "\n".join(paragraphs)
+    rows.extend(_formula_text_rows(flat))
+    return DocumentText(rows=tuple(rows), flat=flat)
 
 
 def _hwpml_document(data: bytes) -> DocumentText:
     text = _strip_tags(data.decode("utf-8", "replace"))
     if not text:
         return DocumentText(reason="HWPML 본문 텍스트 없음")
-    return DocumentText(flat=text)
+    return DocumentText(rows=_formula_text_rows(text), flat=text)
 
 
 def _ole_streams(data: bytes) -> dict[str, bytes]:
@@ -427,6 +466,7 @@ def _binary_hwp_document(data: bytes) -> DocumentText:
     flat = _WHITESPACE_RE.sub(" ", "\n".join(chunks)).strip()
     if not flat and not rows:
         return DocumentText(reason="HWP 본문 텍스트 없음")
+    rows.extend(_formula_text_rows(flat))
     return DocumentText(rows=tuple(rows), flat=flat)
 
 
@@ -482,34 +522,63 @@ def parse_pass_threshold(text: str) -> tuple[Decimal | None, str | None]:
     return None, None
 
 
+def _base_rate_of(cell: str) -> Decimal | None:
+    """계산식 셀에서 기준비율을 뽑는다. 확정 불가면 None."""
+    rate = _BASE_RATE_RE.search(cell)
+    if rate is not None:
+        numerator = _to_decimal(rate.group(1))
+        denominator = _to_decimal(rate.group(2))
+        if numerator is not None and denominator not in (None, Decimal("0")):
+            return numerator / denominator
+    text = _BASE_RATE_TEXT_RE.search(cell)
+    if text is not None:
+        numerator = _to_decimal(text.group(1))
+        if numerator is not None:
+            return numerator / Decimal("100")
+    return None
+
+
+def _price_formula_of(cell: str) -> tuple[Decimal, Decimal | None] | None:
+    """계산식 셀 하나에서 (계수 k, 기준비율) 을 뽑는다. 계산식이 아니면 None."""
+    placeholder = _PLACEHOLDER_PRICE_FORMULA_RE.search(cell)
+    if placeholder is not None:
+        multiplier = _to_decimal(placeholder.group(1))
+        return (multiplier, _base_rate_of(cell)) if multiplier is not None else None
+    numeric = _NUMERIC_PRICE_FORMULA_RE.search(cell)
+    if numeric is not None:
+        multiplier = _to_decimal(numeric.group(2)) if numeric.group(2) else Decimal("1")
+        return (multiplier, _base_rate_of(cell)) if multiplier is not None else None
+    bare = _BARE_LIMIT_PRICE_FORMULA_RE.search(cell)
+    if bare is not None:
+        multiplier = _to_decimal(bare.group(1))
+        return (multiplier, _base_rate_of(cell)) if multiplier is not None else None
+    return None
+
+
 def parse_price_formula(rows: tuple[tuple[str, ...], ...] | list[list[str]]) -> list[PriceFormula]:
     """표 행 목록에서 입찰가격 평점 계산식들을 찾는다.
 
     계산식 셀 앞의 셀들을 구간 라벨로 삼는다. 예: ["추정가격", "고시금액", "이상", "<formula>"]
+
+    계산식 셀 자체에 '입찰가격'이 없고 같은 행의 다른 셀에만 있는 문서가 많으므로,
+    행 전체에 '입찰가격' 또는 '예정가격'이 있어야 입찰가격 계산식으로 인정한다.
+    이 맥락 조건이 없으면 '실적계수' 같은 다른 심사분야 계산식을 잘못 집는다.
     """
     found: list[PriceFormula] = []
     for row in rows:
+        row_text = " ".join(row)
+        row_has_context = "입찰가격" in row_text or "예정가격" in row_text
         for index, cell in enumerate(row):
             # HWP 수식 개체는 조판에 따라 백틱이 끼어든다("`평점(점)`=`배점한도-`2`").
             normalized_cell = cell.replace("`", "")
-            match = _PRICE_FORMULA_RE.search(normalized_cell)
-            if match is not None:
-                multiplier = _to_decimal(match.group(1))
-            else:
-                # 바이너리 HWP 수식 개체는 평점=배점한도-계수 형태로 계수를 숫자로 남긴다.
-                binary = _HWP_PRICE_FORMULA_RE.search(normalized_cell)
-                if binary is None or "입찰가격" not in normalized_cell:
-                    continue
-                multiplier = _to_decimal(binary.group(2)) if binary.group(2) else Decimal("1")
-            if multiplier is None:
+            parts = _price_formula_of(normalized_cell)
+            if parts is None:
                 continue
-            rate = _BASE_RATE_RE.search(normalized_cell)
-            base_rate = None
-            if rate is not None:
-                numerator = _to_decimal(rate.group(1))
-                denominator = _to_decimal(rate.group(2))
-                if numerator is not None and denominator not in (None, Decimal("0")):
-                    base_rate = numerator / denominator
+            multiplier, base_rate = parts
+            if not (
+                row_has_context or "입찰가격" in normalized_cell or "예정가격" in normalized_cell
+            ):
+                continue
             label = " ".join(part for part in row[:index] if part).strip()
             found.append(
                 PriceFormula(
