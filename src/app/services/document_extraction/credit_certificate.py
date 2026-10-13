@@ -45,9 +45,14 @@ _GRADE_ALIASES = {
     "B": "B0",
 }
 
+# OCR 이 숫자 0 을 문자 O 로 읽은 경우를 되돌리는 대응표입니다.
+_OCR_DIGIT_FIXES = {"O": "0"}
+
+# 등급 끝자리 숫자 0 은 OCR 이 문자 O 로 자주 오독합니다(AA0 -> AAO). 후보 수집
+# 단계에서 두 표기를 모두 받아 두고, 정규화 때 등록 코드로 되돌립니다.
 _GRADE_ALTERNATION = (
-    r"(?:AAA|AA\+|AA0|AA-|AA|A\+|A0|A-|A|BBB\+|BBB0|BBB-|BBB|BB\+|BB0|BB-|BB|"
-    r"B\+|B0|B-|B|CCC\+|CCC|CC|C|D)"
+    r"(?:AAA|AA\+|AA[0O]|AA-|AA|A\+|A[0O]|A-|A|BBB\+|BBB[0O]|BBB-|BBB|BB\+|BB[0O]|BB-|BB|"
+    r"B\+|B[0O]|B-|B|CCC\+|CCC|CC|C|D)"
 )
 _GRADE_RE = re.compile(rf"(?<![A-Z0-9+\-]){_GRADE_ALTERNATION}(?![A-Z0-9+\-])")
 _GRADE_LABEL_RE = re.compile(
@@ -57,7 +62,15 @@ _GRADE_LABEL_WINDOW = 48
 
 _DATE_LABEL_RE = re.compile(r"(평가일자|평가기준일|평가일|발급일자|발급일)")
 _DATE_LABEL_WINDOW = 60
-_DATE_RE = re.compile(r"((?:19|20)\d{2})[년.\-/](\d{1,2})[월.\-/](\d{1,2})일?")
+_DATE_PATTERN = r"((?:19|20)\d{2})[년.\-/](\d{1,2})[월.\-/](\d{1,2})일?"
+_DATE_RE = re.compile(_DATE_PATTERN)
+
+# OCR 이 평가일 라벨을 일부만 남기고(등급평, 평가, 평일) 날짜를 바로 뒤에 둔 경우를
+# 잇기 위한 것입니다. 조각과 날짜 사이에 다른 글자가 끼면 잇지 않으므로, 라벨이
+# 유실되고 유효기간 값만 남은 표본을 잘못 붙이지 않습니다.
+_PARTIAL_DATE_LABEL_RE = re.compile(
+    r"(?:등급평가일|등급평가|등급평|평가일|평일|평가)" + _DATE_PATTERN
+)
 
 # 일반 신용등급이 아니라 특정 상품(회사채·기업어음·단기) 등급임을 알리는 표지입니다.
 _INSTRUMENT_MARKERS = ("기업어음", "단기", "회사채", "CP")
@@ -134,9 +147,14 @@ def _compact(text: str) -> str:
 
 
 def _canonical_grade(raw: str) -> str | None:
-    """표기 그대로의 등급을 등록 코드로 맞추고 별표 10 등급군으로 재검증합니다."""
+    """표기 그대로의 등급을 등록 코드로 맞추고 별표 10 등급군으로 재검증합니다.
+
+    끝자리 숫자 0 을 문자 O 로 읽은 OCR 표기(AA0 -> AAO)는 등록 코드로 되돌립니다.
+    """
     token = _compact(raw).upper()
     token = _GRADE_ALIASES.get(token, token)
+    if token not in _VALID_GRADE_CODES and token[-1:] in _OCR_DIGIT_FIXES:
+        token = token[:-1] + _OCR_DIGIT_FIXES[token[-1]]
     if token not in _VALID_GRADE_CODES:
         return None
     if find_credit_grade(token) is None:
@@ -391,6 +409,21 @@ def _collect_date_candidates(pages: Sequence[str]) -> list[_DateCandidate]:
                     order=len(candidates),
                     text=evidence,
                     priority=_DATE_LABEL_PRIORITY.get(match.group(1), 2),
+                )
+            )
+        # OCR 이 평가일 라벨을 일부만 남긴 경우(등급평, 평가, 평일)에도 바로 뒤 날짜를
+        # 평가일 값으로 잇습니다.
+        for match in _PARTIAL_DATE_LABEL_RE.finditer(page_compact):
+            value = _canonical_date(*match.groups())
+            if value is None:
+                continue
+            candidates.append(
+                _DateCandidate(
+                    value=value,
+                    page=page_index,
+                    order=len(candidates),
+                    text=evidence,
+                    priority=_DATE_LABEL_PRIORITY["평가일"],
                 )
             )
     return _dedupe_dates(candidates)

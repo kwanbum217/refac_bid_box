@@ -346,3 +346,27 @@ def test_real_engine_reads_digits_from_scanned_pdf() -> None:
     recognized = "".join("".join(pages).split())
 
     assert "20260315" in recognized.replace("-", "")
+
+
+def test_ocr_partial_evaluation_date_label_is_joined(api, ocr_enabled, monkeypatch) -> None:
+    lines = ("신용평가등급 확인서", "신용등급 : AA-", "등급", "평", "2025년 06월 27일")
+    _use_engine(monkeypatch, _FakeEngine(lines=lines))
+    response = api.post(EXTRACT_URL, content=_build_image_pdf([_draw_scan()]), headers=PDF_HEADERS)
+
+    assert response.status_code == 200
+    evaluated_on = response.json()["fields"]["credit_evaluated_on"]
+    assert evaluated_on is not None
+    assert evaluated_on["value"] == "2025-06-27"
+    assert evaluated_on["confidence"] == "medium"
+
+
+def test_ocr_grade_zero_read_as_letter_o_is_normalized(api, ocr_enabled, monkeypatch) -> None:
+    lines = ("신용평가등급 확인서", "신용등급 : AAO", "평가일 : 2026-03-15")
+    _use_engine(monkeypatch, _FakeEngine(lines=lines))
+    response = api.post(EXTRACT_URL, content=_build_image_pdf([_draw_scan()]), headers=PDF_HEADERS)
+
+    assert response.status_code == 200
+    grade = response.json()["fields"]["credit_grade"]
+    assert grade is not None
+    assert grade["value"] == "AA0"
+    assert grade["confidence"] == "medium"

@@ -261,3 +261,50 @@ def test_effective_period_value_is_not_evaluation_date() -> None:
     assert result.credit_grade is not None
     assert result.credit_grade.value == "AA-"
     assert result.credit_evaluated_on is None
+
+
+@pytest.mark.parametrize(
+    ("notation", "expected"),
+    [("AAO", "AA0"), ("AO", "A0"), ("BBBO", "BBB0"), ("BBO", "BB0"), ("BO", "B0")],
+)
+def test_ocr_zero_read_as_letter_o_is_normalized(notation: str, expected: str) -> None:
+    result = parse_credit_certificate([f"신용등급 : {notation}"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == expected
+    assert result.credit_grade.value in GRADE_CODES
+
+
+def test_partial_evaluation_date_label_is_joined_with_following_date() -> None:
+    text = (
+        "기업신용평가등급 확인서\n"
+        "기업신용평가등급\n"
+        "A+\n"
+        "재무결산기준일 2024년 12월 31일\n"
+        "등급\n"
+        "평\n"
+        "2025년 06월 27일\n"
+        "등급유효기한 2026년 06월 26일\n"
+    )
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "A+"
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2025-06-27"
+
+
+def test_partial_date_label_does_not_take_effective_period_value() -> None:
+    text = "등급\n평\n일\n등급\n2021년 06월 30일\n신용평가등급 BB0에 준하는 등급임"
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "BB0"
+    assert result.credit_evaluated_on is None
+
+
+def test_partial_date_label_without_immediate_date_is_ignored() -> None:
+    text = "신용등급 : AA-\n등급\n평가\n유효기간 2018년 06월 30일"
+    result = parse_credit_certificate([text])
+
+    assert result.credit_evaluated_on is None

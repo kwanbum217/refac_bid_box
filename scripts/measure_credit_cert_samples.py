@@ -454,6 +454,10 @@ def print_score(rows: list[dict[str, str]], answers: dict[str, dict[str, str]]) 
     cert_rows = [
         r for r in rows if answers.get(r["sample_id"], {}).get("expect_status") == EXPECT_EXTRACTED
     ]
+    missing_answers = sorted({row["sample_id"] for row in rows if row["sample_id"] not in answers})
+    if missing_answers:
+        print(f"[경고] 정답이 없는 표본 {len(missing_answers)}건: {', '.join(missing_answers)}")
+        print()
     print(
         f"표본 {len(rows)}건 (확인서 {len(cert_rows)}건, "
         f"비확인서 {sum(1 for r in rows if answers.get(r['sample_id'], {}).get('expect_status') == EXPECT_UNRECOGNIZED)}건, "
