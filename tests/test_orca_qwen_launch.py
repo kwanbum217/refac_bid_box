@@ -86,12 +86,20 @@ def test_wait_for_preamble_rejects_multiple_candidates_in_qwen(tmp_path: Path):
 
 
 def test_build_command_interactive_and_one_shot():
-    """기본은 -i(대화형), --one-shot 은 -p(단발) 플래그를 사용해야 합니다."""
+    """기본은 --yolo -i(대화형), --one-shot 은 --yolo -p(단발) 플래그를 사용해야 합니다."""
     interactive_cmd = build_command("qwen3.7-plus", "지시문", one_shot=False)
-    assert interactive_cmd == ["qwen", "-m", "qwen3.7-plus", "-i", "지시문"]
+    assert interactive_cmd == ["qwen", "-m", "qwen3.7-plus", "--yolo", "-i", "지시문"]
 
     one_shot_cmd = build_command("qwen3.7-plus", "지시문", one_shot=True)
-    assert one_shot_cmd == ["qwen", "-m", "qwen3.7-plus", "-p", "지시문"]
+    assert one_shot_cmd == ["qwen", "-m", "qwen3.7-plus", "--yolo", "-p", "지시문"]
+
+
+def test_default_command_is_yolo_interactive():
+    """기본 경로 argv 에는 무승인 --yolo 와 대화형 -i 가 모두 있어야 합니다."""
+    cmd = build_command("qwen3.7-plus", "지시문", one_shot=False)
+    assert "--yolo" in cmd
+    assert "-i" in cmd
+    assert "-p" not in cmd
 
 
 def test_commit_notice_mentions_commit_requirement():
@@ -137,6 +145,7 @@ def test_resolve_model_includes_openrouter_via_qwen_entry():
         "qwen",
         "-m",
         model_id,
+        "--yolo",
         "-i",
         "지시문",
     ]
