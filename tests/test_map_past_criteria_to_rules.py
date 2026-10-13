@@ -1,7 +1,8 @@
 """`scripts/map_past_criteria_to_rules.py` 의 네트워크·DB 없는 단위 시험.
 
-기준명 표기 변형, 공고일 시행일 대조(미래 규칙 금지), 추정가격 구간 확정, CSV 왕복,
-집계 재현을 합성 기준명으로 검증합니다. 실제 나라장터 요청이나 DB 조회는 하지 않습니다.
+기준명 표기 변형, 공고일 시행일 대조(미래 규칙 금지), 과거 공고 전용 이력 레지스트리 분기,
+추정가격 구간 확정, CSV 왕복, 집계 재현을 합성 기준명으로 검증합니다. 실제 나라장터 요청이나
+DB 조회는 하지 않습니다.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from scripts.map_past_criteria_to_rules import (
+    HISTORY_REGIME_FROM,
     NoticeRow,
     _agreement,
     _regime_rules,
@@ -50,12 +52,95 @@ def test_regime_rules_empty_before_earliest_boundary() -> None:
     assert _regime_rules(date(2023, 4, 30)) == ()
 
 
-def test_no_mapping_before_earliest_regime() -> None:
-    result = map_criteria_to_rule(
-        "시설분야용역 적격심사", "2022-01-01", 400_000_000, institution_name="조달청"
-    )
+def test_history_regime_boundary_matches_serving_registry() -> None:
+    """이력 분기점은 서빙 레지스트리의 가장 이른 시행 구간 시작일과 같아야 합니다."""
+    from src.app.services import evaluation_rules as er
+
+    earliest = min(start for start, _ in er.RULE_REGIME_BOUNDARIES)
+    assert earliest == HISTORY_REGIME_FROM
+
+
+# ----------------------------------------------------------------------------
+# 과거 공고 전용 이력 레지스트리 (공고일 < 2023-05-01)
+# ----------------------------------------------------------------------------
+
+
+def test_pre_2023_05_facility_maps_through_history_registry() -> None:
+    result = map_criteria_to_rule("시설분야용역 적격심사", "2015-08-01", 400_000_000)
+    assert result.scope == "PPS_HISTORY"
+    assert result.rule_id == "SERVC_QUAL_HIST_2015_41_ATTACH_02"
+    assert result.max_price_score == "70"
+    assert result.multiplier == "5"
+    assert result.pass_threshold == "85"  # noqa: S105 - 배점표 통과점수(T) 필드
+    assert result.lwlt_rate == "87.995"
+    assert result.reason == ""
+
+
+def test_pre_2023_05_uses_the_revision_that_was_in_force() -> None:
+    # 2016-48 은 시행 구간이 뒤집혀 조회에서 빠지고, 같은 시행일의 2016-51 이 담당한다.
+    result = map_criteria_to_rule("시설분야용역 적격심사", "2016-06-01", 300_000_000)
+    assert result.rule_id == "SERVC_QUAL_HIST_2016_51_ATTACH_02"
+    # 시행일 경계 당일도 그 판에 든다.
+    edge = map_criteria_to_rule("시설분야용역 적격심사", "2016-05-01", 300_000_000)
+    assert edge.rule_id == "SERVC_QUAL_HIST_2016_51_ATTACH_02"
+
+
+def test_pre_2023_05_academic_uses_known_notice_amount() -> None:
+    """2023-01~04 학술연구는 2022-42 판이며, 2023 년 고시금액(2.2억)이 근거로 있다."""
+    over = map_criteria_to_rule("학술연구용역 적격심사", "2023-02-01", 238_109_427)
+    assert over.scope == "PPS_HISTORY"
+    assert over.rule_id == "SERVC_QUAL_HIST_2022_42_ATTACH_01"
+    assert over.max_price_score == "40"
+    assert over.multiplier == "2"
+    assert over.lwlt_rate == "80.495"
+
+    under = map_criteria_to_rule("학술연구용역 적격심사", "2023-02-01", 100_000_000)
+    assert under.max_price_score == "70"
+    assert under.multiplier == "4"
+    assert under.lwlt_rate == "84.245"
+
+
+def test_pre_2023_05_unknown_notice_amount_is_not_guessed() -> None:
+    """2019 년 고시금액은 저장소에 근거가 없어 값을 만들지 않고 사유만 남긴다."""
+    result = map_criteria_to_rule("학술연구용역 적격심사", "2019-04-12", 90_276_363)
     assert result.rule_id is None
-    assert result.reason
+    assert "고시금액" in result.reason
+
+
+def test_pre_2023_05_uncovered_service_types_are_unmapped() -> None:
+    tech = map_criteria_to_rule("기술용역 적격심사", "2018-05-01", 300_000_000)
+    assert tech.rule_id is None
+    assert "TECH" in tech.reason
+
+    general = map_criteria_to_rule("일반용역 적격심사", "2018-05-01", 300_000_000)
+    assert general.rule_id is None
+    assert "GENERAL" in general.reason
+
+
+def test_pre_2023_05_before_history_window_is_unmapped() -> None:
+    result = map_criteria_to_rule("시설분야용역 적격심사", "2015-01-15", 400_000_000)
+    assert result.rule_id is None
+    assert "개정판이 없습니다" in result.reason
+
+
+def test_pre_2023_05_competition_product_variants_are_ambiguous() -> None:
+    """대상/비대상 별표가 둘 다 있으면 기준명만으로 하나를 고르지 않는다."""
+    result = map_criteria_to_rule("소프트웨어용역 적격심사", "2018-05-01", 300_000_000)
+    assert result.rule_id is None
+    assert result.reason == "이력 별표 후보가 둘 이상"
+
+
+def test_pre_2023_05_institution_and_region_rules_still_win() -> None:
+    """공고일이 이력 구간이어도 기관·LOCAL 후보가 있으면 기존 우선순위가 유지된다."""
+    institution = map_criteria_to_rule(
+        "일반용역 적격심사",
+        "2020-01-01",
+        200_000_000,
+        institution_code="1613000",
+        institution_name="국토교통부",
+    )
+    assert institution.scope == "INSTITUTION"
+    assert institution.rule_id == "SERVC_INST_MOLIT_20180104_GENERAL"
 
 
 def test_mapped_rule_never_effective_after_announcement() -> None:

@@ -356,6 +356,17 @@ jobs:
           uv run coverage report --include="*orca_forbidden_artifacts.py" --fail-under=98
           uv run coverage report --include="*orca_codex_launch.py" --fail-under=96
 
+      # 과거 공고(P2 명세) 이력 레지스트리 생성·대응 스크립트 2종 개별 커버리지 게이트.
+      # src 전역 게이트 80% 판정 대상에 scripts 가 섞이지 않도록 G1·orca 3종과 같은 방식으로
+      # 대상 테스트만 별도 측정하고, 도구별 fail_under 로 판정합니다.
+      # 하한은 워크트리 실측값(build_pps_history_rules 98.15, map_past_criteria_to_rules 85.71)
+      # 에서 2%p 뺀 값을 버림으로 고정했습니다.
+      - name: Run history registry scripts coverage gate
+        run: |
+          uv run pytest -q -m "not data_assets and not e2e" tests/test_evaluation_rules_history.py tests/test_map_past_criteria_to_rules.py --cov=scripts.build_pps_history_rules --cov=scripts.map_past_criteria_to_rules --cov-fail-under=0 --cov-report=term-missing -p no:cacheprovider
+          uv run coverage report --include="*build_pps_history_rules.py" --fail-under=96
+          uv run coverage report --include="*map_past_criteria_to_rules.py" --fail-under=83
+
 
   pytest-warning-budget:
     name: pytest 경고 예산 검증
