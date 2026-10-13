@@ -29,6 +29,7 @@ from scripts.extract_score_params import (
     _hwp_table_rows,
     band_matches,
     extract_document_text,
+    parse_band_terms,
     parse_pass_threshold,
     parse_price_formula,
     parse_price_limit,
@@ -161,6 +162,106 @@ def test_select_band_returns_none_when_ambiguous() -> None:
         BandValue(label="구간 B", value=Decimal("2"), evidence=""),
     ]
     assert select_band(candidates, ANNOUNCEMENT_METHOD, ANNOUNCEMENT_ESTIMATED_PRICE) is None
+
+
+# ----------------------------------------------------------------------------
+# 추정가격 구간 해석 및 선택 (합성 구간 표)
+# ----------------------------------------------------------------------------
+
+# 추정가격 구간이 3개(5억 미만 / 5억 이상 10억 미만 / 10억 이상)인 합성 별표.
+# 배점한도 표 행과 구간별 평점 계산식 행을 함께 둔다.
+THREE_BAND_ROWS = (
+    ("추정가격 5억원 미만", "추정가격 5억원 이상 10억원 미만", "추정가격 10억원 이상"),
+    ("Ⅱ.입찰가격", "※ 입찰가격 평점 계산식 참조", "70", "65", "60"),
+    (
+        "추정가격 5억원 미만",
+        "수식입니다.BIGCIRC  `평점(점)=배점한도-4 TIMES  vert  ( {90} over {100} - "
+        "{입찰가격} over {예정가격} ) TIMES  100 vert",
+        "입찰가격이 예정가격 이하로서 예정가격의 93.75% 이상인 경우의 점수로 평가",
+    ),
+    (
+        "추정가격 5억원 이상 10억원 미만",
+        "수식입니다.BIGCIRC  `평점(점)=배점한도-2 TIMES  vert  ( {90} over {100} - "
+        "{입찰가격} over {예정가격} ) TIMES  100 vert",
+        "입찰가격이 예정가격 이하로서 예정가격의 97.5% 이상인 경우의 점수로 평가",
+    ),
+    (
+        "추정가격 10억원 이상",
+        "수식입니다.BIGCIRC  `평점(점)=배점한도-1 TIMES  vert  ( {90} over {100} - "
+        "{입찰가격} over {예정가격} ) TIMES  100 vert",
+        "입찰가격이 예정가격 이하인 경우의 점수로 평가",
+    ),
+)
+
+BAND_500_000_000 = 500_000_000
+BAND_700_000_000 = 700_000_000
+BAND_1_500_000_000 = 1_500_000_000
+
+
+def test_parse_band_terms_reads_both_ends() -> None:
+    terms = parse_band_terms("추정가격 5억원 이상 10억원 미만")
+    assert terms == (
+        (Decimal("500000000"), "이상"),
+        (Decimal("1000000000"), "미만"),
+    )
+
+
+def test_parse_band_terms_reads_single_bound_and_absence() -> None:
+    assert parse_band_terms("추정가격 5억원 미만") == ((Decimal("500000000"), "미만"),)
+    # 부등호 없는 금액과 고시금액 라벨은 구간 경계로 확정하지 않는다.
+    assert parse_band_terms("추정가격 5억원") == ()
+    assert parse_band_terms("추정가격 고시금액 이상") == ()
+
+
+def test_band_matches_two_sided_range() -> None:
+    label = "추정가격 5억원 이상 10억원 미만"
+    assert band_matches(label, "", BAND_700_000_000)
+    assert not band_matches(label, "", BAND_500_000_000 - 1)
+    assert not band_matches(label, "", BAND_1_500_000_000)
+
+
+def test_band_matches_boundary_operators() -> None:
+    assert band_matches("추정가격 5억원 이상", "", BAND_500_000_000)
+    assert not band_matches("추정가격 5억원 초과", "", BAND_500_000_000)
+    assert band_matches("추정가격 5억원 이하", "", BAND_500_000_000)
+    assert not band_matches("추정가격 5억원 미만", "", BAND_500_000_000)
+
+
+def test_select_band_picks_b_from_synthetic_three_band_table() -> None:
+    limits = parse_price_limit(THREE_BAND_ROWS)
+    assert [(limit.label, limit.value) for limit in limits] == [
+        ("추정가격 5억원 미만", Decimal("70")),
+        ("추정가격 5억원 이상 10억원 미만", Decimal("65")),
+        ("추정가격 10억원 이상", Decimal("60")),
+    ]
+    selected = select_band(limits, "", BAND_700_000_000)
+    assert selected is not None
+    assert selected.label == "추정가격 5억원 이상 10억원 미만"
+    assert selected.value == Decimal("65")
+
+
+def test_select_band_picks_k_from_synthetic_three_band_table() -> None:
+    formulas = parse_price_formula(THREE_BAND_ROWS)
+    candidates = [
+        BandValue(label=formula.label, value=formula.multiplier, evidence=formula.evidence)
+        for formula in formulas
+    ]
+    selected = select_band(candidates, "", BAND_1_500_000_000)
+    assert selected is not None
+    assert selected.label == "추정가격 10억원 이상"
+    assert selected.value == Decimal("1")
+
+
+def test_select_band_rejects_contradicting_single_candidate() -> None:
+    candidate = [BandValue(label="추정가격 5억원 이상", value=Decimal("70"), evidence="")]
+    # 추정가격이 라벨 구간 밖이면 후보가 하나뿐이어도 고르지 않는다.
+    assert select_band(candidate, "", ANNOUNCEMENT_ESTIMATED_PRICE) is None
+    assert select_band(candidate, "", BAND_700_000_000) == candidate[0]
+
+
+def test_select_band_keeps_uninterpretable_single_candidate() -> None:
+    candidate = [BandValue(label="", value=Decimal("70"), evidence="")]
+    assert select_band(candidate, "", BAND_700_000_000) == candidate[0]
 
 
 # ----------------------------------------------------------------------------
