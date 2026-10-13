@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import subprocess
 from pathlib import Path
@@ -157,7 +158,7 @@ def test_policy_denies_git_push_git_dir_and_secret_reads():
     assert deny, "deny 가 비어 있으면 정책이 무의미합니다"
     assert "Shell(git push:*)" in deny
     assert "Edit(.git/**)" in deny
-    assert "Read(.env*)" in deny
+    assert "Read(.env)" in deny
     assert "Read(//etc/**)" in deny
     assert any(rule.startswith("Read(~/") for rule in deny), deny
 
@@ -189,10 +190,48 @@ REQUIRED_DENY_RULES = {
     "Shell(git reset --hard:*)",
     "Shell(git branch -D:*)",
     "Shell(git rebase:*)",
-    # 하위 경로 비밀 파일
-    "Read(**/.env)",
-    "Read(**/.env.*)",
 }
+
+# 비밀값 .env 파일만 열거해 막습니다. .env.example 처럼 비밀값이 없는 파일은
+# 와일드카드에 걸려 함께 막히므로 넓은 패턴(.env*, .env.*)을 쓰지 않습니다.
+SECRET_ENV_DENY_RULES = {
+    "Read(.env)",
+    "Read(**/.env)",
+    "Read(.env.local)",
+    "Read(**/.env.local)",
+    "Read(.env.*.local)",
+    "Read(**/.env.*.local)",
+    "Read(.env.production)",
+    "Read(**/.env.production)",
+    "Read(.env.development)",
+    "Read(**/.env.development)",
+    "Read(.env.test)",
+    "Read(**/.env.test)",
+}
+
+
+def _read_rule_matches(pattern: str, candidate: str) -> bool:
+    """gitignore 식으로 Read 패턴을 후보 경로에 대입합니다. `**/` 는 0개 이상 디렉터리입니다."""
+    body = pattern[len("Read(") : -1]
+    variants = [body]
+    if body.startswith("**/"):
+        variants.append(body[3:])
+    return any(fnmatch.fnmatch(candidate, variant) for variant in variants)
+
+
+def test_policy_enumerates_secret_env_reads_without_blocking_example():
+    """비밀값 열거 규칙이 모두 있고, .env.example 을 막는 와일드카드가 없어야 합니다."""
+    deny = _policy_permissions()["deny"]
+    missing = sorted(SECRET_ENV_DENY_RULES - set(deny))
+    assert not missing, missing
+    assert "Read(.env*)" not in deny
+    assert "Read(**/.env.*)" not in deny
+    offenders = sorted(
+        rule
+        for rule in deny
+        if rule.startswith("Read(") and _read_rule_matches(rule, ".env.example")
+    )
+    assert not offenders, offenders
 
 
 def test_policy_denies_database_docker_delete_and_branch_commands():
