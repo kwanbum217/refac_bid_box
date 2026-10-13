@@ -288,7 +288,7 @@ def test_region_simple_labor_rate_same_at_30eok_and_above() -> None:
 
 
 def test_seoul_general_has_five_bands_with_30eok_split() -> None:
-    """서울은 10억원 이상을 30억원 경계로 나눠 5구간 실측 하한율을 쓴다(경계는 이상 쪽)."""
+    """서울은 10억원 이상을 30억원 경계로 나눠 5구간 원문 산식 역산 하한율을 쓴다(경계는 이상 쪽)."""
     rule = _rule(SEOUL_GENERAL_ID)
     assert rule.price_bands is not None
     assert len(rule.price_bands) == 5

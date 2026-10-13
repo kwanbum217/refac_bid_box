@@ -1554,6 +1554,15 @@ _SRC_GG = (
     "EXT/gg/gg_g2b_20251210_coord.txt:733-843 (별표 1-6) "
     "(입찰가격 평점 산식의 낙찰하한율)"
 )
+# 경기 별표 1-5 보험용역은 원문에 낙찰하한율 열이 없고 평점산식(계수 0.375)만 인쇄됩니다.
+# 배점한도는 5억원 미만 70·5억원 이상 60(coord:684-685)이고 제8조 통과점수는 85(:169)라
+# 88 - (100 - 85) / 0.375 = 48.0 → 47.995% 로, 조달청 보험용역 INSURANCE 기본값과 값·산식이
+# 같습니다. 2026-10-13 원문 산식 역산으로 확인했습니다.
+_SRC_GG_INSURANCE = (
+    f"{_SRC_GG}; 별표 1-5 보험용역 coord:676-728 "
+    "(B 5억원 미만 70·5억원 이상 60, 계수 0.375), 제8조 :169 통과점수 85 "
+    "(원문 산식 역산 47.995%)"
+)
 
 # 2단계 추가 5곳(서울·부산·대전·충남·전북)의 원문 근거는 별도 재수집 문서와 이 워크트리의
 # EXT/ 추출물입니다. 값이 의심스러우면 EXT 원문 행을 직접 대조합니다.
@@ -1562,6 +1571,16 @@ _SRC_SEOUL = (
     f"{_SRC_RECOVER}:76-103 (서울특별시 일반용역 적격심사 세부기준, 시행 2024-08-12, "
     "별표 1~4); EXT/seoul/seoul_general_2024_08_12.tbl.txt:"
     "32,35-37,369-384,712-727,1055-1070,1308-1323"
+)
+# 서울 별표 1~4 구간별 하한율은 원문에 열로 인쇄되지 않지만 평점산식과 통과점수에서 닫힙니다.
+# 하한율 = 88 - (100 - 통과점수) / 평점계수 이고, 소수 셋째 자리 .995 표기 관행을 따릅니다.
+# 통과점수는 30억원 이상 85·10억~30억 90·10억원 미만 95(제7조 :32)이고, 평점계수는 단순노무 외
+# 10억원 이상 1(:379)·10억~5억 2(:722)·5억~2억 4(:1065)·2억원 미만 20(:1318), 단순노무 전 구간
+# 20(:381,724,1067,1320)입니다. 2026-10-13 역산값이 종전 공고 실측 최빈값과 모두 일치합니다.
+_SRC_SEOUL_LWLT_FORMULA = (
+    "원문 산식 역산 (하한율 = 88 - (100 - 통과점수) / 평점계수, .995 표기): "
+    "제7조 :32 (30억원 이상 85, 10억~30억 90, 10억원 미만 95), "
+    "평점산식 :379(k 1), :722(k 2), :1065(k 4), :1318(k 20)"
 )
 _SRC_BUSAN = (
     f"{_SRC_RECOVER}:105-132 (부산광역시 일반용역 적격심사 세부기준, 공고 제2025-1981호, "
@@ -1778,35 +1797,39 @@ def _measured_lwlt_four_band_price(source: str) -> tuple[PriceBand, ...]:
     )
 
 
-# 서울 GENERAL 전용 30억원 분할. 10억원 이상 공고 실측 하한율이 30억원 경계로
-# 77.995/72.995 로 갈려 서울은 공고 실측으로 5구간을 만듭니다. 구간 라벨은 원문 구간 표기를
-# 따르고, B·k·기준비율은 분할 전 10억원 이상 구간 값(B 30·k 1·0.88) 그대로입니다.
-# (인천·제주·강원·경남은 같은 30억 분할을 _five_band_price 로 원문 산식 역산값으로 씁니다.)
+# 서울 GENERAL 전용 30억원 분할. 별표 1~4 평점산식과 제7조 통과점수를 역산하면 10억원 이상
+# 구간이 30억원 경계로 77.995/72.995 로 갈려 서울은 원문 산식 역산으로 5구간을 만듭니다.
+# 구간 라벨은 원문 구간 표기를 따르고, B·k·기준비율은 분할 전 10억원 이상 구간 값
+# (B 30·k 1·0.88) 그대로입니다. (인천·제주·강원·경남은 같은 30억 분할을 _five_band_price 로
+# 원문 산식 역산값으로 씁니다.)
 _SEOUL_TOP_LWLT_RATES: tuple[str, str] = ("77.995", "72.995")
 
 
-def _measured_lwlt_seoul_five_band_price(source: str) -> tuple[PriceBand, ...]:
-    """서울 GENERAL 전용 5구간. 10억원 이상을 30억원 경계로 나눠 실측 하한율을 붙입니다.
+def _seoul_five_band_price(source: str) -> tuple[PriceBand, ...]:
+    """서울 GENERAL 전용 5구간. 10억원 이상을 30억원 경계로 나눠 역산 하한율을 붙입니다.
 
-    2026-10-06 부로 공고 실측 하한율을 쓰는 규칙은 서울 GENERAL 하나뿐이므로, 공유 헬퍼
-    (_four_band_price·_measured_lwlt_four_band_price)는 그대로 두고 이 함수에서 10억원 이상
-    밴드만 두 밴드로 바꿔 끼웁니다. 두 밴드의 source 는 분할 전 10억원 미만 구간과 같이
-    공고 실측임을 함께 밝힙니다.
+    10억원 미만 3구간은 _four_band_price 가 정한 B·k 를 그대로 쓰고 값만 채우며, 10억원 이상은
+    분할 전 값(B 30·k 1·기준비율 0.88)을 유지한 채 두 구간으로 나눕니다. 구간 하한율은 원문에
+    열로 인쇄되지 않고 별표 1~4 평점산식·제7조 통과점수 역산값이며, 모든 구간의 source 에 그
+    근거를 함께 밝힙니다. 공유 헬퍼(_four_band_price·_measured_lwlt_four_band_price)는 그대로
+    두고 구간 구조만 재사용합니다.
     """
-    bands = _measured_lwlt_four_band_price(source)
+    band_source = f"{source}; {_SRC_SEOUL_LWLT_FORMULA}"
+    bands = tuple(
+        replace(band, source=band_source) for band in _measured_lwlt_four_band_price(source)
+    )
     under_30 = replace(
         bands[-1],
         upper_bound=Decimal("3000000000"),
         label="30억원 미만 10억원 이상",
         lwlt_rate=Decimal(_SEOUL_TOP_LWLT_RATES[0]),
-        source=f"{source}; {_SRC_LWLT_MEASURED}",
     )
     over_30 = _local_price_band(
         None,
         "30",
         "1",
         "추정가격 30억원 이상",
-        f"{source}; {_SRC_LWLT_MEASURED}",
+        band_source,
         lwlt_rate=_SEOUL_TOP_LWLT_RATES[1],
     )
     return (*bands[:-1], under_30, over_30)
@@ -2551,13 +2574,16 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         sido_name="경기도",
         service_type="INSURANCE",
         effective_date="2025-08-08",
-        source=_SRC_GG,
+        source=_SRC_GG_INSURANCE,
         description="경기도 보험용역 적격심사 (별표 1-5)",
+        # 별표 1-5 는 낙찰하한율 열 없이 평점산식(계수 0.375)만 인쇄합니다. B 는 5억원 미만
+        # 70·5억원 이상 60 이고 제8조 통과점수는 85 라, 원문 산식 역산값
+        # 88 - (100 - 85) / 0.375 = 48.0 → 47.995% 가 INSURANCE 기본값과 같습니다.
         price_bands=(
-            _local_price_band("500000000", "70", "0.375", "추정가격 5억원 미만", _SRC_GG),
-            _local_price_band(None, "60", "0.375", "추정가격 5억원 이상", _SRC_GG),
+            _local_price_band("500000000", "70", "0.375", "추정가격 5억원 미만", _SRC_GG_INSURANCE),
+            _local_price_band(None, "60", "0.375", "추정가격 5억원 이상", _SRC_GG_INSURANCE),
         ),
-        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_GG),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_GG_INSURANCE),
     ),
     _local_rule(
         "SERVC_LOCAL_GG_20250808_ATTACH_1_6",
@@ -2575,8 +2601,9 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         ),
     ),
     # 서울특별시 (시행 2024-08-12) — 일반 띠 단순노무 외/단순노무가 갈려 두 규칙으로 둡니다.
-    # 추출 원문에는 낙찰하한율 표기가 없어 공고 실측 최빈값을 넣고, 10억원 이상은 부산·대전·
-    # 전북과 같은 30억원 경계(30억원 미만 77.995%, 30억원 이상 72.995%)로 나눕니다.
+    # 원문에 낙찰하한율 열은 없지만 별표 1~4 평점산식과 제7조 통과점수를 역산하면 구간값이
+    # 모두 닫히고, 10억원 이상은 30억원 경계(30억원 미만 77.995%, 30억원 이상 72.995%)로
+    # 갈립니다. 2026-10-13 역산값이 종전 공고 실측 최빈값과 일치함을 확인했습니다.
     _local_rule(
         "SERVC_LOCAL_SEOUL_20240812_ATTACH_01",
         sido_code="11",
@@ -2585,7 +2612,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-08-12",
         source=_SRC_SEOUL,
         description="서울특별시 일반용역 적격심사 (별표 1~4, 단순노무 외)",
-        price_bands=_measured_lwlt_seoul_five_band_price(_SRC_SEOUL),
+        price_bands=_seoul_five_band_price(_SRC_SEOUL),
         threshold_bands=_threshold_30_10(_SRC_SEOUL),
     ),
     _local_rule(
