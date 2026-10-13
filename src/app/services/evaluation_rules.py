@@ -3169,15 +3169,17 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     # 환경부 (기후에너지환경부훈령 제4호, 2025-11-11 시행). 기술용역 기준입니다.
     # band 1 은 원문 표기가 "고시금액 미만"이고 명세 lower 에 고시금액이 적혀 있어 상한을
     # 고시금액으로 옮겼습니다. 제2조(적용범위)가 적용 주체를 "기후에너지환경부 본부 및
-    # 소속기관"으로 명시해 소속기관(유역환경청·지방환경청 등, 코드 대역 1482)까지
-    # 확장합니다(docs/analysis/institution_subunit_scope_20261013.md 5절).
+    # 소속기관"으로 명시해 소속기관(유역환경청·지방환경청 등)까지 확장합니다. 코드 대역은
+    # 현행 1482 와 옛 환경부 소속기관 대역 1481 을 함께 씁니다. 옛 1481xxx(국가미세먼지
+    # 정보센터·국립환경과학원 물환경연구부 센터 등)와 1482xxx 가 모두 환경부 소속기관임을
+    # DB 기관표로 확인했습니다(docs/analysis/institution_subunit_followup_20261013.md 3절).
     _institution_rule(
         "SERVC_INST_ME_20251111_TECH",
         institution_name="환경부",
         institution_code="1482000",
         institution_aliases=("기후에너지환경부",),
         subunit_name_prefixes=("기후에너지환경부 ", "환경부 "),
-        subunit_code_prefixes=("1482",),
+        subunit_code_prefixes=("1482", "1481"),
         service_type="TECH",
         table_name="환경부 기술용역 적격심사",
         description="기후에너지환경부훈령 제4호 별표 1 기술용역 4구간",

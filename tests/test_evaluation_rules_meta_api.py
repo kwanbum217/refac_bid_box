@@ -204,6 +204,16 @@ def test_scope_note_states_local_and_institution_rules_excluded(client):
     # 이 목록은 조달청 별표 14종만 담는다.
     assert "14종" in note, note
     assert "10곳" in note, note
+    # 하위 조직 확장 3곳은 실제로 코드에 선언돼 있어야 이 안내가 성립한다.
+    subunit_institutions = {
+        rule.institution_name
+        for rule in INSTITUTION_RULES
+        if rule.subunit_name_prefixes or rule.subunit_code_prefixes
+    }
+    assert subunit_institutions == {"국토교통부", "환경부", "한국석유공사"}, subunit_institutions
+    assert "하위 조직" in note, note
+    for name in subunit_institutions:
+        assert name in note, (name, note)
     # 기관 규칙이 코드에 반영됐으므로 '아직 코드에 없다'는 종전 문구는 남기지 않는다.
     assert "아직 코드에 없습니다" not in note, note
 

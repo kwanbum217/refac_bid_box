@@ -694,7 +694,8 @@ def test_subunit_expansion_is_declared_only_for_three_institutions() -> None:
             assert rule.subunit_code_prefixes == ("1613",)
         elif rule.institution_name == "환경부":
             assert rule.subunit_name_prefixes == ("기후에너지환경부 ", "환경부 ")
-            assert rule.subunit_code_prefixes == ("1482",)
+            # 현행 1482 대역과 옛 환경부 소속기관 1481 대역을 함께 쓴다.
+            assert rule.subunit_code_prefixes == ("1482", "1481")
         elif rule.institution_name == "한국석유공사":
             assert rule.subunit_name_prefixes == ("한국석유공사 ",)
             assert rule.subunit_code_prefixes == ()
@@ -754,7 +755,7 @@ def test_molit_code_out_of_band_is_excluded_even_with_prefix_name() -> None:
 
 
 def test_me_subunit_code_band_and_legacy_name_prefix_match() -> None:
-    """환경부 소속기관은 코드 대역(1482)과 구 표기 접두(환경부 ) 둘 다로 매칭된다."""
+    """환경부 소속기관은 코드 대역(1482·1481)과 구 표기 접두(환경부 ) 모두로 매칭된다."""
     by_code = _resolve(
         {
             "sucsfbidMthdNm": ME_TECH_METHOD,
@@ -768,6 +769,20 @@ def test_me_subunit_code_band_and_legacy_name_prefix_match() -> None:
     assert by_code.rule is not None
     assert by_code.rule.rule_id == ME_TECH_ID
     assert by_code.scope_stage == RULE_SCOPE_INSTITUTION
+    # 옛 환경부 소속기관 코드(1481xxx)도 같은 기관이라 코드 대역으로 매칭된다.
+    by_legacy_code = _resolve(
+        {
+            "sucsfbidMthdNm": ME_TECH_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttCd": "1481019",
+            "dminsttNm": "환경부 국가미세먼지정보센터",
+        },
+        estimated_price="500000000",
+    )
+    assert by_legacy_code.rule is not None
+    assert by_legacy_code.rule.rule_id == ME_TECH_ID
+    assert by_legacy_code.scope_stage == RULE_SCOPE_INSTITUTION
     by_legacy_name = _resolve(
         {
             "sucsfbidMthdNm": ME_TECH_METHOD,
@@ -780,6 +795,22 @@ def test_me_subunit_code_band_and_legacy_name_prefix_match() -> None:
     assert by_legacy_name.rule is not None
     assert by_legacy_name.rule.rule_id == ME_TECH_ID
     assert by_legacy_name.scope_stage == RULE_SCOPE_INSTITUTION
+
+
+def test_me_code_out_of_band_is_excluded_even_with_prefix_name() -> None:
+    """환경부 코드 대역(1482·1481) 밖 코드는 이름이 접두와 같아도 하위 조직으로 보지 않는다."""
+    result = _resolve(
+        {
+            "sucsfbidMthdNm": ME_TECH_METHOD,
+            "srvceDivNm": "일반용역",
+            "bidNtceDt": "2026-01-02",
+            "dminsttCd": "1483000",
+            "dminsttNm": "환경부 한강유역환경청",
+        },
+        estimated_price="500000000",
+    )
+    assert result.scope_stage != RULE_SCOPE_INSTITUTION
+    assert result.rule is None or result.rule.rule_id != ME_TECH_ID
 
 
 def test_knoc_subunit_name_prefix_matches_with_and_without_code() -> None:
