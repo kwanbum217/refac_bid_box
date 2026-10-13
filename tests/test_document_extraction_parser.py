@@ -203,3 +203,61 @@ def test_empty_page_list_is_unrecognized() -> None:
     assert result.status == "unrecognized"
     assert result.credit_grade is None
     assert result.credit_evaluated_on is None
+
+
+def test_definition_table_is_not_returned_as_grade() -> None:
+    text = (
+        "기업신용평가등급 확인서\n"
+        "기업명 (주)가상기업 기업신용평가등급\n"
+        "대표자 홍길동\n"
+        "사업자등록번호 000-00-00000\n"
+        "AA+\n"
+        "등급평가일 2026년 03월 15일\n"
+        "기업신용평가등급의 정의\n"
+        "등 급 등급의 정의\n"
+        "AAA 전반적인 신용도가 매우 우수하며 장래 환경변화에 대한 안정성이 매우 높은 수준임\n"
+        "AA 전반적인 신용도가 우수하며 장래 환경변화에 대한 안정성이 높은 수준임\n"
+    )
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "AA+"
+    assert result.credit_grade.confidence == "high"
+
+
+def test_boilerplate_grade_sentence_is_not_demoted() -> None:
+    text = "상기등급은 회사채에 대한\n신용평가등급 AA+에 준하는 등급임"
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "AA+"
+    assert result.credit_grade.confidence == "high"
+
+
+def test_grade_value_several_lines_below_label_is_detected() -> None:
+    text = "기업신용평가등급\n가상기업\n사업자등록번호 000-00-00000\nAA-\n평가일 : 2026-03-15"
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "AA-"
+    assert result.credit_grade.confidence == "high"
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2026-03-15"
+
+
+def test_proprietary_evaluator_grade_is_not_returned() -> None:
+    text = "신용평가등급 e-5+\n평가일 : 2026-03-15\n기업신용평가등급\nBBB+"
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "BBB+"
+    assert result.credit_grade.value in GRADE_CODES
+
+
+def test_effective_period_value_is_not_evaluation_date() -> None:
+    text = "신용등급 : AA-\n등급평가일\n유효기간 2018년 06월 30일"
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "AA-"
+    assert result.credit_evaluated_on is None
