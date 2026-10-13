@@ -506,6 +506,42 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         # 지정과 WORKER_MODEL_NOTICE 를 거칩니다.
         "notes": "2026-09-09 실호출에서 403 Access to model denied 로 계정 권한이 없음을 확인했다. 권한이 열리기 전까지 배정하지 말고 qwen-flash 를 쓴다.",
     },
+    # ------------------------------------------------------------------
+    # Qwen Code CLI 경유 OpenRouter 풀
+    # ------------------------------------------------------------------
+    # 같은 모델이 kimi 경로(or-free-nemotron-ultra)에도 등록돼 있지만, 그쪽은
+    # kimi -p 단발 실행이라 대화형 세션이 남지 않습니다. 이 항목은 qwen CLI 의
+    # OpenRouter 프로바이더(~/.qwen/settings.json, envKey OPENROUTER_API_KEY)를
+    # 경유해 -i 대화형 TUI 로 띄우므로 코디네이터가 후속 지시와 반려 사유를 같은
+    # 세션에 보낼 수 있습니다. 제공자는 실행기와 독립 판정 계열을 함께 보는
+    # 라우터 체계를 따라 qwen 으로 둡니다. 빌더 기본값(cmd-deepseek-flash)과 다른
+    # 계열이므로 리뷰어 독립성을 통과합니다.
+    "qwen-nemotron-ultra-free": {
+        "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "provider": "qwen",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "suitable_for": [
+            "reviewer",
+        ],
+        # 2026-10-13 사용자 지정. dispatch --model nvidia/nemotron-3-ultra-550b-a55b:free
+        # 와 scripts/orca_qwen_launch.py --model 같은 값이 미등록으로 거부되던 것을
+        # 정규 등록합니다. 무료 풀 규칙(자동 선택 금지, 명시 지정 전용)을 따르며
+        # TIER_POLICY 와 무료 후보 순서 어디에도 넣지 않습니다. 실제 호출 probe 는
+        # OPENROUTER_API_KEY 가 없는 환경에서 실패하므로 시험은 네트워크 없이 고정합니다.
+        "notes": (
+            "Qwen Code CLI 경유 OpenRouter nvidia/nemotron-3-ultra-550b-a55b:free. "
+            "2026-10-13 사용자 지정. qwen CLI 가 ~/.qwen/settings.json 의 OpenRouter "
+            "프로바이더로 이 ID 를 라우팅하며 qwen TUI 가 정상 동작한다. "
+            "suitable_for 는 reviewer 뿐이며 자동 배정하지 않는다. "
+            "빌더 기본값 cmd 계열과 다른 provider(qwen)라 리뷰어 독립 판정을 통과한다. "
+            "명시 지정 전용이므로 TIER_POLICY 와 무료 순서에 넣지 않는다. "
+            "동일 모델의 kimi 경로 등록(or-free-nemotron-ultra)과 달리 대화형 TUI(-i) "
+            "세션이 남아 후속 지시를 같은 세션에 보낼 수 있다. "
+            "기동은 scripts/orca_qwen_launch.py --model nvidia/nemotron-3-ultra-550b-a55b:free 를 쓴다."
+        ),
+    },
     "codex-luna": {
         "id": "gpt-5.6-luna",
         "provider": "codex",

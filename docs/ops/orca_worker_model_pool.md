@@ -55,8 +55,9 @@
 | `cmd-deepseek-flash` | `deepseek/deepseek-v4.1-flash` | Command Code | O (`True`) | **빌더 기본 모델**(2026-09-20 사용자 지시). 추론 등급은 `--effort` 로 지정하며 `reviewer` 는 배정 대상이 아님 |
 | `cmd-glm-flash` | `z-ai/glm-5.3-flash` | Command Code | X (`False`) | 2026-09-21 등록. 명시 지정 전용 저가 후보. `--effort` 는 `default`/`low`/`high`/`max` 이며 `medium` 없음 |
 | `cmd-hy4-preview` | `tencent/hy4-preview` | Command Code | X (`False`) | 2026-09-21 등록. 명시 지정 전용. `--effort` 는 `default`/`low`/`medium`/`high` 이며 `max` 없음. 입력 단가가 기본 빌더의 약 5배 |
+| `qwen-nemotron-ultra-free` | `nvidia/nemotron-3-ultra-550b-a55b:free` | Qwen (OpenRouter 경유) | X (`False`) | 2026-10-13 등록. 명시 지정 전용 리뷰어. qwen CLI 의 OpenRouter 프로바이더 경유, `-i` 대화형 TUI |
 
-`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5`, `cmd-glm-flash`, `cmd-hy4-preview` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
+`gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5`, `cmd-glm-flash`, `cmd-hy4-preview`, `qwen-nemotron-ultra-free` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
 
 리뷰어에 빌더와 같은 모델 계열을 배정하지 않습니다. 같은 추론 편향이 검토를 그대로 통과시키기 때문입니다. 현재 정책에서 빌더가 Command Code 계열(`cmd-deepseek-flash`)인 동안 리뷰어는 `qwen-plus`(Alibaba Token Plan)이며, 사용자 지시로 `opencode-muse-spark` 를 명시 배정하는 경로도 계열이 갈라집니다.
 
@@ -335,3 +336,47 @@ probe 했으며, 리뷰어 독립성은 CLI 단위 provider 분리를 그대로 
 5. **등급 계약의 정본은 코드다**: 이 절의 표는 probe 기록이며, 실제 검사는
    `MODEL_POOL` 의 `effort_levels` 와 런처의 `allowed_effort_levels()` 가 수행합니다.
    문서와 코드가 어긋나면 코드가 정본입니다.
+
+---
+
+## 12. 등록 (2026-10-13, Qwen Code 경유 OpenRouter Nemotron 3 Ultra)
+
+등록 전 확인 사실과 운용 정책입니다. 이 환경에는 `OPENROUTER_API_KEY` 가 없을 수
+있어 실제 호출 probe 를 고정할 수 없으므로, 아래 근거는 코디네이터가 사용자 qwen
+설정에서 관측한 동작과 `MODEL_POOL` 등록 계약에 한정합니다.
+
+| 항목 | 값 |
+| --- | --- |
+| 풀 키 | `qwen-nemotron-ultra-free` |
+| 모델 ID | `nvidia/nemotron-3-ultra-550b-a55b:free` |
+| provider | `qwen` (qwen CLI 의 OpenRouter 프로바이더 경유) |
+| tier | `free` |
+| `auto_selectable` | `False` (명시 지정 전용) |
+| `suitable_for` | `reviewer` |
+| 런처 | `scripts/orca_qwen_launch.py` (`-i` 대화형 TUI) |
+
+핵심 확인 사실 및 운용 정책:
+
+1. **현상**: `orca_taskctl.py dispatch --model nvidia/nemotron-3-ultra-550b-a55b:free`
+   는 "명시 지정 모델이 MODEL_POOL 에 등록되어 있지 않습니다" 로 거부됐고,
+   `scripts/orca_qwen_launch.py --model 같은 값` 도 "등록되지 않은 ID" 로
+   기동을 거부했습니다. 사용자 `~/.qwen/settings.json` 에는 이 모델이
+   `[OpenRouter] NVIDIA: Nemotron 3 Ultra (free)`, envKey `OPENROUTER_API_KEY` 로
+   등록돼 있고 `qwen -m nvidia/nemotron-3-ultra-550b-a55b:free` TUI 가 정상
+   동작합니다. 2026-10-13 M1·B1·O1 리뷰를 이 스택으로 수행했습니다.
+2. **제공자 선택**: 이 런처로 뜨므로 `provider` 를 `qwen` 으로 둡니다. 라우터의
+   provider 는 실행기와 독립 판정 계열을 함께 보는 값입니다. 빌더 기본값
+   `cmd-deepseek-flash`(provider `cmd`)와 다른 계열이라 리뷰어 독립 판정을
+   통과합니다. 같은 모델의 kimi 경로 등록 `or-free-nemotron-ultra`
+   (provider `kimi-openrouter`)와는 별개 항목입니다.
+3. **자동 배정 금지**: 무료 풀 규칙에 따라 `auto_selectable=False` 이며
+   `TIER_POLICY` 와 `FREE_BUILDER_ORDER`/`FREE_INVESTIGATOR_ORDER` 어디에도 넣지
+   않습니다. `reviewer` 는 무료 풀 개방 대상이 아니므로 `--allow-free` 로도
+   선택되지 않고 오직 `--model` 명시 지정으로만 배정됩니다.
+4. **qwen 런처 허용**: 런처의 허용 목록 `registered_qwen_models()` 는 `MODEL_POOL`
+   에서 provider 가 `qwen` 인 항목으로 파생하므로 이 ID 가 자동 포함됩니다. kimi
+   경로는 `-p` 단발이라 대화형 재개가 불가능하지만, 이 항목은 `-i` 대화형 세션이
+   남아 코디네이터가 후속 지시와 반려 사유를 같은 세션에 보낼 수 있습니다.
+5. **probe 고정**: `OPENROUTER_API_KEY` 가 없는 환경에서는 실제 호출 probe 가
+   실패하므로 시험은 네트워크 없이 고정합니다. 등록 계약은 라우터 시험과 qwen
+   런처 시험이 검증합니다.

@@ -11,6 +11,13 @@ Kimi 런처와 다른 점이 하나 있습니다. qwen 은 `-i` 로 지시문을
 코디네이터가 `orca terminal send` 로 후속 지시와 반려 사유를 같은 세션에 보낼 수
 있습니다. `--one-shot` 을 주면 `-p` 단발 실행으로 바뀝니다.
 
+허용 모델 목록은 `MODEL_POOL` 에서 provider 가 qwen 인 항목으로 파생합니다. Alibaba
+Token Plan 경유 ID 뿐 아니라 qwen CLI 의 OpenRouter 프로바이더
+(`~/.qwen/settings.json`, envKey `OPENROUTER_API_KEY`)를 경유하는 ID 도 같은
+provider 로 등록되어 이 런처로 뜹니다. 2026-10-13 에 등록한
+`nvidia/nemotron-3-ultra-550b-a55b:free` 가 그 예이며, kimi 경로의 단발 실행과 달리
+`-i` 대화형 세션이 남습니다.
+
     orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
       --command "uv run python scripts/orca_qwen_launch.py --model qwen3.7-plus"
     orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json
@@ -44,7 +51,12 @@ REVIEWER_NOTICE = common.REVIEWER_NOTICE
 
 
 def registered_qwen_models() -> dict[str, str]:
-    """MODEL_POOL 에 등록된 qwen provider 모델의 {풀 키: 실제 ID} 를 돌려줍니다."""
+    """MODEL_POOL 에 등록된 qwen provider 모델의 {풀 키: 실제 ID} 를 돌려줍니다.
+
+    provider 가 qwen 이라는 것은 qwen CLI 로 뜬다는 뜻이며, 모델 자체의 소속이
+    아닙니다. Alibaba Token Plan 경유 ID 와 qwen 의 OpenRouter 프로바이더 경유 ID
+    (예: nvidia/nemotron-3-ultra-550b-a55b:free) 가 함께 들어옵니다.
+    """
     from orca_model_router import MODEL_POOL
 
     return {name: info["id"] for name, info in MODEL_POOL.items() if info.get("provider") == "qwen"}
@@ -121,7 +133,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--model",
         required=True,
-        help="풀 키 또는 모델 ID (예: qwen-plus, qwen3.7-plus, deepseek-v4-pro)",
+        help=(
+            "풀 키 또는 모델 ID "
+            "(예: qwen-plus, qwen3.7-plus, deepseek-v4-pro, nvidia/nemotron-3-ultra-550b-a55b:free)"
+        ),
     )
     parser.add_argument("--preamble", type=Path, default=DEFAULT_PREAMBLE)
     parser.add_argument("--timeout-sec", type=float, default=300.0)
