@@ -3626,10 +3626,12 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         ),
     ),
     # 한국수력원자력 (일부개정 2026-06-19). 기관표에 본청 코드가 없어 이름으로만 판정합니다.
+    # DB 실측 본사 표기 "한국수력원자력(주)"·"한국수력원자력주식회사" 를 별칭으로 두고,
+    # "한국수력원자력(주) 한울원자력본부" 같은 하위 조직 표기는 넣지 않습니다.
     _institution_rule(
         "SERVC_INST_KHNP_20260619_CLEANING",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="SIMPLE_LABOR",
         table_name="한국수력원자력 일반용역 적격심사 (청소용역)",
         description="한국수력원자력 별표 1 청소용역 2구간",
@@ -3662,7 +3664,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_MAINTENANCE",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="MAINTENANCE",
         table_name="한국수력원자력 일반용역 적격심사 (사옥사택 경상보수용역)",
         description="한국수력원자력 별표 2 사옥사택 경상보수용역 2구간",
@@ -3695,7 +3697,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_SECURITY",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="SECURITY",
         table_name="한국수력원자력 일반용역 적격심사 (경비용역)",
         description="한국수력원자력 별표 3 경비용역 2구간",
@@ -3728,7 +3730,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_SEWAGE",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="SEWAGE",
         table_name="한국수력원자력 일반용역 적격심사 (하수처리시설 관리용역)",
         description="한국수력원자력 별표 4 하수처리시설 관리용역 2구간",
@@ -3761,7 +3763,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_ACADEMIC",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="ACADEMIC",
         table_name="한국수력원자력 일반용역 적격심사 (학술연구용역)",
         description="한국수력원자력 별표 5 학술연구용역 2구간",
@@ -3794,7 +3796,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_SW",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="SW",
         table_name="한국수력원자력 일반용역 적격심사 (소프트웨어용역 경쟁제품 비대상)",
         description="한국수력원자력 별표 6-㉮ 소프트웨어용역(경쟁제품 비대상) 2구간",
@@ -3827,7 +3829,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_SW_TARGET",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="SW_SME",
         table_name="한국수력원자력 일반용역 적격심사 (소프트웨어용역 경쟁제품 대상)",
         description="한국수력원자력 별표 6-㉯ 소프트웨어용역(경쟁제품 대상) 2구간",
@@ -3860,7 +3862,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_WASTE",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="WASTE",
         table_name="한국수력원자력 일반용역 적격심사 (폐기물처리용역)",
         description="한국수력원자력 별표 7 폐기물처리용역 2구간",
@@ -3893,7 +3895,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_PASSENGER",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="PASSENGER_TRANSPORT",
         table_name="한국수력원자력 일반용역 적격심사 (여객 육상운송용역)",
         description="한국수력원자력 별표 8-㉮ 여객 육상운송용역 2구간",
@@ -3926,7 +3928,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_FREIGHT",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="FREIGHT",
         table_name="한국수력원자력 일반용역 적격심사 (화물 육상운송용역)",
         description="한국수력원자력 별표 8-㉯ 화물 육상운송용역 2구간",
@@ -3960,7 +3962,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     _institution_rule(
         "SERVC_INST_KHNP_20260619_TRANSPORT_AGENCY",
         institution_name="한국수력원자력",
-        institution_aliases=("한수원", "KHNP"),
+        institution_aliases=("한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"),
         service_type="TRANSPORT_AGENCY",
         table_name="한국수력원자력 일반용역 적격심사 (국외운송주선용역)",
         description="한국수력원자력 별표 9·10 국외운송주선용역 3구간",
@@ -4901,8 +4903,9 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
             ),
         ),
     ),
-    # 별표 8 임대차용역은 원문이 k=2 구간과 k=4 구간을 같은 추정가격 축으로 인쇄해 하나를
-    # 고르는 근거가 없습니다. 두 규칙이 함께 매칭되면 RULE_SCOPE_AMBIGUOUS 로 차단됩니다.
+    # 별표 8 임대차용역은 원문 ①입찰가격 계산식의 사업예산규모를 "추정가격 고시금액 이상/
+    # 미만" 두 행으로 인쇄하고 계수를 k=2/k=4 로 달리 둡니다. B(입찰가격 배점한도)는 두 행
+    # 모두 70 이라 고시금액 경계로 두 구간을 나눠 한 규칙으로 등록합니다.
     _institution_rule(
         "SERVC_INST_IIAC_20250101_LEASE",
         institution_name="인천국제공항공사",
@@ -4910,11 +4913,21 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_aliases=("IIAC",),
         service_type="LEASE",
         table_name="인천국제공항공사 일반용역 적격심사 (임대차용역)",
-        description="인천국제공항공사 별표 8 임대차용역 (k=2 구간)",
+        description="인천국제공항공사 별표 8 임대차용역 (고시금액 미만 k=4 / 이상 k=2)",
         effective_date="2025-01-01",
         source=f"{_SRC_INST_RECOVER_A}:4",
         patterns=("임대차용역", "임대차"),
         bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 8 임대차용역 고시금액 미만",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
             _inst_band(
                 None,
                 "70",
@@ -4922,31 +4935,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "88",
                 "85",
                 "80.495",
-                "별표 8 임대차용역",
-                f"{_SRC_INST_RECOVER_A}:4.2",
-            ),
-        ),
-    ),
-    _institution_rule(
-        "SERVC_INST_IIAC_20250101_LEASE_K4",
-        institution_name="인천국제공항공사",
-        institution_code="B551177",
-        institution_aliases=("IIAC",),
-        service_type="LEASE_K4",
-        table_name="인천국제공항공사 일반용역 적격심사 (임대차용역 k=4)",
-        description="인천국제공항공사 별표 8 임대차용역 (k=4 구간)",
-        effective_date="2025-01-01",
-        source=f"{_SRC_INST_RECOVER_A}:4",
-        patterns=("임대차용역", "임대차"),
-        bands=(
-            _inst_band(
-                None,
-                "70",
-                "4",
-                "88",
-                "85",
-                "84.245",
-                "별표 8 임대차용역 (k=4 구간)",
+                "별표 8 임대차용역 고시금액 이상",
                 f"{_SRC_INST_RECOVER_A}:4.2",
             ),
         ),
@@ -5292,7 +5281,8 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
             ),
         ),
     ),
-    # 별표 8 임대차용역은 인천국제공항공사와 같아 k=2·k=4 두 규칙이 함께 매칭되면 차단됩니다.
+    # 별표 8 임대차용역은 인천국제공항공사와 같은 구조라 고시금액 경계로 k=2/k=4 두 구간을
+    # 나눠 한 규칙으로 등록합니다.
     _institution_rule(
         "SERVC_INST_IIAFM_20250901_LEASE",
         institution_name="인천공항시설관리",
@@ -5300,11 +5290,21 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         institution_aliases=("인천공항시설관리(주)",),
         service_type="LEASE",
         table_name="인천공항시설관리 일반용역 적격심사 (임대차용역)",
-        description="인천공항시설관리 별표 8 임대차용역 (k=2 구간)",
+        description="인천공항시설관리 별표 8 임대차용역 (고시금액 미만 k=4 / 이상 k=2)",
         effective_date="2025-09-01",
         source=f"{_SRC_INST_AGENCY}:9",
         patterns=("임대차용역", "임대차"),
         bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 8 임대차용역 · 고시금액 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
             _inst_band(
                 None,
                 "70",
@@ -5312,31 +5312,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "88",
                 "85",
                 "80.495",
-                "별표 8 임대차용역",
-                f"{_SRC_INST_AGENCY}:9.2",
-            ),
-        ),
-    ),
-    _institution_rule(
-        "SERVC_INST_IIAFM_20250901_LEASE_K4",
-        institution_name="인천공항시설관리",
-        institution_code="Z043894",
-        institution_aliases=("인천공항시설관리(주)",),
-        service_type="LEASE_K4",
-        table_name="인천공항시설관리 일반용역 적격심사 (임대차용역 k=4)",
-        description="인천공항시설관리 별표 8 임대차용역 (k=4 구간)",
-        effective_date="2025-09-01",
-        source=f"{_SRC_INST_AGENCY}:9",
-        patterns=("임대차용역", "임대차"),
-        bands=(
-            _inst_band(
-                None,
-                "70",
-                "4",
-                "88",
-                "85",
-                "84.245",
-                "별표 8 임대차용역 (k=4 구간)",
+                "별표 8 임대차용역 · 고시금액 이상",
                 f"{_SRC_INST_AGENCY}:9.2",
             ),
         ),

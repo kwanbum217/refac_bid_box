@@ -1272,7 +1272,7 @@ institutions:
         source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
     sources: ["docs/analysis/servc_formula_userfiles_existing_20261004.md:8", "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:3", "docs/analysis/institution_formula_unresolved_20261012.md", "docs/analysis/institution_formula_g2b_attachment_sweep_20261012.md"]
   - institution_name: "한국수력원자력"
-    name_aliases: ["한국수력원자력", "한수원", "KHNP"]
+    name_aliases: ["한국수력원자력", "한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"]
     institution_code: null
     status: confirmed
     scope: INSTITUTION
@@ -2356,9 +2356,9 @@ institutions:
         flat_score: null
         status: confirmed
         source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
-      - band: "별표 8 임대차용역"
+      - band: "별표 8 임대차용역 고시금액 이상"
         service_type: "임대차용역"
-        lower: null
+        lower: "고시금액"
         upper: null
         B: 70
         k: 2
@@ -2369,10 +2369,10 @@ institutions:
         flat_score: null
         status: confirmed
         source: "docs/analysis/servc_formula_recover_a_20261005.md:4.2"
-      - band: "별표 8 임대차용역 (k=4 구간)"
+      - band: "별표 8 임대차용역 고시금액 미만"
         service_type: "임대차용역"
         lower: null
-        upper: null
+        upper: "고시금액"
         B: 70
         k: 4
         base_ratio: 88
@@ -2654,9 +2654,9 @@ institutions:
         flat_score: null
         status: confirmed
         source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
-      - band: "별표 8 임대차용역"
+      - band: "별표 8 임대차용역 · 고시금액 이상"
         service_type: "임대차용역"
-        lower: null
+        lower: "고시금액"
         upper: null
         B: 70
         k: 2
@@ -2667,10 +2667,10 @@ institutions:
         flat_score: null
         status: confirmed
         source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
-      - band: "별표 8 임대차용역 (k=4 구간)"
+      - band: "별표 8 임대차용역 · 고시금액 미만"
         service_type: "임대차용역"
         lower: null
-        upper: null
+        upper: "고시금액"
         B: 70
         k: 4
         base_ratio: 88
