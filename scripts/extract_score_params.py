@@ -89,7 +89,9 @@ _FORMULA_HINT_RE = re.compile(
 )
 # 통과점수 문구. 실측 예: "종합평점이 85점(다만, 소프트웨어용역의 ...은 88점)이상이면"
 _PASS_THRESHOLD_RE = re.compile(r"종합평점[이가은는]?\s*(\d+(?:\.\d+)?)\s*점")
-_BAND_THRESHOLD_RE = re.compile(r"(\d+(?:\.\d+)?)\s*억")
+# 추정가격 구간 라벨의 금액 항. "5억원 이상", "10억 미만", "2억원 이상 5억원 미만" 처럼
+# 금액마다 부등호가 붙는다. 부등호 없는 금액은 구간 경계로 확정할 수 없어 잡지 않는다.
+_BAND_TERM_RE = re.compile(r"(\d+(?:\.\d+)?)\s*억\s*원?\s*(이상|이하|초과|미만)")
 _WHITESPACE_RE = re.compile(r"\s+")
 # 바이너리 HWP 는 인라인 제어문자가 다른 문자권 문자로 오검출된다.
 # 한글/Latin/CJK/일반 부호만 남겨 근거 문자열을 깨끗하게 유지한다.
@@ -636,25 +638,46 @@ def parse_price_limit(rows: tuple[tuple[str, ...], ...] | list[list[str]]) -> li
     return result
 
 
+def parse_band_terms(label: str) -> tuple[tuple[Decimal, str], ...]:
+    """구간 라벨의 금액 항을 (금액, 부등호) 목록으로 해석한다.
+
+    "추정가격 5억원 이상 10억원 미만" 은 (5억, 이상)·(10억, 미만) 두 항으로 읽는다.
+    금액은 원 단위로 환산한다. 해석할 항이 없으면 빈 튜플이다(추정하지 않는다).
+    """
+    terms: list[tuple[Decimal, str]] = []
+    for match in _BAND_TERM_RE.finditer(label or ""):
+        amount = _to_decimal(match.group(1))
+        if amount is None:
+            continue
+        terms.append((amount * Decimal(100_000_000), match.group(2)))
+    return tuple(terms)
+
+
 def band_matches(label: str, hint: str, estimated_price: int | None) -> bool:
-    """구간 라벨이 공고의 낙찰방법 문구 또는 추정가격과 맞는지 판정한다."""
+    """구간 라벨이 공고의 낙찰방법 문구 또는 추정가격과 맞는지 판정한다.
+
+    낙찰방법 문구에 라벨이 그대로 있으면 그것을 정본으로 삼는다. 그렇지 않으면
+    라벨의 모든 금액 항(양 끝 구간 포함)을 추정가격이 만족해야 맞는 것으로 본다.
+    """
     normalized_label = _norm(label)
     if normalized_label and normalized_label in _norm(hint):
         return True
-    threshold_match = _BAND_THRESHOLD_RE.search(label)
-    if threshold_match is None or estimated_price is None:
+    if estimated_price is None:
         return False
-    threshold = Decimal(threshold_match.group(1)) * Decimal(100_000_000)
+    terms = parse_band_terms(label)
+    if not terms:
+        return False
     price = Decimal(estimated_price)
-    if "이상" in label:
-        return price >= threshold
-    if "미만" in label:
-        return price < threshold
-    if "이하" in label:
-        return price <= threshold
-    if "초과" in label:
-        return price > threshold
-    return False
+    for amount, operator in terms:
+        if operator == "이상" and price < amount:
+            return False
+        if operator == "이하" and price > amount:
+            return False
+        if operator == "초과" and price <= amount:
+            return False
+        if operator == "미만" and price >= amount:
+            return False
+    return True
 
 
 def select_band(
@@ -662,13 +685,18 @@ def select_band(
     hint: str,
     estimated_price: int | None,
 ) -> BandValue | None:
-    """후보 중 공고에 해당하는 구간 값을 고른다. 확정 불가면 None."""
+    """후보 중 공고에 해당하는 구간 값을 고른다. 확정 불가면 None.
+
+    하나로 좁혀지지 않으면 선택하지 않는다. 후보가 하나뿐이더라도 그 라벨이 해석되는
+    구간이고 추정가격이 그 구간 밖이면, 추정가격과 어긋나는 값을 고르지 않고 None 을
+    돌려준다(추정 금지).
+    """
     if not candidates:
         return None
     matched = [c for c in candidates if band_matches(c.label, hint, estimated_price)]
     if len(matched) == 1:
         return matched[0]
-    if len(candidates) == 1:
+    if len(candidates) == 1 and not parse_band_terms(candidates[0].label):
         return candidates[0]
     return None
 
