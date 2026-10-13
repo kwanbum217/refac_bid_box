@@ -260,7 +260,7 @@ institutions:
     standard: "용역 적격심사 기준 (방위사업청예규 제1082호, 2026-09-21 개정·시행)"
     effective_date: "2026-09-21"
     service_types: ["용역"]
-    note: "10억원 이상 구간은 수식에 계수가 생략되고 평탄 문장이 없어 k 미확정이다(규칙 5). 통과점수는 별표 1 의 추정가격 구간이 아니라 제9조① 의 30억원·10억원 경계로 정해진다."
+    note: "10억원 이상 구간은 수식에 계수가 생략되고 평탄 문장이 없어 k 미확정이다(규칙 5). 통과점수는 별표 1 의 추정가격 구간이 아니라 제9조① 의 30억원·10억원 경계로 정해진다. 2026-10-13 재수집(partial_institution_sources_20261013.md)에서도 확정 근거가 없어 미확정을 유지했다."
     non_qual_methods: []
     bands:
       - band: "별표 1 · 10억원 이상 30억원 미만 용역"
@@ -328,7 +328,7 @@ institutions:
         flat_score: 85
         status: confirmed
         source: "docs/analysis/servc_formula_collection_central_20261004.md:225,234,235"
-    sources: ["docs/analysis/servc_formula_collection_central_20261004.md:199-243", "docs/analysis/servc_formula_userfiles_existing_20261004.md:7", "docs/analysis/servc_formula_resolve_daegu_dapa_gg_20261005.md:4"]
+    sources: ["docs/analysis/servc_formula_collection_central_20261004.md:199-243", "docs/analysis/servc_formula_userfiles_existing_20261004.md:7", "docs/analysis/servc_formula_resolve_daegu_dapa_gg_20261005.md:4", "docs/analysis/partial_institution_sources_20261013.md"]
   - institution_name: "한국토지주택공사"
     name_aliases: ["한국토지주택공사", "LH"]
     institution_code: null
@@ -349,7 +349,7 @@ institutions:
     standard: "승강기 점검보수 일반용역 적격심사 세부기준 (한국철도공사 건축기술단 공고 제2026-01호, 2026-09-14 개정). 일반용역은 조달청 일반용역 적격심사 세부기준 준용"
     effective_date: "2026-09-14"
     service_types: ["승강기 점검보수용역"]
-    note: "전사 일반용역은 자체 세부기준이 아니라 조달청 기준을 적용한다(공식 계약절차 안내). 자체 기준은 기술용역·철도궤도/신호/전차선로 공사·승강기 점검보수용역에 한정된다. 아래 bands 는 승강기 점검보수용역 한정이다."
+    note: "전사 일반용역은 자체 세부기준이 아니라 조달청 기준을 적용한다(공식 계약절차 안내). 자체 기준은 기술용역·철도궤도/신호/전차선로 공사·승강기 점검보수용역에 한정된다. 아래 bands 는 승강기 점검보수용역 한정이다. 2026-10-13 재수집(partial_institution_sources_20261013.md)에서 미확정 band 가 없음을 확인했고, 자체 기술용역 기준은 상업 게시판 출처·현행 판본 미확인이라 YAML 에 추가하지 않았다."
     non_qual_methods: []
     bands:
       - band: "승강기 점검보수 · 10억원 이상"
@@ -404,7 +404,7 @@ institutions:
         flat_score: 85
         status: confirmed
         source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:7.2"
-    sources: ["docs/analysis/servc_formula_recover_b_20261005.md:5", "docs/analysis/servc_formula_userfiles_agency_20261004.md:7"]
+    sources: ["docs/analysis/servc_formula_recover_b_20261005.md:5", "docs/analysis/servc_formula_userfiles_agency_20261004.md:7", "docs/analysis/partial_institution_sources_20261013.md"]
   - institution_name: "한국농어촌공사"
     name_aliases: ["한국농어촌공사", "KRC"]
     institution_code: null
@@ -685,7 +685,7 @@ institutions:
     standard: "용역적격심사 세부기준 (2022-10-01 개정·시행. 저장소 확보본은 2021-03-02 시행판)"
     effective_date: "2022-10-01"
     service_types: ["일반용역", "시설분야용역", "기술용역"]
-    note: "현행 2022-10-01 판 원문은 확보하지 못했고, 저장소에는 사용자 제공 2021-03-02 시행판 원문만 있다. 별표 1·2 값은 선행 재계산 문서 인용과 일치한다. 별표 1-1(일반 10억원 이상)과 별표 2(시설분야)는 각각 계수 생략·평탄 점수 미인쇄로 미확정이다."
+    note: "현행 2022-10-01 판 원문은 확보하지 못했고, 저장소에는 사용자 제공 2021-03-02 시행판 원문만 있다. 별표 1·2 값은 선행 재계산 문서 인용과 일치한다. 별표 1-1(일반 10억원 이상)과 별표 2(시설분야)는 각각 계수 생략·평탄 점수 미인쇄로 미확정이다. 2026-10-13 재수집(partial_institution_sources_20261013.md)에서도 확정 근거가 없어 미확정을 유지했다."
     non_qual_methods: []
     bands:
       - band: "별표 1-1 일반용역 10억원 이상"
@@ -818,7 +818,7 @@ institutions:
         flat_score: 85
         status: confirmed
         source: "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4.1"
-    sources: ["docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4", "docs/analysis/servc_formula_userfiles_existing_20261004.md:4", "docs/analysis/servc_formula_collection_central_20261004.md:298-320"]
+    sources: ["docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:4", "docs/analysis/servc_formula_userfiles_existing_20261004.md:4", "docs/analysis/servc_formula_collection_central_20261004.md:298-320", "docs/analysis/partial_institution_sources_20261013.md"]
   - institution_name: "한국가스공사"
     name_aliases: ["한국가스공사", "KOGAS"]
     institution_code: null
@@ -904,7 +904,7 @@ institutions:
     standard: "용역적격심사기준 (최종공포 2025-08-20)"
     effective_date: "2025-08-20"
     service_types: ["기술용역", "학술연구용역", "시설분야용역", "소프트웨어용역", "차량용역", "홍보용역", "여객육상운송용역", "화물육상운송용역", "수주계약 하도급용역"]
-    note: "별표 1-1(기술 10억원 이상)과 별표 1-5(수주계약 하도급)는 계수가 인쇄되지 않고 평탄 문장도 없어 k 미확정이다(규칙 5). 여러 별표의 평탄 문장이 점수를 인쇄하지 않아 그 행은 검산 통과로 세지 않았다."
+    note: "별표 1-1(기술 10억원 이상)과 별표 1-5(수주계약 하도급)는 계수가 인쇄되지 않고 평탄 문장도 없어 k 미확정이다(규칙 5). 여러 별표의 평탄 문장이 점수를 인쇄하지 않아 그 행은 검산 통과로 세지 않았다. 2026-10-13 재수집(partial_institution_sources_20261013.md)에서 현행 HWPX 를 다시 열어도 확정 근거가 없어 미확정을 유지했다."
     non_qual_methods: []
     bands:
       - band: "별표 1-2 기술용역 10억원 미만 5억원 이상"
@@ -1115,7 +1115,7 @@ institutions:
         flat_score: null
         status: confirmed
         source: "docs/analysis/servc_formula_collection_energy_20261004.md:3.1"
-    sources: ["docs/analysis/servc_formula_collection_energy_20261004.md:3.1"]
+    sources: ["docs/analysis/servc_formula_collection_energy_20261004.md:3.1", "docs/analysis/partial_institution_sources_20261013.md"]
   - institution_name: "한국수자원공사"
     name_aliases: ["한국수자원공사", "K-water", "Kwater"]
     institution_code: null
@@ -1124,7 +1124,7 @@ institutions:
     standard: "용역적격심사 세부기준 (40차/개정 2026-06-29, 시행 2026-06-30)"
     effective_date: "2026-06-30"
     service_types: ["기술용역", "점검정비용역", "학술연구용역", "시설분야용역", "기타용역"]
-    note: "별표 5·6·7의2·7의3·8 은 평탄 대입값이 인쇄 점수와 0.010~0.025점 달라 미확정이다(규칙 7). 별표 7의1 은 계수 생략 + 평탄 문장 부재로 k 미확정이다(규칙 5). 최저평점은 원문에 없다."
+    note: "별표 5·6·7의2·7의3·8 은 평탄 대입값이 인쇄 점수와 0.010~0.025점 달라 미확정이다(규칙 7). 별표 7의1 은 계수 생략 + 평탄 문장 부재로 k 미확정이다(규칙 5). 최저평점은 원문에 없다. 2026-10-13 재수집(partial_institution_sources_20261013.md)에서 현행 40차를 다시 열어도 확정 근거가 없어 미확정을 유지했다."
     non_qual_methods: []
     bands:
       - band: "별표 1 기술용역 10억원 이상"
@@ -1270,7 +1270,7 @@ institutions:
         flat_score: 65
         status: partial
         source: "docs/analysis/servc_formula_userfiles_existing_20261004.md:8.2"
-    sources: ["docs/analysis/servc_formula_userfiles_existing_20261004.md:8", "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:3", "docs/analysis/institution_formula_unresolved_20261012.md", "docs/analysis/institution_formula_g2b_attachment_sweep_20261012.md"]
+    sources: ["docs/analysis/servc_formula_userfiles_existing_20261004.md:8", "docs/analysis/20260930_servc_formula_recalc_kwater_koex.md:3", "docs/analysis/institution_formula_unresolved_20261012.md", "docs/analysis/institution_formula_g2b_attachment_sweep_20261012.md", "docs/analysis/partial_institution_sources_20261013.md"]
   - institution_name: "한국수력원자력"
     name_aliases: ["한국수력원자력", "한수원", "KHNP", "한국수력원자력(주)", "한국수력원자력주식회사"]
     institution_code: null
