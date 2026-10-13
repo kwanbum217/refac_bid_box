@@ -37,7 +37,9 @@ class PriceBand:
     """
 
     upper_bound: Decimal | None
-    max_price_score: Decimal
+    # 원문이 배점한도를 용역 유형(계량화 정도 등)별로 여러 값으로 인쇄한 구간은 하나를
+    # 고르지 않고 None 으로 두며, 그 사실을 label·source 에 남깁니다(예: 한국가스공사).
+    max_price_score: Decimal | None
     multiplier: Decimal
     base_rate: Decimal | None = None
     flat_score: Decimal | None = None
@@ -59,7 +61,13 @@ class ThresholdBand:
     source: str | None = None
 
 
-def _validate_bands(bands: Sequence[Any], *, axis: str) -> None:
+def _validate_bands(bands: Sequence[Any], *, axis: str, allow_bounded_top: bool = False) -> None:
+    """구간 목록의 순서와 상한 규칙을 검사합니다.
+
+    원칙적으로 마지막 구간은 상한이 없어야 합니다. 원문이 마지막 구간의 상한까지 인쇄한
+    규칙만 allow_bounded_top 으로 그 사실을 선언하며, 그보다 큰 추정가격은 구간을 고르지
+    못해 계산이 차단됩니다.
+    """
     open_upper = 0
     previous: Decimal | None = None
     for band in bands:
@@ -71,7 +79,7 @@ def _validate_bands(bands: Sequence[Any], *, axis: str) -> None:
         previous = band.upper_bound
     if open_upper > 1:
         raise ValueError(f"{axis} 구간에서 상한 없는 구간은 마지막 하나만 허용합니다.")
-    if bands and bands[-1].upper_bound is not None:
+    if not allow_bounded_top and bands and bands[-1].upper_bound is not None:
         raise ValueError(f"{axis} 구간의 마지막은 상한 없는 구간이어야 합니다.")
 
 
@@ -104,12 +112,17 @@ class EvaluationRule:
     # 아래 두 구간 목록으로 표현합니다. 기존 규칙은 모두 None 이라 기존 경로가 그대로 유지됩니다.
     price_bands: tuple[PriceBand, ...] | None = None
     threshold_bands: tuple[ThresholdBand, ...] | None = None
+    # 원문이 마지막 구간의 상한까지 인쇄한 규칙은 True 로 두어, 그보다 큰 추정가격이 어느
+    # 구간에도 들지 않아 계산이 차단됨을 선언합니다(예: 국토교통부 감리용역 10억원 미만).
+    bounded_price_top: bool = False
     quant_basis: str = QUANT_BASIS_REGISTRY
     score_table_source: str | None = None
     contract_regime: str | None = None
     institution_scope: str = RULE_SCOPE_ALL
     institution_code: str | None = None
     institution_name: str | None = None
+    # 원문이 함께 쓰는 기관 이름(예: 국가유산청-문화재청). 공고에 코드가 없을 때만 씁니다.
+    institution_aliases: tuple[str, ...] = ()
     region_code: str | None = None
     region_name: str | None = None
 
@@ -135,13 +148,17 @@ class EvaluationRule:
                 raise ValueError("price_bands 규칙은 threshold_bands 를 함께 선언해야 합니다.")
             if any(band.multiplier <= 0 for band in self.price_bands):
                 raise ValueError("PriceBand 의 평점계수(k)는 0보다 커야 합니다.")
-            _validate_bands(self.price_bands, axis="PriceBand")
+            _validate_bands(
+                self.price_bands, axis="PriceBand", allow_bounded_top=self.bounded_price_top
+            )
         if self.threshold_bands is not None:
             if self.pass_threshold is not None:
                 raise ValueError("threshold_bands 와 pass_threshold 는 동시에 선언할 수 없습니다.")
             if not self.threshold_bands:
                 raise ValueError("threshold_bands 는 최소 한 구간이 필요합니다.")
-            _validate_bands(self.threshold_bands, axis="ThresholdBand")
+            _validate_bands(
+                self.threshold_bands, axis="ThresholdBand", allow_bounded_top=self.bounded_price_top
+            )
         if self.institution_scope not in RULE_SCOPE_VALUES:
             raise ValueError(f"지원하지 않는 기관 범위입니다: {self.institution_scope}")
         if self.institution_scope == RULE_SCOPE_INSTITUTION and not (
@@ -2861,6 +2878,2505 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
     ),
 )
 
+# =============================================================================
+# 기관(중앙부처·공기업·공단) 자체 적격심사 세부기준 규칙
+# =============================================================================
+#
+# 정본은 data/reference/institution_rules_20261013.yaml 이며, status=confirmed 기관 10곳의
+# bands 를 값을 추정하지 않고 상수로 옮겼습니다(규칙 레지스트리는 코드가 정본). partial 5곳
+# (방위사업청·한국철도공사·한국도로공사·한국전력기술·한국수자원공사)과 unresolved 3곳(한국
+# 토지주택공사·한전 전력연구원·한전KPS)은 넣지 않아 종전 조달청 규칙 경로를 그대로 씁니다.
+#
+# 기관 축은 수요기관(dminsttNm·dminsttCd)입니다. 규칙과 공고 양쪽에 코드가 있으면 코드
+# 일치로만, 한쪽이라도 없으면 공백 제거 이름(또는 name_aliases) 일치로 판정합니다.
+# 수요기관 코드는 DB g2b_demand_institutions 로 확인한 값을 썼고(한국수력원자력은 기관표에
+# 본청 코드가 없어 이름만), 지역본부·지사처럼 이름과 코드가 다른 하위 조직은 대상이 아닙니다.
+# 고시금액 경계는 2026년 고시금액을 쓰며, 원문이 마지막 구간의 상한까지 인쇄한 규칙은 그
+# 유한 상한을 그대로 두어 그보다 큰 추정가격은 구간을 고르지 못해 차단됩니다.
+_SRC_INST_CENTRAL = "docs/analysis/servc_formula_collection_central_20261004.md"
+_SRC_INST_AGENCY = "docs/analysis/servc_formula_userfiles_agency_20261004.md"
+_SRC_INST_RECOVER_A = "docs/analysis/servc_formula_recover_a_20261005.md"
+_SRC_INST_KOGAS = "docs/analysis/servc_formula_kogas_qualification_20261004.md"
+_INSTITUTION_NOTICE_AMOUNT = Decimal(str(notice_amount_for_year(2026)))
+
+# (상한, 배점한도 B, 평점계수 k, 기준비율, 통과점수, 하한율, 구간 라벨, 구간 근거)
+# 상한 "고시금액" 은 2026년 고시금액, None 은 상한 없음을 뜻합니다. B None 은 원문이 B 를
+# 용역 유형(계량화 정도)별 여러 값으로 인쇄해 하나로 확정하지 않은 구간입니다.
+_InstitutionBand = tuple[str | None, str | None, str, str, str, str, str, str]
+
+
+def _inst_band(
+    upper: str | None,
+    b: str | None,
+    k: str,
+    base_ratio: str,
+    pass_score: str,
+    lwlt_rate: str,
+    label: str,
+    source: str,
+) -> _InstitutionBand:
+    return (upper, b, k, base_ratio, pass_score, lwlt_rate, label, source)
+
+
+def _institution_band_bound(upper: str | None) -> Decimal | None:
+    if upper is None:
+        return None
+    if upper == "고시금액":
+        return _INSTITUTION_NOTICE_AMOUNT
+    return Decimal(upper)
+
+
+def _institution_band_order(spec: _InstitutionBand) -> tuple[bool, Decimal]:
+    bound = _institution_band_bound(spec[0])
+    return (bound is None, bound if bound is not None else Decimal("0"))
+
+
+def _institution_rule(
+    rule_id: str,
+    *,
+    institution_name: str,
+    service_type: str,
+    table_name: str,
+    description: str,
+    effective_date: str,
+    source: str,
+    patterns: tuple[str, ...],
+    bands: Sequence[_InstitutionBand],
+    institution_code: str | None = None,
+    institution_aliases: tuple[str, ...] = (),
+) -> EvaluationRule:
+    """기관 규칙 하나를 구간별 price_bands·threshold_bands 로 만듭니다.
+
+    명세(YAML) 순서와 무관하게 구간을 추정가격 오름차순으로 정렬해 선언합니다. 기관 정량평가
+    배점표는 아직 반영하지 않았으므로 quant_basis 는 기관 원문 미반영이며, 구간 하한율은 원문
+    인쇄값을 그대로 씁니다. 규칙 대표 하한율·기준비율은 가장 낮은 구간 값을 쓰고, 실제 계산은
+    추정가격으로 고른 구간값이 정합니다.
+    """
+    ordered = sorted(bands, key=_institution_band_order)
+    price_bands: list[PriceBand] = []
+    threshold_bands: list[ThresholdBand] = []
+    for upper, b, k, base_ratio, pass_score, lwlt_rate, label, band_source in ordered:
+        bound = _institution_band_bound(upper)
+        price_bands.append(
+            PriceBand(
+                upper_bound=bound,
+                max_price_score=Decimal(b) if b is not None else None,
+                multiplier=Decimal(k),
+                base_rate=Decimal(base_ratio) / Decimal("100"),
+                label=label,
+                source=band_source,
+                lwlt_rate=Decimal(lwlt_rate),
+            )
+        )
+        threshold_bands.append(
+            ThresholdBand(
+                upper_bound=bound,
+                pass_threshold=Decimal(pass_score),
+                label=label,
+                source=band_source,
+            )
+        )
+    return EvaluationRule(
+        rule_id=rule_id,
+        service_type=service_type,
+        table_name=table_name,
+        description=description,
+        effective_date=effective_date,
+        source=source,
+        patterns=patterns,
+        lwlt_rate=Decimal(ordered[0][5]),
+        base_rate=Decimal(ordered[0][3]) / Decimal("100"),
+        price_bands=tuple(price_bands),
+        threshold_bands=tuple(threshold_bands),
+        bounded_price_top=ordered[-1][0] is not None,
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=source,
+        institution_scope=RULE_SCOPE_INSTITUTION,
+        institution_code=institution_code,
+        institution_name=institution_name,
+        institution_aliases=institution_aliases,
+    )
+
+
+INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
+    # 국토교통부 (국토교통부훈령 제965호, 2018-01-04 시행). band 1 은 원문 표기가
+    # "고시금액 미만"이고 명세 lower 에 고시금액이 적혀 있어 상한을 고시금액으로 옮겼습니다.
+    _institution_rule(
+        "SERVC_INST_MOLIT_20180104_GENERAL",
+        institution_name="국토교통부",
+        institution_code="1613000",
+        service_type="GENERAL",
+        table_name="국토교통부 용역적격심사 (일반용역)",
+        description="국토교통부훈령 제965호 별표 1 일반용역 4구간",
+        effective_date="2018-01-04",
+        source=f"{_SRC_INST_CENTRAL}:66-111",
+        patterns=("일반용역",),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "20",
+                "88",
+                "95",
+                "87.745",
+                "별표 1 · 고시금액 미만 일반용역",
+                f"{_SRC_INST_CENTRAL}:88,100,104",
+            ),
+            _inst_band(
+                "1000000000",
+                "30",
+                "2",
+                "88",
+                "90",
+                "82.995",
+                "별표 1 · 고시금액 이상 10억원 미만 일반용역",
+                f"{_SRC_INST_CENTRAL}:89,101,103",
+            ),
+            _inst_band(
+                "3000000000",
+                "20",
+                "2",
+                "88",
+                "90",
+                "82.995",
+                "별표 1 · 10억원 이상 30억원 미만 일반용역",
+                f"{_SRC_INST_CENTRAL}:90,103,104",
+            ),
+            _inst_band(
+                None,
+                "20",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 1 · 30억원 이상 일반용역",
+                f"{_SRC_INST_CENTRAL}:91,104",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_MOLIT_20180104_SUPERVISION",
+        institution_name="국토교통부",
+        institution_code="1613000",
+        service_type="SUPERVISION",
+        table_name="국토교통부 용역적격심사 (감리용역)",
+        description="국토교통부훈령 제965호 별표 1 감리용역 (고시금액 이상 10억원 미만)",
+        effective_date="2018-01-04",
+        source=f"{_SRC_INST_CENTRAL}:66-111",
+        patterns=("감리용역",),
+        # 원문이 감리용역 구간의 상한(10억원)까지 인쇄해 마지막 구간이 유한 상한입니다.
+        bands=(
+            _inst_band(
+                "1000000000",
+                "30",
+                "2",
+                "88",
+                "95",
+                "85.495",
+                "별표 1 · 고시금액 이상 10억원 미만 감리용역",
+                f"{_SRC_INST_CENTRAL}:89,102,103",
+            ),
+        ),
+    ),
+    # 국가유산청 (국가유산청고시 제2024-6호, 2024-05-17 시행). 매장유산 조사용역 전용입니다.
+    _institution_rule(
+        "SERVC_INST_KHS_20240517_BURIAL",
+        institution_name="국가유산청",
+        institution_code="1833100",
+        institution_aliases=("문화재청",),
+        service_type="BURIAL",
+        table_name="국가유산청 매장유산 조사용역 적격심사",
+        description="국가유산청고시 제2024-6호 별표 1~5 매장유산 조사용역 5구간",
+        effective_date="2024-05-17",
+        source=(
+            f"{_SRC_INST_CENTRAL}:115-158; "
+            "docs/analysis/servc_formula_userfiles_existing_20261004.md:5"
+        ),
+        patterns=("매장유산조사용역", "매장유산"),
+        bands=(
+            _inst_band(
+                "100000000",
+                "50",
+                "48",
+                "88",
+                "88",
+                "87.745",
+                "별표 5 · 1억원 미만 매장유산 조사용역",
+                f"{_SRC_INST_CENTRAL}:142,150",
+            ),
+            _inst_band(
+                "250000000",
+                "45",
+                "9.6",
+                "88",
+                "88",
+                "86.745",
+                "별표 4 · 2.5억원 미만 1억원 이상 매장유산 조사용역",
+                f"{_SRC_INST_CENTRAL}:141,149",
+            ),
+            _inst_band(
+                "500000000",
+                "40",
+                "3",
+                "88",
+                "85",
+                "82.995",
+                "별표 3 · 5억원 미만 2.5억원 이상 매장유산 조사용역",
+                f"{_SRC_INST_CENTRAL}:140,148",
+            ),
+            _inst_band(
+                "1000000000",
+                "30",
+                "2.5",
+                "88",
+                "85",
+                "81.995",
+                "별표 2 · 10억원 미만 5억원 이상 매장유산 조사용역",
+                f"{_SRC_INST_CENTRAL}:139,147",
+            ),
+            _inst_band(
+                None,
+                "30",
+                "1.875",
+                "88",
+                "85",
+                "79.995",
+                "별표 1 · 10억원 이상 매장유산 조사용역",
+                f"{_SRC_INST_CENTRAL}:138,146",
+            ),
+        ),
+    ),
+    # 환경부 (기후에너지환경부훈령 제4호, 2025-11-11 시행). 기술용역 기준입니다.
+    # band 1 은 원문 표기가 "고시금액 미만"이고 명세 lower 에 고시금액이 적혀 있어 상한을
+    # 고시금액으로 옮겼습니다.
+    _institution_rule(
+        "SERVC_INST_ME_20251111_TECH",
+        institution_name="환경부",
+        institution_code="1482000",
+        institution_aliases=("기후에너지환경부",),
+        service_type="TECH",
+        table_name="환경부 기술용역 적격심사",
+        description="기후에너지환경부훈령 제4호 별표 1 기술용역 4구간",
+        effective_date="2025-11-11",
+        source=f"{_SRC_INST_CENTRAL}:160-196",
+        patterns=("기술용역",),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "20",
+                "88",
+                "95",
+                "87.745",
+                "별표 1 · 고시금액 미만 기술용역",
+                f"{_SRC_INST_CENTRAL}:188",
+            ),
+            _inst_band(
+                "1000000000",
+                "30",
+                "2",
+                "88",
+                "95",
+                "85.495",
+                "별표 1 · 고시금액 이상 10억원 미만 기술용역",
+                f"{_SRC_INST_CENTRAL}:189",
+            ),
+            _inst_band(
+                "3000000000",
+                "20",
+                "2",
+                "88",
+                "90",
+                "82.995",
+                "별표 1 · 10억원 이상 30억원 미만 기술용역",
+                f"{_SRC_INST_CENTRAL}:190",
+            ),
+            _inst_band(
+                None,
+                "20",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 1 · 30억원 이상 기술용역",
+                f"{_SRC_INST_CENTRAL}:191",
+            ),
+        ),
+    ),
+    # 한국농어촌공사 (부칙 2026-06-24 이후 입찰공고분 적용).
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_ACADEMIC",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="ACADEMIC",
+        table_name="한국농어촌공사 일반용역 적격심사 (학술연구용역)",
+        description="한국농어촌공사 별표 1 학술연구용역 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("학술연구용역", "학술연구"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 1 학술연구용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 1 학술연구용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_FACILITY",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="FACILITY",
+        table_name="한국농어촌공사 일반용역 적격심사 (시설분야용역)",
+        description="한국농어촌공사 별표 2 시설분야용역 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("시설분야용역", "시설분야"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 2 시설분야용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 2 시설분야용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_SW",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="SW",
+        table_name="한국농어촌공사 일반용역 적격심사 (소프트웨어용역 경쟁제품 비대상)",
+        description="한국농어촌공사 별표 3 소프트웨어용역(경쟁제품 비대상) 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("소프트웨어용역중소기업자간경쟁제품비대상", "소프트웨어용역경쟁제품비대상"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_SW_TARGET",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="SW_SME",
+        table_name="한국농어촌공사 일반용역 적격심사 (소프트웨어용역 경쟁제품 대상)",
+        description="한국농어촌공사 별표 3의1 소프트웨어용역(경쟁제품 대상) 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("소프트웨어용역중소기업자간경쟁제품대상", "소프트웨어용역경쟁제품대상"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의1 소프트웨어용역(경쟁제품 대상) · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의1 소프트웨어용역(경쟁제품 대상) · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_WASTE",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="WASTE",
+        table_name="한국농어촌공사 일반용역 적격심사 (폐기물처리용역)",
+        description="한국농어촌공사 별표 4 폐기물처리용역 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("폐기물처리용역", "폐기물처리"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 4 폐기물처리용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 4 폐기물처리용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_PASSENGER",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="PASSENGER_TRANSPORT",
+        table_name="한국농어촌공사 일반용역 적격심사 (여객 육상운송용역)",
+        description="한국농어촌공사 별표 5 여객 육상운송용역 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("여객육상운송용역", "여객육상운송"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_FREIGHT",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="FREIGHT",
+        table_name="한국농어촌공사 일반용역 적격심사 (화물 육상운송용역)",
+        description="한국농어촌공사 별표 5의1 화물 육상운송용역 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("화물육상운송용역", "화물육상운송"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 5의1 화물 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 5의1 화물 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_INSURANCE",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="INSURANCE",
+        table_name="한국농어촌공사 일반용역 적격심사 (보험용역)",
+        description="한국농어촌공사 별표 6 보험용역 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_REPAIR",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="REPAIR_INSPECTION",
+        table_name="한국농어촌공사 일반용역 적격심사 (수리·점검용역)",
+        description="한국농어촌공사 별표 7 수리·점검용역 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("수리점검용역", "수리점검"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 7 수리·점검용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 7 수리·점검용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20260624_LEASE",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="LEASE",
+        table_name="한국농어촌공사 일반용역 적격심사 (임대차)",
+        description="한국농어촌공사 별표 8 임대차 2구간",
+        effective_date="2026-06-24",
+        source=f"{_SRC_INST_AGENCY}:4",
+        patterns=("임대차용역", "임대차"),
+        bands=(
+            _inst_band(
+                None,
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 8 임대차 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 8 임대차 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:4.2",
+            ),
+        ),
+    ),
+    # 한국가스공사 (개정 2026-07-08, 시행 2026-07-09). B 는 용역수행능력 계량화 정도
+    # (제16조①)에 따라 30/50/70 으로 갈려 한 값으로 확정하지 않고 None 과 사유를 남깁니다.
+    # k·기준비율·통과점수·하한율은 추정가격 구간(제17조) 값으로 확정입니다.
+    _institution_rule(
+        "SERVC_INST_KOGAS_20260709_GENERAL",
+        institution_name="한국가스공사",
+        institution_code="B551210",
+        institution_aliases=("KOGAS",),
+        service_type="GENERAL",
+        table_name="한국가스공사 용역 적격심사 (종합심사낙찰제 3유형 외)",
+        description="한국가스공사 제17조 용역 4구간 (B 30/50/70 미확정)",
+        effective_date="2026-07-09",
+        source=f"{_SRC_INST_KOGAS}:4-8",
+        patterns=("용역",),
+        bands=(
+            _inst_band(
+                "고시금액",
+                None,
+                "5",
+                "90",
+                "85",
+                "86.995",
+                "제17조 · 고시금액 미만",
+                f"{_SRC_INST_KOGAS}:5.3,5.4; B 30/50/70 은 용역수행능력 계량화 정도에 따라 선택",
+            ),
+            _inst_band(
+                "1000000000",
+                None,
+                "3",
+                "90",
+                "85",
+                "84.995",
+                "제17조 · 10억원 미만 고시금액 이상",
+                f"{_SRC_INST_KOGAS}:5.3,5.4; B 30/50/70 은 용역수행능력 계량화 정도에 따라 선택",
+            ),
+            _inst_band(
+                "3000000000",
+                None,
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "제17조 · 30억원 미만 10억원 이상",
+                f"{_SRC_INST_KOGAS}:5.3,5.4; B 30/50/70 은 용역수행능력 계량화 정도에 따라 선택",
+            ),
+            _inst_band(
+                None,
+                None,
+                "1.5",
+                "90",
+                "85",
+                "79.995",
+                "제17조 · 30억원 이상",
+                f"{_SRC_INST_KOGAS}:5.3,5.4; B 30/50/70 은 용역수행능력 계량화 정도에 따라 선택",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KOGAS_20260709_FACILITY",
+        institution_name="한국가스공사",
+        institution_code="B551210",
+        institution_aliases=("KOGAS",),
+        service_type="FACILITY",
+        table_name="한국가스공사 용역 적격심사 (시설분야용역)",
+        description="한국가스공사 제17조② 시설분야용역 단일 구간",
+        effective_date="2026-07-09",
+        source=f"{_SRC_INST_KOGAS}:4-8",
+        patterns=("시설분야용역", "시설분야"),
+        bands=(
+            _inst_band(
+                None,
+                "50",
+                "5",
+                "92",
+                "90",
+                "89.995",
+                "제17조② 시설분야용역",
+                f"{_SRC_INST_KOGAS}:5.3,5.4",
+            ),
+        ),
+    ),
+    # 한국수력원자력 (일부개정 2026-06-19). 기관표에 본청 코드가 없어 이름으로만 판정합니다.
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_CLEANING",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="SIMPLE_LABOR",
+        table_name="한국수력원자력 일반용역 적격심사 (청소용역)",
+        description="한국수력원자력 별표 1 청소용역 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("청소용역", "청소"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 1 청소용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 1 청소용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_MAINTENANCE",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="MAINTENANCE",
+        table_name="한국수력원자력 일반용역 적격심사 (사옥사택 경상보수용역)",
+        description="한국수력원자력 별표 2 사옥사택 경상보수용역 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("경상보수용역", "경상보수"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 2 사옥사택 경상보수용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 2 사옥사택 경상보수용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_SECURITY",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="SECURITY",
+        table_name="한국수력원자력 일반용역 적격심사 (경비용역)",
+        description="한국수력원자력 별표 3 경비용역 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("경비용역", "경비"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 3 경비용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 3 경비용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_SEWAGE",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="SEWAGE",
+        table_name="한국수력원자력 일반용역 적격심사 (하수처리시설 관리용역)",
+        description="한국수력원자력 별표 4 하수처리시설 관리용역 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("하수처리시설관리용역", "하수처리시설"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 4 하수처리시설 관리용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 4 하수처리시설 관리용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_ACADEMIC",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="ACADEMIC",
+        table_name="한국수력원자력 일반용역 적격심사 (학술연구용역)",
+        description="한국수력원자력 별표 5 학술연구용역 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("학술연구용역", "학술연구"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 5 학술연구용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 5 학술연구용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_SW",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="SW",
+        table_name="한국수력원자력 일반용역 적격심사 (소프트웨어용역 경쟁제품 비대상)",
+        description="한국수력원자력 별표 6-㉮ 소프트웨어용역(경쟁제품 비대상) 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("소프트웨어용역중소기업자간경쟁제품비대상", "소프트웨어용역경쟁제품비대상"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 6-㉮ 소프트웨어용역(경쟁제품 비대상) · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 6-㉮ 소프트웨어용역(경쟁제품 비대상) · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_SW_TARGET",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="SW_SME",
+        table_name="한국수력원자력 일반용역 적격심사 (소프트웨어용역 경쟁제품 대상)",
+        description="한국수력원자력 별표 6-㉯ 소프트웨어용역(경쟁제품 대상) 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("소프트웨어용역중소기업자간경쟁제품대상", "소프트웨어용역경쟁제품대상"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 6-㉯ 소프트웨어용역(경쟁제품 대상) · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 6-㉯ 소프트웨어용역(경쟁제품 대상) · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_WASTE",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="WASTE",
+        table_name="한국수력원자력 일반용역 적격심사 (폐기물처리용역)",
+        description="한국수력원자력 별표 7 폐기물처리용역 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("폐기물처리용역", "폐기물처리"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 7 폐기물처리용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 7 폐기물처리용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_PASSENGER",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="PASSENGER_TRANSPORT",
+        table_name="한국수력원자력 일반용역 적격심사 (여객 육상운송용역)",
+        description="한국수력원자력 별표 8-㉮ 여객 육상운송용역 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("여객육상운송용역", "여객육상운송"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 8-㉮ 여객 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 8-㉮ 여객 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_FREIGHT",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="FREIGHT",
+        table_name="한국수력원자력 일반용역 적격심사 (화물 육상운송용역)",
+        description="한국수력원자력 별표 8-㉯ 화물 육상운송용역 2구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("화물육상운송용역", "화물육상운송"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 8-㉯ 화물 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 8-㉯ 화물 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    # 별표 9(정비자재)와 별표 10(원전연료)은 구간 값이 같아 한 규칙으로 합쳤습니다.
+    _institution_rule(
+        "SERVC_INST_KHNP_20260619_TRANSPORT_AGENCY",
+        institution_name="한국수력원자력",
+        institution_aliases=("한수원", "KHNP"),
+        service_type="TRANSPORT_AGENCY",
+        table_name="한국수력원자력 일반용역 적격심사 (국외운송주선용역)",
+        description="한국수력원자력 별표 9·10 국외운송주선용역 3구간",
+        effective_date="2026-06-19",
+        source=f"{_SRC_INST_AGENCY}:6",
+        patterns=("국외운송주선용역", "국외운송주선"),
+        bands=(
+            _inst_band(
+                "1000000000",
+                "50",
+                "2",
+                "90",
+                "95",
+                "87.495",
+                "별표 9·10 국외운송주선용역 · 10억원 미만",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                "3000000000",
+                "40",
+                "2",
+                "90",
+                "90",
+                "84.995",
+                "별표 9·10 국외운송주선용역 · 30억원 미만 10억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+            _inst_band(
+                None,
+                "30",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 9·10 국외운송주선용역 · 30억원 이상",
+                f"{_SRC_INST_AGENCY}:6.2",
+            ),
+        ),
+    ),
+    # 한국지역난방공사 (개정·시행 2026-01-01).
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_ACADEMIC",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="ACADEMIC",
+        table_name="한국지역난방공사 일반용역 적격심사 (학술연구용역)",
+        description="한국지역난방공사 별표 1 학술연구용역 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("학술연구용역", "학술연구"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 1 학술연구용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 1 학술연구용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_FACILITY",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="FACILITY",
+        table_name="한국지역난방공사 일반용역 적격심사 (시설분야용역)",
+        description="한국지역난방공사 별표 2 시설분야용역 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("시설분야용역", "시설분야"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "91",
+                "85",
+                "87.995",
+                "별표 2 시설분야용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "91",
+                "85",
+                "87.995",
+                "별표 2 시설분야용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_SW",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="SW",
+        table_name="한국지역난방공사 일반용역 적격심사 (소프트웨어용역 경쟁제품 비대상)",
+        description="한국지역난방공사 별표 3 소프트웨어용역(경쟁제품 비대상) 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("소프트웨어용역중소기업자간경쟁제품비대상", "소프트웨어용역경쟁제품비대상"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_SW_TARGET",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="SW_SME",
+        table_name="한국지역난방공사 일반용역 적격심사 (소프트웨어용역 경쟁제품 대상)",
+        description="한국지역난방공사 별표 3의2 소프트웨어용역(경쟁제품 대상) 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("소프트웨어용역중소기업자간경쟁제품대상", "소프트웨어용역경쟁제품대상"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_WASTE",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="WASTE",
+        table_name="한국지역난방공사 일반용역 적격심사 (폐기물처리용역)",
+        description="한국지역난방공사 별표 4 폐기물처리용역 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("폐기물처리용역", "폐기물처리"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 4 폐기물처리용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 4 폐기물처리용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_PASSENGER",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="PASSENGER_TRANSPORT",
+        table_name="한국지역난방공사 일반용역 적격심사 (여객 육상운송용역)",
+        description="한국지역난방공사 별표 5 여객 육상운송용역 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("여객육상운송용역", "여객육상운송"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_FREIGHT",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="FREIGHT",
+        table_name="한국지역난방공사 일반용역 적격심사 (화물 육상운송용역)",
+        description="한국지역난방공사 별표 5의2 화물 육상운송용역 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("화물육상운송용역", "화물육상운송"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 5의2 화물 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 5의2 화물 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_INSURANCE",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="INSURANCE",
+        table_name="한국지역난방공사 일반용역 적격심사 (보험용역)",
+        description="한국지역난방공사 별표 6 보험용역 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_REPAIR",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="REPAIR_INSPECTION",
+        table_name="한국지역난방공사 일반용역 적격심사 (수리·점검용역)",
+        description="한국지역난방공사 별표 7 수리·점검용역 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("수리점검용역", "수리점검"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 7 수리·점검용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 7 수리·점검용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_LEASE",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="LEASE",
+        table_name="한국지역난방공사 일반용역 적격심사 (임대차)",
+        description="한국지역난방공사 별표 8 임대차 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("임대차용역", "임대차"),
+        bands=(
+            _inst_band(
+                None,
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 8 임대차 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 8 임대차 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260101_OTHER",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="GENERAL",
+        table_name="한국지역난방공사 일반용역 적격심사 (기타용역)",
+        description="한국지역난방공사 별표 9 기타용역 2구간",
+        effective_date="2026-01-01",
+        source=f"{_SRC_INST_AGENCY}:5",
+        patterns=("기타용역", "기타"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "80",
+                "5",
+                "88",
+                "85",
+                "84.995",
+                "별표 9 기타용역 고시금액 미만",
+                f"{_SRC_INST_AGENCY}:5.2,5.3",
+            ),
+            _inst_band(
+                None,
+                "50",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 9 기타용역 고시금액 이상",
+                f"{_SRC_INST_AGENCY}:5.2,5.3",
+            ),
+        ),
+    ),
+    # 한국석유공사 (제정 1995-09-18, 12차 개정 2019-09-30). 아래는 일반용역(별표 5~11)입니다.
+    _institution_rule(
+        "SERVC_INST_KNOC_20190930_ACADEMIC",
+        institution_name="한국석유공사",
+        institution_code="B410005",
+        institution_aliases=("KNOC",),
+        service_type="ACADEMIC",
+        table_name="한국석유공사 용역 적격심사 (학술연구용역)",
+        description="한국석유공사 별표 5 학술연구용역 2구간",
+        effective_date="2019-09-30",
+        source=f"{_SRC_INST_RECOVER_A}:5",
+        patterns=("학술연구용역", "학술연구"),
+        bands=(
+            _inst_band(
+                "200000000",
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 5 학술연구용역 · 2억원 미만",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+            _inst_band(
+                None,
+                "40",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 5 학술연구용역 · 2억원 이상",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KNOC_20190930_FACILITY",
+        institution_name="한국석유공사",
+        institution_code="B410005",
+        institution_aliases=("KNOC",),
+        service_type="FACILITY",
+        table_name="한국석유공사 용역 적격심사 (시설분야용역)",
+        description="한국석유공사 별표 6 시설분야용역 2구간",
+        effective_date="2019-09-30",
+        source=f"{_SRC_INST_RECOVER_A}:5",
+        patterns=("시설분야용역", "시설분야"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "91",
+                "85",
+                "87.995",
+                "별표 6 시설분야용역 · 5억원 미만",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "91",
+                "85",
+                "87.995",
+                "별표 6 시설분야용역 · 5억원 이상",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KNOC_20190930_ICT",
+        institution_name="한국석유공사",
+        institution_code="B410005",
+        institution_aliases=("KNOC",),
+        service_type="ICT",
+        table_name="한국석유공사 용역 적격심사 (정보통신용역 경쟁제품 비대상)",
+        description="한국석유공사 별표 7 정보통신용역(경쟁제품 비대상) 2구간",
+        effective_date="2019-09-30",
+        source=f"{_SRC_INST_RECOVER_A}:5",
+        patterns=("정보통신용역중소기업자간경쟁제품비대상", "정보통신용역경쟁제품비대상"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 7 정보통신용역(경쟁제품 비대상) · 5억원 미만",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 7 정보통신용역(경쟁제품 비대상) · 5억원 이상",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KNOC_20190930_ICT_TARGET",
+        institution_name="한국석유공사",
+        institution_code="B410005",
+        institution_aliases=("KNOC",),
+        service_type="ICT_SME",
+        table_name="한국석유공사 용역 적격심사 (정보통신용역 경쟁제품 대상)",
+        description="한국석유공사 별표 8 정보통신용역(경쟁제품 대상) 2구간",
+        effective_date="2019-09-30",
+        source=f"{_SRC_INST_RECOVER_A}:5",
+        patterns=("정보통신용역중소기업자간경쟁제품대상", "정보통신용역경쟁제품대상"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 8 정보통신용역(경쟁제품 대상) · 5억원 미만",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 8 정보통신용역(경쟁제품 대상) · 5억원 이상",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KNOC_20190930_WASTE",
+        institution_name="한국석유공사",
+        institution_code="B410005",
+        institution_aliases=("KNOC",),
+        service_type="WASTE",
+        table_name="한국석유공사 용역 적격심사 (폐기물처리용역)",
+        description="한국석유공사 별표 9 폐기물처리용역 2구간",
+        effective_date="2019-09-30",
+        source=f"{_SRC_INST_RECOVER_A}:5",
+        patterns=("폐기물처리용역", "폐기물처리"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 9 폐기물처리용역 · 5억원 미만",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 9 폐기물처리용역 · 5억원 이상",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KNOC_20190930_TRANSPORT",
+        institution_name="한국석유공사",
+        institution_code="B410005",
+        institution_aliases=("KNOC",),
+        service_type="TRANSPORT",
+        table_name="한국석유공사 용역 적격심사 (운송용역 경쟁제품 비대상)",
+        description="한국석유공사 별표 10 운송용역(경쟁제품 비대상) 2구간",
+        effective_date="2019-09-30",
+        source=f"{_SRC_INST_RECOVER_A}:5",
+        patterns=("운송용역중소기업자간경쟁제품비대상", "운송용역경쟁제품비대상"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 10 운송용역(경쟁제품 비대상) · 5억원 미만",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 10 운송용역(경쟁제품 비대상) · 5억원 이상",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KNOC_20190930_TRANSPORT_TARGET",
+        institution_name="한국석유공사",
+        institution_code="B410005",
+        institution_aliases=("KNOC",),
+        service_type="TRANSPORT_SME",
+        table_name="한국석유공사 용역 적격심사 (운송용역 경쟁제품 대상)",
+        description="한국석유공사 별표 10의2 운송용역(경쟁제품 대상) 2구간",
+        effective_date="2019-09-30",
+        source=f"{_SRC_INST_RECOVER_A}:5",
+        patterns=("운송용역중소기업자간경쟁제품대상", "운송용역경쟁제품대상"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 10의2 운송용역(경쟁제품 대상) · 5억원 미만",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 10의2 운송용역(경쟁제품 대상) · 5억원 이상",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_KNOC_20190930_OTHER",
+        institution_name="한국석유공사",
+        institution_code="B410005",
+        institution_aliases=("KNOC",),
+        service_type="GENERAL",
+        table_name="한국석유공사 용역 적격심사 (기타용역)",
+        description="한국석유공사 별표 11 기타용역 2구간",
+        effective_date="2019-09-30",
+        source=f"{_SRC_INST_RECOVER_A}:5",
+        patterns=("기타용역", "기타"),
+        bands=(
+            _inst_band(
+                "200000000",
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 11 기타용역 · 2억원 미만",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+            _inst_band(
+                None,
+                "40",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 11 기타용역 · 2억원 이상",
+                f"{_SRC_INST_RECOVER_A}:5.2",
+            ),
+        ),
+    ),
+    # 인천국제공항공사 (재무처-17529호, 2024-12-23 제정, 2025-01-01 시행).
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_ACADEMIC",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="ACADEMIC",
+        table_name="인천국제공항공사 일반용역 적격심사 (학술연구용역)",
+        description="인천국제공항공사 별표 1 학술연구용역 2구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("학술연구용역", "학술연구"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 1 학술연구용역 고시금액 미만",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 1 학술연구용역 고시금액 이상",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_OUTSOURCING_TECH",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="OUTSOURCING_TECH",
+        table_name="인천국제공항공사 일반용역 적격심사 (기술분야 아웃소싱용역)",
+        description="인천국제공항공사 별표 2 기술분야 아웃소싱용역 단일 구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("기술분야아웃소싱용역", "기술분야아웃소싱"),
+        bands=(
+            _inst_band(
+                None,
+                "30",
+                "5",
+                "91",
+                "85",
+                "87.995",
+                "별표 2 기술분야 아웃소싱용역",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_OUTSOURCING_GENERAL",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="OUTSOURCING_GENERAL",
+        table_name="인천국제공항공사 일반용역 적격심사 (일반분야 아웃소싱용역)",
+        description="인천국제공항공사 별표 3 일반분야 아웃소싱용역 단일 구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("일반분야아웃소싱용역", "일반분야아웃소싱"),
+        bands=(
+            _inst_band(
+                None,
+                "55",
+                "5",
+                "91",
+                "85",
+                "87.995",
+                "별표 3 일반분야 아웃소싱용역",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_WASTE",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="WASTE",
+        table_name="인천국제공항공사 일반용역 적격심사 (폐기물처리용역)",
+        description="인천국제공항공사 별표 4 폐기물처리용역 2구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("폐기물처리용역", "폐기물처리"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 4 폐기물처리용역 고시금액 미만",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 4 폐기물처리용역 고시금액 이상",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_PASSENGER",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="PASSENGER_TRANSPORT",
+        table_name="인천국제공항공사 일반용역 적격심사 (여객 육상운송용역)",
+        description="인천국제공항공사 별표 5 여객 육상운송용역 2구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("여객육상운송용역", "여객육상운송"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_FREIGHT",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="FREIGHT",
+        table_name="인천국제공항공사 일반용역 적격심사 (화물 육상운송용역)",
+        description="인천국제공항공사 별표 5의2 화물 육상운송용역 2구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("화물육상운송용역", "화물육상운송"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 5의2 화물 육상운송용역 고시금액 미만",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 5의2 화물 육상운송용역 고시금액 이상",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_INSURANCE",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="INSURANCE",
+        table_name="인천국제공항공사 일반용역 적격심사 (보험용역)",
+        description="인천국제공항공사 별표 6 보험용역 2구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 고시금액 미만",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 고시금액 이상",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_REPAIR",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="REPAIR_INSPECTION",
+        table_name="인천국제공항공사 일반용역 적격심사 (수리·점검용역)",
+        description="인천국제공항공사 별표 7 수리·점검용역 2구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("수리점검용역", "수리점검"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 7 수리·점검용역 고시금액 미만",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 7 수리·점검용역 고시금액 이상",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    # 별표 8 임대차용역은 원문이 k=2 구간과 k=4 구간을 같은 추정가격 축으로 인쇄해 하나를
+    # 고르는 근거가 없습니다. 두 규칙이 함께 매칭되면 RULE_SCOPE_AMBIGUOUS 로 차단됩니다.
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_LEASE",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="LEASE",
+        table_name="인천국제공항공사 일반용역 적격심사 (임대차용역)",
+        description="인천국제공항공사 별표 8 임대차용역 (k=2 구간)",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("임대차용역", "임대차"),
+        bands=(
+            _inst_band(
+                None,
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 8 임대차용역",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_LEASE_K4",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="LEASE_K4",
+        table_name="인천국제공항공사 일반용역 적격심사 (임대차용역 k=4)",
+        description="인천국제공항공사 별표 8 임대차용역 (k=4 구간)",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("임대차용역", "임대차"),
+        bands=(
+            _inst_band(
+                None,
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 8 임대차용역 (k=4 구간)",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAC_20250101_OTHER",
+        institution_name="인천국제공항공사",
+        institution_code="B551177",
+        institution_aliases=("IIAC",),
+        service_type="GENERAL",
+        table_name="인천국제공항공사 일반용역 적격심사 (기타용역)",
+        description="인천국제공항공사 별표 9 기타용역 2구간",
+        effective_date="2025-01-01",
+        source=f"{_SRC_INST_RECOVER_A}:4",
+        patterns=("기타용역", "기타"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 9 기타용역 고시금액 미만",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 9 기타용역 고시금액 이상",
+                f"{_SRC_INST_RECOVER_A}:4.2",
+            ),
+        ),
+    ),
+    # 인천공항시설관리(주) (경영기획그룹-15248호, 2025-08-27 개정, 2025-09-01 이후 공고분).
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_ACADEMIC",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="ACADEMIC",
+        table_name="인천공항시설관리 일반용역 적격심사 (학술연구용역)",
+        description="인천공항시설관리 별표 1 학술연구용역 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("학술연구용역", "학술연구"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 1 학술연구용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 1 학술연구용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_FACILITY",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="FACILITY",
+        table_name="인천공항시설관리 일반용역 적격심사 (시설분야용역)",
+        description="인천공항시설관리 별표 2 시설분야용역 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("시설분야용역", "시설분야"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "91",
+                "85",
+                "87.995",
+                "별표 2 시설분야용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "91",
+                "85",
+                "87.995",
+                "별표 2 시설분야용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_SW",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="SW",
+        table_name="인천공항시설관리 일반용역 적격심사 (소프트웨어용역 경쟁제품 비대상)",
+        description="인천공항시설관리 별표 3 소프트웨어용역(경쟁제품 비대상) 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("소프트웨어용역중소기업자간경쟁제품비대상", "소프트웨어용역경쟁제품비대상"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_SW_TARGET",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="SW_SME",
+        table_name="인천공항시설관리 일반용역 적격심사 (소프트웨어용역 경쟁제품 대상)",
+        description="인천공항시설관리 별표 3의2 소프트웨어용역(경쟁제품 대상) 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("소프트웨어용역중소기업자간경쟁제품대상", "소프트웨어용역경쟁제품대상"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_WASTE",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="WASTE",
+        table_name="인천공항시설관리 일반용역 적격심사 (폐기물처리용역)",
+        description="인천공항시설관리 별표 4 폐기물처리용역 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("폐기물처리용역", "폐기물처리"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 4 폐기물처리용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 4 폐기물처리용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_PASSENGER",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="PASSENGER_TRANSPORT",
+        table_name="인천공항시설관리 일반용역 적격심사 (여객 육상운송용역)",
+        description="인천공항시설관리 별표 5 여객 육상운송용역 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("여객육상운송용역", "여객육상운송"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_FREIGHT",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="FREIGHT",
+        table_name="인천공항시설관리 일반용역 적격심사 (화물 육상운송용역)",
+        description="인천공항시설관리 별표 5의2 화물 육상운송용역 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("화물육상운송용역", "화물육상운송"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 5의2 화물 육상운송용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 5의2 화물 육상운송용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_INSURANCE",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="INSURANCE",
+        table_name="인천공항시설관리 일반용역 적격심사 (보험용역)",
+        description="인천공항시설관리 별표 6 보험용역 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_REPAIR",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="REPAIR_INSPECTION",
+        table_name="인천공항시설관리 일반용역 적격심사 (수리·점검용역)",
+        description="인천공항시설관리 별표 7 수리·점검용역 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("수리점검용역", "수리점검"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 7 수리·점검용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 7 수리·점검용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    # 별표 8 임대차용역은 인천국제공항공사와 같아 k=2·k=4 두 규칙이 함께 매칭되면 차단됩니다.
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_LEASE",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="LEASE",
+        table_name="인천공항시설관리 일반용역 적격심사 (임대차용역)",
+        description="인천공항시설관리 별표 8 임대차용역 (k=2 구간)",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("임대차용역", "임대차"),
+        bands=(
+            _inst_band(
+                None,
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 8 임대차용역",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_LEASE_K4",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="LEASE_K4",
+        table_name="인천공항시설관리 일반용역 적격심사 (임대차용역 k=4)",
+        description="인천공항시설관리 별표 8 임대차용역 (k=4 구간)",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("임대차용역", "임대차"),
+        bands=(
+            _inst_band(
+                None,
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 8 임대차용역 (k=4 구간)",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+    _institution_rule(
+        "SERVC_INST_IIAFM_20250901_OTHER",
+        institution_name="인천공항시설관리",
+        institution_code="Z043894",
+        institution_aliases=("인천공항시설관리(주)",),
+        service_type="GENERAL",
+        table_name="인천공항시설관리 일반용역 적격심사 (기타용역)",
+        description="인천공항시설관리 별표 9 기타용역 2구간",
+        effective_date="2025-09-01",
+        source=f"{_SRC_INST_AGENCY}:9",
+        patterns=("기타용역", "기타"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 9 기타용역 · 5억원 미만",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 9 기타용역 · 5억원 이상",
+                f"{_SRC_INST_AGENCY}:9.2",
+            ),
+        ),
+    ),
+)
+
 # 낙찰방법명·조달분류에서 시·도 별표의 용역 세부유형을 정하는 신호. 자동 확정이 아니라
 # 후보를 좁히는 데만 쓰고, 단순노무는 낙찰방법명 표기 또는 사용자 선택으로만 확정합니다(D5).
 _METHOD_SERVICE_MARKERS: tuple[tuple[str, str], ...] = (
@@ -3067,6 +5583,102 @@ def _select_local_rule(
             warnings,
         )
     return _applied(candidates[0])
+
+
+# 조달청·지방조달청이 공고기관인 대행 공고는 수요기관 자체 기관 규칙을 배제하고 종전
+# 조달청 규칙을 씁니다(2026-10-13 실측: 대행 공고는 조달청·개별 발주 기준을 인용). 이
+# 배제를 확정하는 조문은 확인되지 않아 잠정 기본안이며, 끄려면 False 로 둡니다.
+EXCLUDE_INSTITUTION_RULES_FOR_PPS_PROXY = True
+_PPS_PROXY_NAME = "조달청"
+_PPS_PROXY_CODE_PREFIX = "1230"
+
+
+def _is_pps_proxy_announcement(institution_code: str | None, institution_name: str | None) -> bool:
+    """공고기관이 조달청·지방조달청 계열인지 판정합니다.
+
+    실측한 조달청 기관 코드는 1230XXX 대역이고 이름에 조달청이 들어갑니다.
+    """
+    if _PPS_PROXY_NAME in re.sub(r"\s+", "", institution_name or ""):
+        return True
+    return bool(institution_code and institution_code.strip().startswith(_PPS_PROXY_CODE_PREFIX))
+
+
+def _normalize_institution_text(value: str | None) -> str:
+    """기관 규칙 서비스 표기 대조용 정규화. 공백과 구분자를 지웁니다."""
+    return re.sub(r"[\s·ㆍ・.,()\[\]{}\-_/]+", "", str(value or "")).lower()
+
+
+def _institution_match_score(rule: EvaluationRule, text: str) -> int:
+    """규칙의 서비스 표기 중 공고 텍스트에 들어 있는 가장 긴 것의 길이를 돌려줍니다.
+
+    가장 긴 표기가 이기는 방식이라, 예를 들어 한국가스공사 공고에서 "시설분야용역"은
+    "용역"보다 길어 시설분야 규칙이 선택됩니다.
+    """
+    normalized = _normalize_institution_text(text)
+    best = 0
+    for pattern in rule.patterns:
+        token = _normalize_institution_text(pattern)
+        if token and token in normalized:
+            best = max(best, len(token))
+    return best
+
+
+def _select_institution_rule(
+    method_name: str | None,
+    raw_data: dict[str, Any] | None,
+    *,
+    institution_code: str | None,
+    institution_name: str | None,
+    announcement_institution_code: str | None,
+    announcement_institution_name: str | None,
+) -> tuple[EvaluationRule | None, str | None, str, list[str]]:
+    """수요기관 기관 규칙 후보를 수요기관 축과 낙찰방법명으로 골라 돌려줍니다.
+
+    반환: (규칙, 차단 코드, 사유, 경고). 후보가 없으면 (None, None, "", []) 라 호출부가
+    종전 조달청 경로를 그대로 씁니다. 공고기관이 조달청 대행이고 배제 플래그가 켜져 있으면
+    기관 규칙을 고르지 않고 그 사실을 경고로 남깁니다. 같은 길이의 표기로 둘 이상이
+    매칭되면 하나를 추측하지 않고 RULE_SCOPE_AMBIGUOUS 로 차단합니다.
+    """
+    warnings: list[str] = []
+    candidates = [
+        rule
+        for rule in INSTITUTION_RULES
+        if _axis_matches(
+            rule,
+            institution_code=institution_code,
+            institution_name=institution_name,
+            region_code=None,
+            region_name=None,
+            contract_regime=None,
+        )
+    ]
+    if not candidates:
+        return None, None, "", warnings
+    if EXCLUDE_INSTITUTION_RULES_FOR_PPS_PROXY and _is_pps_proxy_announcement(
+        announcement_institution_code, announcement_institution_name
+    ):
+        return (
+            None,
+            None,
+            "",
+            ["공고기관이 조달청 대행이라 수요기관 기관 규칙을 배제하고 조달청 기준을 적용합니다."],
+        )
+    data = raw_data if isinstance(raw_data, dict) else {}
+    text = f"{method_name or ''} {data.get('bidNtceNm') or ''}"
+    scored = [(rule, _institution_match_score(rule, text)) for rule in candidates]
+    best = max(score for _, score in scored)
+    if best <= 0:
+        return None, None, "", warnings
+    winners = [rule for rule, score in scored if score == best]
+    if len(winners) > 1:
+        joined = ", ".join(rule.rule_id for rule in winners)
+        return (
+            None,
+            BLOCK_CODE_RULE_SCOPE_AMBIGUOUS,
+            f"수요기관 기관 규칙이 여러 개 일치해 하나를 확정하지 못했습니다: {joined}",
+            warnings,
+        )
+    return winners[0], None, "", warnings
 
 
 def _normalized_price(value: Decimal | str | float | int | None) -> Decimal | None:
@@ -3279,6 +5891,22 @@ def _clean_axis_value(value: Any) -> str | None:
     return text or None
 
 
+def _cleaned_institution_name(value: str | None) -> str:
+    return re.sub(r"\s+", "", value) if value else ""
+
+
+def _institution_name_matches(rule: EvaluationRule, institution_name: str | None) -> bool:
+    """공고 수요기관명이 규칙 기관명 또는 name_aliases 와 공백 제거 후 같은지 봅니다.
+
+    접두·부분 문자열 일치는 다른 기관 공고를 잘못 집어올 수 있어 쓰지 않습니다.
+    """
+    cleaned = _cleaned_institution_name(institution_name)
+    if not cleaned:
+        return False
+    names = (rule.institution_name, *rule.institution_aliases)
+    return any(cleaned == _cleaned_institution_name(name) for name in names if name)
+
+
 def _axis_matches(
     rule: EvaluationRule,
     *,
@@ -3291,13 +5919,11 @@ def _axis_matches(
     if rule.contract_regime is not None and rule.contract_regime != contract_regime:
         return False
     if rule.institution_scope == RULE_SCOPE_INSTITUTION:
-        if rule.institution_code:
-            return bool(institution_code and rule.institution_code == institution_code)
-        return bool(
-            institution_name
-            and rule.institution_name
-            and re.sub(r"\s+", "", institution_name) == re.sub(r"\s+", "", rule.institution_name)
-        )
+        # 규칙과 공고 양쪽에 코드가 있으면 코드 일치로만 판정하고, 한쪽이라도 코드가 없으면
+        # 공백 제거 이름(또는 name_aliases) 일치로 판정합니다.
+        if rule.institution_code and institution_code:
+            return rule.institution_code == institution_code
+        return _institution_name_matches(rule, institution_name)
     if rule.institution_scope == RULE_SCOPE_REGION:
         if rule.region_code:
             return bool(region_code and rule.region_code == region_code)
@@ -3455,6 +6081,8 @@ def resolve_evaluation_rule(
     raw_data: dict[str, Any] | None = None,
     local_service_type: str | None = None,
     estimated_price: Decimal | str | float | int | None = None,
+    announcement_institution_code: str | None = None,
+    announcement_institution_name: str | None = None,
 ) -> RuleResolutionResult:
     """낙찰방법 출처를 정하고 별표를 판별한 뒤 공고일과 별표 시행일을 대조합니다.
 
@@ -3465,6 +6093,10 @@ def resolve_evaluation_rule(
       공고일이 없으면 현행인 제2026-390호 벌을 씁니다.
       고른 벌에 이름이 없으면 현행 벌까지 대조하고, 어느 벌에도 없으면 RULE_NOT_FOUND 입니다.
     - 원문 낙찰방법이 '공고서참조'면 sucsfbidMthdCd 계열명으로 판별
+    - 수요기관이 기관 규칙(INSTITUTION_RULES) 대상이면 낙찰방법명의 서비스 표기로 기관
+      규칙을 먼저 고릅니다(기관 > 시·도 > 조달청). announcement_institution_code/name 은
+      공고기관 값이며, 공고기관이 조달청 대행이고 EXCLUDE_INSTITUTION_RULES_FOR_PPS_PROXY
+      가 켜져 있으면 기관 규칙을 배제하고 종전 조달청 경로를 씁니다.
     - contract_regime == "LOCAL" 이면 조달청 규칙을 후보에서 배제하고 시·도 자체 별표
       (LOCAL_RULES)만 봅니다. region_code/region_name 은 수요기관 시·도 값입니다(5.4절).
       시·도 규칙이 없으면 LOCAL_RULE_NOT_FOUND 로 차단합니다(D8, 행안부 기본 규칙 없음).
@@ -3492,7 +6124,53 @@ def resolve_evaluation_rule(
         srvce_div_nm=srvce_div_nm,
     )
     scope_stage: str | None = None
+    institution_selected: EvaluationRule | None = None
+    institution_block: tuple[str, str] | None = None
+    institution_warnings: list[str] = []
     if (
+        contract_regime != "LOCAL"
+        and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
+        and not (
+            result.rule is not None and result.rule.rule_id == "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT"
+        )
+    ):
+        (
+            institution_selected,
+            institution_block_code,
+            institution_block_message,
+            institution_warnings,
+        ) = _select_institution_rule(
+            method_name,
+            raw_data,
+            institution_code=institution_code,
+            institution_name=institution_name,
+            announcement_institution_code=announcement_institution_code,
+            announcement_institution_name=announcement_institution_name,
+        )
+        if institution_block_code is not None:
+            institution_block = (institution_block_code, institution_block_message)
+    if institution_selected is not None:
+        # 수요기관 기관 규칙을 확정했으므로 조달청 매칭 단계의 차단·경고를 기관 규칙 기준으로
+        # 다시 적용합니다. 공고 하한율이 있으면 언제나 공고값이 우선합니다.
+        result = replace(
+            _apply_rule_lwlt(result, institution_selected, sucsfbid_lwlt_rate, estimated_price),
+            is_blocked=False,
+            block_reason_code=None,
+            block_reason_message=None,
+        )
+        scope_stage = RULE_SCOPE_INSTITUTION
+    elif institution_block is not None:
+        result = replace(
+            result,
+            is_blocked=True,
+            block_reason_code=institution_block[0],
+            block_reason_message=institution_block[1],
+            rule=None,
+            effective_lwlt_rate=None,
+            rate_source=None,
+        )
+        scope_stage = RULE_SCOPE_INSTITUTION
+    elif (
         contract_regime == "LOCAL"
         and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
         and not (
@@ -3613,6 +6291,8 @@ def resolve_evaluation_rule(
             )
     elif result.rule is not None:
         scope_stage = RULE_SCOPE_ALL
+    if institution_warnings:
+        result = replace(result, warnings=[*result.warnings, *institution_warnings])
     result = replace(
         result,
         method_source=method_source,
@@ -3923,6 +6603,8 @@ def resolve_evaluation_rule_from_raw_data(
             _clean_axis_value(raw_data.get("dminsttNm"))
             or _clean_axis_value(institution_name_fallback)
         ),
+        announcement_institution_code=_clean_axis_value(raw_data.get("ntceInsttCd")),
+        announcement_institution_name=_clean_axis_value(raw_data.get("ntceInsttNm")),
         region_code=_clean_axis_value(region_code),
         region_name=_clean_axis_value(region_name),
         raw_data=raw_data,
