@@ -312,6 +312,29 @@ def test_text_extraction_result_skips_ocr(monkeypatch, ocr_enabled) -> None:
     assert documents._extract(b"%PDF-1.4") is text_result
 
 
+def test_ocr_effective_period_value_is_not_evaluation_date(api, ocr_enabled, monkeypatch) -> None:
+    lines = ("신용평가등급 확인서", "신용등급 : AA-", "등급평가일", "유효기간", "2018년 06월 30일")
+    _use_engine(monkeypatch, _FakeEngine(lines=lines))
+    response = api.post(EXTRACT_URL, content=_build_image_pdf([_draw_scan()]), headers=PDF_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["fields"]["credit_grade"]["value"] == "AA-"
+    assert payload["fields"]["credit_evaluated_on"] is None
+
+
+def test_ocr_spaced_date_is_normalized(api, ocr_enabled, monkeypatch) -> None:
+    lines = ("신용평가등급 확인서", "신용등급 : AA-", "등급평가일", "2025년 04월 09일")
+    _use_engine(monkeypatch, _FakeEngine(lines=lines))
+    response = api.post(EXTRACT_URL, content=_build_image_pdf([_draw_scan()]), headers=PDF_HEADERS)
+
+    assert response.status_code == 200
+    evaluated_on = response.json()["fields"]["credit_evaluated_on"]
+    assert evaluated_on is not None
+    assert evaluated_on["value"] == "2025-04-09"
+    assert evaluated_on["confidence"] == "medium"
+
+
 def test_real_engine_reads_digits_from_scanned_pdf() -> None:
     try:
         ocr.verify_model_files(settings.DOCUMENT_OCR_MODEL_DIR)
