@@ -1,0 +1,481 @@
+schema: INSTITUTION_RULE_CANDIDATES_V1
+version: "1.0.0"
+created_at: "2026-10-14"
+source_task: task_2f34700c8e26
+source_run: run_43cef2f8bd69
+scope: INSTITUTION
+target_set: "규칙 명단(data/reference/institution_rules_20261013.yaml)에 없는 국가계약 기관 7곳 (B군)"
+note: >
+  이 파일은 후보 명세다. 기존 명단(data/reference/institution_rules_20261013.yaml)과 코드는 변경하지 않았다.
+  기관 항목 스키마는 기존 명단의 institutions 항목을 그대로 쓰고, 판정용 필드(recommendation,
+  own_standard_exists, announcements_last_year, attempted_paths)를 추가했다.
+  status 는 confirmed/partial/unresolved 중 하나이고, band 의 status 와는 별개로 기관 단위 판정도다.
+  recommendation 은 add_to_registry / pps_standard_applies / partial / source_unavailable / not_qualification 중 하나다.
+  announcements_last_year 는 코디네이터 집계(2026-10-14, 최근 1년 2025-10-14 이후 Servc 낙030001) 값이다.
+  원문 파일은 .cache/inst_candidates/ 아래에만 두었고 커밋하지 않는다(.cache 는 gitignore 대상).
+  source 의 파일:행 좌표는 그 파일을 scripts/extract_score_params.py 의 extract_document_text 로 읽었을 때의
+  문서 순서 행 번호이거나, PDF 는 추출 마크다운 행 번호다.
+
+conventions:
+  score_formula: "P = B - k * |base_ratio/100 - bid_price/estimated_price| * 100"
+  lwlt_formula: "base_ratio - (100 - pass_score) / k"
+  lwlt_notation: "계산값을 소수 둘째 자리까지 버린 뒤 0.005 를 빼 .995 표기 관행을 따른다 (예: 85.500 -> 85.495)"
+  lower_inclusive: true
+  upper_exclusive: true
+  money_unit: "KRW"
+  boundary_token: "고시금액은 국가계약법 시행령에 따른 연도별 고시금액을 뜻한다"
+
+institutions:
+  - institution_name: "산림청"
+    name_aliases:
+      - "산림청"
+      - "산림청 남부지방산림청"
+      - "산림청 북부지방산림청"
+      - "산림청 동부지방산림청"
+      - "산림청 서부지방산림청"
+      - "산림청 중부지방산림청"
+      - "산림청 국립자연휴양림관리소"
+      - "산림청 남부지방산림청 영덕국유림관리소"
+      - "산림청 남부지방산림청 순천국유림관리소"
+      - "산림청 산림항공본부"
+      - "산림청 국립수목원"
+      - "산림청 국립산림품종관리센터"
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "산림청 산림사업 적격심사 세부기준 (산림청 예규 제728호, 2025-12-01 개정·시행. 최초 제정 2013-01-28 예규 제613호)"
+    effective_date: "2025-12-01"
+    service_types: ["산림사업 (산림의 조성·육성·이용·재해예방·복구 및 도시림·생활림·가로수·수목원 조성·관리)"]
+    note: >
+      산림청 및 소속기관이 발주하는 산림사업에 적용하는 자체 예규다(제1조·제2조). 나라장터 Servc 범주로 올라오는
+      입목처분 위탁조사 용역 등이 이 기준을 첨부한다. 종합평점 통과점수는 제5조① 이 95점으로 규정하며 사업규모별로
+      달라지지 않는다. 별표 1~5 각각에서 입찰가격 평점산식의 B·k·기준비율과 평탄(이상인 경우의 인쇄 점수)을 모두
+      확인했고, 평탄 대입값이 인쇄 점수와 정확히 일치한다(아래 band 검산). 다만 이 기준은 산림사업 전용이며
+      일반용역(청소·경비 등) 자체 산식은 이 예규 범위에 없다. 제8조는 이 기준에 없는 사항은 기획재정부 계약예규와
+      조달청 집행기준을 적용한다고 정한다.
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 · 추정가격 50억원 이상인 산림사업"
+        service_type: "산림사업"
+        lower: 5000000000
+        upper: null
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 85.495
+        price_cap_rate: 90.5
+        flat_score: 45
+        status: confirmed
+        source: ".cache/inst_candidates/law/kfs_byl.pdf:156,222,226,231 (평점=50-2×|(88/100-입찰가격/예정가격)×100|, 90.5% 이상 45점), 본문 제5조① .cache/inst_candidates/kfs/R26BK01716646_f5.hwpx"
+      - band: "별표 2 · 추정가격 50억원 미만 10억원 이상인 산림사업"
+        service_type: "산림사업"
+        lower: 1000000000
+        upper: 5000000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 86.745
+        price_cap_rate: 89.25
+        flat_score: 65
+        status: confirmed
+        source: ".cache/inst_candidates/law/kfs_byl.pdf:187,222,224,231 (평점=70-4×|(88/100-입찰가격/예정가격)×100|, 89.25% 이상 65점)"
+      - band: "별표 3 · 추정가격 10억원 미만 3억원 이상인 산림사업"
+        service_type: "산림사업"
+        lower: 300000000
+        upper: 1000000000
+        B: 80
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 75
+        status: confirmed
+        source: ".cache/inst_candidates/law/kfs_byl.pdf:238,265,267 (평점=80-20×|(88/100-입찰가격/예정가격)×100|, 88.25% 이상 75점)"
+      - band: "별표 4 · 추정가격 3억원 미만 1억원 이상인 산림사업"
+        service_type: "산림사업"
+        lower: 100000000
+        upper: 300000000
+        B: 90
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 85
+        status: confirmed
+        source: ".cache/inst_candidates/law/kfs_byl.pdf:274,306,310,314 (평점=90-20×|(88/100-입찰가격/예정가격)×100|, 88.25% 이상 85점)"
+      - band: "별표 5 · 추정가격 1억원 미만인 산림사업"
+        service_type: "산림사업"
+        lower: null
+        upper: 100000000
+        B: 90
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 85
+        status: confirmed
+        source: ".cache/inst_candidates/law/kfs_byl.pdf:322,353,357,362 (평점=90-20×|(88/100-입찰가격/예정가격)×100|, 88.25% 이상 85점)"
+    sources:
+      - "https://www.law.go.kr/flDownload.do?flSeq=158265701 (행정규칙 본문·별표 PDF, 27쪽)"
+      - "https://law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000208674"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01716646-000 첨부 '산림청 산림사업 적격심사 세부기준(예규)(제728호)(20251201).hwpx'"
+    recommendation: add_to_registry
+    own_standard_exists: yes
+    announcements_last_year: 136
+    attempted_paths:
+      - path: "나라장터 공고 첨부 스윕 (Servc 낙030001, 산림청%, 2025-10-14 이후)"
+        result: "R26BK01716646-000 등에 예규 원문 HWPX 첨부 확인, 내려받아 본문 확인"
+      - path: "국가법령정보센터 행정규칙 flDownload (행정규칙 admRulSeq 2100000208674)"
+        result: "본문·별표 1~6 PDF 27쪽 확보, 별표 1~5 산식·평탄 점수 확인"
+      - path: "산림청 홈페이지 자료실 (forest.go.kr FileDown)"
+        result: "검색 결과로 파일 링크 확인. law.go.kr 원본으로 충분하여 별도 내려받지 않음"
+
+  - institution_name: "국방부"
+    name_aliases:
+      - "국방부"
+      - "국방부 국군재정관리단"
+      - "국방부 국방부근무지원단"
+      - "국방부 국군의무사령부"
+      - "국방부 한국국방연구원"
+      - "국방부 국군조직 육군 군단 제3군단"
+      - "국방부 해군제1함대사령부"
+      - "국방부 한미연합군사령부"
+    institution_code: null
+    status: partial
+    scope: INSTITUTION
+    standard: "기술용역 적격심사기준에 관한 훈령 (국방부훈령 제2987호, 2024-12-03 일부개정·시행). 일반용역은 별도 '일반용역 적격심사기준에 관한 훈령'(국방부훈령 제3176호, 2026-06-22)을 둔다(원문 미확보)"
+    effective_date: "2024-12-03"
+    service_types: ["기술용역 (엔지니어링·건설기술·건축서비스·건축사·전기·정보통신·소방 등 법령에 따른 기술용역)"]
+    note: >
+      국방부 본부·소속기관·국직부대·합참·각군이 집행하는 기술용역입찰에 적용하는 자체 훈령이다(제1조·제2조).
+      나라장터 국방부 공고는 '국방부 기술용역적격심사기준에 관한 훈령'을 적용한다고 명시한다(파일 근거 아래).
+      별표 1 은 입찰가격 배점한도가 30·50·70·90 인 평가기준표 4개로 나뉘고, 기준비율은 모두 88/100 이다.
+      추정가격 30억원 이상은 85점, 30억원 미만 10억원 이상은 90점, 10억원 미만은 95점이 적격통과점수다(제9조).
+      배점한도 30 인 기준표는 산식에 계수 자리가 인쇄되지 않고 평탄 문장도 없어 규칙 5에 따라 k 를 확정하지
+      않았다(방위사업청 별표 1 과 같은 형태). 배점한도 90 인 기준표는 별표 1 에서 산식 행을 읽지 못해 k 미확인이다.
+      구간 라벨(추정가격 경계)은 훈령 별표 1 본문에서 직접 인쇄를 확인하지 못했고, 제9조 통과점수 경계와
+      조달청 기술용역 기준 구조, 그리고 다른 국방부 공고의 '추정가격 5억원 미만 고시금액 이상인 용역' 적용 문구로
+      대응시킨 것이다. 그래서 네 구간 모두 status: partial 로 두어 확정 구간으로 세지 않는다. HWP 수식 개체
+      추출 한계로 표기가 일부 유실되었고, 전사 훈령을 국가법령정보센터에서 본문 텍스트로 확보하지 못했다.
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 평가기준표 1 · 추정가격 10억원 이상 용역 (구간 라벨 추정)"
+        service_type: "기술용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: null
+        base_ratio: 88
+        pass_score: 90
+        lwlt_rate: null
+        price_cap_rate: null
+        flat_score: null
+        status: partial
+        source: ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp:17,20,21 (30-(88/100-입찰가격/예정가격)×100, 계수 자리 없음, 평탄 문장 없음). 통과점수는 같은 파일 제9조(: 제9조 '30억원 이상 85점, 30억원 미만 10억원 이상 90점')"
+      - band: "별표 1 평가기준표 2 · 추정가격 고시금액 이상 10억원 미만 용역 (구간 라벨 추정)"
+        service_type: "기술용역"
+        lower: "고시금액"
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 85.495
+        price_cap_rate: 90.5
+        flat_score: 45
+        status: partial
+        source: ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp:58,61 (50-2×|(88/100-입찰가격/예정가격)×100|, 90.5% 이상 45점, 대입값 50-2×2.5=45.000 일치)"
+      - band: "별표 1 평가기준표 3 · 추정가격 고시금액 미만 용역 (사업수행능력평가 대상, 구간 라벨 추정)"
+        service_type: "기술용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 86.745
+        price_cap_rate: 89.25
+        flat_score: 65
+        status: partial
+        source: ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp:68,71 (70-4×|(88/100-입찰가격/예정가격)×100|, 89.25% 이상 65점, 대입값 70-4×1.25=65.000 일치)"
+      - band: "별표 1 평가기준표 4 · 추정가격 고시금액 미만 용역 (사업수행능력평가 비대상, 구간 라벨 추정)"
+        service_type: "기술용역"
+        lower: null
+        upper: "고시금액"
+        B: 90
+        k: null
+        base_ratio: null
+        pass_score: 95
+        lwlt_rate: null
+        price_cap_rate: null
+        flat_score: null
+        status: partial
+        source: ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp:73,81 (배점한도 90, '평점산식 참조'만 인쇄. 산식 행 추출 실패로 k 미확인)"
+    sources:
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01300416-000 첨부 '7. 기술용역 적격심사기준에 관한 훈령(2024.12.03.).hwp'"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01759112-000 첨부 '입찰공고문_설계(건축)(26-A130).hwpx' (제9조 낙찰자 결정방법 적용 근거)"
+      - "https://law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000247932 (기술용역 적격심사기준에 관한 훈령 연혁)"
+    recommendation: partial
+    own_standard_exists: yes
+    announcements_last_year: 114
+    attempted_paths:
+      - path: "나라장터 공고 첨부 스윕 (Servc, 국방부% 및 국군재정관리단, 2025-10-14 이후)"
+        result: "R26BK01300416-000 에 훈령 원문 HWP 첨부 확인, 내려받아 4개 평가기준표 배점한도·산식 확인. R26BK01759112-000 은 입찰공고문 zip 첨부에 훈령 적용 문구 확인"
+      - path: "국가법령정보센터 행정규칙 admRulInfoP.do?admRulSeq=2100000253350 / 2100000247932"
+        result: "제1조·제2조 본문 일부와 연혁(2023-01-11 제2762호)만 확인. 별표 본문 텍스트는 JS 렌더링으로 확보 실패"
+      - path: "일반용역 적격심사기준에 관한 훈령(제3176호, 2026-06-22) 원문"
+        result: "검색으로 존재·개정일 단서만 확인. 기관 도메인·행정규칙 원문 미확보"
+
+  - institution_name: "한국공항공사"
+    name_aliases:
+      - "한국공항공사"
+      - "한국공항공사 김포공항"
+      - "한국공항공사 김해공항"
+      - "한국공항공사 제주공항"
+      - "한국공항공사 항공기술훈련원"
+      - "한국공항공사 항로시설본부 인천항공교통시설단"
+    institution_code: null
+    status: partial
+    scope: INSTITUTION
+    standard: "한국공항공사 일반용역 적격심사 세부기준 / 기술용역 적격심사 세부기준 / 시설분야용역 적격심사 세부기준 (전사 규정 원문 미확보. 개별 공고 첨부로 '우리 공사 적격심사기준'·'우리공사 일반용역 적격심사 세부기준 [별표 2]' 인용 확인)"
+    effective_date: null
+    service_types: ["일반용역", "기술용역", "시설분야용역"]
+    note: >
+      한국공항공사가 집행하는 용역은 조달청 기준이 아니라 자체 적격심사 세부기준을 적용한다. 나라장터 공고 첨부
+      문서가 '우리공사 적격심사기준', '우리 공사 기술용역 적격심사 세부기준', '우리공사 일반용역 적격심사 세부기준
+      [별표 2]'를 직접 인용한다. 다만 확보한 것은 개별 공고별 배점표(첨부)뿐이고 전사 규정(지침) 원문은
+      확보하지 못했다. 규칙 2에 따라 개별 공고 배점표는 전사 규정이 아니므로, 아래 band 는 기관 자체 문서에서
+      읽은 관측값으로 두되 status: partial 로 두고 통과점수를 확정하지 않았다. 관측된 값은 용역 유형·문서에 따라
+      B·k·기준비율이 달라(기술용역 B=90·k=20·기준 90, 기술용역 B=70·k=4·기준 90, 용역 B=70·k=20·기준 88,
+      시설분야용역 B=70·k=5·기준 93) 전사 규정 없이 하나의 구간표로 확정할 수 없다.
+    non_qual_methods: []
+    bands:
+      - band: "기술용역 적격심사 세부기준 · 고시금액 미만 용역 (개별 공고 첨부, 구간 라벨 원문 표기)"
+        service_type: "기술용역"
+        lower: null
+        upper: "고시금액"
+        B: 90
+        k: 20
+        base_ratio: 90
+        pass_score: null
+        lwlt_rate: null
+        price_cap_rate: 90.25
+        flat_score: 85
+        status: partial
+        source: ".cache/inst_candidates/kac/R26BK01721579_f4.hwpx (붙임 3. 적격심사 세부기준, 평점=90-20×|(90/100-입찰가격/예정가격)×100|, 90.25% 이상 85점, 대입값 90-20×0.25=85.000 일치)"
+      - band: "기술용역 적격심사 기준 · 배점한도 70 구간 (개별 공고 첨부)"
+        service_type: "기술용역"
+        lower: null
+        upper: null
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: null
+        lwlt_rate: null
+        price_cap_rate: 91.25
+        flat_score: 65
+        status: partial
+        source: ".cache/inst_candidates/kac/R26BK01754057_f4.hwp (평점=70-4×|(90/100-입찰가격/예정가격)×100|, 91.25% 이상 65점, 대입값 70-4×1.25=65.000 일치)"
+      - band: "용역 적격심사 세부기준 · 배점한도 70 구간 (개별 공고 첨부, 건설폐기물처리용역)"
+        service_type: "용역"
+        lower: null
+        upper: null
+        B: 70
+        k: 20
+        base_ratio: 88
+        pass_score: null
+        lwlt_rate: null
+        price_cap_rate: 88.25
+        flat_score: 65
+        status: partial
+        source: ".cache/inst_candidates/kac/R26BK01733618_f3.hwpx (평점=70-20×|(88/100-입찰가격/예정가격)×100|, 88.25% 이상 65점, 대입값 70-20×0.25=65.000 일치)"
+      - band: "시설분야용역 적격심사 항목 및 배점한도 · 배점한도 70 구간 (개별 공고 첨부)"
+        service_type: "시설분야용역"
+        lower: null
+        upper: null
+        B: 70
+        k: 5
+        base_ratio: 93
+        pass_score: null
+        lwlt_rate: null
+        price_cap_rate: 96.0
+        flat_score: null
+        status: partial
+        source: ".cache/inst_candidates/kac/R26BK01717869_f4.hwpx (평점(점)=배점한도-5×|(93/100-입찰가격/예정가격)×100|, 입찰가격 배점한도 70, 96% 이상은 96%인 경우의 점수로 평가. 평탄 점수 원문 미인쇄)"
+    sources:
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01721579-000 첨부 '붙임 3. 적격심사 세부기준(...).hwpx'"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01754057-000 첨부 '기술용역 적격심사세부기준(...).hwp' (파일명 기준 fileSeq=4)"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01733618-000 첨부 '적격심사 세부기준(대구공항 폐아스콘 처리용역).hwpx'"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01717869-000 첨부 '3. 적격심사기준_김포공항 소음대책사업 지원 용역(2026~2027).hwpx'"
+    recommendation: partial
+    own_standard_exists: yes
+    announcements_last_year: 174
+    attempted_paths:
+      - path: "나라장터 공고 첨부 스윕 (Servc 낙030001, 한국공항공사%, 2025-10-14 이후)"
+        result: "적격심사 세부기준·적격심사기준·기술용역 적격심사세부기준 명칭 첨부 다수 확인(김포·김해·제주·대구·양양·청주·울산 등). 그중 4건 내려받아 산식 확인"
+      - path: "한국공항공사 홈페이지·전자조달 규정/자료실"
+        result: "전사 규정(지침) 원문 게시 위치 확인 실패"
+      - path: "웹 검색 (한국공항공사 일반용역 적격심사 세부기준)"
+        result: "상업·교육 게시판에 전사 규정 전문 게시물 다수 확인(개정 2026-03-02, 2026-08-14 등). 규칙 1에 따라 계수는 전재하지 않고 제목·개정일 단서만 기록"
+
+  - institution_name: "해양수산부"
+    name_aliases:
+      - "해양수산부"
+      - "해양수산부 평택지방해양수산청"
+      - "해양수산부 인천지방해양수산청"
+      - "해양수산부 포항지방해양수산청"
+      - "해양수산부 여수지방해양수산청"
+      - "해양수산부 군산지방해양수산청"
+      - "해양수산부 동해지방해양수산청"
+      - "해양수산부 목포지방해양수산청"
+      - "해양수산부 대산지방해양수산청"
+      - "해양수산부 마산지방해양수산청"
+      - "해양수산부 부산지방해양수산청"
+      - "해양수산부 울산지방해양수산청"
+      - "해양수산부 국립해양조사원"
+      - "해양수산부 국립수산과학원"
+      - "해양수산부 남해어업관리단"
+      - "해양수산부 동해어업관리단"
+      - "해양수산부 서해어업관리단"
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "(자체 용역 적격심사 세부기준 없음. 조달청 일반용역·기술용역 적격심사 세부기준을 준용)"
+    effective_date: null
+    service_types: []
+    note: >
+      해양수산부와 지방해양수산청의 나라장터 용역 공고는 낙찰자 결정 근거로 조달청 기준을 직접 인용하고 그
+      별표를 첨부한다. 확인된 첨부는 '[별표 1] 심사항목 및 배점한도(조달청 기술용역 적격심사 세부기준)',
+      '[별표 7] 수리·점검용역 적격심사(조달청 일반용역 적격심사 세부기준)' 이고, 별표 파일명 자체가 조달청 기준임을
+      밝힌다. 자체 기준이라는 명칭의 첨부는 확인되지 않았다. 접속 실패가 아니라 원문 근거로 조달청 준용을 확인한
+      것이므로 pps_standard_applies 로 판정한다.
+    non_qual_methods: []
+    bands: []
+    sources:
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01764937-000 첨부 '[별표 1] 심사항목 및 배점한도(조달청 기술용역 적격심사 세부기준)_4. 추정가격이 고시금액 미만(...)인 용역.hwpx'"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01737194-000 첨부 '[별표 7] 수리·점검용역 적격심사(조달청 일반용역 적격심사 세부기준).hwpx'"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01676624-000 첨부 '[별표] 평가항목 및 배점기준(제2조 관련)(건설폐기물처리용역 적격업체 평가기준)_추정가격 2억원 미만인 용역.hwpx'"
+    recommendation: pps_standard_applies
+    own_standard_exists: no
+    announcements_last_year: 255
+    attempted_paths:
+      - path: "나라장터 공고 첨부 스윕 (Servc 낙030001, 해양수산부% 및 지방해양수산청, 2025-10-14 이후)"
+        result: "조달청 기준 별표 첨부 다수 확인. 자체 기준 명칭 첨부 없음"
+      - path: "첨부 본문 판독 (R26BK01764937 파일 4, R26BK01737194 파일 4, R26BK01676624 파일 4)"
+        result: "조달청 기술용역 별표 1(B=90·k=20·기준 90·90.25% 이상 85점, 대입 90-20×0.25=85.000 일치), 조달청 일반용역 별표 7(수리·점검용역, B=60/70·k=2/4·기준 90), 건설폐기물처리용역 적격업체 평가기준(B=70·k=20·기준 88·88.25% 이상 65점) 확인"
+      - path: "국가법령정보센터 행정규칙 (해양수산부)"
+        result: "해양수산부 명의 용역 적격심사 세부기준 행정규칙 미확인"
+
+  - institution_name: "한국농수산식품유통공사"
+    name_aliases:
+      - "한국농수산식품유통공사"
+      - "한국농수산식품유통공사 서울경기지역본부"
+      - "한국농수산식품유통공사 부산울산지사"
+      - "한국농수산식품유통공사 대전충남지역본부"
+      - "한국농수산식품유통공사 인천지역본부"
+      - "한국농수산식품유통공사 에이티센터"
+      - "한국농수산식품유통공사 에이티화훼센터"
+      - "한국농수산식품유통공사 유통본부 농수산물온라인도매시장사업처"
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "(자체 용역 적격심사 세부기준 없음. 조달청 일반용역 적격심사 세부기준을 준용)"
+    effective_date: null
+    service_types: []
+    note: >
+      한국농수산식품유통공사의 나라장터 용역 공고는 첨부로 '조달청 일반용역 적격심사 세부기준(조달청공고)'을
+      싣고 그 공고번호·시행일까지 표기한다(제2026-260호 2026-05-26, 제2026-390호 2026-07-27). 물류·보험·운송·
+      정선·블렌딩 등 용역 유형이 다양하지만 모두 조달청 기준을 인용하며 자체 기준 명칭 첨부는 확인되지 않았다.
+      원문 근거로 조달청 준용을 확인한 것이므로 pps_standard_applies 로 판정한다.
+    non_qual_methods: []
+    bands: []
+    sources:
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01748192-000 첨부 '5. 조달청 일반용역 적격심사 세부기준(조달청공고)(제2026-390호)(20260727).pdf'"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01725506-000 첨부 '5. 조달청 일반용역 적격심사 세부기준(조달청공고)(제2026-390호)(20260727).pdf'"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01708399-000 첨부 '3. 조달청 일반용역 적격심사 세부기준(조달청공고)(제2026-260호)(20260526).pdf'"
+    recommendation: pps_standard_applies
+    own_standard_exists: no
+    announcements_last_year: 50
+    attempted_paths:
+      - path: "나라장터 공고 첨부 스윕 (Servc 낙030001, 한국농수산식품유통공사%, 2025-10-14 이후)"
+        result: "다수 공고가 '조달청 일반용역 적격심사 세부기준(조달청공고)(제2026-390호)' PDF 를 첨부. 자체 기준 첨부 없음"
+      - path: "첨부 파일명·공고문 목록 대조 (R26BK01654875·R26BK01657887·R26BK01682880·R26BK01748192 등)"
+        result: "용역 유형(운송·보험·블렌딩·정선)과 무관하게 조달청 기준 첨부만 확인"
+      - path: "국가법령정보센터 행정규칙 (한국농수산식품유통공사)"
+        result: "공사 명의 용역 적격심사 세부기준 행정규칙 미확인"
+
+  - institution_name: "국민건강보험공단"
+    name_aliases:
+      - "국민건강보험공단"
+      - "국민건강보험공단 본부 국민건강보험공단인재개발원"
+      - "국민건강보험공단 일산병원"
+      - "국민건강보험공단부산울산경남지역본부"
+      - "국민건강보험공단인천경기지역본부"
+      - "국민건강보험공단 서울강원지역본부"
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "(자체 용역 적격심사 세부기준 없음. 조달청 적격심사 세부기준을 준용)"
+    effective_date: null
+    service_types: []
+    note: >
+      국민건강보험공단의 나라장터 용역 공고서는 입찰방법을 '제한경쟁 / 적격심사 / 총액계약'으로 적고, 낙찰자
+      제출서류에 '그 외 조달청 적격심사 세부기준에서 정하는 적격심사를 위해 필요한 자료 일부'를 요구한다.
+      첨부는 입찰공고서·과업지시서·공내역서뿐이고 자체 적격심사 기준·별표 첨부는 확인되지 않았다. 원문 근거로
+      조달청 준용을 확인한 것이므로 pps_standard_applies 로 판정한다.
+    non_qual_methods: []
+    bands: []
+    sources:
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01766450-000 첨부 '입찰공고서_스마트장기요양 앱 휴대폰 본인확인 서비스.hwp' (문서 본문 '그 외 조달청 적격심사 세부기준에서 정하는 적격심사를 위해 필요한 자료 일부')"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01763142-000 / R26BK01687147-000 / R26BK01649789-000 첨부 목록 (입찰공고서·과업지시서뿐)"
+    recommendation: pps_standard_applies
+    own_standard_exists: no
+    announcements_last_year: 50
+    attempted_paths:
+      - path: "나라장터 공고 첨부 스윕 (Servc 낙030001, 국민건강보험공단%, 2025-10-14 이후)"
+        result: "첨부는 입찰공고서·과업지시서·공내역서류. 적격심사 세부기준·별표 첨부 없음"
+      - path: "공고서 본문 판독 (R26BK01766450 파일 3 HWP)"
+        result: "'그 외 조달청 적격심사 세부기준에서 정하는 적격심사를 위해 필요한 자료' 문구 확인. 자체 기준 인용 없음"
+      - path: "국가법령정보센터 행정규칙 (국민건강보험공단)"
+        result: "공단 명의 용역 적격심사 세부기준 행정규칙 미확인"
+
+  - institution_name: "부산항만공사"
+    name_aliases:
+      - "부산항만공사"
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "(자체 용역 적격심사 세부기준 없음. 조달청 일반용역 적격심사 세부기준을 준용)"
+    effective_date: null
+    service_types: []
+    note: >
+      부산항만공사의 나라장터 용역 공고문(적격심사 대상 용역)은 낙찰자 결정 근거로 조달청 기준을 공고번호·시행일까지
+      명시해 인용하고, 적용 별표까지 특정한다. 확인된 공고문은 '낙찰자 결정은 ... 조달청 일반용역 적격심사
+      세부기준(조달청공고 제2026-390호, 2026.07.27.)에 의거 적격심사하여 종합평점(입찰가격 70점, 해당용역수행능력
+      30점)이 85점 이상인 자를 낙찰자로 결정' 및 '제5조 제1항 [별표6] 보험용역 적격심사(추정가격 5억원 미만)의
+      평가 기준을 적용' 이다. 공사(공사 범주) 공고도 조달청 입찰참가자격사전심사기준 지침을 첨부한다. 공고문에
+      '우리공사 사규 등에 따른다'는 부정당업자 지정 관련 문구가 있으나 이는 적격심사 산식과 별개다. 원문 근거로
+      조달청 준용을 확인한 것이므로 pps_standard_applies 로 판정한다.
+    non_qual_methods: []
+    bands: []
+    sources:
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01689561-000 첨부 '공고문_2026년 이그린호(항만안내선) 선박보험 및 선주배상책임보험(PI).pdf' 7항·8항"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01768734-000 첨부 '공고문(...사설항로표지 유지관리용역)_게시.pdf' 및 .hwp"
+      - "https://www.g2b.go.kr 나라장터 공고 R26BK01619359-000 첨부 '붙임1. 조달청 입찰참가자격사전심사기준(지침)(제2565호)(20260331).pdf'"
+    recommendation: pps_standard_applies
+    own_standard_exists: no
+    announcements_last_year: 88
+    attempted_paths:
+      - path: "나라장터 공고 첨부 스윕 (Servc 낙030001, 부산항만공사%, 2025-10-14 이후)"
+        result: "용역 공고 첨부는 공고문·사업수행능력평가(PQ) 기준·설계서뿐. 자체 적격심사 세부기준 첨부 없음"
+      - path: "공고문 PDF 판독 (R26BK01689561, R26BK01768734)"
+        result: "조달청 일반용역 적격심사 세부기준(제2026-390호) 인용과 [별표6] 보험용역 적용 문구 확인. 자체 기준 인용 없음"
+      - path: "부산항만공사 홈페이지(www.busanpa.com)"
+        result: "홈페이지 접속은 되나 규정·자료실의 적격심사 세부기준 문서 경로 확인 실패"
+      - path: "웹 검색 (부산항만공사 용역 적격심사 세부기준)"
+        result: "공사 자체 용역 적격심사 세부기준 문서는 확인되지 않음(검색 결과는 부산광역시 기준)"
