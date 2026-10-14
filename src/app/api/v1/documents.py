@@ -7,13 +7,16 @@ src/app/api/v1/documents.py
 DOCUMENT_OCR_ENABLED 가 켜져 있을 때만 로컬 OCR 로 한 번 더 읽습니다. 업로드
 원본은 요청 안에서만 메모리로 처리하고 디스크·Redis·DB·로그 어디에도 저장하지
 않습니다. 추출은 스레드로 넘기되 10초 제한을 두며, 제한 시간을 넘기면 422 로
-끝냅니다. 오류 응답에는 예외 원문을 담지 않고 한국어 문구만 담습니다.
+끝냅니다. 스레드는 강제로 끝낼 수 없어 계속 돌 수 있으므로 동시에 도는 추출 수를
+상한으로 묶고, 자리가 없으면 503 으로 끝냅니다. 오류 응답에는 예외 원문을 담지
+않고 한국어 문구만 담습니다.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from typing import Literal
 
@@ -37,13 +40,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
 EXTRACTION_TIMEOUT_SECONDS = 10.0
+MAX_CONCURRENT_EXTRACTIONS = 2
 PDF_MEDIA_TYPE = "application/pdf"
 
 DOCUMENT_EXTRACTION_DISABLED_DETAIL = "문서 추출 기능이 비활성화되어 있습니다."
 UNSUPPORTED_MEDIA_TYPE_DETAIL = "PDF 파일만 업로드할 수 있습니다."
 EXTRACTION_TIMEOUT_DETAIL = "문서 처리 시간이 초과되었습니다. 잠시 후 다시 시도해 주십시오."
 EXTRACTION_FAILED_DETAIL = "문서 처리 중 오류가 발생했습니다."
+EXTRACTION_BUSY_DETAIL = "문서 처리 요청이 많습니다. 잠시 후 다시 시도해 주십시오."
 EXTRACTION_NOTICE = "추출값은 확인이 필요합니다. 저장 전에 원문과 대조하십시오."
+
+# 추출 스레드는 강제로 끝낼 수 없으므로, 시간 초과로 응답이 끝나도 스레드가
+# 계속 돕니다. 동시에 도는 추출 수를 이 상한으로 묶어 자원 고갈을 막습니다.
+_EXTRACTION_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_EXTRACTIONS)
 
 
 class FieldEvidence(BaseModel):
@@ -114,6 +123,24 @@ def _extract(data: bytes) -> CreditCertificateResult:
     return scanned if scanned is not None else result
 
 
+def _extract_holding_slot(data: bytes) -> CreditCertificateResult:
+    """동시 처리 자리를 쥔 채 추출하고, 스레드가 실제로 끝날 때 자리를 반납합니다.
+
+    제한 시간을 넘겨 응답이 끝나도 이 스레드는 계속 돌기 때문에, 자리는 응답
+    시점이 아니라 스레드가 끝나는 시점(정상·예외 모두)에 반납되어야 합니다.
+    """
+    try:
+        return _extract(data)
+    finally:
+        _EXTRACTION_SLOTS.release()
+
+
+def _discard_extraction_exception(task: asyncio.Task[CreditCertificateResult]) -> None:
+    """시간 초과 뒤 백그라운드에서 끝난 스레드의 예외를 회수해 경고를 막습니다."""
+    if not task.cancelled():
+        task.exception()
+
+
 @router.post("/extract", response_model=DocumentExtractionResponse)
 async def extract_document(
     request: Request,
@@ -128,9 +155,17 @@ async def extract_document(
 
     started = time.perf_counter()
     data = await request.body()
+    if not _EXTRACTION_SLOTS.acquire(blocking=False):
+        raise HTTPException(status_code=503, detail=EXTRACTION_BUSY_DETAIL)
+    try:
+        runner = asyncio.ensure_future(asyncio.to_thread(_extract_holding_slot, data))
+    except BaseException:
+        _EXTRACTION_SLOTS.release()
+        raise
+    runner.add_done_callback(_discard_extraction_exception)
     try:
         result = await asyncio.wait_for(
-            asyncio.to_thread(_extract, data),
+            asyncio.shield(runner),
             timeout=EXTRACTION_TIMEOUT_SECONDS,
         )
     except PdfValidationError as exc:
