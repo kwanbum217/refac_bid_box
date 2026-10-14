@@ -83,12 +83,53 @@ def test_plain_label_is_preferred_over_instrument_label() -> None:
     assert result.credit_grade.confidence == "high"
 
 
-def test_instrument_only_grade_confidence_is_capped() -> None:
+def test_instrument_only_grade_is_not_adopted() -> None:
     result = parse_credit_certificate(["기업어음 신용등급 : A+"])
 
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
+
+
+def test_instrument_grade_without_plain_grade_is_not_adopted() -> None:
+    result = parse_credit_certificate(["회사채등급 AA-\n평가일 2026.03.02"])
+
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2026-03-02"
+
+
+def test_plain_grade_wins_over_instrument_grade() -> None:
+    result = parse_credit_certificate(["회사채등급 AA-\n신용등급 BBB0\n평가일 2026.03.02"])
+
     assert result.credit_grade is not None
-    assert result.credit_grade.value == "A+"
-    assert result.credit_grade.confidence == "medium"
+    assert result.credit_grade.value == "BBB0"
+    assert result.credit_grade.confidence != "low"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("기업어음등급 A-\n신용평가등급 BB+", "BB+"),
+        ("단기신용등급 B\n신용등급 A0", "A0"),
+        ("회사채등급 AA- 신용등급 BBB0", "BBB0"),
+    ],
+)
+def test_label_bearing_instrument_grade_does_not_shadow_plain_grade(
+    text: str, expected: str
+) -> None:
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == expected
+
+
+@pytest.mark.parametrize("text", ["기업어음 신용등급 : A+", "CP 신용등급 A+"])
+def test_instrument_prefix_without_plain_grade_is_not_adopted(text: str) -> None:
+    result = parse_credit_certificate([text])
+
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
 
 
 def test_repeated_same_grade_lowers_confidence_to_medium() -> None:

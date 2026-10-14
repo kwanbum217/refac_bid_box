@@ -191,14 +191,17 @@ def _is_standalone_grade(compact: str) -> bool:
     return _GRADE_RE.fullmatch(compact) is not None
 
 
-def _is_preferred(compact_line: str, label_start: int, line: str) -> bool:
-    """회사채·기업어음 표지가 붙은 후보인지 판단합니다.
+def _is_preferred(label: str, prefix: str, line: str) -> bool:
+    """일반 신용등급 후보인지 판단합니다.
 
-    '...에 준하는 등급' 문장은 실제 등급을 서술하므로 표지로 강등하지 않습니다.
+    상품 표지가 라벨 자체에 있거나(회사채등급·기업어음등급·단기신용등급), 같은 줄의
+    직전 라벨 끝부터 현재 라벨 시작까지 접두에 있으면(기업어음 신용등급) 상품 등급으로
+    봅니다. '...에 준하는 등급' 문장은 실제 등급을 서술하므로 표지로 강등하지 않습니다.
     """
     if _BOILERPLATE_MARKER in line:
         return True
-    prefix = compact_line[:label_start]
+    if any(marker in label for marker in _INSTRUMENT_MARKERS):
+        return False
     return not any(marker in prefix for marker in _INSTRUMENT_MARKERS)
 
 
@@ -223,8 +226,9 @@ def _lookahead_grade(compacts: list[str], index: int, cutoff: int) -> str | None
 def _pick_grade(candidates: list[_Candidate]) -> FieldResult | None:
     if not candidates:
         return None
-    preferred = [candidate for candidate in candidates if candidate.preferred]
-    pool = preferred or candidates
+    pool = [candidate for candidate in candidates if candidate.preferred]
+    if not pool:
+        return None
     counts = Counter(candidate.value for candidate in pool)
 
     def rank(value: str) -> tuple[int, int]:
@@ -243,8 +247,6 @@ def _pick_grade(candidates: list[_Candidate]) -> FieldResult | None:
         confidence = "medium"
     else:
         confidence = "low"
-    if not winner.preferred and confidence == "high":
-        confidence = "medium"
     return FieldResult(
         value=winner.value,
         confidence=confidence,
@@ -306,13 +308,16 @@ def _collect_grade_candidates(pages: Sequence[str]) -> list[_Candidate]:
                     value = _lookahead_grade(compacts, index, cutoff)
                 if value is None:
                     continue
+                label_start = matches[match_index - 1].end() if match_index else 0
                 candidates.append(
                     _Candidate(
                         value=value,
                         page=page_index,
                         order=len(candidates),
                         text=evidence,
-                        preferred=_is_preferred(compact, match.start(), lines[index]),
+                        preferred=_is_preferred(
+                            match.group(1), compact[label_start : match.start()], lines[index]
+                        ),
                     )
                 )
     return _dedupe(candidates)
