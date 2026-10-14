@@ -143,7 +143,13 @@ institutions:
   announcements: 196
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: unresolved
+    doc: (자체 용역 적격심사 세부기준 원문 미확인. 나라장터 공고서가 조달청 일반용역 적격심사 세부기준을 적용)
+    date: '2026-10-14'
+    note: 나라장터 공고서가 낙찰자 결정 근거로 "조달청 일반용역 적격심사 세부기준"과 "국방과학연구소 계약일반조건"을 함께 적시한다.
+    source: data/reference/institution_rules_candidates_a_20261014.yaml
 - dminstt_cd: Z003688
   dminstt_nm: 서울주택도시개발공사
   name_variants: []
@@ -182,7 +188,13 @@ institutions:
   announcements: 172
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: unresolved
+    doc: (자체 용역 적격심사 세부기준 확인 불가. 나라장터 공고서가 조달청 일반용역 적격심사 세부기준을 적용)
+    date: '2026-10-14'
+    note: 최근 1년 낙030001 용역 공고 193건 중 96건(50%)이 조달청 대행이고, 공단 직접 공고도 나라장터 공고서에 "조달청 일반용역 적격심사 세부기준" 별표 2(시설분야용역)·별표 8(임대차)을 적용한다고 적시한다.
+    source: data/reference/institution_rules_candidates_a_20261014.yaml
 - dminstt_cd: '6500000'
   dminstt_nm: 제주특별자치도
   name_variants: []
@@ -242,7 +254,13 @@ institutions:
   announcements: 166
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: unresolved
+    doc: (자체 용역 적격심사 세부기준 미확인. 나라장터 공고서가 조달청 일반용역 적격심사 세부기준 수요기관 지정형을 적용)
+    date: '2026-10-14'
+    note: 나라장터 공고서가 "조달청 일반용역 적격심사 세부기준 수요기관 지정형(추정가격 5억원 미만)"을 적용하고 통과점수 85점, 낙찰하한율 82.495%를 인쇄한다.
+    source: data/reference/institution_rules_candidates_a_20261014.yaml
 - dminstt_cd: '3940000'
   dminstt_nm: 경기도 고양시
   name_variants: []
@@ -474,7 +492,13 @@ institutions:
   announcements: 107
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: unresolved
+    doc: (자체 세부기준 없음. 국가유산청 고시 매장유산 조사용역 적격심사 세부기준을 준용)
+    date: '2026-10-14'
+    note: 발주 발굴조사 용역 공고서가 "매장유산 조사용역 적격심사 세부기준(국가유산청 고시 제2024-6호)"을 적용한다고 적시한다.
+    source: data/reference/institution_rules_candidates_a_20261014.yaml
 - dminstt_cd: '3780000'
   dminstt_nm: 경기도 성남시
   name_variants: []
@@ -564,7 +588,13 @@ institutions:
   announcements: 100
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: partial
+    status: partial
+    doc: 기술용역 적격심사기준에 관한 훈령 (국방부훈령 제2987호, 2024-12-03 일부개정·시행). 일반용역은 별도 '일반용역 적격심사기준에 관한 훈령'(국방부훈령 제3176호, 2026-06-22)을 둔다(원문 미확보)
+    date: '2026-10-14'
+    note: 국방부 본부·소속기관·국직부대·합참·각군이 집행하는 기술용역입찰에 적용하는 자체 훈령이다(제1조·제2조).
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: '5110000'
   dminstt_nm: 경상북도 상주시
   name_variants: []
@@ -705,7 +735,13 @@ institutions:
   announcements: 89
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: unresolved
+    doc: (자체 용역 적격심사 세부기준 미확인. 나라장터 공고서가 조달청 일반용역 적격심사 세부기준 별표 4를 적용)
+    date: '2026-10-14'
+    note: 나라장터 공고서가 "조달청 일반용역 적격심사 세부기준 [별표 4] 폐기물처리용역 적격심사(추정가격 5억원 미만(고시금액 미만))"을 적용하고 통과점수 85점, 낙찰하한율 86.245%를 인쇄한다.
+    source: data/reference/institution_rules_candidates_a_20261014.yaml
 - dminstt_cd: '5070000'
   dminstt_nm: 경상북도 안동시
   name_variants: []
@@ -976,7 +1012,13 @@ institutions:
   announcements: 78
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: confirmed
+    doc: (자체 용역 적격심사 세부기준 없음. 조달청 일반용역 적격심사 세부기준을 준용)
+    date: '2026-10-14'
+    note: 부산항만공사의 나라장터 용역 공고문(적격심사 대상 용역)은 낙찰자 결정 근거로 조달청 기준을 공고번호·시행일까지 명시해 인용하고, 적용 별표까지 특정한다.
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: B553931
   dminstt_nm: 해양환경공단
   name_variants: []
@@ -997,7 +1039,13 @@ institutions:
   announcements: 78
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: add_to_registry
+    status: confirmed
+    doc: 해양폐기물정화용역 적격심사 세부기준 (제정 2023-06-19, 개정·시행 2025-03-06)
+    date: '2026-10-14'
+    note: 자체 세부기준 원문(제1조~제12조 + [별표 1] 적격심사항목 및 배점한도 + [별표 2] 신인도)을 나라장터 공고 첨부에서 확보했다.
+    source: data/reference/institution_rules_candidates_a_20261014.yaml
 - dminstt_cd: '1613311'
   dminstt_nm: 국토교통부 부산지방국토관리청 영주국토관리사무소
   name_variants: []
@@ -1991,7 +2039,13 @@ institutions:
   announcements: 58
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: unresolved
+    doc: (자체 세부기준 없음. 조달청 일반용역 적격심사 세부기준 및 조달청 기술용역 적격심사 세부기준을 준용)
+    date: '2026-10-14'
+    note: 나라장터 공고서가 학술연구용역은 "조달청 일반용역 적격심사 세부기준(추정가격 5억원 미만 학술연구용역)" 제5조(별표 1)을, 기술용역은 "조달청 기술용역 적격심사 세부기준"을 적용한다고 적시한다.
+    source: data/reference/institution_rules_candidates_a_20261014.yaml
 - dminstt_cd: B551178
   dminstt_nm: 한국공항공사
   name_variants: []
@@ -2012,7 +2066,13 @@ institutions:
   announcements: 57
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: partial
+    status: partial
+    doc: 한국공항공사 일반용역 적격심사 세부기준 / 기술용역 적격심사 세부기준 / 시설분야용역 적격심사 세부기준 (전사 규정 원문 미확보. 개별 공고 첨부로 '우리 공사 적격심사기준'·'우리공사 일반용역 적격심사 세부기준 [별표 2]' 인용 확인)
+    date: '2026-10-14'
+    note: 한국공항공사가 집행하는 용역은 조달청 기준이 아니라 자체 적격심사 세부기준을 적용한다.
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: D645217
   dminstt_nm: 한국농어촌공사 안전기술본부
   name_variants: []
@@ -2805,7 +2865,13 @@ institutions:
   announcements: 48
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: confirmed
+    doc: (자체 용역 적격심사 세부기준 없음. 조달청 적격심사 세부기준을 준용)
+    date: '2026-10-14'
+    note: 국민건강보험공단의 나라장터 용역 공고서는 입찰방법을 '제한경쟁 / 적격심사 / 총액계약'으로 적고, 낙찰자 제출서류에 '그 외 조달청 적격심사 세부기준에서 정하는 적격심사를 위해 필요한 자료 일부'를 요구한다.
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: B554408
   dminstt_nm: 서울물재생시설공단
   name_variants: []
@@ -3582,7 +3648,13 @@ institutions:
   announcements: 42
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: confirmed
+    doc: (자체 용역 적격심사 세부기준 없음. 조달청 일반용역 적격심사 세부기준을 준용)
+    date: '2026-10-14'
+    note: 한국농수산식품유통공사의 나라장터 용역 공고는 첨부로 '조달청 일반용역 적격심사 세부기준(조달청공고)'을 싣고 그 공고번호·시행일까지 표기한다(제2026-260호 2026-05-26, 제2026-390호 2026-07-27).
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: Z003620
   dminstt_nm: (주)강원랜드
   name_variants: []
@@ -5258,7 +5330,13 @@ institutions:
   announcements: 29
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: pps_standard_applies
+    status: confirmed
+    doc: (자체 용역 적격심사 세부기준 없음. 조달청 일반용역·기술용역 적격심사 세부기준을 준용)
+    date: '2026-10-14'
+    note: 해양수산부와 지방해양수산청의 나라장터 용역 공고는 낙찰자 결정 근거로 조달청 기준을 직접 인용하고 그 별표를 첨부한다.
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: '1192367'
   dminstt_nm: 해양수산부 대산지방해양수산청
   name_variants: []
@@ -12044,7 +12122,13 @@ institutions:
   announcements: 11
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: partial
+    status: partial
+    doc: 기술용역 적격심사기준에 관한 훈령 (국방부훈령 제2987호, 2024-12-03 일부개정·시행). 일반용역은 별도 '일반용역 적격심사기준에 관한 훈령'(국방부훈령 제3176호, 2026-06-22)을 둔다(원문 미확보)
+    date: '2026-10-14'
+    note: 국방부 본부·소속기관·국직부대·합참·각군이 집행하는 기술용역입찰에 적용하는 자체 훈령이다(제1조·제2조).
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: ZD00407
   dminstt_nm: 제2군단
   name_variants: []
@@ -12076,7 +12160,13 @@ institutions:
   announcements: 10
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: partial
+    status: partial
+    doc: 기술용역 적격심사기준에 관한 훈령 (국방부훈령 제2987호, 2024-12-03 일부개정·시행). 일반용역은 별도 '일반용역 적격심사기준에 관한 훈령'(국방부훈령 제3176호, 2026-06-22)을 둔다(원문 미확보)
+    date: '2026-10-14'
+    note: 국방부 본부·소속기관·국직부대·합참·각군이 집행하는 기술용역입찰에 적용하는 자체 훈령이다(제1조·제2조).
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: '1300000'
   dminstt_nm: 병무청
   name_variants: []
@@ -16203,7 +16293,13 @@ institutions:
   announcements: 6
   registry_status: unregistered
   manifest_sources: null
-  investigation: null
+  investigation:
+    recommendation: add_to_registry
+    status: confirmed
+    doc: 산림청 산림사업 적격심사 세부기준 (산림청 예규 제728호, 2025-12-01 개정·시행. 최초 제정 2013-01-28 예규 제613호)
+    date: '2026-10-14'
+    note: 산림청 및 소속기관이 발주하는 산림사업에 적용하는 자체 예규다(제1조·제2조).
+    source: data/reference/institution_rules_candidates_b_20261014.yaml
 - dminstt_cd: '1400440'
   dminstt_nm: 산림청 북부지방산림청 인제국유림관리소
   name_variants: []

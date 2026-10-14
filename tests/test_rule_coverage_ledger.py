@@ -497,3 +497,68 @@ def test_manifest_index_matches_committed_manifest() -> None:
         assert sources
         for source in sources:
             assert set(source) == {"source", "files"}
+
+
+# --------------------------------------------------------------------------- #
+# (2) 커밋된 원장 investigation: ICA·ICB 후보 14곳
+# --------------------------------------------------------------------------- #
+
+CANDIDATE_LEDGER_PATHS: tuple[str, ...] = (
+    "data/reference/institution_rules_candidates_a_20261014.yaml",
+    "data/reference/institution_rules_candidates_b_20261014.yaml",
+)
+
+# (dminstt_cd, 후보 institution_name, 후보 YAML 상대 경로)
+INVESTIGATION_TARGETS: tuple[tuple[str, str, str], ...] = (
+    ("B550234", "국방과학연구소", CANDIDATE_LEDGER_PATHS[0]),
+    ("B552584", "한국환경공단", CANDIDATE_LEDGER_PATHS[0]),
+    ("B553968", "한국어촌어항공단", CANDIDATE_LEDGER_PATHS[0]),
+    ("B555210", "국가유산진흥원", CANDIDATE_LEDGER_PATHS[0]),
+    ("B554644", "한국광해광업공단", CANDIDATE_LEDGER_PATHS[0]),
+    ("B553931", "해양환경공단", CANDIDATE_LEDGER_PATHS[0]),
+    ("B553023", "한국원자력환경공단", CANDIDATE_LEDGER_PATHS[0]),
+    ("1400000", "산림청", CANDIDATE_LEDGER_PATHS[1]),
+    ("ZD00303", "국방부", CANDIDATE_LEDGER_PATHS[1]),
+    ("ZD00001", "국방부", CANDIDATE_LEDGER_PATHS[1]),
+    ("1290476", "국방부", CANDIDATE_LEDGER_PATHS[1]),
+    ("B551178", "한국공항공사", CANDIDATE_LEDGER_PATHS[1]),
+    ("1192000", "해양수산부", CANDIDATE_LEDGER_PATHS[1]),
+    ("Z000152", "한국농수산식품유통공사", CANDIDATE_LEDGER_PATHS[1]),
+    ("B550928", "국민건강보험공단", CANDIDATE_LEDGER_PATHS[1]),
+    ("B551220", "부산항만공사", CANDIDATE_LEDGER_PATHS[1]),
+)
+
+
+def _candidate_by_name() -> dict[str, dict]:
+    index: dict[str, dict] = {}
+    for path in CANDIDATE_LEDGER_PATHS:
+        payload = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        for entry in payload["institutions"]:
+            index[entry["institution_name"]] = {**entry, "source": path}
+    return index
+
+
+def test_committed_ledger_investigation_targets() -> None:
+    """후보 14곳의 조사 결론이 대응 16행에만 적히고 나머지 행은 null 이다.
+
+    기관명이 dminstt_nm 과 같은 13행과, 이름 행이 없는 국방부의 별칭 3행만 채운다.
+    같은 후보의 다른 별칭 행(김포공항·지방청·지방산림청·환경본부 등)은 null 이다.
+    """
+    candidates = _candidate_by_name()
+    by_code = {item["dminstt_cd"]: item for item in _ledger()["institutions"]}
+
+    for code, candidate_name, source in INVESTIGATION_TARGETS:
+        candidate = candidates[candidate_name]
+        investigation = by_code[code]["investigation"]
+        assert investigation is not None, code
+        assert investigation["recommendation"] == candidate["recommendation"], code
+        assert investigation["status"] == candidate["status"], code
+        assert investigation["doc"] == candidate["standard"], code
+        assert investigation["date"] == "2026-10-14", code
+        assert investigation["source"] == source, code
+        assert investigation["note"], code
+
+    targets = {code for code, _name, _source in INVESTIGATION_TARGETS}
+    for item in _ledger()["institutions"]:
+        if item["dminstt_cd"] not in targets:
+            assert item["investigation"] is None, item["dminstt_cd"]
