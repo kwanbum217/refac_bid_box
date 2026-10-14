@@ -232,6 +232,23 @@ def test_evidence_does_not_leak_other_lines(api) -> None:
     assert evaluated_on["confidence"] == "high"
 
 
+def test_same_line_evidence_does_not_leak_personal_context(api) -> None:
+    client, _ = api
+    single_line = "상호 홍길동상사 대표 홍길동 신용등급 BB+ 평가일 2026-01-05"
+    response = client.post(EXTRACT_URL, content=_build_pdf([single_line]), headers=PDF_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "extracted"
+
+    grade = payload["fields"]["credit_grade"]
+    evaluated_on = payload["fields"]["credit_evaluated_on"]
+    assert grade["value"] == "BB+"
+    assert evaluated_on["value"] == "2026-01-05"
+    for evidence in (grade["evidence"]["text"], evaluated_on["evidence"]["text"]):
+        assert "홍길동" not in evidence
+
+
 def test_page_without_text_is_unrecognized(api) -> None:
     client, _ = api
     response = client.post(EXTRACT_URL, content=_build_pdf([""]), headers=PDF_HEADERS)

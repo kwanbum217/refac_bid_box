@@ -192,6 +192,42 @@ def test_evidence_is_limited_to_the_value_line() -> None:
     assert "홍길동" not in result.credit_evaluated_on.text
 
 
+def test_same_line_evidence_starts_at_label_and_ends_at_value() -> None:
+    text = "상호 홍길동상사 대표 홍길동 신용등급 BB+ 평가일 2026-01-05"
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "BB+"
+    assert "BB+" in result.credit_grade.text
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2026-01-05"
+    assert "2026-01-05" in result.credit_evaluated_on.text
+    for evidence in (result.credit_grade.text, result.credit_evaluated_on.text):
+        assert "홍길동" not in evidence
+        assert "상호" not in evidence
+        assert "대표" not in evidence
+
+
+def test_grade_evidence_excludes_preceding_identifier_and_trailing_note() -> None:
+    result = parse_credit_certificate(["사업자번호 123-45-67890 신용등급 A0 비고 우수"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "A0"
+    assert "A0" in result.credit_grade.text
+    assert "123-45-67890" not in result.credit_grade.text
+    assert "비고" not in result.credit_grade.text
+
+
+def test_date_evidence_excludes_representative_and_effective_period() -> None:
+    result = parse_credit_certificate(["대표이사 김철수 평가일자 2026.03.04 유효기간 2027.03.03"])
+
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2026-03-04"
+    assert "2026.03.04" in result.credit_evaluated_on.text
+    assert "김철수" not in result.credit_evaluated_on.text
+    assert "유효기간" not in result.credit_evaluated_on.text
+
+
 def test_two_column_evidence_joins_label_and_value_lines() -> None:
     result = parse_credit_certificate(["신용등급\nA+"])
 

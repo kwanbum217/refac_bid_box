@@ -177,6 +177,18 @@ def _trim_evidence(line: str) -> str:
     return line.strip()[:MAX_EVIDENCE_LENGTH]
 
 
+def _line_slice(line: str, start: int, end: int) -> str:
+    """공백 제거본 구간 [start, end) 을 원문 줄의 구간으로 되돌립니다.
+
+    같은 줄에서 라벨 시작부터 값 끝까지만 근거로 남기기 위한 것입니다. 공백 제거본의
+    위치를 원문 줄의 공백 제외 문자 순서에 대응시켜, 라벨 앞 문맥과 값 뒤 문맥을 뺍니다.
+    """
+    positions = [index for index, char in enumerate(line) if not char.isspace()]
+    if start < 0 or end > len(positions) or start >= end:
+        return ""
+    return line[positions[start] : positions[end - 1] + 1]
+
+
 def _page_lines(page_text: str) -> list[str]:
     """쪽 텍스트를 줄 단위로 나누고 줄마다 정규화합니다."""
     return [_canonical(line) for line in page_text.splitlines()]
@@ -214,13 +226,15 @@ def _is_preferred(label: str, prefix: str, line: str) -> bool:
 
 
 def _lookahead_grade(
-    lines: list[str], compacts: list[str], index: int, cutoff: int
+    lines: list[str], compacts: list[str], index: int, cutoff: int, label_start: int
 ) -> tuple[str, str] | None:
     """라벨 줄 아래 2열 표의 등급 값과 근거를 찾습니다.
 
-    근거는 라벨 줄과 값 줄을 공백 하나로 이은 것입니다.
+    근거는 라벨 줄과 값 줄을 공백 하나로 이은 것입니다. 라벨 줄 앞에 문맥이 있으면
+    그 줄은 라벨 시작부터 자른 뒤 잇습니다.
     """
     limit = min(index + 1 + _GRADE_LOOKAHEAD_LINES, cutoff, len(compacts))
+    label_line = _line_slice(lines[index], label_start, len(compacts[index]))
     for candidate_index in range(index + 1, limit):
         compact = compacts[candidate_index]
         if not compact:
@@ -232,7 +246,7 @@ def _lookahead_grade(
             continue
         value = _canonical_grade(match.group(0))
         if value is not None:
-            return value, _trim_evidence(f"{lines[index]} {lines[candidate_index]}")
+            return value, _trim_evidence(f"{label_line} {lines[candidate_index]}")
     return None
 
 
@@ -309,13 +323,15 @@ def _collect_grade_candidates(pages: Sequence[str]) -> list[_Candidate]:
                 segment = compact[match.end() : segment_end][:_GRADE_LABEL_WINDOW]
                 grade_match = _GRADE_RE.search(segment)
                 value = _canonical_grade(grade_match.group(0)) if grade_match is not None else None
-                if value is None:
-                    found = _lookahead_grade(lines, compacts, index, cutoff)
+                if grade_match is None or value is None:
+                    found = _lookahead_grade(lines, compacts, index, cutoff, match.start())
                     if found is None:
                         continue
                     value, text = found
                 else:
-                    text = _trim_evidence(lines[index])
+                    text = _trim_evidence(
+                        _line_slice(lines[index], match.start(), match.end() + grade_match.end())
+                    )
                 label_start = matches[match_index - 1].end() if match_index else 0
                 candidates.append(
                     _Candidate(
@@ -342,13 +358,17 @@ def _date_match(region: str) -> re.Match[str] | None:
     return date_match
 
 
-def _lookahead_date(lines: list[str], compacts: list[str], index: int) -> tuple[str, str] | None:
+def _lookahead_date(
+    lines: list[str], compacts: list[str], index: int, label_start: int
+) -> tuple[str, str] | None:
     """라벨 줄 아래 값을 찾습니다. 유효기간 값을 만나면 버립니다.
 
-    근거는 라벨 줄과 값 줄을 공백 하나로 이은 것입니다.
+    근거는 라벨 줄과 값 줄을 공백 하나로 이은 것입니다. 라벨 줄 앞에 문맥이 있으면
+    그 줄은 라벨 시작부터 자른 뒤 잇습니다.
     """
     passed_effective = False
     limit = min(index + 1 + _DATE_LOOKAHEAD_LINES, len(compacts))
+    label_line = _line_slice(lines[index], label_start, len(compacts[index]))
     for candidate_index in range(index + 1, limit):
         compact = compacts[candidate_index]
         if not compact:
@@ -370,7 +390,7 @@ def _lookahead_date(lines: list[str], compacts: list[str], index: int) -> tuple[
         value = _canonical_date(*date_match.groups())
         if value is None:
             continue
-        return value, _trim_evidence(f"{lines[index]} {lines[candidate_index]}")
+        return value, _trim_evidence(f"{label_line} {lines[candidate_index]}")
     return None
 
 
@@ -404,14 +424,16 @@ def _collect_date_candidates(pages: Sequence[str]) -> list[_DateCandidate]:
                 )
                 segment = compact[match.end() : segment_end][:_DATE_LABEL_WINDOW]
                 date_match = _date_match(segment)
-                value = _canonical_date(*date_match.groups()) if date_match else None
-                if value is None:
-                    found = _lookahead_date(lines, compacts, index)
+                value = _canonical_date(*date_match.groups()) if date_match is not None else None
+                if date_match is None or value is None:
+                    found = _lookahead_date(lines, compacts, index, match.start())
                     if found is None:
                         continue
                     value, text = found
                 else:
-                    text = _trim_evidence(lines[index])
+                    text = _trim_evidence(
+                        _line_slice(lines[index], match.start(), match.end() + date_match.end())
+                    )
                 candidates.append(
                     _DateCandidate(
                         value=value,
