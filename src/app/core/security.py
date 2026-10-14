@@ -834,9 +834,11 @@ authenticated_api_rate_limiter = AuthenticatedAPIRateLimiter()
 class DocumentExtractionRateLimiter:
     """문서 추출 API 요청 제한기 (사용자·IP 축, 고정 윈도우).
 
-    사용자 기준 시간당 10회, IP 기준 시간당 30회로 제한합니다. Redis 장애 시에는
-    로그인 사용자 제한기와 같이 요청을 차단하지 않고 제한을 건너뜁니다. 카운터
-    키에는 반드시 TTL 을 겁니다(운영 Redis 는 volatile-lru).
+    사용자 기준 시간당 10회, IP 기준 시간당 30회로 제한합니다. Redis 를 쓸 수
+    없으면 요청을 통과시키지 않고 503 으로 막습니다(fail-closed). 제한을 알 수
+    없을 때 통과시키면 문서 추출 남용을 막지 못하므로, 로그인·회원가입 제한기와
+    같은 방식으로 막습니다. 카운터 키에는 반드시 TTL 을 겁니다(운영 Redis 는
+    volatile-lru).
     """
 
     def __init__(self, connection: RedisConnection | None = None):
@@ -851,10 +853,18 @@ class DocumentExtractionRateLimiter:
         return f"{DOCUMENT_EXTRACTION_RATE_LIMIT_IP_PREFIX}{ip}"
 
     def check_rate_limit(self, user_id: int | None, ip: str | None) -> None:
-        """사용자·IP 축 한도를 모두 검사합니다. 초과 시 429 를 발생시킵니다."""
+        """사용자·IP 축 한도를 모두 검사합니다.
+
+        초과 시 429 를 발생시킵니다. Redis 미가용(client None) 또는 조회 오류
+        시에는 503 을 발생시킵니다(fail-closed).
+        """
         client = self._conn.client()
         if client is None:
-            return
+            logger.warning("문서 추출 요청 제한 저장소를 사용할 수 없어 요청을 막습니다")
+            raise HTTPException(
+                status_code=503,
+                detail=AUTH_SERVICE_UNAVAILABLE_DETAIL,
+            )
         try:
             if user_id is not None:
                 count = client.get(self._user_key(user_id))
@@ -882,9 +892,11 @@ class DocumentExtractionRateLimiter:
             raise
         except Exception as exc:
             self._conn.invalidate(exc)
-            logger.warning(
-                "문서 추출 요청 제한 조회 중 Redis 오류 발생, 제한을 건너뜁니다: %s", exc
-            )
+            logger.warning("문서 추출 요청 제한 조회 중 Redis 오류 발생, 요청을 막습니다: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail=AUTH_SERVICE_UNAVAILABLE_DETAIL,
+            ) from exc
 
     def record_request(self, user_id: int | None, ip: str | None) -> None:
         """요청을 사용자·IP 축 카운터에 기록합니다. 두 키 모두 TTL 을 겁니다."""
