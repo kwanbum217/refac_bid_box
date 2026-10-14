@@ -138,6 +138,7 @@
                     </div>
                 </div>
 
+                {% include "bids/_attachments.html" %}
                 {% if restrictions and (restrictions.collected or restrictions.industry_limited == 'Y') %}
                 <!-- Participation Restrictions Card -->
                 <div class="h-card p-6 space-y-4" id="participation-restrictions">

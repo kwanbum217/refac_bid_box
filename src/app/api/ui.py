@@ -56,6 +56,7 @@ from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import ChatSessionState
 from src.app.services import bid_queries
+from src.app.services.announcement_attachments import describe_announcement_links
 from src.app.services.auth_forms import (
     CREDIT_GRADE_CHOICES,
     build_reputation_fields,
@@ -325,6 +326,7 @@ def bid_detail(
     detail = bid_queries.get_announcement_detail(db, pk)
     if detail is None:
         raise HTTPException(status_code=404, detail="대상을 찾을 수 없습니다.")
+    detail["announcement_links"] = describe_announcement_links(detail["bid"].raw_data)
     return _render(request, "bids/detail.html", detail, user, "bids")
 
 

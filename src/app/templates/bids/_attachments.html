@@ -1,0 +1,36 @@
+{% if announcement_links and (announcement_links.files or announcement_links.standard_notice_url or announcement_links.detail_url) %}
+<div class="h-card p-6 space-y-4" id="announcement-attachments">
+    <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+        <i class="fas fa-paperclip text-primary mr-2"></i>
+        공고 첨부파일
+    </h2>
+    {% if announcement_links.files %}
+    <ul class="space-y-2">
+        {% for file in announcement_links.files %}
+        <li>
+            <a href="{{ file.url }}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-sm font-semibold text-primary hover:underline break-all">
+                <i class="fas fa-file-arrow-down text-slate-400"></i>
+                <span>{{ file.name }}</span>
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    {% if announcement_links.standard_notice_url or announcement_links.detail_url %}
+    <div class="flex flex-wrap items-center gap-4 border-t border-slate-200 pt-4">
+        {% if announcement_links.standard_notice_url %}
+        <a href="{{ announcement_links.standard_notice_url }}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
+            <i class="fas fa-file-arrow-down text-slate-400"></i>
+            표준공고문
+        </a>
+        {% endif %}
+        {% if announcement_links.detail_url %}
+        <a href="{{ announcement_links.detail_url }}" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-sm font-semibold text-primary hover:underline">
+            <i class="fas fa-up-right-from-square text-slate-400"></i>
+            나라장터 공고 원문 보기
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endif %}
