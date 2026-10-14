@@ -29,6 +29,12 @@ PDF_HEADERS = {"Content-Type": "application/pdf"}
 GRADE_CODES = frozenset(code for code, _ in CREDIT_GRADE_CHOICES)
 EXTRACTION_NOTICE = "추출값은 확인이 필요합니다. 저장 전에 원문과 대조하십시오."
 KOREAN_CERTIFICATE = "신용평가등급확인서\n신용등급 : AA-\n평가일 : 2026-03-15"
+PERSONAL_INFO_CERTIFICATE = (
+    "신용평가등급확인서\n"
+    "발급번호 2026-001 주식회사 홍길동상사 대표이사 홍길동 사업자번호 123-45-67890\n"
+    "신용등급 BB+\n"
+    "평가일 2026-01-05"
+)
 
 
 def _build_pdf(pages: list[str], *, encrypted: bool = False) -> bytes:
@@ -64,8 +70,12 @@ def _build_pdf(pages: list[str], *, encrypted: bool = False) -> bytes:
         content_id = 5 + index * 2
         page_id = 6 + index * 2
         page_ids.append(page_id)
-        hex_body = "".join(f"{char_map[char]:02X}" for char in text)
-        stream = f"BT /F1 12 Tf 72 720 Td <{hex_body}> Tj ET".encode("latin-1")
+        parts = [b"BT /F1 12 Tf"]
+        for line_index, line in enumerate(text.split("\n")):
+            hex_body = "".join(f"{char_map[char]:02X}" for char in line)
+            parts.append(f"1 0 0 1 72 {720 - line_index * 14} Tm <{hex_body}> Tj".encode("latin-1"))
+        parts.append(b"ET")
+        stream = b" ".join(parts)
         objects[content_id] = (
             b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"
         )
@@ -193,15 +203,33 @@ def test_extract_returns_contract_json(api) -> None:
     assert grade["value"] == "AA-"
     assert grade["value"] in GRADE_CODES
     assert grade["confidence"] == "high"
-    assert grade["evidence"] == {
-        "page": 1,
-        "text": "신용평가등급확인서 신용등급 : AA- 평가일 : 2026-03-15",
-    }
+    assert grade["evidence"] == {"page": 1, "text": "신용등급 : AA-"}
 
     evaluated_on = payload["fields"]["credit_evaluated_on"]
     assert evaluated_on["value"] == "2026-03-15"
     assert evaluated_on["confidence"] == "high"
     assert evaluated_on["evidence"]["page"] == 1
+
+
+def test_evidence_does_not_leak_other_lines(api) -> None:
+    client, _ = api
+    response = client.post(
+        EXTRACT_URL, content=_build_pdf([PERSONAL_INFO_CERTIFICATE]), headers=PDF_HEADERS
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "extracted"
+
+    grade = payload["fields"]["credit_grade"]
+    evaluated_on = payload["fields"]["credit_evaluated_on"]
+    assert "BB+" in grade["evidence"]["text"]
+    assert "2026-01-05" in evaluated_on["evidence"]["text"]
+    for evidence in (grade["evidence"]["text"], evaluated_on["evidence"]["text"]):
+        assert "홍길동" not in evidence
+        assert "123-45-67890" not in evidence
+    assert grade["confidence"] == "high"
+    assert evaluated_on["confidence"] == "high"
 
 
 def test_page_without_text_is_unrecognized(api) -> None:

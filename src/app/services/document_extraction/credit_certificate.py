@@ -60,6 +60,10 @@ _GRADE_LABEL_RE = re.compile(
 )
 _GRADE_LABEL_WINDOW = 48
 
+# 문서 제목 '신용평가등급확인서' 의 '신용평가등급' 은 등급 라벨이 아닙니다. 라벨 바로
+# 뒤(공백 제거 기준)에 '확인서' 가 오면 그 매치를 등급 라벨에서 뺍니다.
+_GRADE_TITLE_SUFFIX = "확인서"
+
 _DATE_LABEL_RE = re.compile(r"(평가일자|평가기준일|평가일|발급일자|발급일)")
 _DATE_LABEL_WINDOW = 60
 _DATE_PATTERN = r"((?:19|20)\d{2})[년.\-/](\d{1,2})[월.\-/](\d{1,2})일?"
@@ -186,45 +190,58 @@ def _definition_start(compacts: list[str]) -> int:
     return len(compacts)
 
 
-def _is_standalone_grade(compact: str) -> bool:
-    """한 줄이 등급 기호 하나로만 이루어졌는지 봅니다. 2열 표의 값 줄을 잡습니다."""
-    return _GRADE_RE.fullmatch(compact) is not None
+def _grade_label_matches(compact: str) -> list[re.Match[str]]:
+    """등급 라벨 매치만 돌려줍니다. 제목(라벨 바로 뒤 '확인서')은 제외합니다."""
+    return [
+        match
+        for match in _GRADE_LABEL_RE.finditer(compact)
+        if not compact[match.end() :].startswith(_GRADE_TITLE_SUFFIX)
+    ]
 
 
-def _is_preferred(compact_line: str, label_start: int, line: str) -> bool:
-    """회사채·기업어음 표지가 붙은 후보인지 판단합니다.
+def _is_preferred(label: str, prefix: str, line: str) -> bool:
+    """일반 신용등급 후보인지 판단합니다.
 
-    '...에 준하는 등급' 문장은 실제 등급을 서술하므로 표지로 강등하지 않습니다.
+    상품 표지가 라벨 자체에 있거나(회사채등급·기업어음등급·단기신용등급), 같은 줄의
+    직전 라벨 끝부터 현재 라벨 시작까지 접두에 있으면(기업어음 신용등급) 상품 등급으로
+    봅니다. '...에 준하는 등급' 문장은 실제 등급을 서술하므로 표지로 강등하지 않습니다.
     """
     if _BOILERPLATE_MARKER in line:
         return True
-    prefix = compact_line[:label_start]
+    if any(marker in label for marker in _INSTRUMENT_MARKERS):
+        return False
     return not any(marker in prefix for marker in _INSTRUMENT_MARKERS)
 
 
-def _lookahead_grade(compacts: list[str], index: int, cutoff: int) -> str | None:
-    """라벨 줄 아래 몇 줄 안에서 2열 표의 등급 값을 찾습니다."""
+def _lookahead_grade(
+    lines: list[str], compacts: list[str], index: int, cutoff: int
+) -> tuple[str, str] | None:
+    """라벨 줄 아래 2열 표의 등급 값과 근거를 찾습니다.
+
+    근거는 라벨 줄과 값 줄을 공백 하나로 이은 것입니다.
+    """
     limit = min(index + 1 + _GRADE_LOOKAHEAD_LINES, cutoff, len(compacts))
     for candidate_index in range(index + 1, limit):
         compact = compacts[candidate_index]
         if not compact:
             continue
-        if _GRADE_LABEL_RE.search(compact):
+        if _grade_label_matches(compact):
             return None
         match = _GRADE_RE.search(compact)
         if match is None:
             continue
         value = _canonical_grade(match.group(0))
         if value is not None:
-            return value
+            return value, _trim_evidence(f"{lines[index]} {lines[candidate_index]}")
     return None
 
 
 def _pick_grade(candidates: list[_Candidate]) -> FieldResult | None:
     if not candidates:
         return None
-    preferred = [candidate for candidate in candidates if candidate.preferred]
-    pool = preferred or candidates
+    pool = [candidate for candidate in candidates if candidate.preferred]
+    if not pool:
+        return None
     counts = Counter(candidate.value for candidate in pool)
 
     def rank(value: str) -> tuple[int, int]:
@@ -243,8 +260,6 @@ def _pick_grade(candidates: list[_Candidate]) -> FieldResult | None:
         confidence = "medium"
     else:
         confidence = "low"
-    if not winner.preferred and confidence == "high":
-        confidence = "medium"
     return FieldResult(
         value=winner.value,
         confidence=confidence,
@@ -277,22 +292,14 @@ def _pick_date(candidates: list[_DateCandidate]) -> FieldResult | None:
 def _collect_grade_candidates(pages: Sequence[str]) -> list[_Candidate]:
     candidates: list[_Candidate] = []
     for page_index, page_text in enumerate(pages, start=1):
-        evidence = _trim_evidence(_canonical(page_text))
         lines = _page_lines(page_text)
         compacts = [_compact(line) for line in lines]
         cutoff = _definition_start(compacts)
         for index in range(cutoff):
             compact = compacts[index]
-            if not compact or not _is_standalone_grade(compact):
-                continue
-            value = _canonical_grade(compact)
-            if value is not None:
-                candidates.append(_Candidate(value, page_index, len(candidates), evidence, True))
-        for index in range(cutoff):
-            compact = compacts[index]
             if not compact:
                 continue
-            matches = list(_GRADE_LABEL_RE.finditer(compact))
+            matches = _grade_label_matches(compact)
             for match_index, match in enumerate(matches):
                 segment_end = (
                     matches[match_index + 1].start()
@@ -301,36 +308,45 @@ def _collect_grade_candidates(pages: Sequence[str]) -> list[_Candidate]:
                 )
                 segment = compact[match.end() : segment_end][:_GRADE_LABEL_WINDOW]
                 grade_match = _GRADE_RE.search(segment)
-                value = _canonical_grade(grade_match.group(0)) if grade_match else None
+                value = _canonical_grade(grade_match.group(0)) if grade_match is not None else None
                 if value is None:
-                    value = _lookahead_grade(compacts, index, cutoff)
-                if value is None:
-                    continue
+                    found = _lookahead_grade(lines, compacts, index, cutoff)
+                    if found is None:
+                        continue
+                    value, text = found
+                else:
+                    text = _trim_evidence(lines[index])
+                label_start = matches[match_index - 1].end() if match_index else 0
                 candidates.append(
                     _Candidate(
                         value=value,
                         page=page_index,
                         order=len(candidates),
-                        text=evidence,
-                        preferred=_is_preferred(compact, match.start(), lines[index]),
+                        text=text,
+                        preferred=_is_preferred(
+                            match.group(1), compact[label_start : match.start()], lines[index]
+                        ),
                     )
                 )
     return _dedupe(candidates)
 
 
-def _date_in_region(region: str) -> str | None:
-    """구간의 첫 날짜를 돌려줍니다. 유효기간·유효기한 값이면 버립니다."""
+def _date_match(region: str) -> re.Match[str] | None:
+    """구간의 첫 날짜 매치를 돌려줍니다. 유효기간·유효기한 값이면 버립니다."""
     date_match = _DATE_RE.search(region)
     if date_match is None:
         return None
     effective = _EFFECTIVE_LABEL_RE.search(region)
     if effective is not None and effective.start() < date_match.start():
         return None
-    return _canonical_date(*date_match.groups())
+    return date_match
 
 
-def _lookahead_date(compacts: list[str], index: int) -> str | None:
-    """라벨 줄 아래 몇 줄 안에서 값을 찾습니다. 유효기간 값을 만나면 버립니다."""
+def _lookahead_date(lines: list[str], compacts: list[str], index: int) -> tuple[str, str] | None:
+    """라벨 줄 아래 값을 찾습니다. 유효기간 값을 만나면 버립니다.
+
+    근거는 라벨 줄과 값 줄을 공백 하나로 이은 것입니다.
+    """
     passed_effective = False
     limit = min(index + 1 + _DATE_LOOKAHEAD_LINES, len(compacts))
     for candidate_index in range(index + 1, limit):
@@ -348,17 +364,21 @@ def _lookahead_date(compacts: list[str], index: int) -> str | None:
             if _DATE_RE.search(compact):
                 return None
             continue
-        found = _date_in_region(compact)
-        if found is not None:
-            return found
+        date_match = _date_match(compact)
+        if date_match is None:
+            continue
+        value = _canonical_date(*date_match.groups())
+        if value is None:
+            continue
+        return value, _trim_evidence(f"{lines[index]} {lines[candidate_index]}")
     return None
 
 
 def _dedupe_dates(candidates: list[_DateCandidate]) -> list[_DateCandidate]:
-    seen: set[tuple[int, str, str]] = set()
+    seen: set[tuple[int, str]] = set()
     unique: list[_DateCandidate] = []
     for candidate in candidates:
-        key = (candidate.page, candidate.text, candidate.value)
+        key = (candidate.page, candidate.value)
         if key in seen:
             continue
         seen.add(key)
@@ -369,8 +389,9 @@ def _dedupe_dates(candidates: list[_DateCandidate]) -> list[_DateCandidate]:
 def _collect_date_candidates(pages: Sequence[str]) -> list[_DateCandidate]:
     candidates: list[_DateCandidate] = []
     for page_index, page_text in enumerate(pages, start=1):
-        evidence = _trim_evidence(_canonical(page_text))
-        compacts = [_compact(line) for line in _page_lines(page_text)]
+        lines = _page_lines(page_text)
+        compacts = [_compact(line) for line in lines]
+        page_compact = _compact(_canonical(page_text))
         for index, compact in enumerate(compacts):
             if not compact:
                 continue
@@ -382,24 +403,31 @@ def _collect_date_candidates(pages: Sequence[str]) -> list[_DateCandidate]:
                     else len(compact)
                 )
                 segment = compact[match.end() : segment_end][:_DATE_LABEL_WINDOW]
-                value = _date_in_region(segment)
+                date_match = _date_match(segment)
+                value = _canonical_date(*date_match.groups()) if date_match else None
                 if value is None:
-                    value = _lookahead_date(compacts, index)
-                if value is None:
-                    continue
+                    found = _lookahead_date(lines, compacts, index)
+                    if found is None:
+                        continue
+                    value, text = found
+                else:
+                    text = _trim_evidence(lines[index])
                 candidates.append(
                     _DateCandidate(
                         value=value,
                         page=page_index,
                         order=len(candidates),
-                        text=evidence,
+                        text=text,
                         priority=_DATE_LABEL_PRIORITY.get(match.group(1), 2),
                     )
                 )
         # OCR 이 라벨을 여러 줄로 쪼갠 경우(예: '등급평 / 가 일')를 쪽 전체에서 다시 잇습니다.
-        page_compact = _compact(_canonical(page_text))
         for match in _DATE_LABEL_RE.finditer(page_compact):
-            value = _date_in_region(page_compact[match.end() :][:_DATE_LABEL_WINDOW])
+            region_start = match.end()
+            date_match = _date_match(page_compact[region_start:][:_DATE_LABEL_WINDOW])
+            if date_match is None:
+                continue
+            value = _canonical_date(*date_match.groups())
             if value is None:
                 continue
             candidates.append(
@@ -407,7 +435,9 @@ def _collect_date_candidates(pages: Sequence[str]) -> list[_DateCandidate]:
                     value=value,
                     page=page_index,
                     order=len(candidates),
-                    text=evidence,
+                    text=_trim_evidence(
+                        page_compact[match.start() : region_start + date_match.end()]
+                    ),
                     priority=_DATE_LABEL_PRIORITY.get(match.group(1), 2),
                 )
             )
@@ -422,7 +452,7 @@ def _collect_date_candidates(pages: Sequence[str]) -> list[_DateCandidate]:
                     value=value,
                     page=page_index,
                     order=len(candidates),
-                    text=evidence,
+                    text=_trim_evidence(page_compact[match.start() : match.end()]),
                     priority=_DATE_LABEL_PRIORITY["평가일"],
                 )
             )
@@ -430,10 +460,10 @@ def _collect_date_candidates(pages: Sequence[str]) -> list[_DateCandidate]:
 
 
 def _dedupe(candidates: list[_Candidate]) -> list[_Candidate]:
-    seen: set[tuple[int, str, str]] = set()
+    seen: set[tuple[int, str]] = set()
     unique: list[_Candidate] = []
     for candidate in candidates:
-        key = (candidate.page, candidate.text, candidate.value)
+        key = (candidate.page, candidate.value)
         if key in seen:
             continue
         seen.add(key)

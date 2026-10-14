@@ -32,7 +32,7 @@ def test_extracts_grade_and_date_with_evidence() -> None:
     assert result.credit_grade.value == "AA-"
     assert result.credit_grade.confidence == "high"
     assert result.credit_grade.page == 1
-    assert result.credit_grade.text == "신용평가등급확인서 신용등급 : AA- 평가일 : 2026-03-15"
+    assert result.credit_grade.text == "신용등급 : AA-"
     assert result.credit_evaluated_on is not None
     assert result.credit_evaluated_on.value == "2026-03-15"
     assert result.credit_evaluated_on.confidence == "high"
@@ -83,12 +83,121 @@ def test_plain_label_is_preferred_over_instrument_label() -> None:
     assert result.credit_grade.confidence == "high"
 
 
-def test_instrument_only_grade_confidence_is_capped() -> None:
+def test_instrument_only_grade_is_not_adopted() -> None:
     result = parse_credit_certificate(["기업어음 신용등급 : A+"])
 
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
+
+
+def test_instrument_grade_without_plain_grade_is_not_adopted() -> None:
+    result = parse_credit_certificate(["회사채등급 AA-\n평가일 2026.03.02"])
+
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2026-03-02"
+
+
+def test_plain_grade_wins_over_instrument_grade() -> None:
+    result = parse_credit_certificate(["회사채등급 AA-\n신용등급 BBB0\n평가일 2026.03.02"])
+
     assert result.credit_grade is not None
-    assert result.credit_grade.value == "A+"
-    assert result.credit_grade.confidence == "medium"
+    assert result.credit_grade.value == "BBB0"
+    assert result.credit_grade.confidence != "low"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("기업어음등급 A-\n신용평가등급 BB+", "BB+"),
+        ("단기신용등급 B\n신용등급 A0", "A0"),
+        ("회사채등급 AA- 신용등급 BBB0", "BBB0"),
+    ],
+)
+def test_label_bearing_instrument_grade_does_not_shadow_plain_grade(
+    text: str, expected: str
+) -> None:
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == expected
+
+
+@pytest.mark.parametrize("text", ["기업어음 신용등급 : A+", "CP 신용등급 A+"])
+def test_instrument_prefix_without_plain_grade_is_not_adopted(text: str) -> None:
+    result = parse_credit_certificate([text])
+
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "신용평가등급확인서\n목차\nA\n업체명 가나다",
+        "1. 개요\nB\n2. 내용\nD",
+        "평가 결과\nA+\n비고",
+        "신용평가등급확인서\nB",
+        "신용평가등급확인서 A",
+    ],
+)
+def test_standalone_line_without_grade_label_is_not_adopted(text: str) -> None:
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is None
+
+
+def test_title_only_document_is_unrecognized() -> None:
+    result = parse_credit_certificate(["신용평가등급확인서\n목차\nA\n업체명 가나다"])
+
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
+
+
+def test_grade_below_label_on_next_line_stays_high_confidence() -> None:
+    result = parse_credit_certificate(["신용등급\nA\n평가일 2026.01.05"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "A0"
+    assert result.credit_grade.confidence == "high"
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2026-01-05"
+
+
+def test_grade_after_blank_line_below_label_is_recognized() -> None:
+    result = parse_credit_certificate(["신용등급\n\nBBB-"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "BBB-"
+
+
+def test_evidence_is_limited_to_the_value_line() -> None:
+    text = (
+        "신용평가등급확인서\n"
+        "발급번호 2026-001 주식회사 홍길동상사 대표이사 홍길동 사업자번호 123-45-67890\n"
+        "신용등급 BB+\n"
+        "평가일 2026-01-05"
+    )
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.confidence == "high"
+    assert "BB+" in result.credit_grade.text
+    assert "홍길동" not in result.credit_grade.text
+    assert "123-45-67890" not in result.credit_grade.text
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.confidence == "high"
+    assert "2026-01-05" in result.credit_evaluated_on.text
+    assert "홍길동" not in result.credit_evaluated_on.text
+
+
+def test_two_column_evidence_joins_label_and_value_lines() -> None:
+    result = parse_credit_certificate(["신용등급\nA+"])
+
+    assert result.credit_grade is not None
+    assert "신용등급" in result.credit_grade.text
+    assert "A+" in result.credit_grade.text
 
 
 def test_repeated_same_grade_lowers_confidence_to_medium() -> None:
@@ -292,6 +401,9 @@ def test_partial_evaluation_date_label_is_joined_with_following_date() -> None:
     assert result.credit_grade.value == "A+"
     assert result.credit_evaluated_on is not None
     assert result.credit_evaluated_on.value == "2025-06-27"
+    assert "2025" in result.credit_evaluated_on.text
+    assert "2024" not in result.credit_evaluated_on.text
+    assert "기업신용평가등급" not in result.credit_evaluated_on.text
 
 
 def test_partial_date_label_does_not_take_effective_period_value() -> None:
