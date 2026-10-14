@@ -7,6 +7,8 @@
     var MAX_FILE_BYTES = 5 * 1024 * 1024;
     var CONFIDENCE_LABELS = { high: '높음', medium: '보통', low: '낮음' };
     var UNRECOGNIZED_MESSAGE = '문서에서 등급을 찾지 못했습니다. 직접 입력하십시오.';
+    var UNRECOGNIZED_DATE_MESSAGE =
+        '등급을 찾지 못했습니다. 평가일만 채웠으니 원문과 대조하십시오.';
     var DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
     function createElement(tagName, className, text) {
@@ -42,18 +44,15 @@
     }
 
     function appendEvidence(parent, evidence) {
-        var items = Array.isArray(evidence) ? evidence : evidence ? [evidence] : [];
+        if (!evidence) {
+            return;
+        }
         var list = createElement('ul', 'mt-1 space-y-0.5');
-        items.forEach(function (item) {
-            if (!item) {
-                return;
-            }
-            var prefix = item.page === undefined || item.page === null ? '' : 'p.' + item.page + ' ';
-            var text = (prefix + (item.text || '')).trim();
-            if (text) {
-                list.appendChild(createElement('li', 'text-[10px] text-slate-400', text));
-            }
-        });
+        var prefix = evidence.page === undefined || evidence.page === null ? '' : 'p.' + evidence.page + ' ';
+        var text = (prefix + (evidence.text || '')).trim();
+        if (text) {
+            list.appendChild(createElement('li', 'text-[10px] text-slate-400', text));
+        }
         if (list.firstChild) {
             parent.appendChild(list);
         }
@@ -138,6 +137,7 @@
             reason = '날짜 형식이 아니라 자동 입력하지 않았습니다.';
         }
         renderField(container, field, filled, reason);
+        return filled;
     }
 
     function fileProblem(file) {
@@ -207,6 +207,11 @@
                     }
                     var payload = result.payload || {};
                     if (payload.status === 'unrecognized') {
+                        var date = payload.fields && payload.fields.credit_evaluated_on;
+                        if (date && fillEvaluatedOn(date)) {
+                            setStatus(status, UNRECOGNIZED_DATE_MESSAGE, 'error');
+                            return;
+                        }
                         setStatus(status, UNRECOGNIZED_MESSAGE, 'error');
                         return;
                     }

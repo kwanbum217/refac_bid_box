@@ -173,3 +173,39 @@ def test_terms_include_document_extraction_notice():
     assert "저장하지 않고" in terms
     assert "외부로 전송하지 않습니다" in terms
     assert "평가 입력 보조" in terms
+
+
+def _js_block(source: str, start_marker: str, end_marker: str) -> str:
+    """source 에서 start_marker 부터 end_marker 직전까지 잘라 돌려줍니다."""
+
+    start = source.index(start_marker)
+    return source[start : source.index(end_marker, start)]
+
+
+def test_unrecognized_fills_only_evaluated_on():
+    source = JS_PATH.read_text(encoding="utf-8")
+
+    branch = _js_block(
+        source,
+        "payload.status === 'unrecognized'",
+        "var fields = payload.fields || {};",
+    )
+
+    assert "UNRECOGNIZED_DATE_MESSAGE" in branch
+    assert "payload.fields && payload.fields.credit_evaluated_on" in branch
+    assert "fillEvaluatedOn(date)" in branch
+    assert "fillCreditGrade" not in branch
+    # 평가일도 없거나 채우지 못했으면 기존 미인식 문구로 끝난다.
+    assert "UNRECOGNIZED_MESSAGE" in branch
+
+
+def test_append_evidence_uses_single_object():
+    source = JS_PATH.read_text(encoding="utf-8")
+
+    # 서버는 근거를 단일 객체로 주므로 배열 분기를 두지 않는다.
+    assert "Array.isArray" not in source
+    block = _js_block(source, "function appendEvidence(", "function renderField(")
+
+    assert "evidence.page" in block
+    assert "evidence.text" in block
+    assert "'p.' + evidence.page + ' '" in block
