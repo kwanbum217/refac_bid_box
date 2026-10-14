@@ -253,6 +253,50 @@ def test_detail_shows_performance_basis(auth_client, isolated_db):
     assert "renderPerformanceBasis" in body
 
 
+def test_detail_has_explicit_recalculate_button(auth_client, isolated_db):
+    """정량평가 입력표 아래에 명시적 재계산 버튼이 있고 제거된 조작 요소는 없다."""
+    bid = _create_render_bid(isolated_db)
+    body = auth_client.get(f"/bids/{bid.id}/").text
+
+    assert 'id="btn-recalculate"' in body
+    assert "점수 반영해 다시 계산" in body
+    for removed in ('id="btn-predict"', 'id="btn-evaluate"', 'id="user-price"'):
+        assert removed not in body, f"제거됐어야 할 요소가 남아 있음: {removed}"
+    assert "분석 실행" not in body
+    assert "내 투찰 금액" not in body
+
+
+def test_detail_recalculate_button_bypasses_debounce(auth_client, isolated_db):
+    """버튼 클릭은 대기 중인 디바운스를 지우고 추천 API 를 즉시 호출한다."""
+    bid = _create_render_bid(isolated_db)
+    body = auth_client.get(f"/bids/{bid.id}/").text
+
+    assert "$('#btn-recalculate').on('click'" in body
+    handler = body.split("$('#btn-recalculate').on('click'", 1)[1].split("});", 1)[0]
+    assert "clearTimeout(recommendTimer)" in handler
+    assert "requestRecommend()" in handler
+    # 자동 계산(디바운스)은 그대로 남아 있다.
+    assert "setTimeout(requestRecommend, 400)" in body
+    assert "scheduleRecommend" in body
+
+
+def test_detail_blocked_gap_guidance(auth_client, isolated_db):
+    """PRICE_BOUNDS_UNRESOLVED 차단 안내에 부족 정량점수 요소와 여지 항목 안내가 있다."""
+    bid = _create_render_bid(isolated_db)
+    body = auth_client.get(f"/bids/{bid.id}/").text
+
+    assert 'id="recommend-blocked-gap"' in body
+    assert 'id="recommend-blocked-gap-deficit"' in body
+    assert 'id="recommend-blocked-gap-items"' in body
+    assert "정량평가 입력표에서 값을 고친 뒤 [점수 반영해 다시 계산]을 누르십시오." in body
+
+    gap_fn = body.split("function renderBlockedGap", 1)[1].split(
+        "function renderRecommendAmounts", 1
+    )[0]
+    assert "PRICE_BOUNDS_UNRESOLVED" in gap_fn
+    assert "renderBlockedGap(data)" in body
+
+
 # --------------------------------------------------------------------------- #
 # 2. 추천 API 끝단 (규칙 판별·정량 환산은 실제 코드, 모델 산출물만 대역)
 # --------------------------------------------------------------------------- #
