@@ -32,7 +32,12 @@ from src.app.models.bids import (
 )
 from src.app.models.demand_institutions import G2BDemandInstitution
 from src.app.services.demand_institutions import describe_contract_regime
-from src.app.services.evaluation_rules import resolve_evaluation_rule_from_raw_data
+from src.app.services.evaluation_rules import (
+    METHOD_NAME_PLACEHOLDER,
+    METHOD_SOURCE_CODE,
+    resolve_evaluation_rule_from_raw_data,
+    resolve_method_name,
+)
 from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 
 TOP_INDUSTRY_CHOICES_CACHE_KEY = "bid_queries:top_industry_choices:200"
@@ -873,6 +878,29 @@ def list_results(
     return _apply_page_limit(_paginate_without_count(db, stmt, page_number))
 
 
+def describe_award_method(raw_data: Any) -> dict[str, Any]:
+    """공고 원본 raw_data 에서 낙찰 방법 표기와 출처를 계산합니다.
+
+    원문 이름이 있으면 그대로, '공고서참조'이거나 비어 코드 계열명으로 찾으면 계열명과
+    CODE 출처, 원문·코드가 모두 없으면 '-', 그 밖에는 '공고서 참조'를 돌려줍니다.
+    DB 없이 시험할 수 있도록 순수 함수로 둡니다.
+    """
+    if not isinstance(raw_data, dict):
+        return {"label": "-", "source": None}
+    raw_name = raw_data.get("sucsfbidMthdNm")
+    raw_code = raw_data.get("sucsfbidMthdCd")
+    name = raw_name if isinstance(raw_name, str) else ""
+    code = raw_code if isinstance(raw_code, str) else ""
+    label, source, _warnings = resolve_method_name(name or None, code or None)
+    if source == METHOD_SOURCE_CODE and label:
+        return {"label": label, "source": source}
+    if label and label.strip() and label != METHOD_NAME_PLACEHOLDER:
+        return {"label": label, "source": source}
+    if not name.strip() and not code.strip():
+        return {"label": "-", "source": None}
+    return {"label": "공고서 참조", "source": None}
+
+
 def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
     """공고 상세 + 유사 공고 + 기관 과거 낙찰 이력 (원본 BidDetailView 이식)."""
     instance = db.get(BidAnnouncement, pk)
@@ -909,6 +937,7 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
     return {
         "bid": bid,
         "contract_regime": describe_contract_regime(raw_data, bid.cntrct_mthd_nm, institution),
+        "award_method": describe_award_method(raw_data),
         "similar_bids": list(similar_bids),
         "past_results": past_results,
         "restrictions": get_announcement_restrictions(db, bid),

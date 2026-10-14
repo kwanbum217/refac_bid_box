@@ -128,6 +128,10 @@
                             <div class="detail-value">{{ bid.bid_methd_nm|default("-", true) }}</div>
                         </div>
                         <div>
+                            <div class="detail-label">낙찰 방법</div>
+                            <div class="detail-value">{% if award_method %}{{ award_method.label }}{% if award_method.source == 'CODE' %} <span class="text-xs text-slate-400">(코드 기준)</span>{% endif %}{% else %}-{% endif %}</div>
+                        </div>
+                        <div>
                             <div class="detail-label">마감 일시</div>
                             <div class="detail-value text-rose-600 font-bold">{{ bid.bid_clse_dt|date("Y.m.d H:i") }}</div>
                         </div>
