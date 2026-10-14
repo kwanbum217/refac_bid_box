@@ -32,7 +32,7 @@ def test_extracts_grade_and_date_with_evidence() -> None:
     assert result.credit_grade.value == "AA-"
     assert result.credit_grade.confidence == "high"
     assert result.credit_grade.page == 1
-    assert result.credit_grade.text == "신용평가등급확인서 신용등급 : AA- 평가일 : 2026-03-15"
+    assert result.credit_grade.text == "신용등급 : AA-"
     assert result.credit_evaluated_on is not None
     assert result.credit_evaluated_on.value == "2026-03-15"
     assert result.credit_evaluated_on.confidence == "high"
@@ -170,6 +170,34 @@ def test_grade_after_blank_line_below_label_is_recognized() -> None:
 
     assert result.credit_grade is not None
     assert result.credit_grade.value == "BBB-"
+
+
+def test_evidence_is_limited_to_the_value_line() -> None:
+    text = (
+        "신용평가등급확인서\n"
+        "발급번호 2026-001 주식회사 홍길동상사 대표이사 홍길동 사업자번호 123-45-67890\n"
+        "신용등급 BB+\n"
+        "평가일 2026-01-05"
+    )
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.confidence == "high"
+    assert "BB+" in result.credit_grade.text
+    assert "홍길동" not in result.credit_grade.text
+    assert "123-45-67890" not in result.credit_grade.text
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.confidence == "high"
+    assert "2026-01-05" in result.credit_evaluated_on.text
+    assert "홍길동" not in result.credit_evaluated_on.text
+
+
+def test_two_column_evidence_joins_label_and_value_lines() -> None:
+    result = parse_credit_certificate(["신용등급\nA+"])
+
+    assert result.credit_grade is not None
+    assert "신용등급" in result.credit_grade.text
+    assert "A+" in result.credit_grade.text
 
 
 def test_repeated_same_grade_lowers_confidence_to_medium() -> None:
@@ -373,6 +401,9 @@ def test_partial_evaluation_date_label_is_joined_with_following_date() -> None:
     assert result.credit_grade.value == "A+"
     assert result.credit_evaluated_on is not None
     assert result.credit_evaluated_on.value == "2025-06-27"
+    assert "2025" in result.credit_evaluated_on.text
+    assert "2024" not in result.credit_evaluated_on.text
+    assert "기업신용평가등급" not in result.credit_evaluated_on.text
 
 
 def test_partial_date_label_does_not_take_effective_period_value() -> None:
