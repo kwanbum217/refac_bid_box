@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi import HTTPException
 
 from src.app.api.v1 import documents
 from src.app.api.v1.accounts import require_current_user
@@ -299,3 +300,73 @@ def test_failed_extraction_releases_slot(api, monkeypatch) -> None:
         response = client.post(EXTRACT_URL, content=PDF_BODY, headers=PDF_HEADERS)
         assert response.status_code == 200
         assert response.json()["status"] == "extracted"
+
+
+class _RedisErrorClient:
+    """get 이 Redis 장애를 흉내내는 대역."""
+
+    def get(self, key: str) -> str | None:
+        raise RuntimeError("redis 장애 대역")
+
+
+class _RedisErrorPipeline:
+    def incr(self, key: str, amount: int = 1) -> _RedisErrorPipeline:
+        return self
+
+    def expire(self, key: str, seconds: int) -> _RedisErrorPipeline:
+        return self
+
+    def execute(self) -> list[int]:
+        raise RuntimeError("redis 장애 대역")
+
+
+class _RedisErrorPipelineClient:
+    def pipeline(self) -> _RedisErrorPipeline:
+        return _RedisErrorPipeline()
+
+
+def test_document_extraction_rate_limit_is_503_when_client_missing(monkeypatch) -> None:
+    """Redis 연결이 없으면 fail-open 하지 않고 503 으로 막습니다."""
+    monkeypatch.setattr(security.document_extraction_rate_limiter._conn, "client", lambda: None)
+
+    with pytest.raises(HTTPException) as excinfo:
+        security.document_extraction_rate_limiter.check_rate_limit(7, "203.0.113.7")
+
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.detail == security.AUTH_SERVICE_UNAVAILABLE_DETAIL
+
+
+def test_document_extraction_rate_limit_is_503_on_redis_error(monkeypatch) -> None:
+    """Redis 조회가 예외를 던지면 fail-open 하지 않고 503 으로 막습니다."""
+    monkeypatch.setattr(
+        security.document_extraction_rate_limiter._conn, "client", lambda: _RedisErrorClient()
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        security.document_extraction_rate_limiter.check_rate_limit(7, "203.0.113.7")
+
+    assert excinfo.value.status_code == 503
+    assert excinfo.value.detail == security.AUTH_SERVICE_UNAVAILABLE_DETAIL
+
+
+def test_record_request_ignores_redis_error(monkeypatch) -> None:
+    """record_request 의 Redis 예외는 요청을 막지 않습니다."""
+    monkeypatch.setattr(
+        security.document_extraction_rate_limiter._conn,
+        "client",
+        lambda: _RedisErrorPipelineClient(),
+    )
+
+    security.document_extraction_rate_limiter.record_request(7, "203.0.113.7")
+
+
+def test_extract_endpoint_is_503_when_rate_limit_store_missing(
+    client, extraction_enabled, authenticated, monkeypatch
+) -> None:
+    """제한 저장소가 없으면 엔드포인트가 503 을 돌려줍니다."""
+    monkeypatch.setattr(security.document_extraction_rate_limiter._conn, "client", lambda: None)
+
+    response = client.post(EXTRACT_URL, content=PDF_BODY, headers=PDF_HEADERS)
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": security.AUTH_SERVICE_UNAVAILABLE_DETAIL}
