@@ -132,6 +132,46 @@ def test_instrument_prefix_without_plain_grade_is_not_adopted(text: str) -> None
     assert result.credit_grade is None
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "신용평가등급확인서\n목차\nA\n업체명 가나다",
+        "1. 개요\nB\n2. 내용\nD",
+        "평가 결과\nA+\n비고",
+        "신용평가등급확인서\nB",
+        "신용평가등급확인서 A",
+    ],
+)
+def test_standalone_line_without_grade_label_is_not_adopted(text: str) -> None:
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is None
+
+
+def test_title_only_document_is_unrecognized() -> None:
+    result = parse_credit_certificate(["신용평가등급확인서\n목차\nA\n업체명 가나다"])
+
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
+
+
+def test_grade_below_label_on_next_line_stays_high_confidence() -> None:
+    result = parse_credit_certificate(["신용등급\nA\n평가일 2026.01.05"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "A0"
+    assert result.credit_grade.confidence == "high"
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2026-01-05"
+
+
+def test_grade_after_blank_line_below_label_is_recognized() -> None:
+    result = parse_credit_certificate(["신용등급\n\nBBB-"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "BBB-"
+
+
 def test_repeated_same_grade_lowers_confidence_to_medium() -> None:
     pages = ["신용등급 : A0\n평가일 : 2026-03-15", "신용등급 : A0"]
     result = parse_credit_certificate(pages)

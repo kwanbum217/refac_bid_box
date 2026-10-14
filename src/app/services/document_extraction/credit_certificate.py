@@ -60,6 +60,10 @@ _GRADE_LABEL_RE = re.compile(
 )
 _GRADE_LABEL_WINDOW = 48
 
+# 문서 제목 '신용평가등급확인서' 의 '신용평가등급' 은 등급 라벨이 아닙니다. 라벨 바로
+# 뒤(공백 제거 기준)에 '확인서' 가 오면 그 매치를 등급 라벨에서 뺍니다.
+_GRADE_TITLE_SUFFIX = "확인서"
+
 _DATE_LABEL_RE = re.compile(r"(평가일자|평가기준일|평가일|발급일자|발급일)")
 _DATE_LABEL_WINDOW = 60
 _DATE_PATTERN = r"((?:19|20)\d{2})[년.\-/](\d{1,2})[월.\-/](\d{1,2})일?"
@@ -186,9 +190,13 @@ def _definition_start(compacts: list[str]) -> int:
     return len(compacts)
 
 
-def _is_standalone_grade(compact: str) -> bool:
-    """한 줄이 등급 기호 하나로만 이루어졌는지 봅니다. 2열 표의 값 줄을 잡습니다."""
-    return _GRADE_RE.fullmatch(compact) is not None
+def _grade_label_matches(compact: str) -> list[re.Match[str]]:
+    """등급 라벨 매치만 돌려줍니다. 제목(라벨 바로 뒤 '확인서')은 제외합니다."""
+    return [
+        match
+        for match in _GRADE_LABEL_RE.finditer(compact)
+        if not compact[match.end() :].startswith(_GRADE_TITLE_SUFFIX)
+    ]
 
 
 def _is_preferred(label: str, prefix: str, line: str) -> bool:
@@ -212,7 +220,7 @@ def _lookahead_grade(compacts: list[str], index: int, cutoff: int) -> str | None
         compact = compacts[candidate_index]
         if not compact:
             continue
-        if _GRADE_LABEL_RE.search(compact):
+        if _grade_label_matches(compact):
             return None
         match = _GRADE_RE.search(compact)
         if match is None:
@@ -285,16 +293,9 @@ def _collect_grade_candidates(pages: Sequence[str]) -> list[_Candidate]:
         cutoff = _definition_start(compacts)
         for index in range(cutoff):
             compact = compacts[index]
-            if not compact or not _is_standalone_grade(compact):
-                continue
-            value = _canonical_grade(compact)
-            if value is not None:
-                candidates.append(_Candidate(value, page_index, len(candidates), evidence, True))
-        for index in range(cutoff):
-            compact = compacts[index]
             if not compact:
                 continue
-            matches = list(_GRADE_LABEL_RE.finditer(compact))
+            matches = _grade_label_matches(compact)
             for match_index, match in enumerate(matches):
                 segment_end = (
                     matches[match_index + 1].start()
