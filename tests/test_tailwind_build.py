@@ -210,7 +210,7 @@ def test_template_tailwind_utilities_exist_in_build_css():
 
 
 def test_all_templates_are_scanned():
-    assert len(TEMPLATE_HTML_FILES) == 14
+    assert len(TEMPLATE_HTML_FILES) == 15
 
 
 def test_tailwind_config_values_match_inline_spec():
