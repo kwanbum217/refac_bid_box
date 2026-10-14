@@ -44,18 +44,15 @@
     }
 
     function appendEvidence(parent, evidence) {
-        var items = Array.isArray(evidence) ? evidence : evidence ? [evidence] : [];
+        if (!evidence) {
+            return;
+        }
         var list = createElement('ul', 'mt-1 space-y-0.5');
-        items.forEach(function (item) {
-            if (!item) {
-                return;
-            }
-            var prefix = item.page === undefined || item.page === null ? '' : 'p.' + item.page + ' ';
-            var text = (prefix + (item.text || '')).trim();
-            if (text) {
-                list.appendChild(createElement('li', 'text-[10px] text-slate-400', text));
-            }
-        });
+        var prefix = evidence.page === undefined || evidence.page === null ? '' : 'p.' + evidence.page + ' ';
+        var text = (prefix + (evidence.text || '')).trim();
+        if (text) {
+            list.appendChild(createElement('li', 'text-[10px] text-slate-400', text));
+        }
         if (list.firstChild) {
             parent.appendChild(list);
         }

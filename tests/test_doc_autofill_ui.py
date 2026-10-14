@@ -197,3 +197,15 @@ def test_unrecognized_fills_only_evaluated_on():
     assert "fillCreditGrade" not in branch
     # 평가일도 없거나 채우지 못했으면 기존 미인식 문구로 끝난다.
     assert "UNRECOGNIZED_MESSAGE" in branch
+
+
+def test_append_evidence_uses_single_object():
+    source = JS_PATH.read_text(encoding="utf-8")
+
+    # 서버는 근거를 단일 객체로 주므로 배열 분기를 두지 않는다.
+    assert "Array.isArray" not in source
+    block = _js_block(source, "function appendEvidence(", "function renderField(")
+
+    assert "evidence.page" in block
+    assert "evidence.text" in block
+    assert "'p.' + evidence.page + ' '" in block
