@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from src.app.api.v1 import documents
 from src.app.api.v1.accounts import require_current_user
@@ -370,3 +371,103 @@ def test_extract_endpoint_is_503_when_rate_limit_store_missing(
 
     assert response.status_code == 503
     assert response.json() == {"detail": security.AUTH_SERVICE_UNAVAILABLE_DETAIL}
+
+
+def _request(headers: dict[str, str], receive):
+    """지정한 receive 콜러블로 ASGI Request 를 만듭니다."""
+    scope = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": EXTRACT_URL,
+        "raw_path": EXTRACT_URL.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (key.lower().encode("latin1"), value.encode("latin1")) for key, value in headers.items()
+        ],
+        "client": ("203.0.113.7", 12345),
+        "server": ("testserver", 80),
+    }
+    return Request(scope, receive)
+
+
+def _streaming_request(headers: dict[str, str], chunks: list[bytes]):
+    """지정한 조각을 순서대로 내주는 ASGI Request 를 만듭니다."""
+    delivered = {"count": 0}
+
+    async def receive():
+        index = delivered["count"]
+        if index >= len(chunks):
+            return {"type": "http.request", "body": b"", "more_body": False}
+        delivered["count"] += 1
+        return {
+            "type": "http.request",
+            "body": chunks[index],
+            "more_body": index + 1 < len(chunks),
+        }
+
+    return _request(headers, receive), delivered
+
+
+def test_oversized_content_length_is_413_without_reading_body(monkeypatch) -> None:
+    """Content-Length 가 상한을 넘으면 본문을 조각도 읽지 않고 413 을 돌려줍니다."""
+    monkeypatch.setattr(settings, "DOCUMENT_EXTRACTION_ENABLED", True)
+    monkeypatch.setattr(documents, "enforce_document_extraction_quota", lambda *a, **k: None)
+
+    async def _forbidden_receive():
+        raise AssertionError("크기 상한 초과 시 본문을 읽으면 안 됩니다")
+
+    headers = {**PDF_HEADERS, "Content-Length": str(documents.MAX_PDF_BYTES + 1)}
+    request = _request(headers, _forbidden_receive)
+    user = SimpleNamespace(id=7)
+
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(documents.extract_document(request, user))
+
+    assert excinfo.value.status_code == 413
+    assert excinfo.value.detail == TOO_LARGE_DETAIL
+
+
+def test_streamed_body_over_limit_is_413_before_full_receive(monkeypatch) -> None:
+    """Content-Length 헤더가 없어도 상한을 넘는 순간 읽기를 끊고 413 을 냅니다."""
+    monkeypatch.setattr(settings, "DOCUMENT_EXTRACTION_ENABLED", True)
+    monkeypatch.setattr(documents, "enforce_document_extraction_quota", lambda *a, **k: None)
+
+    chunk = b"%PDF-" + b"a" * (1024 * 1024)
+    chunks = [chunk] * 8
+    request, delivered = _streaming_request(PDF_HEADERS, chunks)
+    user = SimpleNamespace(id=7)
+
+    with pytest.raises(HTTPException) as excinfo:
+        asyncio.run(documents.extract_document(request, user))
+
+    assert excinfo.value.status_code == 413
+    assert excinfo.value.detail == TOO_LARGE_DETAIL
+    assert delivered["count"] < len(chunks)
+
+
+def test_chunked_oversized_body_is_413(api) -> None:
+    """Content-Length 없이 조각으로 보낸 큰 본문도 413 을 받습니다."""
+    client, _ = api
+
+    def _chunks():
+        yield b"%PDF-"
+        for _ in range(6):
+            yield b"a" * (1024 * 1024)
+
+    response = client.post(EXTRACT_URL, content=_chunks(), headers=PDF_HEADERS)
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": TOO_LARGE_DETAIL}
+
+
+def test_body_at_limit_is_processed(api) -> None:
+    """상한 이하의 정상 PDF 는 지금처럼 처리됩니다."""
+    client, _ = api
+
+    response = client.post(EXTRACT_URL, content=PDF_BODY, headers=PDF_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "extracted"

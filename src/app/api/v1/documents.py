@@ -6,10 +6,11 @@ src/app/api/v1/documents.py
 텍스트 PDF 는 pdfplumber 로 바로 읽고, 등급을 찾지 못한 스캔본은
 DOCUMENT_OCR_ENABLED 가 켜져 있을 때만 로컬 OCR 로 한 번 더 읽습니다. 업로드
 원본은 요청 안에서만 메모리로 처리하고 디스크·Redis·DB·로그 어디에도 저장하지
-않습니다. 추출은 스레드로 넘기되 10초 제한을 두며, 제한 시간을 넘기면 422 로
-끝냅니다. 스레드는 강제로 끝낼 수 없어 계속 돌 수 있으므로 동시에 도는 추출 수를
-상한으로 묶고, 자리가 없으면 503 으로 끝냅니다. 오류 응답에는 예외 원문을 담지
-않고 한국어 문구만 담습니다.
+않습니다. 본문은 상한을 넘는 순간 읽기를 중단해 큰 업로드를 끝까지 받지 않습니다.
+추출은 스레드로 넘기되 10초 제한을 두며, 제한 시간을 넘기면 422 로 끝냅니다.
+스레드는 강제로 끝낼 수 없어 계속 돌 수 있으므로 동시에 도는 추출 수를 상한으로
+묶고, 자리가 없으면 503 으로 끝냅니다. 오류 응답에는 예외 원문을 담지 않고 한국어
+문구만 담습니다.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from src.app.services.document_extraction import (
     extract_credit_certificate,
     ocr,
 )
+from src.app.services.document_extraction.pdf_text import MAX_PDF_BYTES, PdfTooLargeError
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +143,37 @@ def _discard_extraction_exception(task: asyncio.Task[CreditCertificateResult]) -
         task.exception()
 
 
+def _content_length_exceeds_limit(request: Request) -> bool:
+    """Content-Length 헤더가 상한을 넘는지 봅니다. 없거나 정수가 아니면 False 입니다."""
+    raw = request.headers.get("content-length")
+    if raw is None:
+        return False
+    try:
+        length = int(raw)
+    except ValueError:
+        return False
+    return length > MAX_PDF_BYTES
+
+
+async def _read_pdf_body(request: Request) -> bytes:
+    """본문을 조각 단위로 받아 상한을 넘는 순간 읽기를 중단합니다.
+
+    Content-Length 가 상한을 넘으면 본문을 조각도 읽지 않고 바로 413 을 냅니다.
+    헤더가 없거나 잘못된 경우에도 조각을 누적하다 상한을 넘는 즉시 멈추므로,
+    큰 본문을 끝까지 받지 않습니다.
+    """
+    if _content_length_exceeds_limit(request):
+        raise PdfTooLargeError
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_PDF_BYTES:
+            raise PdfTooLargeError
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @router.post("/extract", response_model=DocumentExtractionResponse)
 async def extract_document(
     request: Request,
@@ -154,7 +187,16 @@ async def extract_document(
         raise HTTPException(status_code=415, detail=UNSUPPORTED_MEDIA_TYPE_DETAIL)
 
     started = time.perf_counter()
-    data = await request.body()
+    try:
+        data = await _read_pdf_body(request)
+    except PdfTooLargeError as exc:
+        logger.info(
+            "event=document_extraction, status=rejected, status_code=%d, elapsed_ms=%.2f",
+            exc.status_code,
+            (time.perf_counter() - started) * 1000.0,
+        )
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
     if not _EXTRACTION_SLOTS.acquire(blocking=False):
         raise HTTPException(status_code=503, detail=EXTRACTION_BUSY_DETAIL)
     try:
