@@ -482,10 +482,17 @@ def _collect_date_candidates(pages: Sequence[str]) -> list[_DateCandidate]:
 
 
 def _dedupe(candidates: list[_Candidate]) -> list[_Candidate]:
-    seen: set[tuple[int, str]] = set()
+    """같은 쪽 같은 값 후보를 하나로 접습니다.
+
+    키에 preferred 를 넣어 상품 등급(회사채등급·기업어음등급)과 일반 신용등급이
+    같은 쪽에서 같은 값을 가져도 서로 접히지 않게 합니다. 그래야 상품 등급이
+    먼저 나와도 일반 등급 후보가 살아남아 채택됩니다. 일반 등급끼리는 같은 값이
+    한 후보로 접히므로 신뢰도 판정은 그대로입니다.
+    """
+    seen: set[tuple[int, str, bool]] = set()
     unique: list[_Candidate] = []
     for candidate in candidates:
-        key = (candidate.page, candidate.value)
+        key = (candidate.page, candidate.value, candidate.preferred)
         if key in seen:
             continue
         seen.add(key)

@@ -107,6 +107,55 @@ def test_plain_grade_wins_over_instrument_grade() -> None:
     assert result.credit_grade.confidence != "low"
 
 
+def test_same_value_instrument_first_keeps_plain_grade() -> None:
+    result = parse_credit_certificate(["회사채등급 AA-\n신용등급 AA-"])
+
+    assert result.status == "extracted"
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "AA-"
+    assert "신용등급" in result.credit_grade.text
+    assert "회사채" not in result.credit_grade.text
+
+
+def test_same_value_commercial_paper_first_keeps_plain_grade_and_date() -> None:
+    text = "기업어음등급 A0\n신용평가등급 A0\n평가일 2026.02.01"
+    result = parse_credit_certificate([text])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "A0"
+    assert result.credit_evaluated_on is not None
+    assert result.credit_evaluated_on.value == "2026-02-01"
+
+
+def test_same_value_plain_grade_first_is_unaffected() -> None:
+    result = parse_credit_certificate(["신용등급 BBB+\n회사채등급 BBB+"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "BBB+"
+
+
+def test_instrument_only_same_value_remains_unrecognized() -> None:
+    result = parse_credit_certificate(["회사채등급 AA-"])
+
+    assert result.status == "unrecognized"
+    assert result.credit_grade is None
+
+
+def test_same_line_instrument_first_with_different_plain_value() -> None:
+    result = parse_credit_certificate(["회사채등급 AA-\n신용등급 BBB0"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "BBB0"
+
+
+def test_same_page_duplicate_plain_grade_keeps_high_confidence() -> None:
+    result = parse_credit_certificate(["신용등급 A+\n신용등급 A+"])
+
+    assert result.credit_grade is not None
+    assert result.credit_grade.value == "A+"
+    assert result.credit_grade.confidence == "high"
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
