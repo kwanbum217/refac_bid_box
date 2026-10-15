@@ -2894,7 +2894,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
 # 기관(중앙부처·공기업·공단) 자체 적격심사 세부기준 규칙
 # =============================================================================
 #
-# 정본은 data/reference/institution_rules_20261013.yaml 이며, status=confirmed 기관 10곳의
+# 정본은 data/reference/institution_rules_20261013.yaml 이며, status=confirmed 기관 11곳의
 # bands 를 값을 추정하지 않고 상수로 옮겼습니다(규칙 레지스트리는 코드가 정본). partial 5곳
 # (방위사업청·한국철도공사·한국도로공사·한국전력기술·한국수자원공사)과 unresolved 3곳(한국
 # 토지주택공사·한전 전력연구원·한전KPS)은 넣지 않아 종전 조달청 규칙 경로를 그대로 씁니다.
