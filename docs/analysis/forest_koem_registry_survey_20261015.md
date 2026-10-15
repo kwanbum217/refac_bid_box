@@ -2,7 +2,7 @@
 
 > **작성일**: 2026-10-15
 > **작업**: 조사 전용. 코드(`INSTITUTION_RULES`)·기관 규칙 명세 YAML·커버리지 원장·후보 YAML 미수정
-> **정본 사양**: [`.orca/capsules/task_forest_koem_survey_20261015/capsule.yaml`](../../.orca/capsules/task_forest_koem_survey_20261015/capsule.yaml)
+> **정본 사양**: `.orca/capsules/task_forest_koem_survey_20261015/capsule.yaml`
 > **선행 문서**: [`institution_rules_apply_20261013.md`](institution_rules_apply_20261013.md), [`handoff_20261014_ocr_ledger_close.md`](../ops/handoff_20261014_ocr_ledger_close.md)
 > **판정**: 조사 완료. 코드 반영은 다음 Task 이며 이 문서는 그때 손댈 지점을 고정한다.
 
