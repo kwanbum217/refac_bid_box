@@ -1037,7 +1037,7 @@ institutions:
     RULE_NOT_FOUND: 11
     RULE_REGIME_MISMATCH: 3
   announcements: 78
-  registry_status: unregistered
+  registry_status: confirmed
   manifest_sources: null
   investigation:
     recommendation: add_to_registry

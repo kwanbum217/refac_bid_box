@@ -1,11 +1,11 @@
 """수요기관 기관 규칙(INSTITUTION_RULES) 시험.
 
 정본:
- - data/reference/institution_rules_20261013.yaml (R1, status=confirmed 기관 10곳)
+ - data/reference/institution_rules_20261013.yaml (R1, status=confirmed 기관 11곳)
  - src/app/services/evaluation_rules.py 의 INSTITUTION_RULES·_select_institution_rule
  - docs/analysis/institution_rule_inventory_20261013.md 5~7절, docs/analysis/institution_rules_apply_20261013.md
 
-(가) 10개 기관 구간별 값(B·k·기준비율·통과점수·하한율·경계)이 YAML 과 같은지 대조하고,
+(가) 11개 기관 구간별 값(B·k·기준비율·통과점수·하한율·경계)이 YAML 과 같은지 대조하고,
 (나) 수요기관 이름·코드·name_aliases 로 기관 규칙이 선택되는지, (다) 공고기관이 조달청
 계열이면 같은 수요기관이라도 조달청 규칙이 선택되는지, (라) 지방계약(LOCAL)이면 기관 규칙이
 배제되는지, (마) partial·unresolved 기관은 조달청 규칙 그대로인지, (사) 원문 적용 범위가
@@ -58,6 +58,7 @@ EXPECTED_CODES: dict[str, str | None] = {
     "한국석유공사": "B410005",
     "인천국제공항공사": "B551177",
     "인천공항시설관리": "Z043894",
+    "해양환경공단": "B553931",
 }
 # 원문(한국수력원자력 별표 9·10)이 구간 값이 같아 한 규칙으로 합친 표기입니다.
 MERGED_LABEL_PREFIX = "별표 9·10 "
@@ -146,9 +147,9 @@ def _resolve(raw_data: dict, *, estimated_price=None, **kwargs):
 
 
 def test_confirmed_institution_band_values_match_yaml() -> None:
-    """확인 기관 10곳의 구간 값과 경계가 R1 YAML 과 같고 빠짐·추가가 없다."""
+    """확인 기관 11곳의 구간 값과 경계가 R1 YAML 과 같고 빠짐·추가가 없다."""
     confirmed = _confirmed_institutions()
-    assert len(confirmed) == 10
+    assert len(confirmed) == 11
 
     expected_total = 0
     code_total = 0
@@ -171,7 +172,7 @@ def test_confirmed_institution_band_values_match_yaml() -> None:
         code_total += len(code)
 
     assert expected_total == code_total
-    assert code_total == 140
+    assert code_total == 144
 
 
 def test_institution_band_labels_and_sources_trace_yaml() -> None:

@@ -10,17 +10,17 @@
 
 ## 1. 요약
 
-R1 명세에서 `status=confirmed` 인 기관 10곳의 bands 를 `RULE_SCOPE_INSTITUTION` 규칙 69개,
-구간 140개로 옮겼습니다. 값은 명세의 B·k·기준비율·통과점수·하한율·구간 경계를 그대로 쓰고
+R1 명세에서 `status=confirmed` 인 기관 11곳의 bands 를 `RULE_SCOPE_INSTITUTION` 규칙 70개,
+구간 144개로 옮겼습니다. 값은 명세의 B·k·기준비율·통과점수·하한율·구간 경계를 그대로 쓰고
 새로 추정하지 않았습니다. 판정 축은 수요기관(`dminsttNm`·`dminsttCd`)이며, 공고기관이
 조달청·지방조달청 계열이면 수요기관 기관 규칙을 배제하고 종전 조달청 경로를 씁니다.
 `partial` 5곳과 `unresolved` 3곳은 넣지 않아 종전 조달청 규칙 경로를 그대로 씁니다.
 
 | 항목 | 값 |
 | --- | --- |
-| 반영 기관 | 10곳 |
-| 기관 규칙 | 69개 |
-| 기관 구간(band) | 140개 (R1 확인 band 143개 중 한국수력원자력 별표 9·10 3개 병합) |
+| 반영 기관 | 11곳 |
+| 기관 규칙 | 70개 |
+| 기관 구간(band) | 144개 (R1 확인 band 147개 중 한국수력원자력 별표 9·10 3개 병합) |
 | 판정 우선순위 | 기관 > 시·도(LOCAL) > 조달청 |
 | 대행 배제 플래그 | `EXCLUDE_INSTITUTION_RULES_FOR_PPS_PROXY = True` |
 | DB 스키마·데이터 변경 | 없음 |
@@ -41,6 +41,11 @@ R1 명세에서 `status=confirmed` 인 기관 10곳의 bands 를 `RULE_SCOPE_INS
 | 한국석유공사 | B410005 | 8 | 16 | 2019-09-30 | `SERVC_INST_KNOC_20190930_*` |
 | 인천국제공항공사 | B551177 | 11 | 18 | 2025-01-01 | `SERVC_INST_IIAC_20250101_*` |
 | 인천공항시설관리 | Z043894 | 12 | 22 | 2025-09-01 | `SERVC_INST_IIAFM_20250901_*` |
+| 해양환경공단 | B553931 | 1 | 4 | 2025-03-06 | `SERVC_INST_KOEM_20250306_MARINE_WASTE` |
+
+- 해양환경공단은 2026-10-15 등록분입니다. 낙찰방법 표기가 용역 종류를 특정하지 못한 산림청은
+  등록하지 않았으며, 조회 근거와 판정은 [`forest_koem_register_gap_20261015.md`](forest_koem_register_gap_20261015.md)
+  에 있습니다.
 
 - 수요기관 코드는 DB `procurement.g2b_demand_institutions` 로 확인한 값입니다.
   한국수력원자력은 기관표에 본청 행이 없어 이름 매칭만 씁니다.
