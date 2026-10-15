@@ -6,8 +6,8 @@
   - 규칙·조회: src/app/services/evaluation_rules.py
 
 기관 배점표가 있는 규칙은 quant_basis=INSTITUTION 이고 rule_id 로 표를 찾으며, 명세가
-부분이라 표를 확정할 수 없는 한국가스공사 규칙은 종전처럼 정량점수 직접 입력을 유지한다.
-조달청 별표 표(QUANT_SCORE_TABLES)는 하나도 바뀌면 안 된다.
+부분이라 표를 확정할 수 없는 한국가스공사·해양환경공단 규칙은 종전처럼 정량점수 직접 입력을
+유지한다. 조달청 별표 표(QUANT_SCORE_TABLES)는 하나도 바뀌면 안 된다.
 """
 
 from __future__ import annotations
@@ -35,6 +35,8 @@ from src.app.services.evaluation_rules import (
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SPEC_PATH = PROJECT_ROOT / "data/reference/institution_quant_tables_20261013.yaml"
 KOGAS_PREFIX = "SERVC_INST_KOGAS_20260709_"
+# 심사항목 배점표를 확보하지 못해 표 없이 직접 입력을 유지하는 해양환경공단 규칙입니다.
+KOEM_NO_TABLE_ID = "SERVC_INST_KOEM_20250306_MARINE_WASTE"
 
 
 def _spec() -> dict:
@@ -62,9 +64,10 @@ def test_all_confirmed_rules_have_a_table_and_partial_rules_do_not() -> None:
     assert other_ids == {
         "SERVC_INST_KOGAS_20260709_GENERAL",
         "SERVC_INST_KOGAS_20260709_FACILITY",
+        KOEM_NO_TABLE_ID,
     }
     for rule in INSTITUTION_RULES:
-        if rule.rule_id.startswith(KOGAS_PREFIX):
+        if rule.rule_id.startswith(KOGAS_PREFIX) or rule.rule_id == KOEM_NO_TABLE_ID:
             assert rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED
             assert quant_score_table_for_rule(rule) is None
         else:

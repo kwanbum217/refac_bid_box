@@ -2707,3 +2707,67 @@ institutions:
         status: confirmed
         source: "docs/analysis/servc_formula_userfiles_agency_20261004.md:9.2"
     sources: ["docs/analysis/servc_formula_userfiles_agency_20261004.md:9"]
+  - institution_name: "해양환경공단"
+    name_aliases: ["해양환경공단", "해양환경공단 제주지사", "해양환경공단 군산지사", "해양환경공단 대산지사", "해양환경공단 동해지사", "해양환경공단 마산지사", "해양환경공단 목포지사", "해양환경공단 부산지사", "해양환경공단 여수지사", "해양환경공단 울산지사", "해양환경공단 인천지사", "해양환경공단 평택지사", "해양환경공단 포항지사", "해양환경공단 해양환경교육원", "해양환경공단 해양환경조사연구원"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "해양폐기물정화용역 적격심사 세부기준 (제정 2023-06-19, 개정·시행 2025-03-06)"
+    effective_date: "2025-03-06"
+    service_types: ["해양폐기물정화용역"]
+    note: "제1조가 적용 대상을 해양폐기물정화용역(해양폐기물수거업)으로 한정하므로 기관 전체 규칙으로 넓히지 않는다. 표기 토큰은 공고명의 '해양폐기물 정화' 이며 매칭이 공백을 제거해 붙여쓴 '해양폐기물정화' 와 맞는다. 별표는 [별표 1] 1~4호 4구간이고 평탄 점수는 20·45·65·85 다. 심사항목 배점표는 미확보라 정량점수 직접 입력을 유지한다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 · 해양폐기물정화용역 2억원 미만"
+        service_type: "해양폐기물정화용역"
+        lower: null
+        upper: 200000000
+        B: 90
+        k: 20
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 87.745
+        price_cap_rate: 88.25
+        flat_score: 85
+        status: confirmed
+        source: "docs/analysis/forest_koem_registry_survey_20261015.md:3.2"
+      - band: "별표 1 · 해양폐기물정화용역 5억원 미만 2억원 이상"
+        service_type: "해양폐기물정화용역"
+        lower: 200000000
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 86.745
+        price_cap_rate: 89.25
+        flat_score: 65
+        status: confirmed
+        source: "docs/analysis/forest_koem_registry_survey_20261015.md:3.2"
+      - band: "별표 1 · 해양폐기물정화용역 10억원 미만 5억원 이상"
+        service_type: "해양폐기물정화용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 88
+        pass_score: 95
+        lwlt_rate: 85.495
+        price_cap_rate: 90.5
+        flat_score: 45
+        status: confirmed
+        source: "docs/analysis/forest_koem_registry_survey_20261015.md:3.2"
+      - band: "별표 1 · 해양폐기물정화용역 10억원 이상"
+        service_type: "해양폐기물정화용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: 1
+        base_ratio: 88
+        pass_score: 90
+        lwlt_rate: 77.995
+        price_cap_rate: 98
+        flat_score: 20
+        status: confirmed
+        source: "docs/analysis/forest_koem_registry_survey_20261015.md:3.2"
+    sources: ["docs/analysis/forest_koem_registry_survey_20261015.md:3.2"]

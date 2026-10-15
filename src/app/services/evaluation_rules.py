@@ -2909,6 +2909,7 @@ _SRC_INST_CENTRAL = "docs/analysis/servc_formula_collection_central_20261004.md"
 _SRC_INST_AGENCY = "docs/analysis/servc_formula_userfiles_agency_20261004.md"
 _SRC_INST_RECOVER_A = "docs/analysis/servc_formula_recover_a_20261005.md"
 _SRC_INST_KOGAS = "docs/analysis/servc_formula_kogas_qualification_20261004.md"
+_SRC_INST_KOEM = "docs/analysis/forest_koem_registry_survey_20261015.md"
 _INSTITUTION_NOTICE_AMOUNT = Decimal(str(notice_amount_for_year(2026)))
 
 # (상한, 배점한도 B, 평점계수 k, 기준비율, 통과점수, 하한율, 구간 라벨, 구간 근거)
@@ -5401,6 +5402,82 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 f"{_SRC_INST_AGENCY}:9.2",
             ),
         ),
+    ),
+    # 해양환경공단 (해양폐기물정화용역 적격심사 세부기준, 제정 2023-06-19, 개정·시행
+    # 2025-03-06). 제1조가 적용 대상을 해양폐기물정화용역(해양폐기물수거업)으로 한정하므로
+    # 기관 전체 규칙으로 넓히지 않습니다. 표기 토큰은 공고명의 "해양폐기물 정화" 이며,
+    # 매칭이 공백을 제거하므로 붙여쓴 "해양폐기물정화" 로 조회한 적격심사 공고명과 맞습니다.
+    # 부속기관(지사·교육원·조사연구원)은 조사 문서 5.1 의 정확 일치 별칭으로만 처리하고
+    # 접두 확장은 선언하지 않습니다. 배점표는 미확보라 quant_table=False 입니다.
+    _institution_rule(
+        "SERVC_INST_KOEM_20250306_MARINE_WASTE",
+        institution_name="해양환경공단",
+        institution_code="B553931",
+        institution_aliases=(
+            "해양환경공단 제주지사",
+            "해양환경공단 군산지사",
+            "해양환경공단 대산지사",
+            "해양환경공단 동해지사",
+            "해양환경공단 마산지사",
+            "해양환경공단 목포지사",
+            "해양환경공단 부산지사",
+            "해양환경공단 여수지사",
+            "해양환경공단 울산지사",
+            "해양환경공단 인천지사",
+            "해양환경공단 평택지사",
+            "해양환경공단 포항지사",
+            "해양환경공단 해양환경교육원",
+            "해양환경공단 해양환경조사연구원",
+        ),
+        service_type="MARINE_WASTE",
+        table_name="해양환경공단 해양폐기물정화용역 적격심사",
+        description="해양폐기물정화용역 적격심사 세부기준 [별표 1] 4구간 (해양폐기물정화용역 한정)",
+        effective_date="2025-03-06",
+        source=_SRC_INST_KOEM,
+        patterns=("해양폐기물정화",),
+        bands=(
+            _inst_band(
+                "200000000",
+                "90",
+                "20",
+                "88",
+                "95",
+                "87.745",
+                "별표 1 · 해양폐기물정화용역 2억원 미만",
+                f"{_SRC_INST_KOEM}:3.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "88",
+                "95",
+                "86.745",
+                "별표 1 · 해양폐기물정화용역 5억원 미만 2억원 이상",
+                f"{_SRC_INST_KOEM}:3.2",
+            ),
+            _inst_band(
+                "1000000000",
+                "50",
+                "2",
+                "88",
+                "95",
+                "85.495",
+                "별표 1 · 해양폐기물정화용역 10억원 미만 5억원 이상",
+                f"{_SRC_INST_KOEM}:3.2",
+            ),
+            _inst_band(
+                None,
+                "30",
+                "1",
+                "88",
+                "90",
+                "77.995",
+                "별표 1 · 해양폐기물정화용역 10억원 이상",
+                f"{_SRC_INST_KOEM}:3.2",
+            ),
+        ),
+        quant_table=False,
     ),
 )
 
