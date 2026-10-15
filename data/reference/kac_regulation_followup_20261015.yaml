@@ -1,0 +1,531 @@
+schema: INSTITUTION_RULE_FOLLOWUP_V1
+version: "1.0.0"
+created_at: "2026-10-15"
+source_task: task_b2bd77c664cf
+source_run: run_5631fae373c0
+scope: INSTITUTION
+institution: "한국공항공사"
+baseline_candidate: "data/reference/institution_rules_candidates_b_20261014.yaml"
+prior_file: "data/reference/kac_partial_followup_20261015.yaml"
+verdict: candidate
+blocking_issues: []
+
+objective: >
+  한국공항공사 전사 적격심사 규정 원문과 종합평점 통과점수를 추가 수집해 새 YAML 과
+  분석 문서에 기록한다. 기관 규칙 코드와 커버리지 원장은 고치지 않는다.
+
+note: >
+  이번 회차는 재조사가 아니라 신규 경로 개척이다. 직전 회차(data/reference/kac_partial_followup_20261015.yaml)는
+  나라장터 개별 공고 첨부 7건만 읽고 전사 규정 원문과 통과점수를 확보하지 못해 bands 를 비워 두었다.
+  이번 회차는 공사 공식 홈페이지의 규정 게시판(열린경영 > 입찰정보 > 규정 및 계약조건)에서 전사 규정 원문
+  두 건을 직접 내려받아 읽었고, 그 결과 종합평점 통과점수와 별표 구간표를 원문 문장으로 확정했다.
+  직전 회차의 두 파일(data/reference/kac_partial_followup_20261015.yaml, docs/analysis/kac_partial_followup_20261015.md)은
+  덮어쓰지 않았다. 기관 규칙 코드(src/app), data/reference/rule_coverage_ledger.yaml, 기존 후보 YAML 도 고치지 않았다.
+  개별 공고 첨부에서 읽은 관측값은 여기에 승격하지 않는다. 이 파일의 bands 는 전사 규정 원문에서 읽은 값만 담는다.
+  원문 파일은 .cache/inst_candidates/kac/ 아래에만 두었고 커밋하지 않는다(.cache 는 gitignore 대상).
+  source 의 좌표는 scripts/extract_score_params.py 의 _ole_streams / _hwp_records / _hwp_record_text 로
+  읽었을 때의 레코드 텍스트 문단 순서 또는 표 행 순서다.
+
+conventions:
+  score_formula: "P = B - k * |base_ratio/100 - bid_price/estimated_price| * 100"
+  lower_inclusive: true
+  upper_exclusive: true
+  money_unit: "KRW"
+  boundary_token: "고시금액은 국가계약법 제4조에 따라 기획재정부장관이 고시한 금액을 뜻한다"
+  quote_scope: >
+    quote 는 scripts/extract_score_params.py 로 읽은 전사 규정 원문 문장이며 요약하지 않는다.
+    표 셀 조판 순서 때문에 원문 한 문장이 여러 조각으로 나뉜 경우는 조각을 그대로 잇고 그 사실을 밝힌다.
+  confirmed_rule: >
+    confirmed 는 전사 규정 원문이나 나라장터 첨부에서 직접 읽은 문장만 허용한다. 전사 규정 원문에서
+    구간 라벨과 통과점수를 함께 읽은 행만 confirmed 로 두고, 통과점수를 별도 조문에서 읽어 라벨과
+    같은 표에서 결합하지 못한 행은 partial 로 둔다. 상업·교육 게시판의 계수는 전재하지 않는다.
+
+corporate_regulation:
+  status: confirmed
+  publisher: "한국공항공사"
+  publication_site:
+    - site: "KAC 한국공항공사 공식 홈페이지 > 열린경영 > 입찰정보 > 규정 및 계약조건"
+      url: "https://www.airport.co.kr/www/cms/frCon/index.do?MENU_ID=920"
+      board_params: "BOARD_SEQ=1216, SITE_NO=2, CATE_SEQ=1154"
+      list_endpoint: "POST https://www.airport.co.kr/www/ajaxf/frBoardSvc/bbsViewList.do"
+      list_request: "pageNo=1&pagePerCnt=15&MENU_ID=920&CONTENTS_NO=&SITE_NO=2&BOARD_SEQ=1216&BBS_SEQ=&PWD=&SEARCH_FLD=SUBJECT&SEARCH=<검색어>"
+      download_endpoint: "GET https://www.airport.co.kr/ajaxa/fileCpnt/fileDown.do?gbn=b03&BOARD_SEQ=1216&SITE_NO=2&BBS_SEQ=<BBS_SEQ>&FILE_SEQ=<FILE_SEQ>"
+      finding: >
+        게시판 제목 검색어 '적격심사'로 13건이 검색되고, 그중 용역 유형은 일반용역·기술용역 세부기준이다.
+        게시판 전체 목록에는 일반용역·기술용역·물품구매·시설공사 적격심사세부기준이 함께 게시되어 있다.
+        시설분야용역 명의의 별도 게시물은 검색되지 않았고, 원문 제5조 제1항 제2호가 시설분야용역 평가기준을
+        일반용역 적격심사세부기준 [별표 2]로 지정하므로 시설분야용역은 별도 전사 규정이 아니라
+        일반용역 세부기준의 별표임을 확인했다.
+  documents:
+    - service_type: "일반용역"
+      name: "일반용역 적격심사세부기준"
+      decree_history: "제정 2009-11-20, 2026-02-27 지침 제777호, 최종 개정 2026-08-05 지침 제792호"
+      effective_from: "2026-08-14 이후 입찰공고하는 적격심사 대상용역부터 적용"
+      board_title: "일반용역 적격심사세부기준('26.8.14. 입찰공고부터 시행)"
+      board_bbs_seq: 3553810
+      board_posted_at: "2026-08-06"
+      board_writer: "자산계약부"
+      attachments:
+        - "일반용역 적격심사세부기준 개정(안) 전문(260814시행).hwp (FILE_SEQ=1)"
+        - "일반용역 적격심사세부기준 개정(안) 신구대비표(260814시행).hwpx (FILE_SEQ=2)"
+      cache_file: ".cache/inst_candidates/kac/gen_general_260814.hwp"
+      cache_size_bytes: 222208
+    - service_type: "기술용역"
+      name: "기술용역 적격심사세부기준"
+      decree_history: "제정 2009-11-20, 2026-02-27 지침 제778호, 최종 개정 2026-08-05 지침 제793호"
+      effective_from: "2026-08-14 이후 입찰공고하는 적격심사 대상용역부터 적용"
+      board_title: "기술용역 적격심사세부기준('26.8.14. 입찰공고부터 시행)"
+      board_bbs_seq: 3553809
+      board_posted_at: "2026-08-06"
+      board_writer: "자산계약부"
+      attachments:
+        - "기술용역 적격심사세부기준 개정(안) 전문(260814시행).hwp (FILE_SEQ=1)"
+        - "기술용역 적격심사세부기준 개정(안) 신구대비표(260814시행).hwpx (FILE_SEQ=2)"
+      cache_file: ".cache/inst_candidates/kac/tech_general_260814.hwp"
+      cache_size_bytes: 167424
+      effective_clause_quote: "부칙<26. 8. 5.> -이 기준은 2026년 8월 14일 이후 입찰공고하는 적격심사 대상용역부터 적용한다."
+
+pass_score:
+  status: confirmed
+  general_service:
+    service_type: "일반용역"
+    clause: "제10조(낙찰자 결정)"
+    value: 85
+    exceptions:
+      - label: "소프트웨어용역의 중소기업자간 경쟁제품"
+        value: 88
+      - label: "여객 육상운송용역"
+        value: 88
+    quote: >
+      제10조(낙찰자 결정) 최저가 입찰자에 대한 심사결과 종합평점이 85점(다만, 소프트웨어용역의 중소 기업자간
+      경쟁제품, 여객 육상운송용역은 88점)이상이면 낙찰자로 결정한다.<개정 14.11.18, 20.05.12, 22.11.01>
+    source: ".cache/inst_candidates/kac/gen_general_260814.hwp 레코드 텍스트 문단 (전사 규정 원문)"
+  technical_service:
+    service_type: "기술용역"
+    clause: "제4조(낙찰자결정 및 적격심사제출서류 등)"
+    by_scale:
+      - label: "추정가격이 10억원 이상인 용역"
+        value: 92
+      - label: "추정가격이 10억원 미만인 용역"
+        value: 95
+    quote: >
+      제4조(낙찰자결정 및 적격심사제출서류 등) 예정가격 이하로서 최저가 입찰자부터 심사하여 종합평점이
+      용역규모별 적격통과점수(추정가격이 10억원 이상인 용역은 92점, 추정가격이 10억원 미만인 용역은 95점)이상인
+      최저가 입찰자를 낙찰자로 결정한다.<개정 13.1.31, 19.5.17>
+    source: ".cache/inst_candidates/kac/tech_general_260814.hwp 레코드 텍스트 문단 (전사 규정 원문)"
+    note: >
+      이 조는 통과점수를 용역규모 경계(10억원)로만 규정한다. 별표 평가기준표의 구간 경계(10억원/5억원/고시금액)와
+      같으므로 두 구간에 그대로 대응시켰다. 라벨과 통과점수를 같은 문장에서 함께 읽었다.
+
+bands:
+  general_service:
+    note: >
+      일반용역 적격심사세부기준 [별표 1]~[별표 9]의 입찰가격 배점한도와 평점산식을 전사 규정 원문에서 읽은 값이다.
+      배점한도는 [별표]의 '추정가격 5억원 이상 / 추정가격 5억원 미만' 두 열로 인쇄되고, 평점산식은 같은 별표의
+      '사업예산규모' 표에서 '추정가격 고시금액 이상 / 미만' 두 행으로 인쇄된다. 그래서 하나의 [별표]가
+      배점한도 2열과 산식 2행의 조합을 가진다. 평탄 점수는 원문에 인쇄되지 않고 조건 문장만 인쇄되어
+      flat_score 는 null 이다. 통과점수는 제10조에서 읽은 85점(예외 88점)이며 별표 표에는 인쇄되지 않는다.
+    bands:
+      - table: "별표 1"
+        label: "학술연구용역 평가기준 (제5조 제1항 제1호)"
+        service_type: "학술연구용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 40
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "추정가격 고시금액 이상"
+            k: 2
+            base_ratio: 90
+            price_cap_rate: 97.5
+            flat_score: null
+          - 사업예산규모: "추정가격 고시금액 미만"
+            k: 4
+            base_ratio: 90
+            price_cap_rate: 93.75
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 1 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 "추정가격 5억원 이상 / 추정가격 5억원 미만" 두 열에 입찰가격 40 / 70.
+          사업예산규모 표 산식 "평점(점)=배점한도-2 TIMES vert ( {90} over {100} - {입찰가격} over {예정가격} ) TIMES 100 vert",
+          예외사항 "입찰가격이 예정가격 이하로서 예정가격의 97.5%이상인 경우에는 입찰가격이 예정가격의 97.5%인 경우의 점수로 평가".
+          미만 행은 같은 자리에 "평점(점)=배점한도-4" 와 "예정가격의 93.75%이상인 경우" 로 인쇄되어 있다.
+      - table: "별표 2"
+        label: "시설분야용역 평가기준 (제5조 제1항 제2호)"
+        service_type: "시설분야용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 60
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "구간 인쇄 없음"
+            k: 5
+            base_ratio: 93
+            price_cap_rate: 96.0
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 2 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 두 열에 입찰가격 60 / 70. 입찰가격 평점 계산식 "평점(점) = 배점한도  5 × ( 93  입찰가격 ) × 100 100 예정가격",
+          예외사항 "(단, 입찰가격이 예정가격 이하로서 예정가격의 96% 이상인 경우에는 입찰가격이 예정가격의 96%인 경우의 점수로 평가)".
+          이 별표의 계산식은 고시금액 구간으로 나뉘지 않고 단일 행으로 인쇄된다.
+      - table: "별표 3"
+        label: "소프트웨어용역 평가기준 (제5조 제1항 제3호)"
+        service_type: "소프트웨어용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 60
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "추정가격 고시금액 이상"
+            k: 2
+            base_ratio: 90
+            price_cap_rate: 97.5
+            flat_score: null
+          - 사업예산규모: "추정가격 고시금액 미만"
+            k: 4
+            base_ratio: 90
+            price_cap_rate: 93.75
+            flat_score: null
+        pass_score: 85
+        pass_score_exception: 88
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 3 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 두 열에 입찰가격 60 / 70. 사업예산규모 표 산식 "평점(점)=배점한도-2 TIMES vert ( {90} over {100} - {입찰가격} over {예정가격} )",
+          예외사항 "예정가격의 97.5%이상인 경우", 미만 행 "평점(점)=배점한도-4", "예정가격의 93.75%이상인 경우".
+          제10조가 소프트웨어용역의 중소기업자간 경쟁제품을 88점으로 두므로 pass_score_exception 을 함께 적었다.
+      - table: "별표 3의 2"
+        label: "소프트웨어용역 평가기준 대안 (제5조 제1항 제3호)"
+        service_type: "소프트웨어용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 60
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "구간 인쇄 없음"
+            k: 4
+            base_ratio: 93
+            price_cap_rate: 96.0
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 3의 2 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 두 열에 입찰가격 60 / 70. 산식 "ㅇ평점(점) = 배점한도  4 × ( 93  입찰가격 )× 100 100 예정가격",
+          예외사항 "(단, 입찰가격이 예정가격 이하로서 예정가격의 96%이상인 경우에는 입찰가격이 예정가격의 96%인 경우의 점수로 평가)".
+      - table: "별표 4"
+        label: "폐기물처리용역 평가기준 (제5조 제1항 제4호)"
+        service_type: "폐기물처리용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 60
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "추정가격 고시금액 이상"
+            k: 2
+            base_ratio: 90
+            price_cap_rate: 97.5
+            flat_score: null
+          - 사업예산규모: "추정가격 고시금액 미만"
+            k: 4
+            base_ratio: 90
+            price_cap_rate: 93.75
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 4 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 두 열에 입찰가격 60 / 70. 사업예산규모 표 산식 "평점(점)=배점한도-2 TIMES vert ( {90} over {100} - {입찰가격} over {예정가격} )",
+          예외사항 "예정가격의 97.5%이상인 경우", 미만 행 "평점(점)=배점한도-4", "예정가격의 93.75%이상인 경우".
+      - table: "별표 5"
+        label: "육상운송용역 평가기준 (제5조 제1항 제5호)"
+        service_type: "육상운송용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 60
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "구간 인쇄 없음"
+            k: 4
+            base_ratio: 93
+            price_cap_rate: 96.0
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 5 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 두 열에 입찰가격 60 / 70. 산식 "평점(점)=배점한도-4 TIMES vert ( {93} over {100} - {입찰가격} over {예정가격} ) TIMES 100 vert",
+          예외사항 "(다만, 입찰가격이 예정가격 이하로서 예정가격의 96%이상인 경우..." 로 인쇄된다.
+      - table: "별표 5의 2"
+        label: "육상운송용역 평가기준 대안 (제5조 제1항 제5호)"
+        service_type: "육상운송용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 60
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "추정가격 고시금액 이상"
+            k: 2
+            base_ratio: 90
+            price_cap_rate: 97.5
+            flat_score: null
+          - 사업예산규모: "추정가격 고시금액 미만"
+            k: 4
+            base_ratio: 90
+            price_cap_rate: 93.75
+            flat_score: null
+        pass_score: 85
+        pass_score_exception: 88
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 5의 2 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 두 열에 입찰가격 60 / 70. 사업예산규모 표 산식 "평점(점)=배점한도-2 TIMES vert ( {90} over {100} - {입찰가격} over {예정가격} )",
+          예외사항 "예정가격의 97.5%이상인 경우", 미만 행 "평점(점)=배점한도-4", "예정가격의 93.75%이상인 경우".
+          제10조가 여객 육상운송용역을 88점으로 두므로 pass_score_exception 을 함께 적었다.
+      - table: "별표 6"
+        label: "보험용역 평가기준 (제5조 제1항 제6호)"
+        service_type: "보험용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 60
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "구간 인쇄 없음"
+            k: 0.375
+            base_ratio: 88
+            price_cap_rate: null
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 6 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 두 열에 입찰가격 60 / 70. 산식 "평점(점)=배점한도-0.375 TIMES vert ( {88} over {100} - {입찰가격} over {예정가격} ) TIMES 100 vert".
+          이 별표에는 평탄 조건 문장이 인쇄되지 않아 price_cap_rate 와 flat_score 를 null 로 둔다.
+      - table: "별표 7"
+        label: "수리·점검용역 평가기준 (제5조 제1항 제7호)"
+        service_type: "수리·점검용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 60
+          "추정가격 5억원 미만": 70
+        formulas:
+          - 사업예산규모: "추정가격 고시금액 이상"
+            k: 2
+            base_ratio: 90
+            price_cap_rate: 97.5
+            flat_score: null
+          - 사업예산규모: "추정가격 고시금액 미만"
+            k: 4
+            base_ratio: 90
+            price_cap_rate: 93.75
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 7 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          배점한도 두 열에 입찰가격 60 / 70. 사업예산규모 표 산식 "평점(점)=배점한도-2 TIMES vert ( {90} over {100} - {입찰가격} over {예정가격} )",
+          예외사항 "예정가격의 97.5%이상인 경우", 미만 행 "평점(점)=배점한도-4", "예정가격의 93.75%이상인 경우".
+      - table: "별표 8"
+        label: "임대차용역 평가기준 (제5조 제1항 제8호)"
+        service_type: "임대차용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": 70
+          "추정가격 5억원 미만": null
+        formulas:
+          - 사업예산규모: "추정가격 고시금액 이상"
+            k: 2
+            base_ratio: 90
+            price_cap_rate: 97.5
+            flat_score: null
+          - 사업예산규모: "추정가격 고시금액 미만"
+            k: 4
+            base_ratio: 90
+            price_cap_rate: 93.75
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 8 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          별표 8 표 머리는 "구 분 | 심사분야 | 심 사 항 목 | 배점한도" 한 열이고 입찰가격 행 값은 70 이다.
+          사업예산규모 표 산식 "평점(점)=배점한도-2 TIMES vert ( {90} over {100} - {입찰가격} over {예정가격} )",
+          예외사항 "예정가격의 97.5%이상인 경우", 미만 행 "평점(점)=배점한도-4", "예정가격의 93.75%이상인 경우".
+          추정가격 5억원 경계 열이 인쇄되지 않아 B 는 단일값 70 이다.
+      - table: "별표 9"
+        label: "지정형 용역 평가기준 (제5조 제1항 제9호)"
+        service_type: "지정형 용역"
+        status: confirmed
+        B:
+          "추정가격 5억원 이상": "60점 이상 70점 이하"
+          "추정가격 5억원 미만": null
+        formulas:
+          - 사업예산규모: "추정가격 고시금액 이상"
+            k: 2
+            base_ratio: 90
+            price_cap_rate: 97.5
+            flat_score: null
+          - 사업예산규모: "추정가격 고시금액 미만"
+            k: 4
+            base_ratio: 90
+            price_cap_rate: 93.75
+            flat_score: null
+        pass_score: 85
+        source: ".cache/inst_candidates/kac/gen_general_260814.hwp 별표 9 (표 행 + 레코드 텍스트 문단)"
+        quote: >
+          입찰가격 배점한도가 "60점 이상 70점 이하" 로 인쇄된다. 제5조 제1항 제9호가 지정형 용역의 배점을
+          입찰공고에서 설정하도록 정하므로 단일 B 값이 인쇄되지 않는다.
+          사업예산규모 표 산식 "평점(점)=배점한도-2 TIMES vert ( {90} over {100} - {입찰가격} over {예정가격} )",
+          예외사항 "예정가격의 97.5% 이상인 경우", 미만 행 "평점(점)=배점한도-4", "예정가격의 93.75%이상인 경우".
+
+  technical_service:
+    note: >
+      기술용역 적격심사세부기준 평가기준표 네 구간을 전사 규정 원문에서 읽은 값이다. 구간 라벨은 원문에
+      "1.추정가격이 10억원 이상인 용역" 형태로 인쇄되고, 같은 구간의 입찰가격 배점한도와 평점산식이 같은 표에 있다.
+      통과점수는 제4조에서 읽었고, 그 경계(10억원)가 이 표의 첫 경계와 같아 1구간만 92점, 나머지 세 구간은 95점이다.
+      네 구간 모두 라벨과 통과점수를 같은 조문·표에서 함께 읽었으므로 partial 이 아니라 confirmed 로 둔다.
+    bands:
+      - table: "평가기준표 1"
+        label: "추정가격이 10억원 이상인 용역"
+        service_type: "기술용역"
+        lower: 1000000000
+        upper: null
+        B: 30
+        k: 1
+        base_ratio: 90
+        price_cap_rate: 98.0
+        flat_score: 22
+        pass_score: 92
+        status: confirmed
+        source: ".cache/inst_candidates/kac/tech_general_260814.hwp 평가기준표 1 (표 행), 제4조 (레코드 텍스트 문단)"
+        quote: >
+          구간 제목 "1.추정가격이 10억원 이상인 용역". 심사항목 표 "입찰가격 | 입찰가격 | 30점 | 다음 계산식에 의거 산출된 평점 적용
+          90 입찰가격 * 평점=30-｜( - ) ×100｜ 100 예정가격", "최저평점은 2점으로 한다.",
+          "추정가격이 10억원이상인 용역에서 입찰 가격이 예정가격이하로서 100분의 98이상인 경우의 평점은 22점으로 한다."
+          평점산식에 계수 곱셈 항이 인쇄되지 않아 k 를 1 로 두었고, 평탄 대입값 30-1×|0.90-0.98|×100 = 22 가 인쇄 점수와 일치한다.
+      - table: "평가기준표 2"
+        label: "추정가격이 10억원 미만 5억원 이상인 용역"
+        service_type: "기술용역"
+        lower: 500000000
+        upper: 1000000000
+        B: 50
+        k: 2
+        base_ratio: 90
+        price_cap_rate: 92.5
+        flat_score: 45
+        pass_score: 95
+        status: confirmed
+        source: ".cache/inst_candidates/kac/tech_general_260814.hwp 평가기준표 2 (표 행), 제4조 (레코드 텍스트 문단)"
+        quote: >
+          구간 제목 "2. 추정가격이 10억원 미만 5억원 이상인 용역". 심사항목 표 "입찰가격 | 입찰가격 | 50점",
+          "* 평점=50-2×｜( 90/100 - 입찰가격/예정가격 ) ×100｜",
+          "* 입찰가격이 예정가격이하로서 100분의 92.5이상인 경우의 평점은 45점으로 한다."
+          평탄 대입값 50-2×|0.90-0.925|×100 = 45 가 인쇄 점수와 일치한다.
+      - table: "평가기준표 3"
+        label: "추정가격이 5억원 미만 고시금액 이상(건축사법에 따른 설계 또는 시설물의 안전 및 유지관리에 관한 특별법에 따른 정밀점검/정밀안전진단은 5억원 미만 1억원 이상)인 용역"
+        service_type: "기술용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 90
+        price_cap_rate: 91.25
+        flat_score: 65
+        pass_score: 95
+        status: confirmed
+        source: ".cache/inst_candidates/kac/tech_general_260814.hwp 평가기준표 3 (표 행), 제4조 (레코드 텍스트 문단)"
+        quote: >
+          구간 제목 "3. 추정가격이 5억원 미만 고시금액 이상(건축사법에 따른 설계 또는 시설물의 안전 및 유지관리에 관한
+          특별법에 따른 정밀점검/정밀안전진단은 5억원 미만 1억원 이상)인 용역". 심사항목 표 "입찰가격 | 입찰가격 | 70점",
+          "* 평점=70-4×｜( 90/100 - 입찰가격/예정가격 ) ×100｜",
+          "* 입찰가격이 예정가격이하로서 100분의 91.25이상인 경우의 평점은 65점으로 한다."
+          평탄 대입값 70-4×|0.90-0.9125|×100 = 65 가 인쇄 점수와 일치한다.
+      - table: "평가기준표 4"
+        label: "추정가격이 고시금액 미만(건축사법에 따른 설계 또는 시설물의 안전 및 유지관리에 관한 특별법에 따른 정밀점검/정밀안전진단은 1억원 미만)인 용역"
+        service_type: "기술용역"
+        lower: null
+        upper: "고시금액"
+        B: 90
+        k: 20
+        base_ratio: 90
+        price_cap_rate: 90.25
+        flat_score: 85
+        pass_score: 95
+        status: confirmed
+        source: ".cache/inst_candidates/kac/tech_general_260814.hwp 평가기준표 4 (표 행), 제4조 (레코드 텍스트 문단)"
+        quote: >
+          구간 제목 "4. 추정가격이 고시금액 미만(건축사법에 따른 설계 또는 시설물의 안전 및 유지관리에 관한 특별법에 따른
+          정밀점검/정밀안전진단은 1억원 미만)인 용역". 심사항목 표 "입찰가격 | 입찰가격 | 90점",
+          "* 평점=90-20×｜( 90/100 - 입찰가격/예정가격 )×100｜",
+          "* 입찰가격이 예정가격이하로서 예정가격의 100분의 90.25이상인 경우의 평점은 85점으로 한다."
+          평탄 대입값 90-20×|0.90-0.9025|×100 = 85 가 인쇄 점수와 일치한다.
+
+cross_check:
+  note: >
+    전사 규정 원문에서 읽은 구간표가 직전 회차에 개별 공고 첨부에서 읽은 관측값과 맞는지 대조한 결과다.
+    관측값을 전사 표로 승격한 것이 아니라, 이미 확보한 전사 표에 관측값이 대응하는지 확인한 것이다.
+  matches:
+    - observation: "직전 회차 시설분야용역 관측 B=70·k=5·기준 93·96% 이상 65점 (나라장터 R26BK01717869 첨부)"
+      corporate_band: "일반용역 적격심사세부기준 [별표 2] 시설분야용역 · 추정가격 5억원 미만"
+      result: "일치. 배점한도 70, 산식 배점한도-5×(93/100-입찰가격/예정가격)×100, 평탄 96% 가 전사 규정 원문과 같다."
+    - observation: "직전 회차 기술용역 관측 B=90·k=20·기준 90·90.25% 이상 85점 (나라장터 R26BK01721579 등 2건)"
+      corporate_band: "기술용역 적격심사세부기준 평가기준표 4 · 추정가격이 고시금액 미만인 용역"
+      result: "일치. 네 값이 전사 규정 원문과 같다."
+    - observation: "직전 회차 기술용역 관측 B=70·k=4·기준 90·91.25% 이상 65점 (나라장터 R26BK01754057 첨부)"
+      corporate_band: "기술용역 적격심사세부기준 평가기준표 3 · 추정가격이 5억원 미만 고시금액 이상인 용역"
+      result: "일치. 네 값이 전사 규정 원문과 같다."
+  mismatches: []
+  observation_kept_in_prior_file: >
+    개별 공고에서 읽은 관측값은 이 파일로 옮기지 않았다. 직전 회차 파일(data/reference/kac_partial_followup_20261015.yaml)의
+    observed_bands 에 그대로 남아 있다. 이 파일은 전사 규정 원문에서 읽은 값만 bands 에 담는다.
+
+pending:
+  - "일반용역 [별표 1]~[별표 9]의 평탄 점수: 원문이 평탄 조건 문장만 인쇄하고 그 조건에서의 점수를 인쇄하지 않아 flat_score 를 null 로 두었다. 대입값은 계산으로 구할 수 있으나 원문 인쇄값이 아니다."
+  - "일반용역 [별표 9]의 단일 배점한도: 제5조 제1항 제9호가 지정형 용역의 배점을 입찰공고에서 설정하도록 정해 '60점 이상 70점 이하' 범위만 인쇄된다."
+  - "일반용역 [별표 8]의 추정가격 5억원 경계: 표 머리에 배점한도 열이 하나만 인쇄되어 B 를 단일값 70 으로 두었다."
+  - "건설폐기물처리용역: 제5조 제1항 제4-1호가 별표가 아니라 환경부 고시(건설폐기물의 재활용촉진에 관한 법률 제15조 제3항에 의한 평가기준)를 지정하므로 이 전사 규정의 별표 구간표에 없다."
+  - "일반용역 세부기준의 개정 이력 표기: 본문 첫머리 이력은 '2026. 8. 5 지침 제792호' 이고 게시물 제목과 첨부 파일명은 '26.8.14 시행' 이다. 부칙 문단은 이번 추출에서 확인하지 못했다."
+
+attempted_paths:
+  - path: "KAC 한국공항공사 공식 홈페이지 규정 게시판 (열린경영 > 입찰정보 > 규정 및 계약조건, MENU_ID=920)"
+    result: >
+      성공. 목록 API(bbsViewList.do)를 제목 검색어 '적격심사'로 호출해 13건을 확인했고, 용역 유형 게시물
+      네 건(일반용역 26.8.14 시행·26.3.2 시행, 기술용역 26.8.14 시행·26.3.2 시행)과 물품·공사 게시물을 확인했다.
+      최신 두 건의 첨부 '전문' HWP 를 내려받아 전사 규정 원문을 읽었다.
+  - path: "전사 규정 원문 판독 (cache gen_general_260814.hwp, tech_general_260814.hwp)"
+    result: >
+      성공. scripts/extract_score_params.py 의 extract_document_text 로 표 행과 평문을 얻고, _ole_streams /
+      _hwp_records / _hwp_record_text 로 문단 텍스트를 따로 얻었다. 평문 통짜 UTF-16LE 디코딩은 정렬 오차로
+      일부가 깨졌고, 레코드 단위 문단 텍스트에서 제10조·제4조 문장과 별표 산식 표를 회수했다.
+  - path: "국가법령정보센터 행정규칙 (한국공항공사)"
+    result: >
+      시도. 공사는 공기업이라 적격심사 세부기준이 행정규칙으로 등록되어 있지 않다. 전사 규정 게시판에서
+      원문을 확보했으므로 추가 조회는 하지 않았다.
+  - path: "알리오 공공기관 경영정보 공개시스템 내부규정"
+    result: >
+      시도. /occasional/findRuleList.json 을 기관명·제목으로 조회해 한국공항공사 내부규정 71건을 확인했으나
+      적격심사 세부기준은 그 목록에 없다(정관·인사규정·공사감독규정 등). 공사 홈페이지 게시판이 정본이다.
+  - path: "나라장터 공고 첨부의 낙찰자 결정 조항"
+    result: >
+      이번 회차에 개별 공고를 새로 내려받지 않았다. 직전 회차가 개별 공고 첨부 7건에서 통과점수 0건을 확인했고,
+      전사 규정 원문에서 통과점수를 확보했으므로 개별 공고 재판독은 범위에서 제외했다.
+
+failed_paths:
+  - path: "KAC 공식 홈페이지 게시판에서 시설분야용역 명의 게시물 검색"
+    result: >
+      제목 검색어 '시설분야용역' 결과 0건. 원문 제5조 제1항 제2호가 시설분야용역 평가기준을 일반용역
+      적격심사세부기준 [별표 2]로 지정하므로 별도 전사 규정이 존재하지 않는 것으로 확인했다.
+  - path: "상업·교육 게시판 게시물 계수 전재"
+    result: >
+      사용하지 않음. 검색 결과에 일반용역·시설공사 세부기준 전문을 게시한 상업·교육 게시판 글이 다수
+      확인되었으나 규칙에 따라 계수와 통과점수를 전재하지 않았다. 이 파일의 모든 값은 공사 공식 게시판
+      첨부 원문에서 읽었다.
+  - path: "일반용역 세부기준 부칙 문단 추출"
+    result: >
+      실패. 레코드 텍스트에서 '부칙' 문단을 찾지 못했다. 시행일은 게시물 제목과 첨부 파일명 '(260814시행)' 및
+      개정 이력의 '2026. 8. 5 지침 제792호' 로 확인했다. 기술용역 세부기준은 부칙<26. 8. 5.> 문단을 읽었다.
+  - path: "기술용역 세부기준 평문 통짜 디코딩"
+    result: >
+      실패. Section0 스트림을 UTF-16LE 로 통째로 디코딩하면 레코드 크기가 어긋나 본문 대부분이 깨졌다.
+      _hwp_records 로 레코드를 나눠 읽는 방식으로 대체해 제4조와 평가기준표 네 구간을 정상 판독했다.
+
+sources:
+  - "https://www.airport.co.kr/www/cms/frCon/index.do?MENU_ID=920 (한국공항공사 공식 홈페이지 열린경영 > 입찰정보 > 규정 및 계약조건)"
+  - "https://www.airport.co.kr/www/cms/frBoardCon/boardView.do?MENU_ID=920&SITE_NO=2&BOARD_SEQ=1216&BBS_SEQ=3553810 (일반용역 적격심사세부기준('26.8.14. 입찰공고부터 시행))"
+  - "https://www.airport.co.kr/ajaxa/fileCpnt/fileDown.do?gbn=b03&BOARD_SEQ=1216&SITE_NO=2&BBS_SEQ=3553810&FILE_SEQ=1 (일반용역 적격심사세부기준 개정(안) 전문(260814시행).hwp)"
+  - "https://www.airport.co.kr/www/cms/frBoardCon/boardView.do?MENU_ID=920&SITE_NO=2&BOARD_SEQ=1216&BBS_SEQ=3553809 (기술용역 적격심사세부기준('26.8.14. 입찰공고부터 시행))"
+  - "https://www.airport.co.kr/ajaxa/fileCpnt/fileDown.do?gbn=b03&BOARD_SEQ=1216&SITE_NO=2&BBS_SEQ=3553809&FILE_SEQ=1 (기술용역 적격심사세부기준 개정(안) 전문(260814시행).hwp)"
+  - "https://www.alio.go.kr/occasional/ruleList.do (알리오 내부규정 게시판, 한국공항공사 71건 확인. 적격심사 세부기준 없음)"
