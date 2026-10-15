@@ -203,7 +203,7 @@ def test_scope_note_states_local_and_institution_rules_excluded(client):
     assert "시·도" in note, note
     # 이 목록은 조달청 별표 14종만 담는다.
     assert "14종" in note, note
-    assert "10곳" in note, note
+    assert "11곳" in note, note
     # 하위 조직 확장 3곳은 실제로 코드에 선언돼 있어야 이 안내가 성립한다.
     subunit_institutions = {
         rule.institution_name
