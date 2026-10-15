@@ -1,0 +1,186 @@
+schema: KAC_PARTIAL_FOLLOWUP_V1
+version: "1.0.0"
+created_at: "2026-10-15"
+source_task: task_a782350d0a01
+source_run: run_cfe18fe34fa6
+scope: INSTITUTION
+target_set: "한국공항공사"
+prior_file: "data/reference/institution_rules_candidates_b_20261014.yaml"
+objective: >
+  한국공항공사 전사 적격심사 세부기준의 구간 라벨과 통과점수를 추가 수집해 기록한다.
+verdict: candidate
+blocking_issues: []
+
+note: >
+  이 파일은 2026-10-14 후보 명세(data/reference/institution_rules_candidates_b_20261014.yaml)의
+  한국공항공사(status: partial) 항목에 대한 후속 수집 결과다. 이번 회차에 새로 판독한 근거는
+  .cache/inst_candidates/kac/ 에 이미 내려받아 두었으나 아직 읽지 않았던 첨부 3건
+  (R26BK01743888_f3.hwp, R26BK01766558_f4.hwp, R26BK01743642_f3.hwp)이다.
+  전사 규정(지침) 원문은 이번 회차에도 확보하지 못했으므로 bands 는 비어 있다.
+  전사 규정 원문에서 구간 라벨과 통과점수를 함께 읽은 값이 없기 때문이며, 개별 공고 첨부에서
+  읽은 관측값을 전사 구간표로 승격하지 않는다. 관측값은 observed_bands 에 partial 로만 둔다.
+  확보한 7건 어디에도 종합평점 통과점수 문구가 없어 pass_score 는 전 행 null 이다.
+
+conventions:
+  score_formula: "P = B - k * |base_ratio/100 - bid_price/estimated_price| * 100"
+  lwlt_formula: "base_ratio - (100 - pass_score) / k"
+  lwlt_notation: "계산값을 소수 둘째 자리까지 버린 뒤 0.005 를 빼 .995 표기 관행을 따른다 (예: 85.500 -> 85.495)"
+  lower_inclusive: true
+  upper_exclusive: true
+  money_unit: "KRW"
+  boundary_token: "고시금액은 국가계약법 시행령에 따른 연도별 고시금액을 뜻한다"
+  quote_scope: "quote 는 scripts/extract_score_params.py 의 extract_document_text 로 읽은 원문 문장이며 요약하지 않는다"
+  partial_rule: "원문으로 구간 라벨과 통과점수를 함께 확인하지 못한 행은 partial 이다"
+
+institution:
+  institution_name: "한국공항공사"
+  name_aliases:
+    - "한국공항공사"
+    - "한국공항공사 김포공항"
+    - "한국공항공사 김해공항"
+    - "한국공항공사 제주공항"
+    - "한국공항공사 항공기술훈련원"
+    - "한국공항공사 항로시설본부 인천항공교통시설단"
+  institution_code: null
+  status: partial
+  scope: INSTITUTION
+  standard: "한국공항공사 일반용역 적격심사 세부기준 / 기술용역 적격심사 세부기준 / 시설분야용역 적격심사 세부기준 (전사 규정 원문 미확보)"
+  effective_date: null
+  service_types: ["일반용역", "기술용역", "시설분야용역"]
+  corporate_standard_obtained: false
+  own_standard_exists: yes
+  recommendation: partial
+  announcements_last_year: 174
+
+  bands: []
+
+  observed_bands:
+    - band: "기술용역 적격심사 세부 평가기준 · 추정가격이 고시금액 미만(건축사법에 따른 설계 또는 시설물의 안전 및 유지관리에 관한 특별법에 따른 정밀점검/정밀안전진단은 1억원 미만)인 용역"
+      service_type: "기술용역"
+      lower: null
+      upper: "고시금액"
+      B: 90
+      k: 20
+      base_ratio: 90
+      pass_score: null
+      lwlt_rate: null
+      price_cap_rate: 90.25
+      flat_score: 85
+      status: partial
+      new_in_followup: false
+      quote: "■ 추정가격이 고시금액 미만(건축사법에 따른 설계 또는 시설물의 안전 및 유지관리에 관한 특별법에 따른 정밀점검/정밀안전진단은 1억원 미만)인 용역"
+      evidence: "구간 라벨과 입찰가격 산식이 같은 문서에 인쇄되어 있다. 산식은 '평점=90-20×|(90/100-입찰가격/예정가격)×100|', 평탄은 '예정가격의 100분의 90.25이상인 경우의 평점은 85점'이다. 통과점수 문구는 없다."
+      source: ".cache/inst_candidates/kac/R26BK01721579_f4.hwpx (붙임 3. 적격심사 세부기준, 심사항목 '▷입찰가격' 배점한도 90점)"
+    - band: "기술용역 적격심사 기준 · 배점한도 70 구간 (구간 라벨 원문 미인쇄)"
+      service_type: "기술용역"
+      lower: null
+      upper: null
+      B: 70
+      k: 4
+      base_ratio: 90
+      pass_score: null
+      lwlt_rate: null
+      price_cap_rate: 91.25
+      flat_score: 65
+      status: partial
+      new_in_followup: false
+      quote: "기술용역 적격심사 기준 [김해공항 국제선 승강시설 교체공사 시공단계 건설사업관리용역]"
+      evidence: "문서 제목에 용역명만 인쇄되고 추정가격 구간 표기는 없다. 산식은 '평점=70-4×|(90/100-입찰가격/예정가격)×100|', 평탄은 '100분의 91.25이상인 경우의 평점은 65점'이다. 통과점수 문구는 없다."
+      source: ".cache/inst_candidates/kac/R26BK01754057_f4.hwp (심사항목 '입찰가격' 배점한도 70점)"
+    - band: "건설폐기물 처리용역 적격업체 평가기준(환경부고시) 추정가격 2억원 미만인 용역"
+      service_type: "용역"
+      lower: null
+      upper: 200000000
+      B: 70
+      k: 20
+      base_ratio: 88
+      pass_score: null
+      lwlt_rate: null
+      price_cap_rate: 88.25
+      flat_score: 65
+      status: partial
+      new_in_followup: false
+      quote: "※ 건설폐기물 처리용역 적격업체 평가기준(환경부고시) 추정가격 2억원 미만인 용역"
+      evidence: "구간 라벨과 입찰가격 산식이 같은 문서에 인쇄되어 있다. 산식은 '평점(점) = 70-20 ×|({88} over {100} -{입찰가격} over {예정가격})×100|', 평탄은 '100분의 88.25이상인 경우의 평점은 65점'이다. 통과점수 문구는 없다."
+      source: ".cache/inst_candidates/kac/R26BK01733618_f3.hwpx (용역 적격심사 세부기준, 평가분야 'Ⅱ.입찰가격' 배점한도 70)"
+    - band: "시설분야용역 적격심사 항목 및 배점한도 · 추정가격 5억원 미만"
+      service_type: "시설분야용역"
+      lower: null
+      upper: 500000000
+      B: 70
+      k: 5
+      base_ratio: 93
+      pass_score: null
+      lwlt_rate: null
+      price_cap_rate: 96.0
+      flat_score: null
+      status: partial
+      new_in_followup: false
+      quote: "추정가격 5억원 미만"
+      evidence: "구간 라벨이 심사항목 표 머리에 인쇄되어 있고 같은 표의 'Ⅲ.입찰가격' 배점한도가 70이다. 산식은 '평점(점) = 배점한도 ­ 5 × (93 ­ 입찰가격)/100 ... /100 예정가격', 평탄은 '예정가격의 96% 이상인 경우에는 입찰가격이 예정가격의 96%인 경우의 점수로 평가'이며 평탄 점수는 인쇄되지 않았다. 통과점수 문구는 없다."
+      source: ".cache/inst_candidates/kac/R26BK01717869_f4.hwpx (시설분야용역 적격심사 항목 및 배점한도, 'Ⅲ.입찰가격' 배점한도 70)"
+    - band: "적격심사 세부기준 「대구공항 기계설비 성능점검 용역」 · 구간 라벨 원문 미인쇄"
+      service_type: "기술용역"
+      lower: null
+      upper: null
+      B: 90
+      k: 20
+      base_ratio: 90
+      pass_score: null
+      lwlt_rate: null
+      price_cap_rate: 90.25
+      flat_score: 85
+      status: partial
+      new_in_followup: true
+      quote: "적격심사 세부기준 「대구공항 기계설비 성능점검 용역」"
+      evidence: "이번 회차에 새로 판독한 문서다. 문서 제목에 용역명만 인쇄되고 추정가격 구간 표기는 없다. 산식은 '평점=90-20×|(90/100-입찰가격/예정가격)×100|', 평탄은 '예정가격의 100분의 90.25이상인 경우의 평점은 85점'이다. 통과점수 문구는 없다. B=90·k=20·기준 90 조합이 R26BK01721579 와 독립적으로 한 번 더 확인되었다."
+      source: ".cache/inst_candidates/kac/R26BK01743888_f3.hwp (심사항목 '입찰가격' 배점한도 90점, 한국공항공사 대구공항 시설부)"
+    - band: "적격심사 세부 평가기준 (건설공사 안전점검 수행기관 지정) · 수행능력 평가방법 및 세부평가기준 (1억원 미만)"
+      service_type: "시설분야용역"
+      lower: null
+      upper: null
+      B: 90
+      k: 20
+      base_ratio: 88
+      pass_score: null
+      lwlt_rate: null
+      price_cap_rate: null
+      flat_score: null
+      status: partial
+      new_in_followup: true
+      quote: "ㅇ 수행능력 평가방법 및 세부평가기준 (1억원 미만)"
+      evidence: "이번 회차에 새로 판독한 문서다. 심사항목 표는 '수행능력 10점 / 가격 90점 / 합계 100점'이고 가격 산식은 '평점 = 90 – 20 ×|(88/100-입찰가격/예정가격)×100|'이다. B=90·k=20·기준 88 조합은 기존 관측에 없던 값이다. 다만 구간 표기 '(1억원 미만)'은 수행능력 평가방법 절 제목에만 인쇄되어 입찰가격 산식 행과 직접 결합되지 않으므로 lower·upper 를 확정하지 않는다. 평탄 문장과 통과점수 문구는 없다."
+      source: ".cache/inst_candidates/kac/R26BK01766558_f4.hwp (적격심사 세부 평가기준, 수요기관 한국공항공사 김포공항)"
+
+  pass_score:
+    value: null
+    status: unconfirmed
+    note: >
+      확보한 첨부 7건 어디에도 '종합평점이 N점 이상이면' 형태의 적격 통과점수 문구가 없다.
+      첨부는 모두 적격심사 세부기준·별표(평가항목·배점한도·산식)이며 낙찰자 결정 조항을 담지 않는다.
+      전사 규정 원문을 확보하지 못해 통과점수는 네 행 모두 미확정이다.
+
+  attempted_paths:
+    - path: "미판독 첨부 3건 판독 (.cache/inst_candidates/kac/R26BK01743888_f3.hwp, R26BK01766558_f4.hwp, R26BK01743642_f3.hwp)"
+      result: "2건에서 구간 라벨·산식·평탄 문장을 읽었다. R26BK01743888 은 B=90·k=20·기준 90·90.25% 이상 85점, R26BK01766558 은 B=90·k=20·기준 88 을 인쇄한다. R26BK01743642 는 문서가 아니라 다운로드 실패 응답이었다."
+    - path: "기존 4건 재판독 (.cache/inst_candidates/kac/R26BK01721579_f4.hwpx, R26BK01754057_f4.hwp, R26BK01733618_f3.hwpx, R26BK01717869_f4.hwpx)"
+      result: "구간 라벨 원문을 정확히 인용할 수 있게 되었다. '추정가격이 고시금액 미만(...)인 용역', '추정가격 2억원 미만인 용역', '추정가격 5억원 미만' 3건은 원문 라벨이 확인되었고 R26BK01754057 만 구간 라벨이 인쇄되지 않았다."
+    - path: "통과점수 문구 탐색 (7건 전체 평문에 '종합평점', '낙찰자', '이상인 자', '낙찰하한' 패턴)"
+      result: "적격 통과점수 문구 0건. 검출된 '종합평점'·'낙찰자' 문자열은 고용평가 항목과 확약서 문구였다."
+
+  failed_paths:
+    - path: ".cache/inst_candidates/kac/R26BK01743642_f3.hwp 판독"
+      result: "확장자는 .hwp 이나 내용이 163바이트 JSON 이다. 원문은 {\"ErrorMsg\":\"파일이 존재하지 않습니다.\",\"reason\":\"Unprocessable Entity\",\"path\":\"/pn/pnp/pnpe/UntyAtchFile/downloadFile.do\",\"ErrorCode\":-1,\"locale\":\"ko\"} 로, 내려받기 실패 응답이 저장된 것이다. 문서가 아니므로 산식·라벨을 읽을 수 없다."
+    - path: "한국공항공사 전사 규정(지침) 원문 확보"
+      result: "2026-10-14 조사에서 공사 홈페이지·전자조달 게시 위치를 확인하지 못했고, 이번 회차 재조사 대상에서 제외했다. 전사 규정 원문이 없어 전사 구간표(bands)를 채우지 못했다."
+    - path: "상업·교육 게시판 게시물 계수 전재"
+      result: "규칙에 따라 전재하지 않았다. 개정일 단서(개정 2026-03-02, 2026-08-14 등)만 확인되었고 이 파일의 어떤 값도 그 출처를 쓰지 않았다."
+
+  sources:
+    - "https://www.g2b.go.kr 나라장터 공고 R26BK01721579-000 첨부 '붙임 3. 적격심사 세부기준(...).hwpx' (파일 4)"
+    - "https://www.g2b.go.kr 나라장터 공고 R26BK01754057-000 첨부 '기술용역 적격심사세부기준(...).hwp' (파일 4)"
+    - "https://www.g2b.go.kr 나라장터 공고 R26BK01733618-000 첨부 '적격심사 세부기준(대구공항 폐아스콘 처리용역).hwpx' (파일 3)"
+    - "https://www.g2b.go.kr 나라장터 공고 R26BK01717869-000 첨부 '3. 적격심사기준_김포공항 소음대책사업 지원 용역(2026~2027).hwpx' (파일 4)"
+    - "https://www.g2b.go.kr 나라장터 공고 R26BK01743888-000 첨부 (파일 3 .hwp, 이번 회차 신규 판독. 첨부 파일명은 이 워크트리 캐시 파일명 R26BK01743888_f3.hwp 로만 확인했고 문서 안 제목은 '적격심사 세부기준 「대구공항 기계설비 성능점검 용역」' 이다)"
+    - "https://www.g2b.go.kr 나라장터 공고 R26BK01766558-000 첨부 (파일 4 .hwp, 이번 회차 신규 판독. 첨부 파일명은 이 워크트리 캐시 파일명 R26BK01766558_f4.hwp 로만 확인했고 문서 안 제목은 '적격심사 세부 평가기준' 이며 수요기관은 한국공항공사 김포공항이다)"
+    - "https://www.g2b.go.kr 나라장터 공고 R26BK01743642-000 첨부 (파일 3, 내려받기 실패. 캐시 파일 R26BK01743642_f3.hwp 가 파일 부재 응답 JSON 이다)"
