@@ -1,0 +1,202 @@
+schema: INSTITUTION_RULE_FOLLOWUP_V1
+version: "1.0.0"
+created_at: "2026-10-15"
+source_task: task_c184d2f67f75
+source_run: run_cfe18fe34fa6
+scope: INSTITUTION
+institution: "국방부"
+baseline_candidate: "data/reference/institution_rules_candidates_b_20261014.yaml"
+note: >
+  국방부 partial 후보(data/reference/institution_rules_candidates_b_20261014.yaml)의 우선순위 4번 후속 수집 결과다.
+  기관 규칙 코드, 커버리지 원장, 기존 후보 YAML 은 읽기만 했고 고치지 않았다.
+  기술용역 훈령(국방부훈령 제2987호)의 별표 1 평가기준표 네 구간 라벨과 미확정 계수 k 를 추가로 읽었고,
+  일반용역 훈령(국방부훈령 제3176호) 전문을 국가법령정보센터 첨부에서 새로 확보해 별표 1 구간과 제9조 통과점수를 읽었다.
+  여전히 읽지 못한 값은 pending 에 남겼다. 근거 없음은 blocked 로 적지 않는다.
+  원문 파일은 .cache/inst_candidates/ 아래에만 두었고 커밋하지 않는다(.cache 는 gitignore 대상).
+  source 의 파일:행 좌표는 그 파일을 scripts/extract_score_params.py 의 extract_document_text 로 읽었을 때의
+  문서 순서 행 번호이거나, 바이너리 HWP 는 레코드 텍스트 문단 순서다.
+
+conventions:
+  score_formula: "P = B - k * |base_ratio/100 - bid_price/estimated_price| * 100"
+  lower_inclusive: true
+  upper_exclusive: true
+  money_unit: "KRW"
+  boundary_token: "고시금액은 국가계약법 제4조제1항에 따라 기획재정부장관이 고시한 금액을 뜻한다"
+  confirmed_rule: >
+    confirmed 는 훈령 원문이나 나라장터 첨부에서 직접 읽은 문장만 허용한다. 원문에서 구간 라벨과
+    통과점수를 같은 문장이나 표에서 함께 확인하지 못한 행은 partial 로 둔다. 상업 게시판 계수는 전재하지 않는다.
+
+technical_service_decree:
+  name: "기술용역 적격심사기준에 관한 훈령"
+  decree_no: "국방부훈령 제2987호"
+  effective_date: "2024-12-03"
+  pass_threshold_clause: >
+    제9조는 추정가격 30억원 이상 용역 85점, 30억원 미만 10억원 이상 용역 90점, 10억원 미만 용역 95점으로 정한다.
+    이 경계(30억원/10억원)는 별표 1 구간 라벨의 경계(10억원/5억원/고시금액)와 다르다.
+  source_files:
+    - ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp (나라장터 공고 R26BK01300416-000 첨부 7. 기술용역 적격심사기준에 관한 훈령(2024.12.03.).hwp)"
+  bands:
+    - table: "별표 1 평가기준표 1"
+      label: "추정가격 10억원 이상인 용역"
+      label_status: confirmed
+      B: 30
+      k: null
+      k_status: partial
+      base_ratio: 88
+      price_cap_rate: null
+      flat_score: null
+      pass_score: null
+      status: partial
+      source: ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp 별표 1 (평가기준표 1 제목, 레코드 텍스트 문단)"
+      quote: >
+        별표 1 첫 구간 제목 "1. 추정가격 10억원 이상인 용역". 입찰가격 평점산식은
+        "30 - (88/100 - 입찰가격/예정가격)×100" 으로 인쇄되어 계수 자리가 없어 k 를 확정하지 않았다.
+        평탄 점수 문장 없음.
+    - table: "별표 1 평가기준표 2"
+      label: "추정가격 5억원이상 10억원 미만인 용역"
+      label_status: confirmed
+      B: 50
+      k: 2
+      k_status: confirmed
+      base_ratio: 88
+      price_cap_rate: 90.5
+      flat_score: 45
+      pass_score: null
+      status: partial
+      source: ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp 별표 1 (평가기준표 2 제목·산식·평탄 문장, 레코드 텍스트 문단)"
+      quote: >
+        별표 1 둘째 구간 제목 "2. 추정가격 5억원이상 10억원 미만인 용역". 입찰가격 평점산식
+        "50-2×(88/100 - 입찰가격/예정가격)×100", 평탄 문장 "예정가격 대비 입찰가격의 비율이 90.5% 이상인 경우 평점은 45점으로 함".
+    - table: "별표 1 평가기준표 3"
+      label: "추정가격 고시금액 이상 5억원 미만, 추정가격 고시금액 미만으로서 사업수행능력평가 대상인 용역"
+      label_status: confirmed
+      B: 70
+      k: 4
+      k_status: confirmed
+      base_ratio: 88
+      price_cap_rate: 89.25
+      flat_score: 65
+      pass_score: null
+      status: partial
+      source: ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp 별표 1 (평가기준표 3 제목·산식·평탄 문장, 레코드 텍스트 문단)"
+      quote: >
+        별표 1 셋째 구간 제목 "3. 추정가격 고시금액 이상 5억원 미만, 추정가격 고시금액 미만으로서 사업수행능력평가 대상인 용역".
+        입찰가격 평점산식 "70-4×(88/100 - 입찰가격/예정가격)×100", 평탄 문장 "예정가격 대비 입찰가격의 비율이 89.25% 이상인 경우 평점은 65점으로 함".
+        같은 표 주 "ㄴ. 「건축서비스산업 진흥법 시행령」제18조에 의한 용역 등 추정가격 고시금액 미만으로서 사업수행능력평가 대상인 용역은 평가기준표 3에 따른다."
+    - table: "별표 1 평가기준표 4"
+      label: "추정가격 고시금액 미만인 용역 (사업수행능력평가 대상이 아닌 경우)"
+      label_status: confirmed
+      B: 90
+      k: 20
+      k_status: confirmed
+      base_ratio: 88
+      price_cap_rate: 88.25
+      flat_score: 85
+      pass_score: null
+      status: partial
+      source: ".cache/inst_candidates/mnd/R26BK01300416_f7.hwp 별표 1 (평가기준표 4 제목·주 ㄴ, 레코드 텍스트 문단)"
+      quote: >
+        별표 1 넷째 구간 제목 "4. 추정가격 고시금액 미만인 용역 (사업수행능력평가 대상이 아닌 경우)".
+        산식 표에는 "(나)입찰가격 / 평점산식 참조 / 90" 만 인쇄되어 있고, 같은 표 주에
+        "ㄴ. 입찰가격 평점산식: 90-20×|(88/100 - 입찰가격/예정가격)×100|", "예정가격 대비 입찰가격의 비율이 88.25% 이상인 경우 평점은 85점으로 함" 이 있다.
+        계수 20 을 이 주에서 읽었다.
+
+general_service_decree:
+  name: "일반용역 적격심사기준에 관한 훈령"
+  decree_no: "국방부훈령 제3176호"
+  effective_date: "2026-06-22"
+  pass_threshold_clause: >
+    제9조는 별표 1 의 추정가격 10억원 이상·10억원 미만 5억원 이상·5억원 미만 고시금액 이상 용역을 90점으로,
+    추정가격 고시금액 미만인 용역을 95점으로 정한다. 이 조는 구간 라벨을 그대로 인용하므로 라벨과 통과점수를 함께 확인했다.
+  source_files:
+    - ".cache/inst_candidates/mnd/R26_mnd_general_3176.hwp (국가법령정보센터 첨부 「일반용역 적격심사기준에 관한 훈령」 전문.hwp, flSeq=166220251, admRulSeq=2100000281052)"
+  bands:
+    - table: "별표 1 평가기준표 제1호"
+      label: "추정가격 10억원 이상인 용역"
+      label_status: confirmed
+      B: 30
+      k: null
+      k_status: partial
+      base_ratio: 88
+      price_cap_rate: null
+      flat_score: null
+      pass_score: 90
+      status: confirmed
+      source: ".cache/inst_candidates/mnd/R26_mnd_general_3176.hwp 별표 1 제1호, 제9조 제1호 (레코드 텍스트 문단)"
+      quote: >
+        별표 1 "1. 추정가격 10억원 이상인 용역", 입찰가격 평점산식 "30 - (88/100 - 입찰가격/예정가격)×100"
+        (계수 자리 미인쇄, k 미확정). 제9조 제1호 "[별표 1]의 추정가격 10억원 이상인 용역 : 90점".
+    - table: "별표 1 평가기준표 제2호"
+      label: "추정가격 10억원 미만 5억원 이상인 용역"
+      label_status: confirmed
+      B: 50
+      k: 2
+      k_status: confirmed
+      base_ratio: 88
+      price_cap_rate: 93.0
+      flat_score: 40
+      pass_score: 90
+      status: confirmed
+      source: ".cache/inst_candidates/mnd/R26_mnd_general_3176.hwp 별표 1 제2호, 제9조 제2호 (레코드 텍스트 문단)"
+      quote: >
+        별표 1 "2. 추정가격 10억원 미만 5억원 이상인 용역", 입찰가격 평점산식 "50 -2× (88/100 - 입찰가격/예정가격)×100",
+        평탄 문장 "예정가격 대비 입찰가격의 비율이 93% 이상인 경우 평점은 40점으로 함". 제9조 제2호 "[별표 1]의 추정가격 10억원 미만 5억원 이상인 용역 : 90점".
+    - table: "별표 1 평가기준표 제3호"
+      label: "추정가격 5억원 미만 고시금액 이상인 용역"
+      label_status: confirmed
+      B: 70
+      k: 4
+      k_status: confirmed
+      base_ratio: 88
+      price_cap_rate: 90.5
+      flat_score: 60
+      pass_score: 90
+      status: confirmed
+      source: ".cache/inst_candidates/mnd/R26_mnd_general_3176.hwp 별표 1 제3호, 제9조 제3호 (레코드 텍스트 문단)"
+      quote: >
+        별표 1 "3. 추정가격 5억원 미만 고시금액 이상인 용역", 입찰가격 평점산식 "70 -4× (88/100 - 입찰가격/예정가격)×100",
+        평탄 문장 "예정가격 대비 입찰가격의 비율이 90.5% 이상인 경우 평점은 60점으로 함". 제9조 제3호 "[별표 1]의 추정가격 5억원 미만 고시금액 이상인 용역 : 90점".
+    - table: "별표 1 평가기준표 제4호"
+      label: "추정가격 고시금액 미만인 용역"
+      label_status: confirmed
+      B: 90
+      k: 20
+      k_status: confirmed
+      base_ratio: 88
+      price_cap_rate: 88.25
+      flat_score: 85
+      pass_score: 95
+      status: confirmed
+      source: ".cache/inst_candidates/mnd/R26_mnd_general_3176.hwp 별표 1 제4호 주 2, 제9조 제4호 (레코드 텍스트 문단)"
+      quote: >
+        별표 1 "4. 추정가격 고시금액 미만인 용역", 입찰가격 배점한도 90("(나)입찰가격 평점계산식 참조 90").
+        같은 표 【주】2 "입찰가격 평점계산식: 90-20×|(88/100 - 입찰가격/예정가격)×100|",
+        "예정가격 대비 입찰가격의 비율이 88.25% 이상인 경우 평점은 85점으로 함". 제9조 제4호 "[별표 1]의 추정가격 고시금액 미만인 용역 : 95점".
+
+pending:
+  - "기술용역 훈령 별표 1 평가기준표 1(배점한도 30)의 계수 k: 원문 산식에 계수 자리가 인쇄되지 않아 미확정"
+  - "일반용역 훈령 별표 1 제1호(배점한도 30)의 계수 k: 원문 산식에 계수 자리가 인쇄되지 않아 미확정"
+  - "기술용역 훈령 별표 1 네 구간의 pass_score: 제9조가 30억원/10억원 경계로만 규정하고 별표 1 라벨 경계와 달라 라벨과 통과점수를 같은 문장·표에서 함께 확인하지 못함"
+  - "기술용역 훈령 별표 1 평가기준표 4 산식 표 자체에는 계수가 인쇄되지 않음(주 ㄴ 에서 대신 확인)"
+
+attempted_paths:
+  - path: "기술용역 훈령 원문 HWP 별표 1 레코드 텍스트 추출 (기존 캐시)"
+    result: >
+      성공. scripts/extract_score_params.py 의 _hwp_records / _hwp_record_text 로 문단 단위 텍스트를 읽어
+      별표 1 네 구간 라벨과 평가기준표 4 주 ㄴ 평점산식(90-20×)을 확인했다. 표 행 복원만으로는 계수가 유실된 부분을
+      레코드 텍스트가 회수했다.
+  - path: "국가법령정보센터 행정규칙 첨부파일 (admRulAttFlList.do → flDownload.do) 에서 일반용역 훈령 전문 HWP 다운로드"
+    result: >
+      성공. admRulId 28543 의 현행본(제3176호, 2026-06-22) admRulSeq 2100000281052 에서 전문.hwp(flSeq=166220251)를
+      내려받아 별표 1 네 구간과 제9조 통과점수를 확인했다.
+  - path: "국가법령정보센터 웹 본문(admRulLsInfoP.do) 별표 텍스트 직접 파싱"
+    result: >
+      실패. 본문이 AJAX(admRulLsInfoR.do)로만 로드되어 정적 HTML 에 별표 텍스트가 없다. 기존 실패 경로를 재시도하지 않고
+      첨부 HWP 다운로드로 대체했다.
+  - path: "상업·교육 게시판의 일반용역 훈령 계수 전재"
+    result: "사용하지 않음. 규칙에 따라 계수·통과점수는 원문(국가법령정보센터 첨부)에서 읽은 값만 기록했다."
+
+sources:
+  - "https://www.g2b.go.kr 나라장터 공고 R26BK01300416-000 첨부 '7. 기술용역 적격심사기준에 관한 훈령(2024.12.03.).hwp'"
+  - "https://law.go.kr/admRulLsInfoP.do?admRulId=28543 (국방부 일반용역 적격심사기준에 관한 훈령, 현행 국방부훈령 제3176호)"
+  - "https://www.law.go.kr/LSW/flDownload.do?flSeq=166220251 (국가법령정보센터 일반용역 훈령 전문 HWP)"
