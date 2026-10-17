@@ -117,6 +117,48 @@ REAL_ANNOUNCEMENT_CASES = [
         "SERVC_QUAL_POST_20260526_ATTACH_14",
         2_644_312_000,
     ),
+    (
+        "R26BK01761862",
+        "적격심사제-수리ㆍ점검용역 적격심사 고시금액 미만",
+        "86.245",
+        "SERVC_QUAL_POST_20260526_ATTACH_15",
+        93_690_909,
+    ),
+    (
+        "R26BK01749994",
+        "적격심사제-수리ㆍ점검용역 적격심사 5억원 미만 고시금액 이상",
+        "82.495",
+        "SERVC_QUAL_POST_20260526_ATTACH_16",
+        391_011_436,
+    ),
+    (
+        "R26BK01776402",
+        "적격심사제-임대차 적격심사 추정가격 고시금액 미만",
+        "86.245",
+        "SERVC_QUAL_POST_20260526_ATTACH_17",
+        157_745_455,
+    ),
+    (
+        "R26BK01773031",
+        "적격심사제-임대차 적격심사 추정가격 고시금액 이상",
+        "82.495",
+        "SERVC_QUAL_POST_20260526_ATTACH_18",
+        1_072_000_000,
+    ),
+    (
+        "R26BK01775979",
+        "적격심사제-수요기관 지정형 적격심사  추정가격 고시금액 미만",
+        "86.245",
+        "SERVC_QUAL_POST_20260526_ATTACH_19",
+        46_500_000,
+    ),
+    (
+        "R26BK01767539",
+        "적격심사제-수요기관 지정형 적격심사  추정가격 고시금액 이상",
+        "82.495",
+        "SERVC_QUAL_POST_20260526_ATTACH_20",
+        259_713_636,
+    ),
 ]
 
 
@@ -442,5 +484,6 @@ def test_real_raw_data_adapter_uses_full_announcement_method() -> None:
 
 
 def test_real_registry_contains_fourteen_rules() -> None:
-    assert len(POST_20260526_RULES) == 14
+    # 2026-10-17 별표 7·8·9 6종 추가로 20종이다.
+    assert len(POST_20260526_RULES) == 20
     assert get_rule_by_id("SERVC_QUAL_POST_20260526_ATTACH_14") is not None

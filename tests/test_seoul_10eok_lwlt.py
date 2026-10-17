@@ -269,7 +269,8 @@ def test_seoul_simple_labor_is_87_745() -> None:
 LOCAL_RULES_EXCLUDING_SEOUL_DIGEST = (
     "4e8030ef9619e2ef7ee5b5088a1aeb949df978974bdc604ef1ebe96ac9f02f02"
 )
-NATIONAL_RULES_DIGEST = "3436d7f5bfa896ec4b4d4f95e1367add414424ab746143fcae364005f8e00e3f"
+# 2026-10-17 조달청 별표 7·8·9 6종 추가. 추가분을 뺀 다이제스트는 이전 값(3436d7f5…)과 같다.
+NATIONAL_RULES_DIGEST = "c56ccd81fe131183d3d0de1d3ed80e48e408ef7e6a0493f91fb0ba4b2291935e"
 
 
 def _signature(rule: EvaluationRule) -> dict[str, object]:

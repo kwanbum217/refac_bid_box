@@ -2,7 +2,7 @@
 
 규칙 값의 유일한 정본은 src/app/services/evaluation_rules.py 이며, 본 테스트는
 GET /api/v1/evaluations/rules 가 그 상수를 값을 만들지 않고 문자열로 직렬화하는지,
-범위 안내(scope_note)가 14종 범위와 지방계약·확인 기관 규칙의 목록 제외를 밝히는지,
+범위 안내(scope_note)가 20종 범위와 지방계약·확인 기관 규칙의 목록 제외를 밝히는지,
 공고 식별자를 주면 매칭된 별표를 matched_rule 로 돌려주는지를 확인합니다.
 
 실물 DB 는 쓰지 않고 conftest 의 isolated_db (SQLite 인메모리) 위에서 동작합니다.
@@ -72,7 +72,7 @@ def _create_bid(
 
 
 def test_rules_endpoint_returns_fourteen_rows_without_auth(client):
-    """인증 없이 호출해도 현행 별표 14종과 여섯 열 값을 돌려준다."""
+    """인증 없이 호출해도 현행 별표 20종과 여섯 열 값을 돌려준다."""
     response = client.get(RULES_URL)
 
     assert response.status_code == 200, response.text
@@ -80,8 +80,8 @@ def test_rules_endpoint_returns_fourteen_rows_without_auth(client):
 
     assert payload["matched_rule"] is None
     rules = payload["rules"]
-    assert len(rules) == 14
-    assert len(POST_20260727_RULES) == 14
+    assert len(rules) == 20
+    assert len(POST_20260727_RULES) == 20
 
     for row in rules:
         assert set(row) == META_KEYS
@@ -192,7 +192,7 @@ def test_matched_rule_carries_declared_score_table(client, isolated_db):
 
 
 def test_scope_note_states_local_and_institution_rules_excluded(client):
-    """scope_note 가 14종 범위와 지방계약·확인 기관 규칙의 목록 제외를 밝힌다."""
+    """scope_note 가 20종 범위와 지방계약·확인 기관 규칙의 목록 제외를 밝힌다."""
     note = client.get(RULES_URL).json()["scope_note"]
 
     assert isinstance(note, str)
@@ -201,8 +201,8 @@ def test_scope_note_states_local_and_institution_rules_excluded(client):
     assert INSTITUTION_RULES, "확인 기관 규칙이 코드에 있어야 이 안내가 성립한다"
     assert "지방계약" in note, note
     assert "시·도" in note, note
-    # 이 목록은 조달청 별표 14종만 담는다.
-    assert "14종" in note, note
+    # 이 목록은 조달청 별표 20종만 담는다.
+    assert "20종" in note, note
     assert "12곳" in note, note
     # 하위 조직 확장 3곳은 실제로 코드에 선언돼 있어야 이 안내가 성립한다.
     subunit_institutions = {
@@ -222,7 +222,7 @@ def test_institution_rules_are_excluded_from_meta_list(client):
     """기관 규칙은 코드에 있지만 이 목록에는 넣지 않는다."""
     payload = client.get(RULES_URL).json()
 
-    assert len(payload["rules"]) == 14
+    assert len(payload["rules"]) == 20
     assert all(not row["rule_id"].startswith("SERVC_INST_") for row in payload["rules"])
     assert any(rule.rule_id.startswith("SERVC_INST_") for rule in INSTITUTION_RULES)
 
@@ -263,7 +263,7 @@ def test_bid_id_returns_institution_matched_rule(client, isolated_db):
 
     assert payload["matched_rule"] is not None
     assert payload["matched_rule"]["rule_id"] == "SERVC_INST_IIAC_20250101_OTHER"
-    assert len(payload["rules"]) == 14
+    assert len(payload["rules"]) == 20
 
 
 def test_bid_id_returns_matched_rule(client, isolated_db):
@@ -275,8 +275,8 @@ def test_bid_id_returns_matched_rule(client, isolated_db):
     assert payload["matched_rule"] is not None
     assert payload["matched_rule"]["rule_id"] == FACILITY_RULE_ID
     assert payload["matched_rule"]["base_rate"] == "0.93"
-    # 목록은 그대로 14종 전체다.
-    assert len(payload["rules"]) == 14
+    # 목록은 그대로 20종 전체다.
+    assert len(payload["rules"]) == 20
 
 
 def test_bid_id_without_match_returns_null_and_list_only(client, isolated_db):
@@ -286,7 +286,7 @@ def test_bid_id_without_match_returns_null_and_list_only(client, isolated_db):
     payload = client.get(RULES_URL, params={"bid_id": bid.id}).json()
 
     assert payload["matched_rule"] is None
-    assert len(payload["rules"]) == 14
+    assert len(payload["rules"]) == 20
 
 
 def test_unknown_bid_id_returns_404(client):
