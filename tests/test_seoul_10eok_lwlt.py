@@ -267,8 +267,10 @@ def test_seoul_simple_labor_is_87_745() -> None:
 #   이전 d4bf004e28be73fdb59c614d6a419547edc64da63e9dab8040bd12439c233372
 #   이후 4e8030ef9619e2ef7ee5b5088a1aeb949df978974bdc604ef1ebe96ac9f02f02
 # 2026-10-17 전라남도 구판 2종, 광주광역시 구판 2종 추가. 각 추가분을 뺀 다이제스트는 직전 값과 같다.
+#   이후 80adff533a6a52f6aeefb463dd528ab69804878b42dba36a489beb43ec7f3267
+# 2026-10-18 광주광역시 구판 광역시 본청·소속기관용 경계 규칙 4종 추가. 추가분을 뺀 다이제스트는 직전 값과 같다.
 LOCAL_RULES_EXCLUDING_SEOUL_DIGEST = (
-    "80adff533a6a52f6aeefb463dd528ab69804878b42dba36a489beb43ec7f3267"
+    "86f2b5c556fed4a0960e75c122b29a4d3602765be553bb407350c11e76513a14"
 )
 # 2026-10-17 조달청 별표 7·8·9 6종 추가. 추가분을 뺀 다이제스트는 이전 값(3436d7f5…)과 같다.
 NATIONAL_RULES_DIGEST = "c56ccd81fe131183d3d0de1d3ed80e48e408ef7e6a0493f91fb0ba4b2291935e"

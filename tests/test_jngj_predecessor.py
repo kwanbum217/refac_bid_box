@@ -177,12 +177,26 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         assert rule.region_name == "광주광역시"
         assert rule.effective_date == "2022-11-15"
         assert rule.superseded_date == REGIME_CHANGE_DATE
+    # 2026-10-18 광역시 본청·소속기관용 경계 규칙은 고시 판본 경계(2025-01-01)와 통합 시행일에서 끝난다.
+    metro_windows = {
+        f"{GWANGJU_PREDECESSOR_WASTE_ID}_METRO_330": ("2022-11-15", "2025-01-01"),
+        f"{GWANGJU_PREDECESSOR_WASTE_ID}_METRO_350": ("2025-01-01", REGIME_CHANGE_DATE),
+        f"{GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID}_METRO_330": ("2022-11-15", "2025-01-01"),
+        f"{GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID}_METRO_350": ("2025-01-01", REGIME_CHANGE_DATE),
+    }
+    metro_rules = {rule.rule_id: rule for rule in LOCAL_RULES if rule.rule_id in metro_windows}
+    assert set(metro_rules) == set(metro_windows)
+    for rule_id, (effective, superseded_on) in metro_windows.items():
+        assert metro_rules[rule_id].region_code == "29"
+        assert metro_rules[rule_id].effective_date == effective
+        assert metro_rules[rule_id].superseded_date == superseded_on
     superseded = {rule.rule_id for rule in LOCAL_RULES if rule.superseded_date is not None}
     assert superseded == {
         PREDECESSOR_WASTE_ID,
         PREDECESSOR_LAND_TRANSPORT_ID,
         GWANGJU_PREDECESSOR_WASTE_ID,
         GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID,
+        *metro_windows,
     }
 
 
