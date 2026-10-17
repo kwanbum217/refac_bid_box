@@ -569,12 +569,22 @@ def _rule_signature(rule: EvaluationRule) -> dict[str, object]:
     }
 
 
+# 2026-10-17 전남광주 통합 지침 이전 공고용 전라남도 구판 규칙. 통합 규칙 곁에 놓여 있어
+# 기존·신규 순서 단정에서는 빼고, 존재만 따로 단정한다.
+PREDECESSOR_RULE_IDS = (
+    "SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4",
+    "SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4",
+)
+
+
 def test_existing_36_local_rules_unchanged() -> None:
     """기존 36개 규칙은 순서와 동작 필드가 그대로이고 신규 11개는 뒤에 추가된다."""
-    assert len(LOCAL_RULES) == len(EXISTING_RULE_IDS) + len(NEW_RULE_IDS)
-    assert tuple(rule.rule_id for rule in LOCAL_RULES) == EXISTING_RULE_IDS + NEW_RULE_IDS
+    rules = tuple(rule for rule in LOCAL_RULES if rule.rule_id not in PREDECESSOR_RULE_IDS)
+    assert {rule.rule_id for rule in LOCAL_RULES} >= set(PREDECESSOR_RULE_IDS)
+    assert len(rules) == len(EXISTING_RULE_IDS) + len(NEW_RULE_IDS)
+    assert tuple(rule.rule_id for rule in rules) == EXISTING_RULE_IDS + NEW_RULE_IDS
     payload = json.dumps(
-        [_rule_signature(rule) for rule in LOCAL_RULES[: len(EXISTING_RULE_IDS)]],
+        [_rule_signature(rule) for rule in rules[: len(EXISTING_RULE_IDS)]],
         ensure_ascii=False,
         sort_keys=True,
     )
