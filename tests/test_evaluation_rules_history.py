@@ -107,10 +107,13 @@ def test_generator_helpers() -> None:
 
 
 def test_notice_amount_only_evidenced_years() -> None:
-    # 2023 년만 저장소에 근거가 있다(src/ml/notice_amount.py, 기획재정부 고시 제2022-32호).
+    # 2021~2022 년은 기획재정부 고시 제2020-39호(2020-12-30) 2.1억,
+    # 2023 년은 기획재정부 고시 제2022-32호(2022-12-30) 2.2억으로 근거가 있다.
+    assert erhist.history_notice_amount_for_year(2021) == 210_000_000
+    assert erhist.history_notice_amount_for_year(2022) == 210_000_000
     assert erhist.history_notice_amount_for_year(2023) == 220_000_000
-    # 2019~2022 년 값은 저장소에 근거가 없어 값을 만들지 않는다.
-    for year in (2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2024):
+    # 2019~2020 년 값은 저장소에 근거가 없어 값을 만들지 않는다.
+    for year in (2015, 2016, 2017, 2018, 2019, 2020, 2024):
         assert erhist.history_notice_amount_for_year(year) is None
 
 
