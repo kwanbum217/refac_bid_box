@@ -206,6 +206,17 @@ _SCORE_NOTE_B_SPLIT = "조건부: B는 추정가격 5억원 미만 70/이상 60�
 _SCORE_NOTE_B_MANUAL = "수요기관 지정: B는 60~70 범위에서 공고문 값 입력"
 _SCORE_NOTE_K_SPLIT = "조건부: k는 고시금액 미만 4/이상 2로 선택"
 _SCORE_THRESHOLD_88_ATTACHMENTS = {"ATTACH_03", "ATTACH_04"}
+# 개정 후 별표 7(수리ㆍ점검)·8(임대차)·9(수요기관 지정형)는 조달청 원문에서 직접 확인했습니다.
+# 제2026-260호와 제2026-390호 두 판의 배점한도·기준값·계수·통과점수·낙찰하한율이 모두 같아
+# 개정 후 두 벌이 같은 규칙 객체를 재사용합니다.
+# - 제2026-260호 개정 전문(국가법령정보센터 flSeq=164496633) 별표 7 p.38, 별표 8 p.41,
+#   별표 9 p.43, 제10조 p.13-14
+# - 제2026-390호 개정 전문·분야별 낙찰하한율 안내(조달청 고시, 2026-07-24)
+_SCORE_DOC_POST_ATTACH_7_9 = "docs/analysis/post_rev_old_annex_apply_20261017.md 3장 원문 근거표"
+_SCORE_SRC_POST_ATTACH_7_9 = (
+    "조달청 일반용역 적격심사 세부기준 제2026-260호(시행 2026-05-26)·제2026-390호"
+    f"(시행 2026-07-27) 별표 7~9 원문 및 {_SCORE_DOC_POST_ATTACH_7_9}"
+)
 
 
 def _score_source(regime: str, table_row: int, *, pre_rows: str = "") -> str:
@@ -541,6 +552,50 @@ _SCORE_TABLE_DECLARATIONS: dict[str, ScoreTableEntry] = {
     "SERVC_QUAL_POST_20260526_ATTACH_12": (None, None, None, _SCORE_REASON_UNMAPPED_BAND),
     "SERVC_QUAL_POST_20260526_ATTACH_13": (None, None, None, _SCORE_REASON_UNMAPPED_BAND),
     "SERVC_QUAL_POST_20260526_ATTACH_14": (None, None, None, _SCORE_REASON_UNMAPPED_BAND),
+    # 개정 후 별표 7~9. 개정 전과 달리 원문이 고시금액 미만·이상 두 행으로 나뉘어 있어
+    # 한 별표를 두 규칙으로 담고, 통과점수는 제10조의 기타 분야 85점입니다.
+    "SERVC_QUAL_POST_20260526_ATTACH_15": (
+        None,
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_POST_ATTACH_7_9} (별표7 수리ㆍ점검 고시금액 미만: T=85; "
+        f"{_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_16": (
+        None,
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_POST_ATTACH_7_9} (별표7 수리ㆍ점검 고시금액 이상: T=85; "
+        f"{_SCORE_NOTE_B_SPLIT}, {_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_17": (
+        Decimal("70"),
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_POST_ATTACH_7_9} (별표8 임대차 고시금액 미만: B=70 단일·T=85; "
+        f"{_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_18": (
+        Decimal("70"),
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_POST_ATTACH_7_9} (별표8 임대차 고시금액 이상: B=70 단일·T=85; "
+        f"{_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_19": (
+        None,
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_POST_ATTACH_7_9} (별표9 수요기관 지정형 고시금액 미만: T=85; "
+        f"{_SCORE_NOTE_B_MANUAL}, {_SCORE_NOTE_K_SPLIT})",
+    ),
+    "SERVC_QUAL_POST_20260526_ATTACH_20": (
+        None,
+        None,
+        Decimal("85"),
+        f"{_SCORE_SRC_POST_ATTACH_7_9} (별표9 수요기관 지정형 고시금액 이상: T=85; "
+        f"{_SCORE_NOTE_B_MANUAL}, {_SCORE_NOTE_K_SPLIT})",
+    ),
 }
 
 
@@ -596,7 +651,12 @@ def _has_conditional_axis(rule_id: str, axis: str) -> bool:
             "k": {5, 15, 16, 17},
         }
     else:
-        conditional = {"B": {1, 2, 3, 4, 5, 7, 9, 11}, "k": {5}}
+        # 개정 후 별표 7은 원문이 입찰가격 배점한도를 추정가격 5억원 기준으로 나누므로
+        # 15·16 이 B 조건부이고, 별표 7~9 는 모두 계수가 고시금액 기준 조건부입니다.
+        conditional = {
+            "B": {1, 2, 3, 4, 5, 7, 9, 11, 15, 16},
+            "k": {5, 15, 16, 17, 18, 19, 20},
+        }
     return attachment_number in conditional[axis]
 
 
@@ -758,7 +818,9 @@ def resolve_score_params(
     )
 
 
-# 2026-05-26 개정 후 일반용역 적격심사 실측 정본 별표 14종
+# 2026-05-26 개정 후 일반용역 적격심사 실측 정본 별표 1~9 (규칙 20종).
+# 제2026-260호 원문이 고시금액 미만·이상 두 행으로 나눈 별표 1·3·4·5의2·7·8·9 는
+# 행마다 한 규칙이고, 단일 행인 별표 2·3의2·5·6 과 일반 띠 3종은 한 규칙입니다.
 POST_20260526_RULES: tuple[EvaluationRule, ...] = (
     EvaluationRule(
         rule_id="SERVC_QUAL_POST_20260526_ATTACH_01",
@@ -996,13 +1058,101 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
         base_rate=Decimal("0.90"),
         sample_count=18,
     ),
+    # 개정 후 별표 7(수리ㆍ점검용역)·8(임대차)·9(수요기관 지정형). 제2026-260호 원문이
+    # 고시금액 미만·이상 두 행으로 배점한도와 낙찰하한율을 나누므로 별표마다 두 규칙입니다.
+    EvaluationRule(
+        rule_id="SERVC_QUAL_POST_20260526_ATTACH_15",
+        service_type="REPAIR_INSPECTION",
+        table_name="수리ㆍ점검용역 적격심사 (고시금액 미만)",
+        description="수리ㆍ점검용역 적격심사 추정가격 고시금액 미만",
+        effective_date="2026-05-26",
+        source="조달청 일반용역 적격심사 세부기준 제2026-260호(시행 2026-05-26) 별표 7",
+        patterns=(
+            "수리ㆍ점검용역 적격심사 고시금액 미만",
+            "수리ㆍ점검용역 적격심사 추정가격 고시금액 미만",
+        ),
+        lwlt_rate=Decimal("86.245"),
+        base_rate=Decimal("0.90"),
+        sample_count=38,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_POST_20260526_ATTACH_16",
+        service_type="REPAIR_INSPECTION",
+        table_name="수리ㆍ점검용역 적격심사 (고시금액 이상)",
+        description="수리ㆍ점검용역 적격심사 추정가격 5억원 미만 고시금액 이상 / 5억원 이상",
+        effective_date="2026-05-26",
+        source="조달청 일반용역 적격심사 세부기준 제2026-260호(시행 2026-05-26) 별표 7",
+        patterns=(
+            "수리ㆍ점검용역 적격심사 5억원 미만 고시금액 이상",
+            "수리ㆍ점검용역 적격심사 5억원 이상",
+        ),
+        lwlt_rate=Decimal("82.495"),
+        base_rate=Decimal("0.90"),
+        sample_count=22,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_POST_20260526_ATTACH_17",
+        service_type="LEASE",
+        table_name="임대차 적격심사 (고시금액 미만)",
+        description="임대차 적격심사 추정가격 고시금액 미만",
+        effective_date="2026-05-26",
+        source="조달청 일반용역 적격심사 세부기준 제2026-260호(시행 2026-05-26) 별표 8",
+        patterns=("임대차 적격심사 추정가격 고시금액 미만",),
+        lwlt_rate=Decimal("86.245"),
+        base_rate=Decimal("0.90"),
+        sample_count=76,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_POST_20260526_ATTACH_18",
+        service_type="LEASE",
+        table_name="임대차 적격심사 (고시금액 이상)",
+        description="임대차 적격심사 추정가격 고시금액 이상",
+        effective_date="2026-05-26",
+        source="조달청 일반용역 적격심사 세부기준 제2026-260호(시행 2026-05-26) 별표 8",
+        patterns=("임대차 적격심사 추정가격 고시금액 이상",),
+        lwlt_rate=Decimal("82.495"),
+        base_rate=Decimal("0.90"),
+        sample_count=22,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_POST_20260526_ATTACH_19",
+        service_type="DEMAND_AGENCY",
+        table_name="수요기관 지정형 적격심사 (고시금액 미만)",
+        description="수요기관 지정형 적격심사 추정가격 고시금액 미만",
+        effective_date="2026-05-26",
+        source="조달청 일반용역 적격심사 세부기준 제2026-260호(시행 2026-05-26) 별표 9",
+        # 원문 낙찰방법명이 "수요기관 지정형 적격심사"와 "추정가격" 사이에 공백을 두 칸 둡니다.
+        patterns=(
+            "수요기관 지정형 적격심사  추정가격 고시금액 미만",
+            "수요기관 지정형 적격심사 추정가격 고시금액 미만",
+        ),
+        lwlt_rate=Decimal("86.245"),
+        base_rate=Decimal("0.90"),
+        sample_count=38,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_POST_20260526_ATTACH_20",
+        service_type="DEMAND_AGENCY",
+        table_name="수요기관 지정형 적격심사 (고시금액 이상)",
+        description="수요기관 지정형 적격심사 추정가격 고시금액 이상",
+        effective_date="2026-05-26",
+        source="조달청 일반용역 적격심사 세부기준 제2026-260호(시행 2026-05-26) 별표 9",
+        patterns=(
+            "수요기관 지정형 적격심사  추정가격 고시금액 이상",
+            "수요기관 지정형 적격심사 추정가격 고시금액 이상",
+        ),
+        lwlt_rate=Decimal("82.495"),
+        base_rate=Decimal("0.90"),
+        sample_count=11,
+    ),
 )
 
 POST_20260526_RULES = _with_score_table(POST_20260526_RULES)
 
-# 2026-07-27 개정 후 일반용역 적격심사 별표 14종 (조달청 공고 제2026-390호).
+# 2026-07-27 개정 후 일반용역 적격심사 별표 1~9 (조달청 공고 제2026-390호).
 # 여객 육상운송용역(ATTACH_03)과 소프트웨어용역 중소기업자간 경쟁제품 대상(ATTACH_04)만
-# 기준비율과 낙찰하한율이 오르고, 나머지 12종은 제2026-260호 벌의 같은 객체를 재사용합니다.
+# 기준비율과 낙찰하한율이 오르고, 나머지 18종은 제2026-260호 벌의 같은 객체를 재사용합니다.
+# 별표 7~9 는 원문 두 판의 값이 같아 260호 객체를 그대로 씁니다.
 POST_20260727_RULES: tuple[EvaluationRule, ...] = (
     POST_20260526_RULES[0],
     POST_20260526_RULES[1],
