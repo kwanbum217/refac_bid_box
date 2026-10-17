@@ -40,6 +40,8 @@ from src.app.services.evaluation_rules import (
 
 METHOD_FACILITY = "시설분야용역 적격심사 추정가격 5억원 이상"
 METHOD_GENERIC = "추정가격 2억원 미만인 용역"
+# 띠 표기가 아닌 일반 표기. 띠 표기는 환경부고시 규칙이 따로 받는다(2026-10-17).
+METHOD_NON_BAND = "적격심사제-일반용역 적격심사"
 
 
 def _rule(rule_id: str) -> EvaluationRule:
@@ -552,7 +554,7 @@ def test_jngj_fishery_cleanup_rule_is_not_general() -> None:
 
 def test_jngj_general_service_has_no_sido_rule() -> None:
     """전남광주 일반용역(어장정화·정비 아님)은 시·도 규칙 없음 경로로 차단된다."""
-    result = _resolve_jngj(sucsfbid_mthd_nm=METHOD_GENERIC)
+    result = _resolve_jngj(sucsfbid_mthd_nm=METHOD_NON_BAND)
     assert result.rule is None
     assert result.is_blocked is True
     assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
@@ -570,7 +572,7 @@ def test_jngj_fishery_method_name_confirms_attach_06() -> None:
 def test_jngj_fishery_announcement_name_only_recommends() -> None:
     """공고명의 어장 신호만으로는 확정하지 않고 추천 경고만 남긴다."""
     result = _resolve_jngj(
-        sucsfbid_mthd_nm=METHOD_GENERIC,
+        sucsfbid_mthd_nm=METHOD_NON_BAND,
         raw_data={"bidNtceNm": "어장정화·정비 용역"},
     )
     assert result.rule is None

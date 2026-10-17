@@ -32,10 +32,21 @@ POST_20260727_SW_SME_RULE_ID = "SERVC_QUAL_POST_20260727_ATTACH_04"
 PRE_20250901_FACILITY_RULE_ID = "SERVC_QUAL_PRE_20250901_ATTACH_01"
 PRE_20230501_FACILITY_RULE_ID = "SERVC_QUAL_PRE_20230501_ATTACH_01"
 HIGH_BASE_RATE_SERVICE_TYPES = {"FACILITY", "PASSENGER_TRANSPORT", "SW_SME"}
+MOE_CDW_PPS_BAND_RULE_IDS = {
+    "SERVC_QUAL_POST_20260526_ATTACH_12",
+    "SERVC_QUAL_POST_20260526_ATTACH_13",
+    "SERVC_QUAL_POST_20260526_ATTACH_14",
+}
 GENERAL_BAND_METHODS = (
     "적격심사제-추정가격 2억원 미만인 용역",
     "적격심사제-추정가격 5억원 미만 2억원 이상인 용역",
     "적격심사제-추정가격 30억원 미만 15억원 이상인 용역",
+)
+# 환경부고시 건설폐기물처리용역 평가기준 [별표] 구간명 띠 표기(2026-10-17 조사). 별도 시험이 다룬다.
+MOE_CDW_BAND_METHODS = (
+    "적격심사제-추정가격 15억원 미만 5억원 이상인 용역",
+    "적격심사제-추정가격 100억원 미만 30억원 이상인 용역",
+    "적격심사제-추정가격 100억원 이상인 용역",
 )
 SUBDIVIDED_BAND_METHODS = (
     "적격심사제-추정가격 15억원 미만 5억원 이상인 용역",
@@ -350,22 +361,36 @@ class TestPreRegimeResolution:
 
     @pytest.mark.parametrize("bid_ntce_dt", ["2025-08-27", "2025-10-01", "2026-05-25"])
     @pytest.mark.parametrize("method", GENERAL_BAND_METHODS)
-    def test_pre_period_general_band_is_blocked_by_regime_mismatch(
+    def test_pre_period_general_band_resolves_to_moe_cdw(
         self,
         method: str,
         bid_ntce_dt: str,
     ) -> None:
+        # 띠 표기는 환경부고시 건설폐기물처리용역 평가기준 [별표] 구간명이다(2026-10-17 조사).
+        # 고시 시행일(2025-01-02) 이후 공고는 고시 해당 호로 계산된다.
         result = _resolve(method, bid_ntce_dt=bid_ntce_dt, rate="87.745")
+
+        assert result.is_blocked is False
+        assert result.rule is not None
+        assert result.rule.rule_id.startswith("SERVC_QUAL_MOE_CDW_")
+        assert result.rate_source == "ANNOUNCEMENT"
+
+    @pytest.mark.parametrize("method", GENERAL_BAND_METHODS)
+    def test_band_before_moe_effective_date_is_blocked_by_regime_mismatch(
+        self, method: str
+    ) -> None:
+        result = _resolve(method, bid_ntce_dt="2024-12-31", rate="87.745")
 
         assert result.is_blocked is True
         assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
         assert result.rule is not None
         assert result.rule.rule_id.startswith("SERVC_QUAL_POST_20260526_")
         assert result.effective_lwlt_rate is None
-        assert result.rate_source is None
 
     @pytest.mark.parametrize("bid_ntce_dt", ["2025-08-27", "2025-10-01", "2026-05-25"])
-    @pytest.mark.parametrize("method", SUBDIVIDED_BAND_METHODS)
+    @pytest.mark.parametrize(
+        "method", [m for m in SUBDIVIDED_BAND_METHODS if m not in MOE_CDW_BAND_METHODS]
+    )
     def test_pre_period_subdivided_band_is_rule_not_found(
         self,
         method: str,
@@ -404,6 +429,10 @@ class TestPostRegimeRegression:
 
             assert result.is_blocked is False, rule.rule_id
             assert result.rule is not None
+            if rule.rule_id in MOE_CDW_PPS_BAND_RULE_IDS:
+                # 값 미상 띠 규칙은 환경부고시 해당 호가 대신 받는다.
+                assert result.rule.rule_id.startswith("SERVC_QUAL_MOE_CDW_"), rule.rule_id
+                continue
             assert result.rule.rule_id == rule.rule_id
             assert result.rule.lwlt_rate == rule.lwlt_rate
             assert result.rule.base_rate == rule.base_rate
