@@ -114,6 +114,7 @@ from src.app.services.evaluation_recommendation import (
 )
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
+    BLOCK_CODE_MANUAL_EVALUATION,
     CREDIT_GRADE_SCORES,
     METHOD_FAMILY_BY_CODE,
     METHOD_SOURCE_CODE,
@@ -212,6 +213,17 @@ QUANT_NOTICE_LOCAL_UNVERIFIED = (
     "정량평가 배점표는 기관 원문 미반영입니다. 입력한 정량점수는 서버가 검증하지 않습니다."
 )
 LOCAL_USER_INPUT_SOURCE = "사용자 입력(지자체 기준 미확보)"
+# 관리규정외 수기심사 공고는 발주기관 자체 심사기준표가 정본이라, 사용자가 그 값을 입력하면
+# 가격점수 경로를 열고 결과 근거에 사용자 입력임을 남깁니다.
+MANUAL_USER_INPUT_RULE_ID = "SERVC_MANUAL_USER_INPUT"
+MANUAL_USER_INPUT_SOURCE = "수기심사 공고: 사용자 입력 기준"
+MANUAL_USER_INPUT_NOTICE = f"{MANUAL_USER_INPUT_SOURCE}으로 계산합니다."
+MANUAL_INPUT_LABELS: dict[str, str] = {
+    "max_price_score": "가격배점한도(B)",
+    "multiplier": "평점계수(k)",
+    "pass_threshold": "통과점수",  # nosec B105 - 배점표 항목의 한국어 표기이지 비밀번호가 아닙니다
+    "base_rate": "기준비율",
+}
 
 
 @dataclass(frozen=True)
@@ -524,6 +536,69 @@ def _local_user_input_rule(qualification: QualificationInput) -> EvaluationRule 
         score_table_source=LOCAL_USER_INPUT_SOURCE,
         institution_scope=RULE_SCOPE_ALL,
     )
+
+
+def _manual_user_input_rule(qualification: QualificationInput) -> EvaluationRule | None:
+    """수기심사 공고에서 사용자가 입력한 자체 심사기준표 값으로 만든 임시 규칙.
+
+    B·k·기준비율·통과점수 넷 중 하나라도 비면 None 을 돌려주어 차단을 유지합니다.
+    LOCAL_RULE_NOT_FOUND 경로(_local_user_input_rule)와 같은 구조이며, 근거 표기만
+    수기심사 공고임을 밝힙니다.
+    """
+    values = (
+        qualification.max_price_score,
+        qualification.multiplier,
+        qualification.pass_threshold,
+        qualification.base_rate,
+    )
+    if any(value is None for value in values):
+        return None
+    base_rate = Decimal(str(qualification.base_rate))
+    return EvaluationRule(
+        rule_id=MANUAL_USER_INPUT_RULE_ID,
+        service_type="GENERAL",
+        table_name="수기심사 자체 심사기준 (사용자 입력)",
+        description="적격심사제-관리규정외 수기심사 — 사용자 입력 심사기준",
+        effective_date="2000-01-01",
+        source=MANUAL_USER_INPUT_SOURCE,
+        patterns=(),
+        lwlt_rate=Decimal("0"),
+        base_rate=base_rate,
+        price_bands=(
+            PriceBand(
+                upper_bound=None,
+                max_price_score=Decimal(str(qualification.max_price_score)),
+                multiplier=Decimal(str(qualification.multiplier)),
+                base_rate=base_rate,
+                label="사용자 입력",
+                source=MANUAL_USER_INPUT_SOURCE,
+            ),
+        ),
+        threshold_bands=(
+            ThresholdBand(
+                upper_bound=None,
+                pass_threshold=Decimal(str(qualification.pass_threshold)),
+                label="사용자 입력",
+                source=MANUAL_USER_INPUT_SOURCE,
+            ),
+        ),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=MANUAL_USER_INPUT_SOURCE,
+        institution_scope=RULE_SCOPE_ALL,
+    )
+
+
+def _manual_missing_labels(qualification: QualificationInput) -> list[str]:
+    """수기심사 자체 심사기준 입력에서 비어 있는 항목의 표기 목록입니다."""
+    supplied: dict[str, float | None] = {
+        "max_price_score": qualification.max_price_score,
+        "multiplier": qualification.multiplier,
+        "pass_threshold": qualification.pass_threshold,
+        "base_rate": qualification.base_rate,
+    }
+    return [
+        MANUAL_INPUT_LABELS[field_name] for field_name, value in supplied.items() if value is None
+    ]
 
 
 # =============================================================================
@@ -1738,6 +1813,45 @@ def _resolve_evaluation_inputs(
                     rate_source=rate_source,
                     warnings=lwlt_warnings,
                 )
+        # 관리규정외 수기심사는 발주기관 자체 심사기준표가 정본이라, 사용자가 가격배점한도(B)·
+        # 평점계수(k)·기준비율·통과점수를 모두 입력하면 그 값으로 계산합니다. 일부만 들어오면
+        # 부족한 항목을 안내하고 차단을 유지합니다.
+        elif rule_result.block_reason_code == BLOCK_CODE_MANUAL_EVALUATION:
+            manual_rule = _manual_user_input_rule(qualification)
+            if manual_rule is None:
+                labels = ", ".join(_manual_missing_labels(qualification))
+                return _blocked_inputs(
+                    "rule",
+                    BLOCK_CODE_MANUAL_EVALUATION,
+                    "수기심사 공고입니다. 발주기관 자체 심사기준표의 가격배점한도(B)·"
+                    f"평점계수(k)·기준비율·통과점수를 모두 입력해야 계산합니다. 부족한 항목: {labels}.",
+                    rule_result,
+                )
+            manual_lwlt: Decimal | None = None
+            raw_lwlt = raw_data.get("sucsfbidLwltRate")
+            if raw_lwlt is not None:
+                try:
+                    text = str(raw_lwlt).strip()
+                    if text:
+                        manual_lwlt = Decimal(text)
+                except (ArithmeticError, TypeError, ValueError):
+                    manual_lwlt = None
+            if manual_lwlt is None or manual_lwlt <= 0:
+                effective_lwlt = manual_rule.lwlt_rate
+                rate_source = "RULE_DEFAULT"
+            else:
+                effective_lwlt = manual_lwlt
+                rate_source = "ANNOUNCEMENT"
+            rule_result = replace(
+                rule_result,
+                is_blocked=False,
+                block_reason_code=None,
+                block_reason_message=None,
+                rule=manual_rule,
+                effective_lwlt_rate=effective_lwlt,
+                rate_source=rate_source,
+                warnings=[*rule_result.warnings, MANUAL_USER_INPUT_NOTICE],
+            )
         if rule_result.is_blocked:
             return _blocked_inputs(
                 "rule",
