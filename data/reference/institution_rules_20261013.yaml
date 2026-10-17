@@ -2778,8 +2778,8 @@ institutions:
     scope: INSTITUTION
     standard: "일반용역 적격심사세부기준 (제정 2009-11-20, 최종 개정 2026-08-05 지침 제792호, 2026-08-14 이후 입찰공고분 적용)"
     effective_date: "2026-08-14"
-    service_types: ["학술연구용역", "시설분야용역", "폐기물처리용역", "보험용역", "수리·점검용역"]
-    note: "제10조가 종합평점 통과점수를 85점으로 정하고 제5조 제1항이 용역 유형별 [별표]를 지정한다. 추정가격 5억원 경계로 인쇄된 배점한도 B 와 고시금액 경계로 인쇄된 평점계수 k·기준비율이 함께 구간을 정해, 별표 1·4·7 은 세 구간, 단일 산식인 별표 2·6 은 두 구간이다. 별표 3·3의 2(소프트웨어용역)와 별표 5·5의 2(육상운송용역)는 제10조의 88점 예외와 제5조 제1항의 대안 지정 때문에 어느 표가 어느 속성에 붙는지 원문으로 확정되지 않아 등록하지 않았다. 별표 8(임대차용역)은 공고 표기가 0건, 별표 9(지정형 용역)는 배점한도가 범위로만 인쇄되어 등록하지 않았다. 심사항목 배점표는 미확보라 정량점수 직접 입력을 유지한다. 토큰과 하한율 근거는 docs/analysis/kac_register_20261017.md 에 있다."
+    service_types: ["학술연구용역", "시설분야용역", "소프트웨어용역(중소기업자간 경쟁제품 대상)", "폐기물처리용역", "보험용역", "수리·점검용역"]
+    note: "제10조가 종합평점 통과점수를 85점으로 정하고 소프트웨어용역 중소기업자간 경쟁제품 대상은 88점으로 따로 둔다. 제5조 제1항이 용역 유형별 [별표]를 지정한다. 추정가격 5억원 경계로 인쇄된 배점한도 B 와 고시금액 경계로 인쇄된 평점계수 k·기준비율이 함께 구간을 정해, 별표 1·4·7 은 세 구간, 단일 산식인 별표 2·6·3의 2 는 두 구간이다. 별표 3의 2 는 공고 낙찰방법명이 대상 표기를 담아 인쇄되어 2026-10-17 등록했다. 별표 5·5의 2(육상운송용역)는 제5조 제1항이 대안을 지정해 어느 표가 어느 속성에 붙는지 원문으로 확정되지 않아, 별표 3(비대상)은 비대상 표기 공고가 조회되지 않아 등록하지 않았다. 별표 8(임대차용역)은 공고 표기가 0건, 별표 9(지정형 용역)는 배점한도가 범위로만 인쇄되어 등록하지 않았다. 심사항목 배점표는 미확보라 정량점수 직접 입력을 유지한다. 토큰과 하한율 근거는 docs/analysis/kac_register_20261017.md 와 docs/analysis/kac_annex_3_2_register_20261017.md 에 있다."
     non_qual_methods: []
     bands:
       - band: "별표 1 학술연구용역 · 고시금액 미만"
@@ -2847,6 +2847,32 @@ institutions:
         flat_score: null
         status: confirmed
         source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) · 5억원 미만"
+        service_type: "소프트웨어용역(중소기업자간 경쟁제품 대상)"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 4
+        base_ratio: 93
+        pass_score: 88
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_annex_3_2_register_20261017.md:3"
+      - band: "별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) · 5억원 이상"
+        service_type: "소프트웨어용역(중소기업자간 경쟁제품 대상)"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 4
+        base_ratio: 93
+        pass_score: 88
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_annex_3_2_register_20261017.md:3"
       - band: "별표 4 폐기물처리용역 · 고시금액 미만"
         service_type: "폐기물처리용역"
         lower: null
@@ -2951,4 +2977,4 @@ institutions:
         flat_score: null
         status: confirmed
         source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
-    sources: ["docs/analysis/kac_regulation_followup_20261015.md:4.2", "docs/analysis/kac_register_20261017.md"]
+    sources: ["docs/analysis/kac_regulation_followup_20261015.md:4.2", "docs/analysis/kac_register_20261017.md", "docs/analysis/kac_annex_3_2_register_20261017.md:3"]
