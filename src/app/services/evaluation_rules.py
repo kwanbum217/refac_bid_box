@@ -2942,6 +2942,153 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
             "95", "육상운송용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_5
         ),
     ),
+    # 광주광역시(광역) 본청·소속기관 전용 구판 규칙 (국제입찰 고시 금액 경계).
+    # 자치구 등 그 밖의 공고는 위 5억원 경계 규칙을 그대로 쓰고, 본청·소속기관 공고만
+    # 이 규칙(3.3억/3.5억 경계)을 씁니다. _select_local_rule 이 수요기관명으로 가릅니다.
+    _local_rule(
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3_METRO_330",
+        sido_code="29",
+        sido_name="광주광역시",
+        service_type="WASTE",
+        effective_date="2022-11-15",
+        superseded_date="2025-01-01",
+        source=_SRC_GWANGJU_ATTACH_1_3,
+        description="광주광역시(광역) 폐기물처리용역 적격심사 (별표 1-3, 지역제한 3.3억, 통합 지침 이전)",
+        lwlt_rate="82.995",
+        price_bands=(
+            _local_price_band(
+                "100000000",
+                "90",
+                "20",
+                "추정가격 1억원 미만",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "330000000",
+                "80",
+                "20",
+                "지역제한 금액 미만 1억원 이상",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                None,
+                "30",
+                "1",
+                "지역제한 금액 이상",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="82.995",
+            ),
+        ),
+        threshold_bands=_single_threshold(
+            "95", "폐기물처리용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_3
+        ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3_METRO_350",
+        sido_code="29",
+        sido_name="광주광역시",
+        service_type="WASTE",
+        effective_date="2025-01-01",
+        superseded_date="2026-07-16",
+        source=_SRC_GWANGJU_ATTACH_1_3,
+        description="광주광역시(광역) 폐기물처리용역 적격심사 (별표 1-3, 지역제한 3.5억, 통합 지침 이전)",
+        lwlt_rate="82.995",
+        price_bands=(
+            _local_price_band(
+                "100000000",
+                "90",
+                "20",
+                "추정가격 1억원 미만",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "350000000",
+                "80",
+                "20",
+                "지역제한 금액 미만 1억원 이상",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                None,
+                "30",
+                "1",
+                "지역제한 금액 이상",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="82.995",
+            ),
+        ),
+        threshold_bands=_single_threshold(
+            "95", "폐기물처리용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_3
+        ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_5_METRO_330",
+        sido_code="29",
+        sido_name="광주광역시",
+        service_type="LAND_TRANSPORT",
+        effective_date="2022-11-15",
+        superseded_date="2025-01-01",
+        source=_SRC_GWANGJU_ATTACH_1_5,
+        description="광주광역시(광역) 육상운송용역 적격심사 (별표 1-5, 지역제한 3.3억, 통합 지침 이전)",
+        lwlt_rate="85.495",
+        price_bands=(
+            _local_price_band(
+                "330000000",
+                "70",
+                "2",
+                "지역제한 금액 미만",
+                _SRC_GWANGJU_ATTACH_1_5,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                None,
+                "60",
+                "2",
+                "지역제한 금액 이상",
+                _SRC_GWANGJU_ATTACH_1_5,
+                lwlt_rate="85.495",
+            ),
+        ),
+        threshold_bands=_single_threshold(
+            "95", "육상운송용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_5
+        ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_5_METRO_350",
+        sido_code="29",
+        sido_name="광주광역시",
+        service_type="LAND_TRANSPORT",
+        effective_date="2025-01-01",
+        superseded_date="2026-07-16",
+        source=_SRC_GWANGJU_ATTACH_1_5,
+        description="광주광역시(광역) 육상운송용역 적격심사 (별표 1-5, 지역제한 3.5억, 통합 지침 이전)",
+        lwlt_rate="85.495",
+        price_bands=(
+            _local_price_band(
+                "350000000",
+                "70",
+                "2",
+                "지역제한 금액 미만",
+                _SRC_GWANGJU_ATTACH_1_5,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                None,
+                "60",
+                "2",
+                "지역제한 금액 이상",
+                _SRC_GWANGJU_ATTACH_1_5,
+                lwlt_rate="85.495",
+            ),
+        ),
+        threshold_bands=_single_threshold(
+            "95", "육상운송용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_5
+        ),
+    ),
     # 전남광주통합특별시 (예규 제3호, 시행 2026-07-16)
     _local_rule(
         "SERVC_LOCAL_JNGJ_20260716_ATTACH_01",
@@ -6601,6 +6748,29 @@ def _narrow_to_current_regime(
     return narrowed
 
 
+def _is_gwangju_metro_institution(name: str | None) -> bool:
+    """광주광역시(광역) 본청·소속기관 공고인지 판정합니다.
+
+    수요기관명이 광주광역시 또는 전남광주통합특별시 로 시작하고, 그 뒤가 동구·서구·
+    남구·북구·광산구 가 아니며, '교육청' 이라는 낱말을 포함하지 않고, 지방공기업
+    (공사·공단·재단) 이 아닌 공고를 본청·소속기관으로 봅니다.
+    """
+    if not name:
+        return False
+    text = re.sub(r"\s+", "", str(name))
+    prefixes = ("광주광역시", "전남광주통합특별시")
+    for prefix in prefixes:
+        if text.startswith(prefix):
+            rest = text[len(prefix) :]
+            districts = ("동구", "서구", "남구", "북구", "광산구")
+            if any(rest.startswith(district) for district in districts):
+                return False
+            if "교육청" in text:
+                return False
+            return not ("공사" in text or "공단" in text or "재단" in text)
+    return False
+
+
 def _select_local_rule(
     method_name: str | None,
     raw_data: dict[str, Any] | None,
@@ -6609,6 +6779,8 @@ def _select_local_rule(
     sido_name: str | None,
     configured_service_type: str | None = None,
     announced: date | None = None,
+    institution_name: str | None = None,
+    announcement_institution_name: str | None = None,
 ) -> tuple[EvaluationRule | None, str | None, str, list[str]]:
     """LOCAL 규칙 후보를 수요기관 시·도와 용역 세부유형으로 골라 돌려줍니다.
 
@@ -6620,21 +6792,44 @@ def _select_local_rule(
     def _applied(rule: EvaluationRule) -> tuple[EvaluationRule, str | None, str, list[str]]:
         return rule, None, "", list(warnings)
 
-    region_rules = _narrow_to_current_regime(
-        [
-            rule
-            for rule in LOCAL_RULES
-            if _axis_matches(
-                rule,
-                institution_code=None,
-                institution_name=None,
-                region_code=sido_code,
-                region_name=sido_name,
-                contract_regime="LOCAL",
-            )
-        ],
-        announced,
-    )
+    # 광주광역시(광역) 본청·소속기관 공고는 국제입찰 고시 금액(3.3억/3.5억) 경계 규칙을
+    # 쓰고, 자치구 등 그 밖의 공고는 기존 5억원 경계 규칙을 씁니다. 수요기관명으로 가릅니다.
+    metro_name = institution_name
+    if metro_name is None and isinstance(raw_data, dict):
+        metro_name = raw_data.get("dminsttNm") or raw_data.get("demandInsttNm")
+    if metro_name is None:
+        metro_name = announcement_institution_name
+    is_gwangju_metro = _is_gwangju_metro_institution(metro_name)
+
+    base_candidates = [
+        rule
+        for rule in LOCAL_RULES
+        if _axis_matches(
+            rule,
+            institution_code=None,
+            institution_name=None,
+            region_code=sido_code,
+            region_name=sido_name,
+            contract_regime="LOCAL",
+        )
+    ]
+    if sido_code == "29" or sido_name == "광주광역시":
+
+        def _is_gwangju_legacy(rule: EvaluationRule) -> bool:
+            return "GWANGJU_20221115" in rule.rule_id
+
+        if is_gwangju_metro:
+            base_candidates = [
+                r
+                for r in base_candidates
+                if not (_is_gwangju_legacy(r) and "_METRO_" not in r.rule_id)
+            ]
+        else:
+            base_candidates = [
+                r for r in base_candidates if not (_is_gwangju_legacy(r) and "_METRO_" in r.rule_id)
+            ]
+
+    region_rules = _narrow_to_current_regime(base_candidates, announced)
     if not region_rules:
         return None, BLOCK_CODE_LOCAL_RULE_NOT_FOUND, _LOCAL_NOT_FOUND_MESSAGE, warnings
 
@@ -7525,6 +7720,8 @@ def resolve_evaluation_rule(
             sido_name=region_name,
             configured_service_type=local_service_type,
             announced=announced,
+            institution_name=institution_name,
+            announcement_institution_name=announcement_institution_name,
         )
         if selected is None:
             if (
