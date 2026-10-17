@@ -159,7 +159,7 @@ ORDER BY total_12m DESC
 | 명령 | 결과 |
 | --- | --- |
 | `uv run pytest tests/test_post_rev_old_annex.py tests/test_evaluation_rules_post.py -q -m 'not data_assets'` | **160 passed** |
-| `uv run pytest tests/ -q -m 'not data_assets'` | **15 failed, 7834 passed, 41 skipped, 3 deselected in 247.56s** |
+| `uv run pytest tests/ -q -m 'not data_assets'` | **15 failed, 7834 passed, 41 skipped, 3 deselected in 248.17s** (커밋 트리에서 측정. 커밋 전 실행도 실패 15건·통과 7834건으로 같았고 시간만 247.56s 였습니다) |
 | `uv run mypy src` | **Success: no issues found in 135 source files** |
 | `python3 scripts/validate_agent_rules.py --quiet` | **검증 통과: 21/21 건** |
 | `uv run ruff check` / `ruff format --check` (변경 3파일) | **All checks passed / 3 files already formatted** |
