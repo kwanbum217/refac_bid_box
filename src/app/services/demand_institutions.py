@@ -265,6 +265,14 @@ SIDO_ALIASES: dict[str, str] = {
     "광주광역시": "전남광주통합특별시",
 }
 
+# 통합특별시 출범(2026-07-16) 전 계열입니다. 통합 명칭만으로는 옛 계열을 알 수 없어, 통합 전
+# 공고에 구판 별표(전라남도 예규 제1075호, 시행 2023-03-02)를 적용하려면 계열이 필요합니다.
+# 코드는 법정동코드 앞 2자리(전라남도 46, 광주광역시 29)이고 수요기관 기준정보 rgn_cd 와 같습니다.
+PRE_MERGE_SIDO_CODES: dict[str, tuple[str, str]] = {
+    "전라남도": ("46", "전라남도"),
+    "광주광역시": ("29", "광주광역시"),
+}
+
 # 규칙 region_code 로 쓰는 2자리 시·도 코드(법정동코드 앞 2자리).
 SIDO_CODES: dict[str, str] = {
     "서울특별시": "11",
@@ -294,6 +302,11 @@ def institution_sido(
     기준은 수요기관의 `toplvl_instt_nm`(시·도 본청)이고, 없으면 `rgn_nm` 첫 토큰입니다.
     `rgn_nm` 은 시·군·구 단위라 시·도 규칙 정확 일치에 쓸 수 없어 본청 필드를 씁니다.
     교육청·공단처럼 본청이 아닌 값은 (None, None) 으로 두어 시·도 규칙에서 제외합니다.
+
+    전남·광주 기관은 통합특별시 규칙 하나로 매칭하되(설계 5.4절), 통합 전 공고에 구판 별표를
+    적용할 수 있도록 옛 계열(전라남도 46·광주광역시 29)을 코드로 남깁니다. `toplvl_instt_nm`
+    이 통합 명칭뿐이면 `rgn_nm` 첫 토큰으로 계열을 보완하고, 보완하지 못하면(통합 명칭이거나
+    다른 시·도 소재) 통합 코드를 그대로 돌려줍니다.
     """
     if institution is None:
         return None, None
@@ -305,7 +318,14 @@ def institution_sido(
             name = region_name.split()[0]
     if not name:
         return None, None
+    if name in PRE_MERGE_SIDO_CODES:
+        return PRE_MERGE_SIDO_CODES[name]
     normalized = SIDO_ALIASES.get(name, name)
+    if normalized == "전남광주통합특별시":
+        region_name = _institution_value(institution, "rgn_nm", "rgnNm")
+        legacy = (region_name or "").split()
+        if legacy and legacy[0] in PRE_MERGE_SIDO_CODES:
+            return PRE_MERGE_SIDO_CODES[legacy[0]]
     code = SIDO_CODES.get(normalized)
     if code is None:
         return None, None
