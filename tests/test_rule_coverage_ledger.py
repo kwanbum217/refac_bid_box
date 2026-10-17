@@ -11,8 +11,11 @@ DB·.env 를 쓰지 않습니다. 전량 시험은 -m 'not data_assets' 로 돌�
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 import yaml
@@ -562,3 +565,59 @@ def test_committed_ledger_investigation_targets() -> None:
     for item in _ledger()["institutions"]:
         if item["dminstt_cd"] not in targets:
             assert item["investigation"] is None, item["dminstt_cd"]
+
+
+# --------------------------------------------------------------------------- #
+# (3) 교육 계열 시·도 미산출 대체 경로의 인자 전달
+# --------------------------------------------------------------------------- #
+
+
+def _institution_row(**overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "dminstt_cd": "7150000",
+        "instt_ty_lrgclsfc_nm": "교육행정조직",
+        "instt_ty_midclsfc_nm": "시, 도교육청",
+        "rgn_nm": "부산광역시 부산진구",
+        "toplvl_instt_nm": "부산광역시교육청",
+    }
+    row.update(overrides)
+    return row
+
+
+def _announcement_row(institution_code: str) -> Any:
+    return SimpleNamespace(
+        raw_data=json.dumps(
+            {"dminsttCd": institution_code, "sucsfbidMthdNm": "시설분야용역 적격심사"}
+        ),
+        category="Servc",
+        dminstt_nm="부산광역시교육청",
+        cntrct_mthd_nm="지방자치단체 입찰",
+        presmpt_prce=Decimal("500000000"),
+    )
+
+
+def test_to_record_passes_education_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """원장 재생성도 교육 계열 시·도 미산출 공고를 같은 판정으로 세도록 인자를 넘긴다."""
+    captured: list[dict[str, Any]] = []
+
+    def fake_resolve(**kwargs: Any) -> RuleResolutionResult:
+        captured.append(kwargs)
+        return RuleResolutionResult(is_blocked=False, rule=_pps_rule("R_EDU"))
+
+    monkeypatch.setattr(ledger_script, "resolve_evaluation_rule_from_raw_data", fake_resolve)
+    ledger_script._to_record(_announcement_row("7150000"), {"7150000": _institution_row()})
+    assert captured[0]["education_institution"] is True
+
+    ledger_script._to_record(
+        _announcement_row("9990000"),
+        {
+            "9990000": _institution_row(
+                dminstt_cd="9990000",
+                instt_ty_lrgclsfc_nm=None,
+                instt_ty_midclsfc_nm=None,
+                jrsdctn_div_nm="지방자치단체",
+                toplvl_instt_nm="서울특별시",
+            )
+        },
+    )
+    assert captured[1]["education_institution"] is False
