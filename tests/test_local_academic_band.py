@@ -167,6 +167,13 @@ def test_unknown_regime_notice_falls_back_to_mois_rule() -> None:
     assert result.rule.rule_id == OVER_2E_RULE_ID
 
 
+def test_national_regime_notice_is_not_given_mois_rule() -> None:
+    """행안부 예규는 지방계약 기준이라 국가계약 공고의 띠 표기는 풀지 않는다."""
+    for method in (METHOD_UNDER_1E, METHOD_OVER_2E):
+        result = _resolve(method, contract_regime="NATIONAL")
+        assert result.rule is None or result.rule.rule_id not in (UNDER_1E_RULE_ID, OVER_2E_RULE_ID)
+
+
 def test_announcement_lwlt_rate_wins_over_rule_default() -> None:
     """공고에 낙찰하한율이 있으면 언제나 공고값이 우선한다."""
     result = _resolve(

@@ -51,6 +51,7 @@ def _resolve(
     announcement_method: str,
     bid_ntce_dt: date | str | None = None,
     rate: str | None = None,
+    contract_regime: str | None = None,
 ) -> RuleResolutionResult:
     return resolve_evaluation_rule(
         category="Servc",
@@ -58,6 +59,7 @@ def _resolve(
         sucsfbid_mthd_nm=announcement_method,
         sucsfbid_lwlt_rate=rate,
         bid_ntce_dt=bid_ntce_dt,
+        contract_regime=contract_regime,
     )
 
 
@@ -369,7 +371,11 @@ class TestPreRegimeResolution:
         method: str,
         bid_ntce_dt: str,
     ) -> None:
-        result = _resolve(method, bid_ntce_dt=bid_ntce_dt, rate="85.495")
+        # 조달청 개정 전 벌의 판정이다. 지방계약 띠 표기(1억미만·2억이상)는 행안부 예규
+        # 규칙이 따로 받으므로(tests/test_local_academic_band.py) 국가계약 공고로 고정한다.
+        result = _resolve(
+            method, bid_ntce_dt=bid_ntce_dt, rate="85.495", contract_regime="NATIONAL"
+        )
 
         assert result.is_blocked is True
         assert result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND

@@ -7406,7 +7406,13 @@ def resolve_evaluation_rule(
         )
     elif result.rule is not None:
         scope_stage = RULE_SCOPE_ALL
-    if result.is_blocked and result.block_reason_code in _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES:
+    if (
+        contract_regime != "NATIONAL"
+        and result.is_blocked
+        and result.block_reason_code in _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES
+    ):
+        # 행안부 예규는 지방계약 기준이라 국가계약으로 확인된 공고에는 적용하지 않습니다.
+        # 계약 법령 미상(지방공사·의료원 등)은 공고문이 이 예규를 지목해 적용합니다.
         # 시·도 자체 별표가 이 띠 표기를 규칙으로 확정하지 못한 공고만 행안부 예규 제2장의2
         # [별표 4] 학술연구용역 해당 열로 풉니다. 시·도 규칙으로 계산되던 공고는 위 분기에서
         # 이미 규칙이 확정돼 차단되지 않으므로 여기 오지 않습니다.
