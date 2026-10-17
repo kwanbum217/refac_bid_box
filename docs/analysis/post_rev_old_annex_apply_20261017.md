@@ -3,7 +3,7 @@
 > **작성일**: 2026-10-17
 > **작업**: `task_726ec2471804` (Orca builder, run_5614217efbdd)
 > **브랜치**: `kwanbum217/orca-post-rev-old-annex`
-> **정본 사양**: [.orca/capsules/task_post_rev_old_annex_20261017/capsule.yaml](../../.orca/capsules/task_post_rev_old_annex_20261017/capsule.yaml)
+> **정본 사양**: `.orca/capsules/task_post_rev_old_annex_20261017/capsule.yaml`
 > **선행 조사**: `docs/analysis/rule_not_found_rest_20261017.md` (RULE_NOT_FOUND 536건 중 375건이 개정 전 벌 전용 별표 표기)
 
 ---
