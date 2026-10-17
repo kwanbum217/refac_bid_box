@@ -1595,7 +1595,7 @@ $(document).ready(function() {
         let badgeText = defaultText;
         if (data && data.negotiation_variant != null) {
             badgeText = '협상에의한계약 평가비율 제공';
-        } else if (data && data.rule_id === 'SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT') {
+        } else if (data && typeof data.rule_id === 'string' && data.rule_id.startsWith('SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT')) {
             badgeText = '기술용역 적격심사 공고 (공고 하한율 적용)';
         }
         $('#evaluation-scope-badge').text(badgeText);

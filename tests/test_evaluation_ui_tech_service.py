@@ -29,7 +29,7 @@ def test_scope_badge_is_reset_for_general_tech_and_negotiation_responses():
     end = template.index("function renderNegotiation", start)
     setter = template[start:end]
     assert "일반용역 적격심사만 지원 (약 6%)" in setter
-    assert "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT" in setter
+    assert "data.rule_id.startsWith('SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT')" in setter
     assert "기술용역 적격심사 공고 (공고 하한율 적용)" in setter
     assert "협상에의한계약 평가비율 제공" in setter
     assert "별표" not in setter
