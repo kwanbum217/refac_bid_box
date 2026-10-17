@@ -1880,6 +1880,31 @@ _SRC_JEONNAM_ATTACH_5_1_4 = (
     "85.495, 10억원 이상 30억원 미만 82.995, 30억원 이상 80.495"
 )
 
+# 광주광역시 구판 (예규 제377호, 시행 2022-11-15) — 통합 지침 이전 공고 전용.
+# 통합 지침 시행일(2026-07-16) 이후 공고는 JNGJ 규칙이 쓰이고, 그 이전 공고는 같은
+# 세부유형의 이 구판 규칙이 쓰입니다. region_code "29" 로 두고 superseded_date 2026-07-16.
+_GWANGJU_ELIS_RULE = (
+    "자치법규정보시스템 https://www.elis.go.kr/allalr/selectAlrBdtOne"
+    "?alrNo=29000068001145&histNo=007 (광주광역시 일반용역 적격심사 세부 기준, "
+    "광주광역시 예규 제377호, 시행 2022-11-15)"
+)
+_SRC_GWANGJU_ATTACH_1_3 = (
+    f"{_GWANGJU_ELIS_RULE}; 별표 1-3 폐기물처리용역 적격심사 "
+    "1. 심사항목 및 배점한도 (Ⅱ. 입찰가격 지역제한 금액 이상 30·"
+    "지역제한 금액 미만~1억원 이상 80·1억원 미만 90, 합계 100), "
+    "별표 6 폐기물 행 (평점 = 30 - 1x|88 - 투찰율| / 80 - 20x|...| / 90 - 20x|...|), "
+    "제11조제1항 통과점수 95; "
+    "낙찰하한율 원문 병기 82.995·87.745·87.745"
+)
+_SRC_GWANGJU_ATTACH_1_5 = (
+    f"{_GWANGJU_ELIS_RULE}; 별표 1-5 육상운송용역 적격심사 "
+    "1. 심사항목 및 배점한도 (Ⅱ. 입찰가격 지역제한 금액 이상 60·"
+    "지역제한 금액 미만 70, 합계 100), "
+    "별표 6 육상운송 행 (평점 = 60 - 2x|88 - 투찰율| / 70 - 2x|...|), "
+    "제11조제1항 통과점수 95; "
+    "낙찰하한율 원문 병기 85.495·85.495"
+)
+
 # 세종 별표 3(소프트웨어)·별표 5(육상운송)는 같은 별표 안에서 중소기업자간 경쟁제품
 # 대상/비대상 여부로 k·낙찰하한율·통과점수가 갈립니다(별표 분리가 아니라 조건 분기).
 # 출처는 코디네이터가 확인한 원문 추출 파일의 행 번호입니다.
@@ -2559,8 +2584,8 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
     ),
     # 전라남도 구판 (예규 제1075호, 시행 2023-03-02) — 통합 지침 이전 공고 전용.
     # 통합 지침 시행일(2026-07-16) 이후 공고는 아래 현행 규칙이 쓰이고, 그 이전 공고는 같은
-    # 세부유형의 이 구판 규칙이 쓰입니다. 광주광역시 계열은 전신 기준 원문을 확보하지 못해
-    # 구판 규칙을 만들지 않고 현행 규칙의 시행일 대조 차단(RULE_REGIME_MISMATCH)을 유지합니다.
+    # 세부유형의 이 구판 규칙이 쓰입니다. 광주광역시 계열은 별도 구판 규칙
+    # (SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3/1_5) 이 아래에 등록되어 있습니다.
     _local_rule(
         "SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4",
         sido_code="46",
@@ -2665,6 +2690,80 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
             ),
         ),
         threshold_bands=_threshold_30_10(_SRC_JEONNAM_ATTACH_5_1_4),
+    ),
+    # 광주광역시 구판 (예규 제377호, 시행 2022-11-15) — 통합 지침 이전 공고 전용.
+    # region_code "29" 로 두고 superseded_date 2026-07-16. 통과점수는 95 단일(제11조 ①).
+    _local_rule(
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3",
+        sido_code="29",
+        sido_name="광주광역시",
+        service_type="WASTE",
+        effective_date="2022-11-15",
+        superseded_date="2026-07-16",
+        source=_SRC_GWANGJU_ATTACH_1_3,
+        description="광주광역시 폐기물처리용역 적격심사 (별표 1-3, 통합 지침 이전)",
+        lwlt_rate="82.995",
+        price_bands=(
+            _local_price_band(
+                "100000000",
+                "90",
+                "20",
+                "추정가격 1억원 미만",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "500000000",
+                "80",
+                "20",
+                "지역제한 금액 미만 1억원 이상",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                None,
+                "30",
+                "1",
+                "지역제한 금액 이상",
+                _SRC_GWANGJU_ATTACH_1_3,
+                lwlt_rate="82.995",
+            ),
+        ),
+        threshold_bands=_single_threshold(
+            "95", "폐기물처리용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_3
+        ),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_5",
+        sido_code="29",
+        sido_name="광주광역시",
+        service_type="LAND_TRANSPORT",
+        effective_date="2022-11-15",
+        superseded_date="2026-07-16",
+        source=_SRC_GWANGJU_ATTACH_1_5,
+        description="광주광역시 육상운송용역 적격심사 (별표 1-5, 통합 지침 이전)",
+        lwlt_rate="85.495",
+        price_bands=(
+            _local_price_band(
+                "500000000",
+                "70",
+                "2",
+                "지역제한 금액 미만",
+                _SRC_GWANGJU_ATTACH_1_5,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                None,
+                "60",
+                "2",
+                "지역제한 금액 이상",
+                _SRC_GWANGJU_ATTACH_1_5,
+                lwlt_rate="85.495",
+            ),
+        ),
+        threshold_bands=_single_threshold(
+            "95", "육상운송용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_5
+        ),
     ),
     # 전남광주통합특별시 (예규 제3호, 시행 2026-07-16)
     _local_rule(
