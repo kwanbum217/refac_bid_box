@@ -1038,6 +1038,29 @@ SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT = EvaluationRule(
     base_rate=Decimal("0.90"),
 )
 
+# 2026-05-26 시행 전(2022-11-01 ~ 2026-05-25) 공고에 쓰는 기술용역 별표1 입니다.
+# 제8983호(시행 2022-11-01)·제6352호(시행 2025-09-01)·제654호(시행 2026-01-26)의
+# 별표1 기준비율이 88/100 으로 같아 한 객체로 묶었고, 공고 하한율만 쓰는 성격은 현행과 같습니다.
+SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526 = replace(
+    SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT,
+    rule_id="SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526",
+    table_name="기술용역 적격심사 (개정 전)",
+    effective_date="2022-11-01",
+    source=(
+        "조달청 기술용역 적격심사 세부기준 제8983호(시행 2022-11-01)·"
+        "제6352호(시행 2025-09-01)·제654호(시행 2026-01-26), 공고별 sucsfbidLwltRate"
+    ),
+    base_rate=Decimal("0.88"),
+)
+
+# 현행·구판 두 기술용역 규칙 ID 를 함께 담는 비교용 집합입니다.
+SERVC_TECH_QUAL_RULE_IDS = frozenset(
+    {
+        SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT.rule_id,
+        SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526.rule_id,
+    }
+)
+
 # 2025-09-01 시행 개정 전 규칙 14종 (제2025-257호·제2026-15호).
 # 하한율은 2025-09-01 이상 2026-05-26 미만 구간 공고의 실측 최빈값입니다.
 PRE_20250901_RULES: tuple[EvaluationRule, ...] = (
@@ -6260,6 +6283,8 @@ def resolve_evaluation_rule(
       2025-09-01 이상은 제2025-257호 벌, 2023-05-01 이상은 제2023-53호 벌이며,
       공고일이 없으면 현행인 제2026-390호 벌을 씁니다.
       고른 벌에 이름이 없으면 현행 벌까지 대조하고, 어느 벌에도 없으면 RULE_NOT_FOUND 입니다.
+    - 기술용역 적격심사는 공고일 2026-05-26 미만이면 개정 전 규칙(시행일 2022-11-01,
+      기준비율 0.88)을, 그 밖에는 현행 규칙을 씁니다.
     - 원문 낙찰방법이 '공고서참조'면 sucsfbidMthdCd 계열명으로 판별
     - 수요기관이 기관 규칙(INSTITUTION_RULES) 대상이면 낙찰방법명의 서비스 표기로 기관
       규칙을 먼저 고릅니다(기관 > 시·도 > 조달청). announcement_institution_code/name 은
@@ -6290,6 +6315,7 @@ def resolve_evaluation_rule(
         bid_prce_evl_rt=bid_prce_evl_rt,
         rules=allocated_rules,
         srvce_div_nm=srvce_div_nm,
+        announced=announced,
     )
     scope_stage: str | None = None
     institution_selected: EvaluationRule | None = None
@@ -6298,9 +6324,7 @@ def resolve_evaluation_rule(
     if (
         contract_regime != "LOCAL"
         and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
-        and not (
-            result.rule is not None and result.rule.rule_id == "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT"
-        )
+        and not (result.rule is not None and result.rule.rule_id in SERVC_TECH_QUAL_RULE_IDS)
     ):
         (
             institution_selected,
@@ -6341,9 +6365,7 @@ def resolve_evaluation_rule(
     elif (
         contract_regime == "LOCAL"
         and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
-        and not (
-            result.rule is not None and result.rule.rule_id == "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT"
-        )
+        and not (result.rule is not None and result.rule.rule_id in SERVC_TECH_QUAL_RULE_IDS)
     ):
         selected, local_code, local_reason, local_warnings = _select_local_rule(
             method_name,
@@ -6375,7 +6397,7 @@ def resolve_evaluation_rule(
             if local_warnings:
                 result = replace(result, warnings=[*result.warnings, *local_warnings])
             scope_stage = RULE_SCOPE_REGION
-    elif result.rule is not None and result.rule.rule_id != "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT":
+    elif result.rule is not None and result.rule.rule_id not in SERVC_TECH_QUAL_RULE_IDS:
         matching_rules = [
             candidate
             for candidate in allocated_rules
@@ -6523,6 +6545,7 @@ def _resolve_by_method_name(
     bid_prce_evl_rt: Decimal | str | float | None = None,
     rules: Sequence[EvaluationRule] = POST_20260526_RULES,
     srvce_div_nm: str | None = None,
+    announced: date | None = None,
 ) -> RuleResolutionResult:
     """일반용역 적격심사 대상 판별 순서에 따라 차단 조건 및 별표 규칙을 확정합니다.
 
@@ -6532,7 +6555,7 @@ def _resolve_by_method_name(
     3. sucsfbidMthdNm 이 '적격심사제-관리규정외 수기심사' -> 계산 차단 (MANUAL_EVALUATION)
     4. 협상에의한계약 -> 평가비율만 제공 (NEGOTIATION_CONTRACT)
     5. 적격심사제가 아닌 알려진 낙찰방법 계열 -> 계산 차단 (NOT_QUALIFICATION_METHOD)
-    6. 기술용역 적격심사 -> 공고 하한율 적용
+    6. 기술용역 적격심사 -> 공고 하한율 적용 (공고일 2026-05-26 미만은 개정 전 별표)
     7. sucsfbidMthdNm 을 별표 식별 문자열과 매칭 -> 별표 확정, 실패 시 계산 차단 (RULE_NOT_FOUND)
     8. 하한율 확정 우선순위:
        - 공고의 sucsfbidLwltRate 가 최우선
@@ -6635,6 +6658,9 @@ def _resolve_by_method_name(
 
     # 기술용역 적격심사는 협상 판별 이후, 일반용역 별표 매칭 이전에 판별합니다.
     if srvce_div_nm == "기술용역" and sucsfbid_mthd_nm and "적격심사" in sucsfbid_mthd_nm:
+        tech_rule = SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+        if announced is not None and announced < date(2026, 5, 26):
+            tech_rule = SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
         tech_parsed_lwlt_rate: Decimal | None = None
         if sucsfbid_lwlt_rate is not None:
             try:
@@ -6651,7 +6677,7 @@ def _resolve_by_method_name(
                 block_reason_message=(
                     "기술용역 공고의 낙찰하한율이 없어 공고별 하한율을 적용할 수 없습니다."
                 ),
-                rule=SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT,
+                rule=tech_rule,
                 effective_lwlt_rate=Decimal("0"),
                 warnings=warnings,
             )
@@ -6660,7 +6686,7 @@ def _resolve_by_method_name(
             is_blocked=False,
             block_reason_code=None,
             block_reason_message=None,
-            rule=SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT,
+            rule=tech_rule,
             effective_lwlt_rate=tech_parsed_lwlt_rate,
             rate_source="ANNOUNCEMENT",
             warnings=warnings,

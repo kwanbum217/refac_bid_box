@@ -18,6 +18,7 @@ from src.app.services.evaluation_rules import (
 
 POST_REGIME_DT = "2026-07-10 11:30:45"
 PRE_REGIME_DT = "2025-08-27 15:13:28"
+PRE_TECH_REGIME_DT = "2022-10-31 10:00:00"
 
 
 def _raw(**overrides):
@@ -124,18 +125,21 @@ def test_pre_regime_announcement_is_blocked_even_when_rule_matches():
     assert "2025-08-27" in (result.block_reason_message or "")
 
 
-def test_pre_regime_tech_service_is_blocked():
+def test_tech_service_announcement_before_pre_rule_is_blocked():
+    """구판 기술용역 별표 시행일(2022-11-01)보다 앞선 공고는 RULE_REGIME_MISMATCH 로 남는다."""
     result = resolve_evaluation_rule_from_raw_data(
         "Servc",
         _raw(
             sucsfbidMthdNm="적격심사제-추정가격이 10억원 이상인 기술용역의 평가기준",
             srvceDivNm="기술용역",
             sucsfbidLwltRate="79.995",
-            bidNtceDt=PRE_REGIME_DT,
+            bidNtceDt=PRE_TECH_REGIME_DT,
         ),
     )
 
     assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526"
 
 
 @pytest.mark.parametrize(
