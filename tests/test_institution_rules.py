@@ -1,11 +1,11 @@
 """수요기관 기관 규칙(INSTITUTION_RULES) 시험.
 
 정본:
- - data/reference/institution_rules_20261013.yaml (R1, status=confirmed 기관 11곳)
+ - data/reference/institution_rules_20261013.yaml (R1, status=confirmed 기관 12곳)
  - src/app/services/evaluation_rules.py 의 INSTITUTION_RULES·_select_institution_rule
  - docs/analysis/institution_rule_inventory_20261013.md 5~7절, docs/analysis/institution_rules_apply_20261013.md
 
-(가) 11개 기관 구간별 값(B·k·기준비율·통과점수·하한율·경계)이 YAML 과 같은지 대조하고,
+(가) 12개 기관 구간별 값(B·k·기준비율·통과점수·하한율·경계)이 YAML 과 같은지 대조하고,
 (나) 수요기관 이름·코드·name_aliases 로 기관 규칙이 선택되는지, (다) 공고기관이 조달청
 계열이면 같은 수요기관이라도 조달청 규칙이 선택되는지, (라) 지방계약(LOCAL)이면 기관 규칙이
 배제되는지, (마) partial·unresolved 기관은 조달청 규칙 그대로인지, (사) 원문 적용 범위가
@@ -36,6 +36,7 @@ from src.app.services import evaluation_rules as rules_module
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_RULE_REGIME_MISMATCH,
     INSTITUTION_RULES,
+    QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
     RULE_SCOPE_INSTITUTION,
     RULE_SCOPE_REGION,
     resolve_evaluation_rule_from_raw_data,
@@ -59,6 +60,7 @@ EXPECTED_CODES: dict[str, str | None] = {
     "인천국제공항공사": "B551177",
     "인천공항시설관리": "Z043894",
     "해양환경공단": "B553931",
+    "한국공항공사": "B551178",
 }
 # 원문(한국수력원자력 별표 9·10)이 구간 값이 같아 한 규칙으로 합친 표기입니다.
 MERGED_LABEL_PREFIX = "별표 9·10 "
@@ -147,9 +149,9 @@ def _resolve(raw_data: dict, *, estimated_price=None, **kwargs):
 
 
 def test_confirmed_institution_band_values_match_yaml() -> None:
-    """확인 기관 11곳의 구간 값과 경계가 R1 YAML 과 같고 빠짐·추가가 없다."""
+    """확인 기관 12곳의 구간 값과 경계가 R1 YAML 과 같고 빠짐·추가가 없다."""
     confirmed = _confirmed_institutions()
-    assert len(confirmed) == 11
+    assert len(confirmed) == 12
 
     expected_total = 0
     code_total = 0
@@ -172,7 +174,7 @@ def test_confirmed_institution_band_values_match_yaml() -> None:
         code_total += len(code)
 
     assert expected_total == code_total
-    assert code_total == 144
+    assert code_total == 157
 
 
 def test_institution_band_labels_and_sources_trace_yaml() -> None:
@@ -409,6 +411,113 @@ def test_lease_rule_splits_k_by_notice_amount() -> None:
     assert under.rule.rule_id == "SERVC_INST_IIAC_20250101_LEASE"
     # 2억원은 고시금액 미만 구간이라 k=4·인쇄 하한율 84.245% 를 쓴다.
     assert under.effective_lwlt_rate == Decimal("84.245")
+
+
+def _kac_raw_data(method: str, **extra: str) -> dict:
+    return {
+        "sucsfbidMthdNm": method,
+        "srvceDivNm": "일반용역",
+        "bidNtceDt": "2026-09-01",
+        "dminsttNm": "한국공항공사",
+        **extra,
+    }
+
+
+def test_kac_rules_are_selected_by_service_token() -> None:
+    """한국공항공사 일반용역 별표는 유형 표기로 갈리고 구간 하한율이 인쇄값과 맞는다."""
+    cases = (
+        (
+            "적격심사제-학술연구용역 적격심사 추정가격 고시금액 미만",
+            "200000000",
+            "ACADEMIC",
+            "86.245",
+        ),
+        (
+            "적격심사제-학술연구용역 적격심사 추정가격 고시금액 미만",
+            "300000000",
+            "ACADEMIC",
+            "82.495",
+        ),
+        ("적격심사제-시설분야용역 적격심사 추정가격 5억원 미만", "300000000", "FACILITY", "89.995"),
+        (
+            "적격심사제-폐기물처리용역 적격심사 추정가격 고시금액미만",
+            "600000000",
+            "WASTE",
+            "82.495",
+        ),
+        ("적격심사제-보험용역 적격심사 추정가격 5억원미만", "600000000", "INSURANCE", "47.995"),
+        ("적격심사제-수리ㆍ점검용역 적격심사 고시금액 미만", "300000000", "REPAIR", "82.495"),
+    )
+    for method, price, suffix, lwlt in cases:
+        result = _resolve(_kac_raw_data(method, dminsttCd="B551178"), estimated_price=price)
+        assert result.is_blocked is False, method
+        assert result.rule is not None, method
+        assert result.rule.rule_id == f"SERVC_INST_KAC_20260814_{suffix}", method
+        assert result.scope_stage == RULE_SCOPE_INSTITUTION, method
+        assert result.effective_lwlt_rate == Decimal(lwlt), method
+
+
+def test_kac_insurance_token_matches_announcement_name() -> None:
+    """낙찰방법명이 공고서참조(코드 낙030001)여도 공고명의 보험 표기로 보험용역 규칙을 고른다."""
+    result = _resolve(
+        _kac_raw_data(
+            "공고서참조",
+            sucsfbidMthdCd="낙030001",
+            bidNtceNm="2026년도 전국공항 재산종합보험",
+            dminsttCd="B551178",
+        ),
+        estimated_price="300000000",
+    )
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_INST_KAC_20260814_INSURANCE"
+    assert result.effective_lwlt_rate == Decimal("47.995")
+
+
+def test_kac_waste_token_does_not_cover_construction_waste() -> None:
+    """건설폐기물처리용역은 제5조 제1항 제4-1호의 환경부 고시라 별표 4 기관 규칙을 고르지 않는다."""
+    result = _resolve(
+        _kac_raw_data(
+            "공고서참조",
+            sucsfbidMthdCd="낙030001",
+            bidNtceNm="김포공항 건설폐기물 처리용역",
+            dminsttCd="B551178",
+        ),
+        estimated_price="300000000",
+    )
+    assert result.scope_stage != RULE_SCOPE_INSTITUTION
+
+
+def test_kac_registers_only_unambiguous_general_service_tables() -> None:
+    """한국공항공사는 통과점수가 85점 하나인 별표만 등록하고 소프트웨어·육상운송은 넣지 않는다."""
+    rules = _rules_for("한국공항공사")
+    assert {rule.service_type for rule in rules} == {
+        "ACADEMIC",
+        "FACILITY",
+        "WASTE",
+        "INSURANCE",
+        "REPAIR_INSPECTION",
+    }
+    assert {rule.effective_date for rule in rules} == {"2026-08-14"}
+    assert all(rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED for rule in rules)
+    for rule in rules:
+        for threshold in rule.threshold_bands or ():
+            assert threshold.pass_threshold == Decimal("85"), rule.rule_id
+
+
+def test_kac_subunit_alias_matches_only_without_code() -> None:
+    """한국공항공사 하위 조직 표기는 코드가 없을 때만 정확 일치 별칭으로 매칭된다."""
+    method = "적격심사제-시설분야용역 적격심사 추정가격 5억원 미만"
+    without_code = _resolve(
+        _kac_raw_data(method, dminsttNm="한국공항공사 김포공항"),
+        estimated_price="300000000",
+    )
+    assert without_code.rule is not None
+    assert without_code.rule.rule_id == "SERVC_INST_KAC_20260814_FACILITY"
+    with_code = _resolve(
+        _kac_raw_data(method, dminsttCd="Z013741", dminsttNm="한국공항공사 김포공항"),
+        estimated_price="300000000",
+    )
+    assert with_code.scope_stage != RULE_SCOPE_INSTITUTION
 
 
 def test_khnp_head_office_alias_matches_but_subsidiary_does_not() -> None:

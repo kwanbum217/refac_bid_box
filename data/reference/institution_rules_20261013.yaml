@@ -2771,3 +2771,184 @@ institutions:
         status: confirmed
         source: "docs/analysis/forest_koem_registry_survey_20261015.md:3.2"
     sources: ["docs/analysis/forest_koem_registry_survey_20261015.md:3.2"]
+  - institution_name: "한국공항공사"
+    name_aliases: ["한국공항공사", "한국공항공사 김포공항", "한국공항공사 제주공항", "한국공항공사 김해공항", "한국공항공사 청주공항", "한국공항공사 항로시설본부 인천항공교통시설단", "한국공항공사대구공항", "한국공항공사 항공기술훈련원", "한국공항공사 포항경주공항", "한국공항공사 여수공항", "한국공항공사 울산공항", "한국공항공사 무안공항", "한국공항공사 원주지사", "한국공항공사 광주공항", "한국공항공사 군산지사", "한국공항공사 양양공항", "한국공항공사 사천지사", "한국공항공사 항로시설본부"]
+    institution_code: null
+    status: confirmed
+    scope: INSTITUTION
+    standard: "일반용역 적격심사세부기준 (제정 2009-11-20, 최종 개정 2026-08-05 지침 제792호, 2026-08-14 이후 입찰공고분 적용)"
+    effective_date: "2026-08-14"
+    service_types: ["학술연구용역", "시설분야용역", "폐기물처리용역", "보험용역", "수리·점검용역"]
+    note: "제10조가 종합평점 통과점수를 85점으로 정하고 제5조 제1항이 용역 유형별 [별표]를 지정한다. 추정가격 5억원 경계로 인쇄된 배점한도 B 와 고시금액 경계로 인쇄된 평점계수 k·기준비율이 함께 구간을 정해, 별표 1·4·7 은 세 구간, 단일 산식인 별표 2·6 은 두 구간이다. 별표 3·3의 2(소프트웨어용역)와 별표 5·5의 2(육상운송용역)는 제10조의 88점 예외와 제5조 제1항의 대안 지정 때문에 어느 표가 어느 속성에 붙는지 원문으로 확정되지 않아 등록하지 않았다. 별표 8(임대차용역)은 공고 표기가 0건, 별표 9(지정형 용역)는 배점한도가 범위로만 인쇄되어 등록하지 않았다. 심사항목 배점표는 미확보라 정량점수 직접 입력을 유지한다. 토큰과 하한율 근거는 docs/analysis/kac_register_20261017.md 에 있다."
+    non_qual_methods: []
+    bands:
+      - band: "별표 1 학술연구용역 · 고시금액 미만"
+        service_type: "학술연구용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 1 학술연구용역 · 고시금액 이상 5억원 미만"
+        service_type: "학술연구용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 1 학술연구용역 · 5억원 이상"
+        service_type: "학술연구용역"
+        lower: 500000000
+        upper: null
+        B: 40
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 2 시설분야용역 · 5억원 미만"
+        service_type: "시설분야용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 2 시설분야용역 · 5억원 이상"
+        service_type: "시설분야용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 5
+        base_ratio: 93
+        pass_score: 85
+        lwlt_rate: 89.995
+        price_cap_rate: 96
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 4 폐기물처리용역 · 고시금액 미만"
+        service_type: "폐기물처리용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 4 폐기물처리용역 · 고시금액 이상 5억원 미만"
+        service_type: "폐기물처리용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 4 폐기물처리용역 · 5억원 이상"
+        service_type: "폐기물처리용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 6 보험용역 · 5억원 미만"
+        service_type: "보험용역"
+        lower: null
+        upper: 500000000
+        B: 70
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 6 보험용역 · 5억원 이상"
+        service_type: "보험용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 0.375
+        base_ratio: 88
+        pass_score: 85
+        lwlt_rate: 47.995
+        price_cap_rate: null
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 7 수리·점검용역 · 고시금액 미만"
+        service_type: "수리·점검용역"
+        lower: null
+        upper: "고시금액"
+        B: 70
+        k: 4
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 86.245
+        price_cap_rate: 93.75
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 7 수리·점검용역 · 고시금액 이상 5억원 미만"
+        service_type: "수리·점검용역"
+        lower: "고시금액"
+        upper: 500000000
+        B: 70
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+      - band: "별표 7 수리·점검용역 · 5억원 이상"
+        service_type: "수리·점검용역"
+        lower: 500000000
+        upper: null
+        B: 60
+        k: 2
+        base_ratio: 90
+        pass_score: 85
+        lwlt_rate: 82.495
+        price_cap_rate: 97.5
+        flat_score: null
+        status: confirmed
+        source: "docs/analysis/kac_regulation_followup_20261015.md:4.2"
+    sources: ["docs/analysis/kac_regulation_followup_20261015.md:4.2", "docs/analysis/kac_register_20261017.md"]
