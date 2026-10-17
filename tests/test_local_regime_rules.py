@@ -361,8 +361,9 @@ def test_traffic_resolve_score_params_unchanged() -> None:
         ("강원도", ("51", "강원특별자치도")),
         ("전라북도", ("52", "전북특별자치도")),
         ("제주도", ("50", "제주특별자치도")),
-        ("전라남도", ("12", "전남광주통합특별시")),
-        ("광주광역시", ("12", "전남광주통합특별시")),
+        # 전남·광주는 통합 전 계열 코드(법정동코드 46·29)를 남겨 구판 별표를 가릴 수 있게 한다.
+        ("전라남도", ("46", "전라남도")),
+        ("광주광역시", ("29", "광주광역시")),
         ("인천광역시", ("28", "인천광역시")),
     ],
 )
@@ -370,6 +371,24 @@ def test_institution_sido_normalizes_legacy_province_names(
     toplvl: str, expected: tuple[str, str]
 ) -> None:
     assert institution_sido({"toplvlInsttNm": toplvl}) == expected
+
+
+def test_institution_sido_reads_legacy_lineage_from_region_when_toplvl_is_merged() -> None:
+    """본청 값이 통합 명칭이면 rgn_nm 첫 토큰으로 통합 전 계열을 보완한다."""
+    assert institution_sido(
+        {"toplvlInsttNm": "전남광주통합특별시", "rgnNm": "전라남도 여수시"}
+    ) == ("46", "전라남도")
+    assert institution_sido(
+        {"toplvlInsttNm": "전남광주통합특별시", "rgnNm": "광주광역시 북구"}
+    ) == ("29", "광주광역시")
+    # 통합 명칭만 있고 rgn_nm 이 없거나 다른 시·도 소재면 통합 규칙 축을 그대로 쓴다.
+    assert institution_sido({"toplvlInsttNm": "전남광주통합특별시"}) == (
+        "12",
+        "전남광주통합특별시",
+    )
+    assert institution_sido(
+        {"toplvlInsttNm": "전남광주통합특별시", "rgnNm": "서울특별시 중구"}
+    ) == ("12", "전남광주통합특별시")
 
 
 @pytest.mark.parametrize("toplvl", ["경기도교육청", "서울물재생시설공단", "(없음)", ""])
@@ -406,6 +425,11 @@ PRINTED_SCORE_CASES = (
     ("SERVC_LOCAL_JNGJ_20260716_ATTACH_05", "500000000", "90.5", "55"),
     ("SERVC_LOCAL_JNGJ_20260716_ATTACH_06", "1000000000", "98", "20"),
     ("SERVC_LOCAL_GN_20230105_ATTACH_01", "1000000000", "98", "20"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4", "700000000", "93", "25"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4", "300000000", "88.25", "75"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4", "50000000", "88.25", "85"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4", "700000000", "90.5", "55"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4", "300000000", "90.5", "75"),
     ("SERVC_LOCAL_GG_20250808_ATTACH_1_2", "1000000000", "98", "20"),
     ("SERVC_LOCAL_GG_20250808_ATTACH_1_3", "300000000", "89.25", "55"),
     ("SERVC_LOCAL_GG_20250808_ATTACH_1_4", "1000000000", "90.5", "20"),
@@ -441,6 +465,10 @@ REPRESENTATIVE_VALUES = (
     ("SERVC_LOCAL_CB_20231020_ATTACH_01", "600000000", "50", "2", "95"),
     ("SERVC_LOCAL_JNGJ_20260716_ATTACH_03", "600000000", "30", "1", "95"),
     ("SERVC_LOCAL_GN_20230105_ATTACH_01", "1500000000", "30", "1", "90"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4", "300000000", "80", "20", "95"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4", "3000000000", "30", "1", "85"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4", "300000000", "80", "2", "95"),
+    ("SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4", "1500000000", "60", "2", "90"),
     ("SERVC_LOCAL_DAEGU_20260511_ATTACH_01", "300000000", "60", "60", "85"),
     ("SERVC_LOCAL_GG_20250808_ATTACH_1_5", "600000000", "60", "0.375", "85"),
 )
@@ -822,10 +850,19 @@ def test_local_rule_resolution_never_keeps_stale_block(rule: EvaluationRule) -> 
     이전에는 _apply_rule_lwlt 가 rule 만 교체하고 is_blocked=True 를 그대로 두어,
     조달청 단계에서 미매칭된 공고가 36개 규칙 중 33개에서 '차단+규칙 동시 보유' 상태가 됐다.
     전 규칙을 대표 낙찰방법명으로 판별해 확정 규칙은 is_blocked=False 를, 사용자 선택이
-    필요한 규칙은 LOCAL_SERVICE_TYPE_UNRESOLVED 를 확인한다.
+    필요한 규칙은 LOCAL_SERVICE_TYPE_UNRESOLVED 를 확인한다. 폐지된 구판 규칙은 시행일
+    이후 공고에서 현행 규칙으로 넘어가므로 그 사실을 따로 확인한다.
     """
     method = _LOCAL_REPRESENTATIVE_METHOD[rule.service_type]
     result = _resolve_for_rule(rule, method)
+
+    if rule.superseded_date is not None:
+        assert result.rule is not None, rule.rule_id
+        assert result.rule.rule_id != rule.rule_id, rule.rule_id
+        assert result.rule.superseded_date is None, rule.rule_id
+        assert result.is_blocked is False, rule.rule_id
+        assert result.block_reason_code is None, rule.rule_id
+        return
 
     if rule.rule_id in _LOCAL_SELECTION_REQUIRED:
         assert result.rule is None, rule.rule_id

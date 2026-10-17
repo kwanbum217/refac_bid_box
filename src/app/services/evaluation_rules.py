@@ -126,6 +126,9 @@ class EvaluationRule:
     institution_name: str | None = None
     # 원문이 함께 쓰는 기관 이름(예: 국가유산청-문화재청). 공고에 코드가 없을 때만 씁니다.
     institution_aliases: tuple[str, ...] = ()
+    # 이 규칙의 효력이 끝나는 시행일. 시·도 구판 별표처럼 후속 규칙이 시행돼 폐지된 규칙에만
+    # 적고, 공고일이 그 날짜 이상이면 같은 세부유형 후보에서 밀립니다(현행 규칙은 None).
+    superseded_date: str | None = None
     # 원문 적용 범위 조항이 적용 주체에 하위 조직(지역본부·지사·사업소·소속기관)을 명시한
     # 기관만 선언합니다. 정확 일치가 실패한 뒤의 2차 판정에만 쓰며, 코드 대역을 선언한
     # 규칙은 코드가 이름보다 우선합니다.
@@ -1843,6 +1846,40 @@ _SRC_JEONBUK = (
     "72.995%; 단순노무 87.745%; 구간 하한율 숫자 행 141, 143, 145, 369, 595, 802)"
 )
 
+# 통합특별시 출범 전 옛 전라남도 기준입니다. 통합 지침(예규 제3호) 시행일 2026-07-16 이전 공고에만
+# 적용하는 구판 별표이고, 원문은 자치법규정보시스템 전라남도 일반용역 적격심사 세부기준
+# 예규 제1075호(시행 2023-03-02)와 그 별표 4·5 첨부(HWP)입니다. 같은 주소의 histNo=001 은
+# 2015-10-01 예규 제1050호라 값이 다릅니다(2026-10-17 확인).
+_JEONNAM_ELIS_RULE = (
+    "자치법규정보시스템 https://www.elis.go.kr/allalr/selectAlrBdtOne"
+    "?alrNo=46000007006065&histNo=005 (전라남도 일반용역 적격심사 세부기준, "
+    "전라남도 예규 제1075호, 시행 2023-03-02)"
+)
+_SRC_JEONNAM_ATTACH_4_1_4 = (
+    f"{_JEONNAM_ELIS_RULE}; 별표 4 폐기물처리용역 적격심사 "
+    "1. 심사항목 및 배점한도 (Ⅱ. 입찰가격 5억원 이상 30·5억원 미만 1억원 이상 80·"
+    "1억원 미만 90, 합계 100), 4. 입찰가격 평점산식[별표 4-1-4] "
+    "(5억원 이상 평점 = 30 - 1 * |88 - 입찰가격/예정가격 * 100|, 5억원 미만 1억원 이상 "
+    "평점 = 80 - 20 * |...|, 1억원 미만 평점 = 90 - 20 * |...|), "
+    "주 2) 투찰률 93% 이상 25점·88.25% 이상 75점·88.25% 이상 85점; "
+    "본문 제7조 ① 통과점수 (30억원 이상 85·30억원 미만 10억원 이상 90·10억원 미만 95); "
+    "낙찰하한율은 원문 미인쇄라 평점산식·통과점수 역산 "
+    "(하한율 = 88 - (100 - 통과점수) / 평점계수, .995 표기): 1억원 미만·5억원 미만 1억원 이상 "
+    "87.745, 5억원 이상 10억원 미만 82.995, 10억원 이상 30억원 미만 77.995, "
+    "30억원 이상 72.995"
+)
+_SRC_JEONNAM_ATTACH_5_1_4 = (
+    f"{_JEONNAM_ELIS_RULE}; 별표 5 육상운송용역 적격심사 "
+    "1. 심사항목 및 배점한도 (Ⅱ. 입찰가격 5억원 이상 60·5억원 미만 80, 합계 100), "
+    "7. 입찰가격 평점산식[별표 5-1-4] (5억원 이상 평점 = 60 - 2 * |88 - 입찰가격/예정가격 "
+    "* 100|, 5억원 미만 평점 = 80 - 2 * |...|), "
+    "주 2) 투찰률 90.5% 이상은 90.5%인 경우의 점수로 평가; "
+    "본문 제7조 ① 통과점수 (30억원 이상 85·30억원 미만 10억원 이상 90·10억원 미만 95); "
+    "낙찰하한율은 원문 미인쇄라 평점산식·통과점수 역산 "
+    "(하한율 = 88 - (100 - 통과점수) / 평점계수, .995 표기): 5억원 미만·5억원 이상 10억원 미만 "
+    "85.495, 10억원 이상 30억원 미만 82.995, 30억원 이상 80.495"
+)
+
 # 세종 별표 3(소프트웨어)·별표 5(육상운송)는 같은 별표 안에서 중소기업자간 경쟁제품
 # 대상/비대상 여부로 k·낙찰하한율·통과점수가 갈립니다(별표 분리가 아니라 조건 분기).
 # 출처는 코디네이터가 확인한 원문 추출 파일의 행 번호입니다.
@@ -2109,6 +2146,7 @@ def _local_rule(
     description: str,
     lwlt_rate: str | None = None,
     base_rate: str = "0.88",
+    superseded_date: str | None = None,
 ) -> EvaluationRule:
     return EvaluationRule(
         rule_id=rule_id,
@@ -2116,6 +2154,7 @@ def _local_rule(
         table_name=f"{sido_name} 일반용역 적격심사 ({service_type})",
         description=description,
         effective_date=effective_date,
+        superseded_date=superseded_date,
         source=source,
         patterns=(),
         lwlt_rate=Decimal(lwlt_rate or _LOCAL_LWLT_BY_SERVICE[service_type]),
@@ -2517,6 +2556,115 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         price_bands=_four_band_price(_SRC_CB, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_CB),
         lwlt_rate="87.745",
+    ),
+    # 전라남도 구판 (예규 제1075호, 시행 2023-03-02) — 통합 지침 이전 공고 전용.
+    # 통합 지침 시행일(2026-07-16) 이후 공고는 아래 현행 규칙이 쓰이고, 그 이전 공고는 같은
+    # 세부유형의 이 구판 규칙이 쓰입니다. 광주광역시 계열은 전신 기준 원문을 확보하지 못해
+    # 구판 규칙을 만들지 않고 현행 규칙의 시행일 대조 차단(RULE_REGIME_MISMATCH)을 유지합니다.
+    _local_rule(
+        "SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4",
+        sido_code="46",
+        sido_name="전라남도",
+        service_type="WASTE",
+        effective_date="2023-03-02",
+        superseded_date="2026-07-16",
+        source=_SRC_JEONNAM_ATTACH_4_1_4,
+        description="전라남도 폐기물처리용역 적격심사 (별표 4-1-4, 통합 지침 이전)",
+        # 별표 4 는 추정가격 5억원 이상(B 30·k 1)·5억원 미만 1억원 이상(B 80·k 20)·
+        # 1억원 미만(B 90·k 20) 세 구간입니다. 5억원 이상 행은 통과점수 구간(10억·30억)마다
+        # 낙찰하한율이 갈려 같은 B·k 로 세 구간으로 나눠 등록합니다(현행 별표 3 과 같은 구조).
+        lwlt_rate="87.745",
+        price_bands=(
+            _local_price_band(
+                "100000000",
+                "90",
+                "20",
+                "추정가격 1억원 미만",
+                _SRC_JEONNAM_ATTACH_4_1_4,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "500000000",
+                "80",
+                "20",
+                "5억원 미만 1억원 이상",
+                _SRC_JEONNAM_ATTACH_4_1_4,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "1000000000",
+                "30",
+                "1",
+                "10억원 미만 5억원 이상",
+                _SRC_JEONNAM_ATTACH_4_1_4,
+                lwlt_rate="82.995",
+            ),
+            _local_price_band(
+                "3000000000",
+                "30",
+                "1",
+                "30억원 미만 10억원 이상",
+                _SRC_JEONNAM_ATTACH_4_1_4,
+                lwlt_rate="77.995",
+            ),
+            _local_price_band(
+                None,
+                "30",
+                "1",
+                "추정가격 30억원 이상",
+                _SRC_JEONNAM_ATTACH_4_1_4,
+                lwlt_rate="72.995",
+            ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_JEONNAM_ATTACH_4_1_4),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4",
+        sido_code="46",
+        sido_name="전라남도",
+        service_type="LAND_TRANSPORT",
+        effective_date="2023-03-02",
+        superseded_date="2026-07-16",
+        source=_SRC_JEONNAM_ATTACH_5_1_4,
+        description="전라남도 육상운송용역 적격심사 (별표 5-1-4, 통합 지침 이전)",
+        # 별표 5 는 추정가격 5억원 이상(B 60·k 2)·5억원 미만(B 80·k 2) 두 구간이고,
+        # 5억원 이상 행은 통과점수 구간(10억·30억)마다 낙찰하한율이 갈립니다.
+        lwlt_rate="85.495",
+        price_bands=(
+            _local_price_band(
+                "500000000",
+                "80",
+                "2",
+                "추정가격 5억원 미만",
+                _SRC_JEONNAM_ATTACH_5_1_4,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                "1000000000",
+                "60",
+                "2",
+                "10억원 미만 5억원 이상",
+                _SRC_JEONNAM_ATTACH_5_1_4,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                "3000000000",
+                "60",
+                "2",
+                "30억원 미만 10억원 이상",
+                _SRC_JEONNAM_ATTACH_5_1_4,
+                lwlt_rate="82.995",
+            ),
+            _local_price_band(
+                None,
+                "60",
+                "2",
+                "추정가격 30억원 이상",
+                _SRC_JEONNAM_ATTACH_5_1_4,
+                lwlt_rate="80.495",
+            ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_JEONNAM_ATTACH_5_1_4),
     ),
     # 전남광주통합특별시 (예규 제3호, 시행 2026-07-16)
     _local_rule(
@@ -6048,6 +6196,49 @@ def _classify_sme_competition(text: str) -> str | None:
     return None
 
 
+def _rule_applies_to_announcement(rule: EvaluationRule, announced: date | None) -> bool:
+    """규칙의 효력 구간(시행일 이상, superseded_date 미만)에 공고일이 드는지 봅니다."""
+    if announced is None:
+        return False
+    if date.fromisoformat(rule.effective_date) > announced:
+        return False
+    if rule.superseded_date is None:
+        return True
+    return announced < date.fromisoformat(rule.superseded_date)
+
+
+def _narrow_to_current_regime(
+    rules: Sequence[EvaluationRule], announced: date | None
+) -> list[EvaluationRule]:
+    """같은 세부유형에 구판·현행이 함께 있으면 공고일이 효력 구간에 드는 규칙만 남깁니다.
+
+    구판(예: 전라남도 예규 제1075호)과 현행(통합 지침)이 같은 시·도·세부유형으로 함께
+    걸리면, 공고일이 구간에 드는 하나만 남겨 구판과 현행을 가립니다. 구간에 드는 규칙이
+    없으면(모두 시행 전) 시행일이 가장 늦은 현행 규칙을 남겨, 종전처럼 시행일 대조에서
+    RULE_REGIME_MISMATCH 로 막습니다. 공고일이 없으면 폐지되지 않은 현행 규칙을 남겨
+    종전 판정을 유지합니다.
+    """
+    by_service_type: dict[str, list[EvaluationRule]] = {}
+    for rule in rules:
+        by_service_type.setdefault(rule.service_type, []).append(rule)
+    narrowed: list[EvaluationRule] = []
+    for group in by_service_type.values():
+        if len(group) == 1:
+            narrowed.extend(group)
+            continue
+        if announced is None:
+            narrowed.extend([rule for rule in group if rule.superseded_date is None] or group)
+            continue
+        in_window = [rule for rule in group if _rule_applies_to_announcement(rule, announced)]
+        if len(in_window) == 1:
+            narrowed.extend(in_window)
+        elif not in_window:
+            narrowed.append(max(group, key=lambda rule: rule.effective_date))
+        else:
+            narrowed.extend(group)
+    return narrowed
+
+
 def _select_local_rule(
     method_name: str | None,
     raw_data: dict[str, Any] | None,
@@ -6055,28 +6246,33 @@ def _select_local_rule(
     sido_code: str | None,
     sido_name: str | None,
     configured_service_type: str | None = None,
+    announced: date | None = None,
 ) -> tuple[EvaluationRule | None, str | None, str, list[str]]:
     """LOCAL 규칙 후보를 수요기관 시·도와 용역 세부유형으로 골라 돌려줍니다.
 
     반환: (규칙, 차단 코드, 사유, 경고). 규칙을 못 고르면 차단 코드와 사유를 채웁니다.
+    같은 시·도·세부유형에 구판과 현행이 함께 있으면 공고일로 하나를 가립니다.
     """
     warnings: list[str] = []
 
     def _applied(rule: EvaluationRule) -> tuple[EvaluationRule, str | None, str, list[str]]:
         return rule, None, "", list(warnings)
 
-    region_rules = [
-        rule
-        for rule in LOCAL_RULES
-        if _axis_matches(
-            rule,
-            institution_code=None,
-            institution_name=None,
-            region_code=sido_code,
-            region_name=sido_name,
-            contract_regime="LOCAL",
-        )
-    ]
+    region_rules = _narrow_to_current_regime(
+        [
+            rule
+            for rule in LOCAL_RULES
+            if _axis_matches(
+                rule,
+                institution_code=None,
+                institution_name=None,
+                region_code=sido_code,
+                region_name=sido_name,
+                contract_regime="LOCAL",
+            )
+        ],
+        announced,
+    )
     if not region_rules:
         return None, BLOCK_CODE_LOCAL_RULE_NOT_FOUND, _LOCAL_NOT_FOUND_MESSAGE, warnings
 
@@ -6541,6 +6737,15 @@ def _institution_subunit_name_matches(rule: EvaluationRule, institution_name: st
     return False
 
 
+# 통합특별시 출범(2026-07-16)으로 폐지된 옛 시·도 코드입니다. 통합 시·도 규칙(region_code "12")은
+# 옛 계열 코드(전라남도 46·광주광역시 29)로도 매칭합니다. 통합 전 공고를 후보에 올려 두고,
+# 구판·현행 선택은 공고일 대조(_narrow_to_current_regime)가 정하게 하기 위함입니다.
+MERGED_REGION_CODE = "12"
+REGION_CODE_EQUIVALENTS: dict[str, frozenset[str]] = {
+    MERGED_REGION_CODE: frozenset({"46", "29"}),
+}
+
+
 def _axis_matches(
     rule: EvaluationRule,
     *,
@@ -6570,7 +6775,11 @@ def _axis_matches(
         return _institution_subunit_name_matches(rule, institution_name)
     if rule.institution_scope == RULE_SCOPE_REGION:
         if rule.region_code:
-            return bool(region_code and rule.region_code == region_code)
+            if not region_code:
+                return False
+            if rule.region_code == region_code:
+                return True
+            return region_code in REGION_CODE_EQUIVALENTS.get(rule.region_code, frozenset())
         return bool(
             region_name
             and rule.region_name
@@ -6941,6 +7150,7 @@ def resolve_evaluation_rule(
             sido_code=region_code,
             sido_name=region_name,
             configured_service_type=local_service_type,
+            announced=announced,
         )
         if selected is None:
             if (
