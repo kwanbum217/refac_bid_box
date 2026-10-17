@@ -1214,6 +1214,183 @@ SERVC_TECH_QUAL_RULE_IDS = frozenset(
     }
 )
 
+# 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 제1~4호.
+# 낙찰방법명에 추정가격 띠만 적힌 폐기물처리용역 적격심사 공고가 이 기준으로 계산되게 합니다.
+# 값은 환경부고시 제2024-287호(시행 2025-01-02)·제2025-165호(시행 2025-10-07) 원문에서
+# 확정했습니다. 두 판의 배점한도·계수·기준비율·통과점수·낙찰하한율이 같아 한 벌로 둡니다.
+_MOE_CDW_SOURCE = (
+    "환경부고시 「건설폐기물처리용역 적격업체 평가기준」 제2024-287호(시행 2025-01-02)·"
+    "제2025-165호(시행 2025-10-07) [별표] 평가항목 및 배점기준 제1~4호"
+)
+MOE_CDW_RULES: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_QUAL_MOE_CDW_ATTACH_04",
+        service_type="WASTE_MOE",
+        table_name="건설폐기물처리용역 적격업체 평가기준 제4호 (2억원 미만)",
+        description="추정가격 2억원 미만인 용역",
+        effective_date="2025-01-02",
+        source=_MOE_CDW_SOURCE,
+        patterns=(
+            "추정가격 2억원 미만인 용역",
+            "추정가격 2억원미만인 용역",
+            "추정가격 2억 미만인 용역",
+            "추정가격 2억미만인 용역",
+        ),
+        lwlt_rate=Decimal("87.745"),
+        base_rate=Decimal("0.90"),
+        max_price_score=Decimal("70"),
+        multiplier=Decimal("20"),
+        pass_threshold=Decimal("95"),
+        score_table_source=_MOE_CDW_SOURCE + " (제4호: B=70, k=20, T=95, 기준비율 88%)",
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_MOE_CDW_ATTACH_03",
+        service_type="WASTE_MOE",
+        table_name="건설폐기물처리용역 적격업체 평가기준 제3호 (5억 미만 2억 이상)",
+        description="추정가격 5억원 미만 2억원 이상인 용역",
+        effective_date="2025-01-02",
+        source=_MOE_CDW_SOURCE,
+        patterns=(
+            "추정가격 5억원 미만 2억원 이상인 용역",
+            "추정가격 5억원미만 2억원이상인 용역",
+            "추정가격 5억원미만 2억원 이상인 용역",
+            "추정가격 5억원 미만 2억원이상인 용역",
+        ),
+        lwlt_rate=Decimal("86.745"),
+        base_rate=Decimal("0.90"),
+        max_price_score=Decimal("60"),
+        multiplier=Decimal("4"),
+        pass_threshold=Decimal("95"),
+        score_table_source=_MOE_CDW_SOURCE + " (제3호: B=60, k=4, T=95, 기준비율 88%)",
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_MOE_CDW_ATTACH_02",
+        service_type="WASTE_MOE",
+        table_name="건설폐기물처리용역 적격업체 평가기준 제2호 (15억 미만 5억 이상)",
+        description="추정가격 15억원 미만 5억원 이상인 용역",
+        effective_date="2025-01-02",
+        source=_MOE_CDW_SOURCE,
+        patterns=(
+            "추정가격 15억원 미만 5억원 이상인 용역",
+            "추정가격 15억원미만 5억원이상인 용역",
+            "추정가격 15억원미만 5억원 이상인 용역",
+            "추정가격 15억원 미만 5억원이상인 용역",
+        ),
+        lwlt_rate=Decimal("85.495"),
+        base_rate=Decimal("0.90"),
+        max_price_score=Decimal("50"),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("95"),
+        score_table_source=_MOE_CDW_SOURCE + " (제2호: B=50, k=2, T=95, 기준비율 88%)",
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_MOE_CDW_ATTACH_04A",
+        service_type="WASTE_MOE",
+        table_name="건설폐기물처리용역 적격업체 평가기준 제1호 (30억 미만 15억 이상)",
+        description="추정가격 30억원 미만 15억원 이상인 용역",
+        effective_date="2025-01-02",
+        source=_MOE_CDW_SOURCE,
+        patterns=(
+            "추정가격 30억원 미만 15억원 이상인 용역",
+            "추정가격 30억원미만 15억원이상인 용역",
+            "추정가격 30억원미만 15억원 이상인 용역",
+            "추정가격 30억원 미만 15억원이상인 용역",
+        ),
+        lwlt_rate=Decimal("82.995"),
+        base_rate=Decimal("0.90"),
+        max_price_score=Decimal("30"),
+        multiplier=Decimal("1"),
+        pass_threshold=Decimal("95"),
+        score_table_source=_MOE_CDW_SOURCE + " (제1호: B=30, k=1, T=95, 기준비율 88%)",
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_MOE_CDW_ATTACH_04B",
+        service_type="WASTE_MOE",
+        table_name="건설폐기물처리용역 적격업체 평가기준 제1호 (100억 미만 30억 이상)",
+        description="추정가격 100억원 미만 30억원 이상인 용역",
+        effective_date="2025-01-02",
+        source=_MOE_CDW_SOURCE,
+        patterns=(
+            "추정가격 100억원 미만 30억원 이상인 용역",
+            "추정가격 100억원미만 30억원이상인 용역",
+            "추정가격 100억원미만 30억원 이상인 용역",
+            "추정가격 100억원 미만 30억원이상인 용역",
+        ),
+        lwlt_rate=Decimal("77.995"),
+        base_rate=Decimal("0.90"),
+        max_price_score=Decimal("30"),
+        multiplier=Decimal("1"),
+        pass_threshold=Decimal("90"),
+        score_table_source=_MOE_CDW_SOURCE + " (제1호: B=30, k=1, T=90, 기준비율 88%)",
+    ),
+    EvaluationRule(
+        rule_id="SERVC_QUAL_MOE_CDW_ATTACH_04C",
+        service_type="WASTE_MOE",
+        table_name="건설폐기물처리용역 적격업체 평가기준 제1호 (100억 이상)",
+        description="추정가격 100억원 이상인 용역",
+        effective_date="2025-01-02",
+        source=_MOE_CDW_SOURCE,
+        patterns=(
+            "추정가격 100억원 이상인 용역",
+            "추정가격 100억원이상인 용역",
+            "추정가격 100억 이상인 용역",
+            "추정가격 100억이상인 용역",
+        ),
+        lwlt_rate=Decimal("72.995"),
+        base_rate=Decimal("0.90"),
+        max_price_score=Decimal("30"),
+        multiplier=Decimal("1"),
+        pass_threshold=Decimal("85"),
+        score_table_source=_MOE_CDW_SOURCE + " (제1호: B=30, k=1, T=85, 기준비율 88%)",
+    ),
+)
+
+MOE_CDW_WARNING = (
+    "낙찰방법명이 추정가격 띠만 적은 폐기물처리용역 공고라 환경부고시 "
+    "「건설폐기물처리용역 적격업체 평가기준」 [별표] 제1~4호를 적용했습니다."
+)
+
+
+MOE_CDW_EFFECTIVE_DATE = "2025-01-02"
+
+# 띠 표기 공고가 조달청 별표 매칭에서 받는 값 미상 띠 규칙입니다(배점표 선언은 UNMAPPED_BAND).
+_MOE_CDW_PPS_BAND_RULE_IDS = frozenset(
+    {
+        "SERVC_QUAL_POST_20260526_ATTACH_12",
+        "SERVC_QUAL_POST_20260526_ATTACH_13",
+        "SERVC_QUAL_POST_20260526_ATTACH_14",
+    }
+)
+_MOE_CDW_FALLBACK_BLOCK_CODES = frozenset({"RULE_NOT_FOUND", "LOCAL_RULE_NOT_FOUND"})
+
+
+def _is_moe_cdw_fallback_target(result: RuleResolutionResult) -> bool:
+    """환경부고시 대체 적용 대상인지 판정합니다.
+
+    조달청 띠 규칙(ATTACH_12~14)으로 잡혔거나(시행일 불일치 차단 포함), 규칙 미발견으로
+    막힌 결과만 대상입니다. 시·도·기관 규칙으로 확정된 결과와 세부유형 선택 대기는 제외합니다.
+    """
+    rule_id = result.rule.rule_id if result.rule is not None else None
+    if rule_id in _MOE_CDW_PPS_BAND_RULE_IDS:
+        return result.block_reason_code in (None, "RULE_REGIME_MISMATCH")
+    return result.is_blocked and result.block_reason_code in _MOE_CDW_FALLBACK_BLOCK_CODES
+
+
+def select_moe_cdw_rule(method_name: str | None) -> EvaluationRule | None:
+    """낙찰방법명이 폐기물 띠 표기 6종 중 하나일 때 MoE [별표] 해당 호 규칙을 돌려줍니다.
+
+    띠 표기 6종과 정확히 맞는 경우에만 고르며, 그 밖의 표기는 None 을 돌려
+    기존 판정을 그대로 둡니다.
+    """
+    name = method_name or ""
+    if not name.strip():
+        return None
+    for rule in MOE_CDW_RULES:
+        if match_rule_by_mthd_nm(name, rules=(rule,)) is not None:
+            return rule
+    return None
+
+
 # 2025-09-01 시행 개정 전 규칙 14종 (제2025-257호·제2026-15호).
 # 하한율은 2025-09-01 이상 2026-05-26 미만 구간 공고의 실측 최빈값입니다.
 PRE_20250901_RULES: tuple[EvaluationRule, ...] = (
@@ -7002,9 +7179,11 @@ def match_rule_by_mthd_nm(
 
     normalized_input = normalize_pattern_string(sucsfbid_mthd_nm)
 
+    ordered_rules = list(rules)
+
     # 패턴 매칭 후보 목록 작성 (긴 패턴이 먼저 매칭되도록 정렬)
     pattern_rule_pairs: list[tuple[str, str, EvaluationRule]] = []
-    for rule in rules:
+    for rule in ordered_rules:
         for p in rule.patterns:
             pattern_rule_pairs.append((p, normalize_pattern_string(p), rule))
 
@@ -7424,6 +7603,25 @@ def resolve_evaluation_rule(
                 block_reason_code=None,
                 block_reason_message=None,
                 warnings=[*result.warnings, MOIS_ACADEMIC_BAND_WARNING],
+            )
+            scope_stage = RULE_SCOPE_ALL
+    if (
+        announced is not None
+        and announced >= date.fromisoformat(MOE_CDW_EFFECTIVE_DATE)
+        and _is_moe_cdw_fallback_target(result)
+    ):
+        # 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 구간명을 옮긴 띠 표기 공고는
+        # 조달청 별표에 대응 값이 없어 ATTACH_12~14(값 미상)로 잡히거나 규칙 미발견으로 막힙니다.
+        # 그런 공고만 고시 해당 호로 풉니다. 시·도·기관 규칙으로 확정된 공고와 세부유형 선택을
+        # 기다리는 공고(LOCAL_SERVICE_TYPE_UNRESOLVED)는 대상이 아닙니다.
+        moe_rule = select_moe_cdw_rule(method_name)
+        if moe_rule is not None:
+            result = replace(
+                _apply_rule_lwlt(result, moe_rule, sucsfbid_lwlt_rate, estimated_price),
+                is_blocked=False,
+                block_reason_code=None,
+                block_reason_message=None,
+                warnings=[*result.warnings, MOE_CDW_WARNING],
             )
             scope_stage = RULE_SCOPE_ALL
     if institution_warnings:
