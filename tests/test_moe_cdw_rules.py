@@ -16,10 +16,10 @@ from src.app.services.evaluation_rules import (
     PRE_20230501_RULES,
     PRE_20250901_RULES,
     RuleResolutionResult,
-    match_rule_by_mthd_nm,
     resolve_evaluation_rule,
     resolve_evaluation_rule_from_raw_data,
     resolve_score_params,
+    select_moe_cdw_rule,
 )
 
 BANDS = (
@@ -84,7 +84,7 @@ class TestMoeCdwDeclarations:
 
     def test_values(self) -> None:
         for method_name, rate, b, k, t in BANDS:
-            rule = match_rule_by_mthd_nm(method_name)
+            rule = select_moe_cdw_rule(method_name)
             assert rule is not None
             assert rule.service_type == "WASTE_MOE"
             assert rule.lwlt_rate == Decimal(rate)
@@ -139,7 +139,7 @@ class TestMoeCdwMatching:
 
     def test_score_params(self) -> None:
         method_name = "적격심사제-추정가격 2억원 미만인 용역"
-        rule = match_rule_by_mthd_nm(method_name)
+        rule = select_moe_cdw_rule(method_name)
         assert rule is not None
         res = resolve_score_params(rule, 100_000_000, "2026-06-10", method_name)
         assert res.max_price_score == Decimal("70")
@@ -148,10 +148,10 @@ class TestMoeCdwMatching:
 
 
 class TestMoeCdwNonRegression:
-    def test_post_bundle_carries_moe(self) -> None:
-        assert any(r.service_type == "WASTE_MOE" for r in POST_20260526_RULES)
-        assert any(r.service_type == "WASTE_MOE" for r in POST_20260727_RULES)
+    def test_post_bundle_does_not_carry_moe(self) -> None:
+        assert not any(r.service_type == "WASTE_MOE" for r in POST_20260526_RULES)
+        assert not any(r.service_type == "WASTE_MOE" for r in POST_20260727_RULES)
 
-    def test_pre_bundle_carries_moe(self) -> None:
-        assert any(r.service_type == "WASTE_MOE" for r in PRE_20250901_RULES)
-        assert any(r.service_type == "WASTE_MOE" for r in PRE_20230501_RULES)
+    def test_pre_bundle_does_not_carry_moe(self) -> None:
+        assert not any(r.service_type == "WASTE_MOE" for r in PRE_20250901_RULES)
+        assert not any(r.service_type == "WASTE_MOE" for r in PRE_20230501_RULES)

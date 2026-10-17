@@ -45,9 +45,12 @@
 
 ## 3. 판정 순서
 
-기존 `SERVC_QUAL_POST_20260526_ATTACH_12~14` 는 값을 바꾸지 않고 그대로 둡니다. 띠 표기가
-MoE 규칙으로 먼저 매칭되도록 `match_rule_by_mthd_nm` 에서 `MOE_CDW_RULES` 를 후보 앞에
-놓습니다. MoE 규칙의 `service_type` 은 `WASTE_MOE` 로 두어 조달청 `GENERAL` 규칙과
+`MOE_CDW_RULES` 는 어느 시행일 벌(POST_20260526, POST_20260727, PRE_20250901,
+PRE_20230501)에도 싣지 않는 별도 규칙 집합입니다. `resolve_evaluation_rule` 에서
+`select_moe_cdw_rule` 이 낙찰방법명이 폐기물 띠 표기 6종과 정확히 맞을 때만
+MoE 규칙을 고르고, 시·도 규칙이나 기관 규칙으로 이미 확정된 공고는 그대로 둡니다.
+기존 `SERVC_QUAL_POST_20260526_ATTACH_12~14` 는 값을 바꾸지 않고 그대로 둡니다.
+MoE 규칙의 `service_type` 은 `WASTE_MOE` 로 두어 조달청 `GENERAL` 규칙과
 혼동되지 않습니다.
 
 ## 4. DB 조회 (읽기 전용)
@@ -57,10 +60,13 @@ MoE 규칙으로 먼저 매칭되도록 `match_rule_by_mthd_nm` 에서 `MOE_CDW_
 
 ## 5. 변경 파일
 
-- `src/app/services/evaluation_rules.py`: `MOE_CDW_RULES` (6종) 추가, PRE/POST 벌에 싣기,
-  `match_rule_by_mthd_nm` 우선순위 조정.
+- `src/app/services/evaluation_rules.py`: `MOE_CDW_RULES` (6종) 추가, `select_moe_cdw_rule`
+  추가, `resolve_evaluation_rule` 에서 선택.
 - `tests/test_moe_cdw_rules.py`: 6종 매칭·값·시행일 경계·비회귀 시험.
 - `docs/analysis/moe_cdw_rules_apply_20261017.md`: 본 문서.
+
+`data/reference/rule_coverage_ledger.yaml` 과 `docs/context/CURRENT_STATE.md` 는 수정하지
+않았습니다. 규칙 추가로 인한 범위 밖 실패 노드 ID 는 `worker_done.json` 에 적었습니다.
 
 원장(`data/reference/rule_coverage_ledger.yaml`)과 `docs/context/CURRENT_STATE.md` 는
 수정하지 않았습니다.

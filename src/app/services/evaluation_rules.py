@@ -1344,15 +1344,27 @@ MOE_CDW_RULES: tuple[EvaluationRule, ...] = (
         score_table_source=_MOE_CDW_SOURCE + " (제1호: B=30, k=1, T=85, 기준비율 88%)",
     ),
 )
-# 별칭: 조사 문서가 쓴 이름과 일치시킵니다.
-WASTE_MOE_RULES = MOE_CDW_RULES
-MOE_CDW_WASTE_RULES = MOE_CDW_RULES
-ENV_MOE_CDW_RULES = MOE_CDW_RULES
-SERVC_QUAL_WASTE_MOE_RULES = MOE_CDW_RULES
 
-# 개정 후 두 벌에도 MoE 규칙을 싣습니다 (effective_date 가드 적용).
-POST_20260526_RULES = POST_20260526_RULES + MOE_CDW_RULES
-POST_20260727_RULES = POST_20260727_RULES + MOE_CDW_RULES
+MOE_CDW_WARNING = (
+    "낙찰방법명이 추정가격 띠만 적은 폐기물처리용역 공고라 환경부고시 "
+    "「건설폐기물처리용역 적격업체 평가기준」 [별표] 제1~4호를 적용했습니다."
+)
+
+
+def select_moe_cdw_rule(method_name: str | None) -> EvaluationRule | None:
+    """낙찰방법명이 폐기물 띠 표기 6종 중 하나일 때 MoE [별표] 해당 호 규칙을 돌려줍니다.
+
+    띠 표기 6종과 정확히 맞는 경우에만 고르며, 그 밖의 표기는 None 을 돌려
+    기존 판정을 그대로 둡니다.
+    """
+    name = method_name or ""
+    if not name.strip():
+        return None
+    for rule in MOE_CDW_RULES:
+        if match_rule_by_mthd_nm(name, rules=(rule,)) is not None:
+            return rule
+    return None
+
 
 # 2025-09-01 시행 개정 전 규칙 14종 (제2025-257호·제2026-15호).
 # 하한율은 2025-09-01 이상 2026-05-26 미만 구간 공고의 실측 최빈값입니다.
@@ -1581,7 +1593,7 @@ PRE_20250901_RULES: tuple[EvaluationRule, ...] = (
     ),
 )
 
-PRE_20250901_RULES = _with_score_table(PRE_20250901_RULES) + MOE_CDW_RULES
+PRE_20250901_RULES = _with_score_table(PRE_20250901_RULES)
 
 # 2023-05-01 시행 개정 전 규칙 14종 (제2023-53호).
 # 별표 1·11 배점표는 제2025-257호와 다르지만, 규칙 레지스트리가 담는 식별 문자열·하한율·기준비율은
@@ -1811,7 +1823,7 @@ PRE_20230501_RULES: tuple[EvaluationRule, ...] = (
     ),
 )
 
-PRE_20230501_RULES = _with_score_table(PRE_20230501_RULES) + MOE_CDW_RULES
+PRE_20230501_RULES = _with_score_table(PRE_20230501_RULES)
 
 # 2026-05-26 개정 전 규칙 호환 별칭 (제2023-53호 + 제2025-257호·제2026-15호)
 PRE_20260526_RULES: tuple[EvaluationRule, ...] = PRE_20230501_RULES + PRE_20250901_RULES
@@ -6947,9 +6959,7 @@ def match_rule_by_mthd_nm(
 
     normalized_input = normalize_pattern_string(sucsfbid_mthd_nm)
 
-    # 환경부고시 건설폐기물처리용역 적격업체 평가기준 [별표] 규칙이 조달청 일반용역
-    # 별표(ATTACH_12~14)와 같은 띠 표기를 공유하므로, MoE 규칙을 먼저 시도합니다.
-    ordered_rules = list(MOE_CDW_RULES) + [rule for rule in rules if rule not in MOE_CDW_RULES]
+    ordered_rules = list(rules)
 
     # 패턴 매칭 후보 목록 작성 (긴 패턴이 먼저 매칭되도록 정렬)
     pattern_rule_pairs: list[tuple[str, str, EvaluationRule]] = []
@@ -7355,6 +7365,23 @@ def resolve_evaluation_rule(
         )
     elif result.rule is not None:
         scope_stage = RULE_SCOPE_ALL
+    if result.is_blocked and result.block_reason_code in {
+        BLOCK_CODE_RULE_NOT_FOUND,
+        BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
+        BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED,
+    }:
+        # 시·도/기관 규칙으로 이미 확정된 공고는 위 분기에서 규칙이 세워져 차단되지
+        # 않으므로 여기 오지 않습니다. 띠 표기 6종과 정확히 맞을 때만 MoE [별표]로 풉니다.
+        moe_rule = select_moe_cdw_rule(method_name)
+        if moe_rule is not None:
+            result = replace(
+                _apply_rule_lwlt(result, moe_rule, sucsfbid_lwlt_rate, estimated_price),
+                is_blocked=False,
+                block_reason_code=None,
+                block_reason_message=None,
+                warnings=[*result.warnings, MOE_CDW_WARNING],
+            )
+            scope_stage = RULE_SCOPE_ALL
     if institution_warnings:
         result = replace(result, warnings=[*result.warnings, *institution_warnings])
     result = replace(
@@ -7575,7 +7602,12 @@ def _resolve_by_method_name(
             warnings=warnings,
         )
 
-    matched_rule = match_rule_by_mthd_nm(sucsfbid_mthd_nm, rules=rules)
+    # 환경부고시 건설폐기물처리용역 적격업체 평가기준 [별표] 띠 표기는 조달청 일반용역
+    # 별표(ATTACH_12~14)와 같은 식별 문자열을 공유하므로, 띠 표기 6종과 정확히 맞으면
+    # MoE 규칙을 우선 매칭합니다. 시·도·기관 규칙은 이후 단계에서 별도로 우선합니다.
+    matched_rule = select_moe_cdw_rule(sucsfbid_mthd_nm)
+    if matched_rule is None:
+        matched_rule = match_rule_by_mthd_nm(sucsfbid_mthd_nm, rules=rules)
     if matched_rule is None:
         return RuleResolutionResult(
             is_blocked=True,
