@@ -10,17 +10,17 @@
 
 ## 1. 요약
 
-R1 명세에서 `status=confirmed` 인 기관 11곳의 bands 를 `RULE_SCOPE_INSTITUTION` 규칙 70개,
-구간 144개로 옮겼습니다. 값은 명세의 B·k·기준비율·통과점수·하한율·구간 경계를 그대로 쓰고
+R1 명세에서 `status=confirmed` 인 기관 12곳의 bands 를 `RULE_SCOPE_INSTITUTION` 규칙 75개,
+구간 157개로 옮겼습니다. 값은 명세의 B·k·기준비율·통과점수·하한율·구간 경계를 그대로 쓰고
 새로 추정하지 않았습니다. 판정 축은 수요기관(`dminsttNm`·`dminsttCd`)이며, 공고기관이
 조달청·지방조달청 계열이면 수요기관 기관 규칙을 배제하고 종전 조달청 경로를 씁니다.
 `partial` 5곳과 `unresolved` 3곳은 넣지 않아 종전 조달청 규칙 경로를 그대로 씁니다.
 
 | 항목 | 값 |
 | --- | --- |
-| 반영 기관 | 11곳 |
-| 기관 규칙 | 70개 |
-| 기관 구간(band) | 144개 (R1 확인 band 147개 중 한국수력원자력 별표 9·10 3개 병합) |
+| 반영 기관 | 12곳 |
+| 기관 규칙 | 75개 |
+| 기관 구간(band) | 157개 (R1 확인 band 160개 중 한국수력원자력 별표 9·10 3개 병합) |
 | 판정 우선순위 | 기관 > 시·도(LOCAL) > 조달청 |
 | 대행 배제 플래그 | `EXCLUDE_INSTITUTION_RULES_FOR_PPS_PROXY = True` |
 | DB 스키마·데이터 변경 | 없음 |
@@ -42,10 +42,15 @@ R1 명세에서 `status=confirmed` 인 기관 11곳의 bands 를 `RULE_SCOPE_INS
 | 인천국제공항공사 | B551177 | 11 | 18 | 2025-01-01 | `SERVC_INST_IIAC_20250101_*` |
 | 인천공항시설관리 | Z043894 | 12 | 22 | 2025-09-01 | `SERVC_INST_IIAFM_20250901_*` |
 | 해양환경공단 | B553931 | 1 | 4 | 2025-03-06 | `SERVC_INST_KOEM_20250306_MARINE_WASTE` |
+| 한국공항공사 | B551178 | 5 | 13 | 2026-08-14 | `SERVC_INST_KAC_20260814_*` |
 
 - 해양환경공단은 2026-10-15 등록분입니다. 낙찰방법 표기가 용역 종류를 특정하지 못한 산림청은
   등록하지 않았으며, 조회 근거와 판정은 [`forest_koem_register_gap_20261015.md`](forest_koem_register_gap_20261015.md)
   에 있습니다.
+- 한국공항공사는 2026-10-17 등록분입니다. 일반용역 적격심사세부기준의 별표 가운데 통과점수가
+  85점으로 하나이고 구간이 원문으로 정해지는 별표 1·2·4·6·7 만 등록했으며, 통과점수가 88점으로
+  갈리는 별표 3·3의 2·5·5의 2 와 별표 8·9, 기술용역은 등록하지 않았습니다. 등록·미등록 판정과
+  조회 근거는 [`kac_register_20261017.md`](kac_register_20261017.md) 에 있습니다.
 
 - 수요기관 코드는 DB `procurement.g2b_demand_institutions` 로 확인한 값입니다.
   한국수력원자력은 기관표에 본청 행이 없어 이름 매칭만 씁니다.
@@ -210,7 +215,7 @@ EXCLUDE_INSTITUTION_RULES_FOR_PPS_PROXY = True
 
 | 파일 | 내용 |
 | --- | --- |
-| `src/app/services/evaluation_rules.py` | `INSTITUTION_RULES`(69규칙·140구간), 수요기관·공고기관 판정, 대행 배제 플래그, `_axis_matches` 코드·이름·별칭 판정, `PriceBand.max_price_score` 선택화, `bounded_price_top` 선언 |
+| `src/app/services/evaluation_rules.py` | `INSTITUTION_RULES`(75규칙·157구간), 수요기관·공고기관 판정, 대행 배제 플래그, `_axis_matches` 코드·이름·별칭 판정, `PriceBand.max_price_score` 선택화, `bounded_price_top` 선언 |
 | `src/app/api/v1/evaluations.py` | `SERVC_RULE_META_SCOPE_NOTE` 의 기관 산식 문장 수정 |
 | `tests/test_institution_rules.py` | 신규. (가)~(바) 판정 시험 |
 | `tests/test_evaluation_rules_scope_axis.py` | 기관 축 코드·이름·별칭 판정 시험 추가 |
