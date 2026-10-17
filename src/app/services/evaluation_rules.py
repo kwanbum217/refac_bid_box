@@ -2894,7 +2894,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
 # 기관(중앙부처·공기업·공단) 자체 적격심사 세부기준 규칙
 # =============================================================================
 #
-# 정본은 data/reference/institution_rules_20261013.yaml 이며, status=confirmed 기관 11곳의
+# 정본은 data/reference/institution_rules_20261013.yaml 이며, status=confirmed 기관 12곳의
 # bands 를 값을 추정하지 않고 상수로 옮겼습니다(규칙 레지스트리는 코드가 정본). partial 5곳
 # (방위사업청·한국철도공사·한국도로공사·한국전력기술·한국수자원공사)과 unresolved 3곳(한국
 # 토지주택공사·한전 전력연구원·한전KPS)은 넣지 않아 종전 조달청 규칙 경로를 그대로 씁니다.
@@ -2910,6 +2910,30 @@ _SRC_INST_AGENCY = "docs/analysis/servc_formula_userfiles_agency_20261004.md"
 _SRC_INST_RECOVER_A = "docs/analysis/servc_formula_recover_a_20261005.md"
 _SRC_INST_KOGAS = "docs/analysis/servc_formula_kogas_qualification_20261004.md"
 _SRC_INST_KOEM = "docs/analysis/forest_koem_registry_survey_20261015.md"
+_SRC_INST_KAC = "docs/analysis/kac_regulation_followup_20261015.md"
+# 한국공항공사의 수요기관 하위 조직 표기입니다. db_readonly_query.py 로 한국공항공사 적격심사
+# 용역 공고의 dminsttCd·dminsttNm 을 조회해 나온 정확 일치 이름만 담았고, 접두 확장은 쓰지
+# 않습니다. 하위 조직 공고는 코드가 Z0038xx·D067524 대역이라 규칙 코드(B551178)와 달라
+# 코드가 있는 공고에서는 매칭되지 않습니다.
+_KAC_INSTITUTION_ALIASES: tuple[str, ...] = (
+    "한국공항공사 김포공항",
+    "한국공항공사 제주공항",
+    "한국공항공사 김해공항",
+    "한국공항공사 항로시설본부 인천항공교통시설단",
+    "한국공항공사 청주공항",
+    "한국공항공사대구공항",
+    "한국공항공사 항공기술훈련원",
+    "한국공항공사 포항경주공항",
+    "한국공항공사 여수공항",
+    "한국공항공사 울산공항",
+    "한국공항공사 무안공항",
+    "한국공항공사 원주지사",
+    "한국공항공사 광주공항",
+    "한국공항공사 군산지사",
+    "한국공항공사 양양공항",
+    "한국공항공사 사천지사",
+    "한국공항공사 항로시설본부",
+)
 _INSTITUTION_NOTICE_AMOUNT = Decimal(str(notice_amount_for_year(2026)))
 
 # (상한, 배점한도 B, 평점계수 k, 기준비율, 통과점수, 하한율, 구간 라벨, 구간 근거)
@@ -5475,6 +5499,227 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "77.995",
                 "별표 1 · 해양폐기물정화용역 10억원 이상",
                 f"{_SRC_INST_KOEM}:3.2",
+            ),
+        ),
+        quant_table=False,
+    ),
+    # 한국공항공사 (일반용역 적격심사세부기준, 최종 개정 2026-08-05 지침 제792호, 2026-08-14
+    # 이후 입찰공고분 적용). 제10조가 종합평점 통과점수를 85점으로 정하고, 제5조 제1항이
+    # 용역 유형별 [별표]를 지정합니다. 배점한도 B 는 별표의 "추정가격 5억원 이상/미만" 두 열,
+    # 평점계수 k 와 기준비율은 같은 별표 "사업예산규모" 표의 "추정가격 고시금액 이상/미만" 두
+    # 행으로 인쇄되어 구간이 셋(고시금액 미만, 고시금액 이상 5억원 미만, 5억원 이상)으로
+    # 정해집니다. 별표 2·6 은 산식이 구간으로 나뉘지 않아 구간이 둘입니다. 표기 토큰과 하한율
+    # 계산 근거는 docs/analysis/kac_register_20261017.md 에 있습니다.
+    #
+    # 넣지 않은 별표: 별표 3·3의 2(소프트웨어용역)와 별표 5·5의 2(육상운송용역)는 제10조가
+    # 중소기업자간 경쟁제품과 여객 육상운송용역의 통과점수를 88점으로 따로 두고, 제5조 제1항이
+    # "별표 3 또는 별표 3의 2", "별표 5 또는 별표 5의 2" 로 대안을 지정해 어느 표가 어느
+    # 속성에 붙는지 원문으로 확정되지 않아 등록하지 않았습니다. 별표 8(임대차용역)은 공고
+    # 표기가 0건, 별표 9(지정형 용역)는 배점한도가 "60점 이상 70점 이하" 범위로만 인쇄되어
+    # 등록하지 않았습니다.
+    _institution_rule(
+        "SERVC_INST_KAC_20260814_ACADEMIC",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="ACADEMIC",
+        table_name="한국공항공사 일반용역 적격심사 (학술연구용역)",
+        description="한국공항공사 별표 1 학술연구용역 3구간",
+        effective_date="2026-08-14",
+        source=f"{_SRC_INST_KAC}:4.2",
+        patterns=("학술연구용역",),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 1 학술연구용역 · 고시금액 미만",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 1 학술연구용역 · 고시금액 이상 5억원 미만",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                None,
+                "40",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 1 학술연구용역 · 5억원 이상",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KAC_20260814_FACILITY",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="FACILITY",
+        table_name="한국공항공사 일반용역 적격심사 (시설분야용역)",
+        description="한국공항공사 별표 2 시설분야용역 2구간",
+        effective_date="2026-08-14",
+        source=f"{_SRC_INST_KAC}:4.2",
+        patterns=("시설분야용역",),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 2 시설분야용역 · 5억원 미만",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 2 시설분야용역 · 5억원 이상",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KAC_20260814_WASTE",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="WASTE",
+        table_name="한국공항공사 일반용역 적격심사 (폐기물처리용역)",
+        description="한국공항공사 별표 4 폐기물처리용역 3구간",
+        effective_date="2026-08-14",
+        source=f"{_SRC_INST_KAC}:4.2",
+        # 제5조 제1항 제4-1호가 건설폐기물처리용역을 환경부 고시로 돌리므로, 공고명의
+        # "건설폐기물 처리용역"(조회 144건)이 걸리지 않도록 낙찰방법명 토큰으로 한정합니다.
+        patterns=("폐기물처리용역적격심사",),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 4 폐기물처리용역 · 고시금액 미만",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 4 폐기물처리용역 · 고시금액 이상 5억원 미만",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 4 폐기물처리용역 · 5억원 이상",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KAC_20260814_INSURANCE",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="INSURANCE",
+        table_name="한국공항공사 일반용역 적격심사 (보험용역)",
+        description="한국공항공사 별표 6 보험용역 2구간",
+        effective_date="2026-08-14",
+        source=f"{_SRC_INST_KAC}:4.2",
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 미만",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 이상",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KAC_20260814_REPAIR",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="REPAIR_INSPECTION",
+        table_name="한국공항공사 일반용역 적격심사 (수리·점검용역)",
+        description="한국공항공사 별표 7 수리·점검용역 3구간",
+        effective_date="2026-08-14",
+        source=f"{_SRC_INST_KAC}:4.2",
+        patterns=("수리점검용역",),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 7 수리·점검용역 · 고시금액 미만",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 7 수리·점검용역 · 고시금액 이상 5억원 미만",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 7 수리·점검용역 · 5억원 이상",
+                f"{_SRC_INST_KAC}:4.2",
             ),
         ),
         quant_table=False,
