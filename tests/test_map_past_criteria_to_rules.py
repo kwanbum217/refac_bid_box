@@ -101,10 +101,20 @@ def test_pre_2023_05_academic_uses_known_notice_amount() -> None:
 
 
 def test_pre_2023_05_unknown_notice_amount_is_not_guessed() -> None:
-    """2019 년 고시금액은 저장소에 근거가 없어 값을 만들지 않고 사유만 남긴다."""
-    result = map_criteria_to_rule("학술연구용역 적격심사", "2019-04-12", 90_276_363)
-    assert result.rule_id is None
-    assert "고시금액" in result.reason
+    """2019~2020 년 고시금액은 저장소에 근거가 없어 값을 만들지 않고 사유만 남긴다."""
+    for day in ("2019-04-12", "2020-06-01"):
+        result = map_criteria_to_rule("학술연구용역 적격심사", day, 90_276_363)
+        assert result.rule_id is None
+        assert "고시금액" in result.reason
+
+
+def test_pre_2023_05_evidenced_notice_amount_resolves() -> None:
+    """2021~2022 년은 고시 제2020-39호 2.1억이 근거로 있어 이력 규칙이 확정된다."""
+    for day in ("2021-06-01", "2022-06-01"):
+        result = map_criteria_to_rule("학술연구용역 적격심사", day, 300_000_000)
+        assert result.scope == "PPS_HISTORY"
+        assert result.rule_id is not None
+        assert result.reason == ""
 
 
 def test_pre_2023_05_uncovered_service_types_are_unmapped() -> None:
