@@ -2064,7 +2064,7 @@ institutions:
     RULE_NOT_FOUND: 1
     MANUAL_EVALUATION: 1
   announcements: 57
-  registry_status: unregistered
+  registry_status: confirmed
   manifest_sources: null
   investigation:
     recommendation: partial
@@ -2476,7 +2476,7 @@ institutions:
     RULE_REGIME_MISMATCH: 25
     MANUAL_EVALUATION: 1
   announcements: 52
-  registry_status: unregistered
+  registry_status: confirmed
   manifest_sources: null
   investigation: null
 - dminstt_cd: '1613168'
@@ -3316,7 +3316,7 @@ institutions:
     RULE_REGIME_MISMATCH: 21
     MANUAL_EVALUATION: 15
   announcements: 44
-  registry_status: unregistered
+  registry_status: confirmed
   manifest_sources: null
   investigation: null
 - dminstt_cd: Z004843
@@ -5553,7 +5553,7 @@ institutions:
   block_codes:
     RULE_REGIME_MISMATCH: 18
   announcements: 29
-  registry_status: unregistered
+  registry_status: confirmed
   manifest_sources: null
   investigation: null
 - dminstt_cd: Z004822
@@ -19491,7 +19491,7 @@ institutions:
   block_codes:
     RULE_REGIME_MISMATCH: 2
   announcements: 5
-  registry_status: unregistered
+  registry_status: confirmed
   manifest_sources: null
   investigation: null
 - dminstt_cd: Z003854
@@ -19507,7 +19507,7 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes: {}
   announcements: 5
-  registry_status: unregistered
+  registry_status: confirmed
   manifest_sources: null
   investigation: null
 - dminstt_cd: Z004977
