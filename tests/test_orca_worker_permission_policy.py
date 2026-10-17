@@ -169,6 +169,8 @@ REQUIRED_DENY_RULES = {
     "Shell(mysql:*)",
     "Shell(mysqldump:*)",
     "Shell(mysqladmin:*)",
+    # 앞부분 일치만으로는 for 본문, sh -c 문자열, $( ) 치환 속 명령을 막지 못한다(2026-10-18 실측).
+    "Shell(*mysqladmin*)",
     # 컨테이너/볼륨/이미지 삭제와 임의 실행
     "Shell(docker compose down:*)",
     "Shell(docker-compose down:*)",
@@ -178,6 +180,7 @@ REQUIRED_DENY_RULES = {
     "Shell(docker system prune:*)",
     "Shell(docker rm:*)",
     "Shell(docker exec:*)",
+    "Shell(*docker exec*)",
     "Shell(docker run:*)",
     # 작업 트리 밖 삭제와 권한 상승
     "Shell(rm -rf:*)",
