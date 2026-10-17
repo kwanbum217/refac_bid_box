@@ -80,6 +80,11 @@ MOLIT_SUBUNIT_NAME = "국토교통부 대전지방국토관리청 충주국토�
 MOLIT_SUPERVISION_METHOD = "적격심사제-감리용역 적격심사 추정가격 5억원 미만"
 ME_TECH_METHOD = "적격심사제-기술용역 적격심사 추정가격 5억원 미만"
 KNOC_OTHER_METHOD = "적격심사제-기타용역 추정가격 2억원 미만"
+# 한국공항공사 별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) 표기와 규칙 ID 입니다.
+KAC_SOFTWARE_SME_METHOD = (
+    "적격심사제-소프트웨어용역(중소기업자간 경쟁제품 대상) 적격심사 추정가격 5억원 미만"
+)
+KAC_SOFTWARE_SME_ID = "SERVC_INST_KAC_20260814_SOFTWARE_SME"
 
 
 def _yaml_institutions() -> list[dict]:
@@ -174,7 +179,7 @@ def test_confirmed_institution_band_values_match_yaml() -> None:
         code_total += len(code)
 
     assert expected_total == code_total
-    assert code_total == 157
+    assert code_total == 159
 
 
 def test_institution_band_labels_and_sources_trace_yaml() -> None:
@@ -487,8 +492,8 @@ def test_kac_waste_token_does_not_cover_construction_waste() -> None:
     assert result.scope_stage != RULE_SCOPE_INSTITUTION
 
 
-def test_kac_registers_only_unambiguous_general_service_tables() -> None:
-    """한국공항공사는 통과점수가 85점 하나인 별표만 등록하고 소프트웨어·육상운송은 넣지 않는다."""
+def test_kac_registers_general_service_tables_and_software_sme_rule() -> None:
+    """한국공항공사는 통과점수 85점 별표와 대상 표기로 확정된 별표 3의 2 를 등록한다."""
     rules = _rules_for("한국공항공사")
     assert {rule.service_type for rule in rules} == {
         "ACADEMIC",
@@ -496,12 +501,65 @@ def test_kac_registers_only_unambiguous_general_service_tables() -> None:
         "WASTE",
         "INSURANCE",
         "REPAIR_INSPECTION",
+        "SOFTWARE",
     }
     assert {rule.effective_date for rule in rules} == {"2026-08-14"}
     assert all(rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED for rule in rules)
     for rule in rules:
+        expected = Decimal("88") if rule.service_type == "SOFTWARE" else Decimal("85")
         for threshold in rule.threshold_bands or ():
-            assert threshold.pass_threshold == Decimal("85"), rule.rule_id
+            assert threshold.pass_threshold == expected, rule.rule_id
+
+
+def test_kac_software_sme_rule_bands_match_spec() -> None:
+    """별표 3의 2 는 B 70·60, k 4, 기준비율 93, 통과 88, 하한율 89.995 두 구간이다."""
+    rules = [rule for rule in _rules_for("한국공항공사") if rule.service_type == "SOFTWARE"]
+    assert len(rules) == 1
+    rule = rules[0]
+    assert rule.rule_id == KAC_SOFTWARE_SME_ID
+    # 대상 표기를 담은 토큰만 쓴다. "소프트웨어용역" 단독은 별표 3(비대상)과 구분되지 않는다.
+    assert rule.patterns == ("소프트웨어용역중소기업자간경쟁제품대상",)
+    assert [(band.upper_bound, band.max_price_score) for band in rule.price_bands] == [
+        (Decimal("500000000"), Decimal("70")),
+        (None, Decimal("60")),
+    ]
+    for band in rule.price_bands:
+        assert band.multiplier == Decimal("4")
+        assert band.base_rate == Decimal("0.93")
+        assert band.lwlt_rate == Decimal("89.995")
+    for threshold in rule.threshold_bands:
+        assert threshold.pass_threshold == Decimal("88")
+    # 하한율: 93 - (100-88)/4 = 90 에서 소수 둘째 자리까지 버린 뒤 0.005 를 뺀 값이다.
+    assert Decimal("93") - (Decimal("100") - Decimal("88")) / Decimal("4") - Decimal(
+        "0.005"
+    ) == Decimal("89.995")
+
+
+def test_kac_software_sme_announcement_selects_rule_both_bands() -> None:
+    """대상 표기 공고는 추정가격 5억원 경계 양쪽 모두 별표 3의 2 하한율 89.995% 로 간다."""
+    for price in ("400000000", "600000000"):
+        result = _resolve(
+            _kac_raw_data(KAC_SOFTWARE_SME_METHOD, dminsttCd="B551178"),
+            estimated_price=price,
+        )
+        assert result.is_blocked is False, price
+        assert result.rule is not None, price
+        assert result.rule.rule_id == KAC_SOFTWARE_SME_ID, price
+        assert result.scope_stage == RULE_SCOPE_INSTITUTION, price
+        assert result.effective_lwlt_rate == Decimal("89.995"), price
+
+
+def test_kac_software_token_without_sme_marker_does_not_select_rule() -> None:
+    """대상 표기가 없는 소프트웨어용역 공고는 별표 3의 2 규칙으로 가지 않는다(별표 3 비대상)."""
+    result = _resolve(
+        _kac_raw_data(
+            "적격심사제-소프트웨어용역 적격심사 추정가격 5억원 미만",
+            dminsttCd="B551178",
+        ),
+        estimated_price="400000000",
+    )
+    assert result.scope_stage != RULE_SCOPE_INSTITUTION
+    assert result.rule is None or result.rule.rule_id != KAC_SOFTWARE_SME_ID
 
 
 def test_kac_subunit_alias_matches_only_without_code() -> None:
