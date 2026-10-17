@@ -66,11 +66,11 @@ class TestDisqualificationContract:
 
 
 class TestEvaluationRulesRegistry:
-    """별표 14종 선언형 등록 및 정본 검증."""
+    """별표 20종 선언형 등록 및 정본 검증."""
 
     def test_post_20260526_rules_count(self) -> None:
         rules = list_all_rules()
-        assert len(rules) == 14
+        assert len(rules) == 20
 
     def test_insurance_rule_rate_is_canonical_47_995(self) -> None:
         rule = get_rule_by_id("SERVC_QUAL_POST_20260526_ATTACH_02")
@@ -102,6 +102,12 @@ class TestEvaluationRulesRegistry:
             "SERVC_QUAL_POST_20260526_ATTACH_12": Decimal("87.745"),
             "SERVC_QUAL_POST_20260526_ATTACH_13": Decimal("86.745"),
             "SERVC_QUAL_POST_20260526_ATTACH_14": Decimal("82.995"),
+            "SERVC_QUAL_POST_20260526_ATTACH_15": Decimal("86.245"),
+            "SERVC_QUAL_POST_20260526_ATTACH_16": Decimal("82.495"),
+            "SERVC_QUAL_POST_20260526_ATTACH_17": Decimal("86.245"),
+            "SERVC_QUAL_POST_20260526_ATTACH_18": Decimal("82.495"),
+            "SERVC_QUAL_POST_20260526_ATTACH_19": Decimal("86.245"),
+            "SERVC_QUAL_POST_20260526_ATTACH_20": Decimal("82.495"),
         }
 
         for rule in POST_20260526_RULES:

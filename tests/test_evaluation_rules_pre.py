@@ -221,7 +221,8 @@ class TestPost20260727Declaration:
     """제2026-390호 벌의 선언 내용과 제2026-260호 벌 객체 재사용 검증."""
 
     def test_bundle_has_fourteen_unique_ids(self) -> None:
-        assert len(POST_20260727_RULES) == 14
+        # 2026-10-17 별표 7·8·9(수리ㆍ점검·임대차·수요기관 지정형) 6종 추가로 20종이다.
+        assert len(POST_20260727_RULES) == 20
         rule_ids = [rule.rule_id for rule in POST_20260727_RULES]
         assert len(rule_ids) == len(set(rule_ids))
         assert rule_ids == [
@@ -229,7 +230,7 @@ class TestPost20260727Declaration:
             "SERVC_QUAL_POST_20260526_ATTACH_02",
             POST_20260727_PASSENGER_RULE_ID,
             POST_20260727_SW_SME_RULE_ID,
-            *[f"SERVC_QUAL_POST_20260526_ATTACH_{index:02d}" for index in range(5, 15)],
+            *[f"SERVC_QUAL_POST_20260526_ATTACH_{index:02d}" for index in range(5, 21)],
         ]
 
     def test_only_passenger_and_sw_sme_are_new_objects(self) -> None:
@@ -374,13 +375,15 @@ class TestPreRegimeResolution:
         assert result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND
         assert result.rule is None
 
-    def test_post_period_does_not_gain_pre_only_attachments(self) -> None:
+    def test_post_period_matches_post_repair_attachment(self) -> None:
+        # 제2026-260호 개정 전문에 [별표 7] 수리ㆍ점검용역이 실재해 개정 후 규칙으로 매칭된다.
         result = _resolve(
             "적격심사제-수리ㆍ점검용역 적격심사 고시금액 미만", bid_ntce_dt="2026-06-01"
         )
 
-        assert result.is_blocked is True
-        assert result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND
+        assert result.is_blocked is False
+        assert result.rule is not None
+        assert result.rule.rule_id == "SERVC_QUAL_POST_20260526_ATTACH_15"
 
 
 class TestPostRegimeRegression:
@@ -402,7 +405,7 @@ class TestPostRegimeRegression:
             assert result.rate_source == "ANNOUNCEMENT"
 
     def test_post_registry_is_untouched(self) -> None:
-        assert len(POST_20260526_RULES) == 14
+        assert len(POST_20260526_RULES) == 20
         assert {rule.effective_date for rule in POST_20260526_RULES} == {"2026-05-26"}
 
 
@@ -449,19 +452,21 @@ class TestExplicitRulesCalls:
     def test_match_rule_by_mthd_nm_default_stays_post_bundle(self) -> None:
         method = "적격심사제-수리ㆍ점검용역 적격심사 고시금액 미만"
 
-        assert match_rule_by_mthd_nm(method) is None
+        default_match = match_rule_by_mthd_nm(method)
+        assert default_match is not None
+        assert default_match.rule_id == "SERVC_QUAL_POST_20260526_ATTACH_15"
         matched = match_rule_by_mthd_nm(method, rules=PRE_20250901_RULES)
         assert matched is not None
         assert matched.rule_id == "SERVC_QUAL_PRE_20250901_ATTACH_15"
 
 
 class TestScoreTableDeclaration:
-    """개정 3세대 42건의 배점표(B·k·T) 판정: 확정값만 실리고 미확정은 None."""
+    """개정 3세대 48건의 배점표(B·k·T) 판정: 확정값만 실리고 미확정은 None."""
 
     def test_all_rules_carry_a_declaration_source(self) -> None:
-        """42건 전부가 출처 또는 미확인 사유를 남긴다."""
+        """48건 전부가 출처 또는 미확인 사유를 남긴다."""
         rules = PRE_20230501_RULES + PRE_20250901_RULES + POST_20260526_RULES
-        assert len(rules) == 42
+        assert len(rules) == 48
         for rule in rules:
             assert rule.score_table_source, rule.rule_id
             assert rule.score_table_source.strip() != ""
