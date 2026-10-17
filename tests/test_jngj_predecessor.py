@@ -26,6 +26,8 @@ from src.app.services.evaluation_rules import (
 
 PREDECESSOR_WASTE_ID = "SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4"
 PREDECESSOR_LAND_TRANSPORT_ID = "SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4"
+GWANGJU_PREDECESSOR_WASTE_ID = "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3"
+GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID = "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_5"
 JNGJ_WASTE_ID = "SERVC_LOCAL_JNGJ_20260716_ATTACH_03"
 JNGJ_LAND_TRANSPORT_ID = "SERVC_LOCAL_JNGJ_20260716_ATTACH_05"
 
@@ -92,19 +94,20 @@ def test_jeonnam_before_regime_uses_predecessor_rule(method: str, expected_rule_
     assert result.block_reason_code is None
 
 
-@pytest.mark.parametrize("method", [WASTE_METHOD, LAND_TRANSPORT_METHOD])
-def test_gwangju_before_regime_stays_blocked(method: str) -> None:
-    """광주광역시 계열은 전신 기준 원문을 확보하지 못해 차단을 유지한다.
-
-    차단 결과는 종전과 같이 현행 규칙을 후보로 둔 채 RULE_REGIME_MISMATCH 로 막고,
-    구판 규칙은 붙지 않으며 하한율도 확정하지 않는다.
-    """
+@pytest.mark.parametrize(
+    ("method", "expected_rule_id"),
+    [
+        (WASTE_METHOD, GWANGJU_PREDECESSOR_WASTE_ID),
+        (LAND_TRANSPORT_METHOD, GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID),
+    ],
+)
+def test_gwangju_before_regime_uses_predecessor_rule(method: str, expected_rule_id: str) -> None:
+    """광주광역시 계열은 전신 기준(예규 제377호) 별표로 계산한다."""
     result = _resolve(GWANGJU_INSTITUTION, method, "2026-06-01", estimated_price=400000000)
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
-    assert result.effective_lwlt_rate is None
-    assert result.rate_source is None
-    assert result.rule is None or result.rule.superseded_date is None
+    assert result.rule is not None
+    assert result.rule.rule_id == expected_rule_id
+    assert result.is_blocked is False
+    assert result.block_reason_code is None
 
 
 @pytest.mark.parametrize(
@@ -140,8 +143,8 @@ def test_announcement_without_date_keeps_current_rule() -> None:
 
 
 def test_predecessor_rules_declare_supersede_window() -> None:
-    """구판 규칙 두 개만 전라남도 축과 폐지 시행일을 선언한다."""
-    predecessors = {
+    """전라남도·광주광역시 구판 규칙이 폐지 시행일을 선언한다."""
+    jeonnam_predecessors = {
         rule.rule_id: rule
         for rule in LOCAL_RULES
         if rule.rule_id
@@ -150,14 +153,37 @@ def test_predecessor_rules_declare_supersede_window() -> None:
             PREDECESSOR_LAND_TRANSPORT_ID,
         }
     }
-    assert set(predecessors) == {PREDECESSOR_WASTE_ID, PREDECESSOR_LAND_TRANSPORT_ID}
-    for rule in predecessors.values():
+    assert set(jeonnam_predecessors) == {PREDECESSOR_WASTE_ID, PREDECESSOR_LAND_TRANSPORT_ID}
+    for rule in jeonnam_predecessors.values():
         assert rule.region_code == "46"
         assert rule.region_name == "전라남도"
         assert rule.effective_date == "2023-03-02"
         assert rule.superseded_date == REGIME_CHANGE_DATE
+    gwangju_predecessors = {
+        rule.rule_id: rule
+        for rule in LOCAL_RULES
+        if rule.rule_id
+        in {
+            GWANGJU_PREDECESSOR_WASTE_ID,
+            GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID,
+        }
+    }
+    assert set(gwangju_predecessors) == {
+        GWANGJU_PREDECESSOR_WASTE_ID,
+        GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID,
+    }
+    for rule in gwangju_predecessors.values():
+        assert rule.region_code == "29"
+        assert rule.region_name == "광주광역시"
+        assert rule.effective_date == "2022-11-15"
+        assert rule.superseded_date == REGIME_CHANGE_DATE
     superseded = {rule.rule_id for rule in LOCAL_RULES if rule.superseded_date is not None}
-    assert superseded == {PREDECESSOR_WASTE_ID, PREDECESSOR_LAND_TRANSPORT_ID}
+    assert superseded == {
+        PREDECESSOR_WASTE_ID,
+        PREDECESSOR_LAND_TRANSPORT_ID,
+        GWANGJU_PREDECESSOR_WASTE_ID,
+        GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID,
+    }
 
 
 # --------------------------------------------------------------------------- #
