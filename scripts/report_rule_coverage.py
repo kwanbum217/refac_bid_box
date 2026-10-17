@@ -39,6 +39,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.app.services.demand_institutions import (  # noqa: E402
     classify_contract_regime,
     institution_sido,
+    is_education_institution,
 )
 from src.app.services.evaluation_rules import (  # noqa: E402
     RULE_SCOPE_INSTITUTION,
@@ -384,6 +385,7 @@ def _to_record(row: Any, institutions: dict[str, dict[str, Any]]) -> dict[str, A
             region_code=sido_code,
             region_name=sido_name,
             estimated_price=row.presmpt_prce,
+            education_institution=is_education_institution(institution),
         )
         error_type = None
     except Exception as exc:  # 판정 실패는 ERROR 로 세고 예외 형식 이름만 남깁니다.

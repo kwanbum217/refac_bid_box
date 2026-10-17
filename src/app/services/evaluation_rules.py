@@ -6186,6 +6186,14 @@ BLOCK_CODE_RULE_SCOPE_AMBIGUOUS = "RULE_SCOPE_AMBIGUOUS"
 BLOCK_CODE_LOCAL_RULE_NOT_FOUND = "LOCAL_RULE_NOT_FOUND"
 BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED = "LOCAL_SERVICE_TYPE_UNRESOLVED"
 
+# 지방계약법 시행령 제42조 제4항의 시·도 예규 적용 대상에 교육청이 없고, 조달청 일반용역
+# 적격심사 세부기준 제3조가 시행령 제42조 제1항 일반용역을 심사대상으로 명시합니다.
+# 시·도를 산출하지 못한 교육 계열 공고를 조달청 기준으로 풀었을 때 붙이는 경고입니다.
+EDU_PPS_FALLBACK_WARNING = (
+    "교육청 공고: 시·도 규칙 대신 조달청 일반용역 적격심사 세부기준을 적용했습니다"
+    "(지방계약법 시행령 제42조 제1항, 조달청 세부기준 제3조)."
+)
+
 METHOD_NAME_PLACEHOLDER = "공고서참조"
 METHOD_SOURCE_ANNOUNCEMENT = "ANNOUNCEMENT"
 METHOD_SOURCE_CODE = "CODE"
@@ -6498,6 +6506,113 @@ def _allocate_rules_for_announcement(
     return regime_rules
 
 
+def _narrow_rule_scope(
+    result: RuleResolutionResult,
+    *,
+    method_name: str | None,
+    allocated_rules: Sequence[EvaluationRule],
+    institution_code: str | None,
+    institution_name: str | None,
+    region_code: str | None,
+    region_name: str | None,
+    contract_regime: str | None,
+) -> tuple[RuleResolutionResult, str | None]:
+    """매칭된 별표를 기관·시·도 축으로 좁혀 적용 범위(scope_stage)를 확정합니다.
+
+    매칭 규칙과 같은 식별 문자열 정밀도의 후보만 남기고 범위 순서
+    (INSTITUTION -> REGION -> ALL)로 하나를 고릅니다. 후보가 없으면 RULE_NOT_FOUND 로,
+    같은 범위 후보가 둘 이상이면 RULE_SCOPE_AMBIGUOUS 로 막습니다.
+    """
+    matched = result.rule
+    if matched is None:
+        return result, None
+    matching_rules = [
+        candidate
+        for candidate in allocated_rules
+        if candidate.service_type == matched.service_type
+        and match_rule_by_mthd_nm(method_name or "", rules=(candidate,)) is not None
+    ]
+    base_specificity = max(
+        (
+            len(normalize_pattern_string(pattern))
+            for pattern in matched.patterns
+            if pattern in (method_name or "")
+            or normalize_pattern_string(pattern) in normalize_pattern_string(method_name or "")
+        ),
+        default=0,
+    )
+    matching_rules = [
+        candidate
+        for candidate in matching_rules
+        if any(
+            len(normalize_pattern_string(pattern)) == base_specificity
+            and (
+                pattern in (method_name or "")
+                or normalize_pattern_string(pattern) in normalize_pattern_string(method_name or "")
+            )
+            for pattern in candidate.patterns
+        )
+        and _axis_matches(
+            candidate,
+            institution_code=institution_code,
+            institution_name=institution_name,
+            region_code=region_code,
+            region_name=region_name,
+            contract_regime=contract_regime,
+        )
+    ]
+    for stage in (RULE_SCOPE_INSTITUTION, RULE_SCOPE_REGION, RULE_SCOPE_ALL):
+        stage_rules = [
+            candidate for candidate in matching_rules if candidate.institution_scope == stage
+        ]
+        if len(stage_rules) > 1:
+            return (
+                replace(
+                    result,
+                    is_blocked=True,
+                    block_reason_code=BLOCK_CODE_RULE_SCOPE_AMBIGUOUS,
+                    block_reason_message=f"{stage} 범위에 일치하는 적격심사 규칙이 여러 개입니다.",
+                    rule=None,
+                    effective_lwlt_rate=None,
+                    rate_source=None,
+                ),
+                stage,
+            )
+        if stage_rules:
+            selected = stage_rules[0]
+            if result.rate_source == "RULE_DEFAULT":
+                warnings = [
+                    warning
+                    for warning in result.warnings
+                    if not warning.startswith("공고에 낙찰하한율이 명시되지 않아 별표 기본값(")
+                ]
+                warnings.append(
+                    f"공고에 낙찰하한율이 명시되지 않아 별표 기본값({selected.lwlt_rate}%)을 적용합니다."
+                )
+                return (
+                    replace(
+                        result,
+                        rule=selected,
+                        effective_lwlt_rate=selected.lwlt_rate,
+                        warnings=warnings,
+                    ),
+                    stage,
+                )
+            return replace(result, rule=selected), stage
+    return (
+        replace(
+            result,
+            is_blocked=True,
+            block_reason_code=BLOCK_CODE_RULE_NOT_FOUND,
+            block_reason_message="공고의 판정 문맥에 일치하는 적격심사 규칙이 없습니다.",
+            rule=None,
+            effective_lwlt_rate=None,
+            rate_source=None,
+        ),
+        None,
+    )
+
+
 def resolve_evaluation_rule(
     category: str | None,
     prearng_prce_dcsn_mthd_nm: str | None,
@@ -6519,6 +6634,7 @@ def resolve_evaluation_rule(
     estimated_price: Decimal | str | float | int | None = None,
     announcement_institution_code: str | None = None,
     announcement_institution_name: str | None = None,
+    education_institution: bool = False,
 ) -> RuleResolutionResult:
     """낙찰방법 출처를 정하고 별표를 판별한 뒤 공고일과 별표 시행일을 대조합니다.
 
@@ -6538,6 +6654,13 @@ def resolve_evaluation_rule(
     - contract_regime == "LOCAL" 이면 조달청 규칙을 후보에서 배제하고 시·도 자체 별표
       (LOCAL_RULES)만 봅니다. region_code/region_name 은 수요기관 시·도 값입니다(5.4절).
       시·도 규칙이 없으면 LOCAL_RULE_NOT_FOUND 로 차단합니다(D8, 행안부 기본 규칙 없음).
+    - education_institution(교육 계열 수요기관) 이고 region_code 가 없어 시·도 규칙을
+      고르지 못한 LOCAL_RULE_NOT_FOUND 공고만 차단하지 않고 조달청 매칭 결과를 씁니다.
+      지방계약법 시행령 제42조 제4항의 시·도 예규 대상에 교육청이 없고, 조달청 일반용역
+      적격심사 세부기준 제3조가 시행령 제42조 제1항 일반용역을 심사대상으로 명시합니다.
+      조달청 별표에도 없으면 RULE_NOT_FOUND 로 남습니다. 조달청 기준으로 풀린 결과에만
+      경고(EDU_PPS_FALLBACK_WARNING)를 붙이고 범위 판정(scope_stage)은 조달청 기본 경로와
+      같은 축 재선택 결과를 씁니다.
     - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).
       공고일이 없으면 대조하지 않고, 있는데 읽을 수 없으면 차단 대신 경고만 남깁니다.
     - 공고 하한율이 없으면 estimated_price 로 고른 구간의 하한율을 씁니다. 구간별
@@ -6620,16 +6743,39 @@ def resolve_evaluation_rule(
             configured_service_type=local_service_type,
         )
         if selected is None:
-            result = replace(
-                result,
-                is_blocked=True,
-                block_reason_code=local_code,
-                block_reason_message=local_reason,
-                rule=None,
-                effective_lwlt_rate=None,
-                rate_source=None,
-                warnings=[*result.warnings, *local_warnings],
-            )
+            if (
+                education_institution
+                and region_code is None
+                and local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+            ):
+                # 시·도 예규 적용 대상에 교육청이 없고 조달청 일반용역 세부기준이 시행령
+                # 제42조 제1항 일반용역을 심사대상으로 명시하므로, 시·도를 산출하지 못한
+                # 교육 계열 공고만 조달청 매칭 결과를 그대로 씁니다. 조달청 별표에도 없으면
+                # 아래 축 재선택이 RULE_NOT_FOUND 로 막습니다.
+                if result.rule is not None:
+                    result, scope_stage = _narrow_rule_scope(
+                        result,
+                        method_name=method_name,
+                        allocated_rules=allocated_rules,
+                        institution_code=institution_code,
+                        institution_name=institution_name,
+                        region_code=region_code,
+                        region_name=region_name,
+                        contract_regime=contract_regime,
+                    )
+                if result.rule is not None:
+                    result = replace(result, warnings=[*result.warnings, EDU_PPS_FALLBACK_WARNING])
+            else:
+                result = replace(
+                    result,
+                    is_blocked=True,
+                    block_reason_code=local_code,
+                    block_reason_message=local_reason,
+                    rule=None,
+                    effective_lwlt_rate=None,
+                    rate_source=None,
+                    warnings=[*result.warnings, *local_warnings],
+                )
         else:
             # 시·도 규칙을 확정했으므로 조달청 매칭 단계에서 세워진 RULE_NOT_FOUND 차단을
             # 해제합니다. 이 플래그를 남기면 아래 조기 반환이 유효한 규칙을 차단합니다.
@@ -6643,87 +6789,16 @@ def resolve_evaluation_rule(
                 result = replace(result, warnings=[*result.warnings, *local_warnings])
             scope_stage = RULE_SCOPE_REGION
     elif result.rule is not None and result.rule.rule_id not in SERVC_TECH_QUAL_RULE_IDS:
-        matching_rules = [
-            candidate
-            for candidate in allocated_rules
-            if candidate.service_type == result.rule.service_type
-            and match_rule_by_mthd_nm(method_name or "", rules=(candidate,)) is not None
-        ]
-        base_specificity = max(
-            (
-                len(normalize_pattern_string(pattern))
-                for pattern in result.rule.patterns
-                if pattern in (method_name or "")
-                or normalize_pattern_string(pattern) in normalize_pattern_string(method_name or "")
-            ),
-            default=0,
+        result, scope_stage = _narrow_rule_scope(
+            result,
+            method_name=method_name,
+            allocated_rules=allocated_rules,
+            institution_code=institution_code,
+            institution_name=institution_name,
+            region_code=region_code,
+            region_name=region_name,
+            contract_regime=contract_regime,
         )
-        matching_rules = [
-            candidate
-            for candidate in matching_rules
-            if any(
-                len(normalize_pattern_string(pattern)) == base_specificity
-                and (
-                    pattern in (method_name or "")
-                    or normalize_pattern_string(pattern)
-                    in normalize_pattern_string(method_name or "")
-                )
-                for pattern in candidate.patterns
-            )
-            and _axis_matches(
-                candidate,
-                institution_code=institution_code,
-                institution_name=institution_name,
-                region_code=region_code,
-                region_name=region_name,
-                contract_regime=contract_regime,
-            )
-        ]
-        for stage in (RULE_SCOPE_INSTITUTION, RULE_SCOPE_REGION, RULE_SCOPE_ALL):
-            stage_rules = [rule for rule in matching_rules if rule.institution_scope == stage]
-            if len(stage_rules) > 1:
-                result = replace(
-                    result,
-                    is_blocked=True,
-                    block_reason_code=BLOCK_CODE_RULE_SCOPE_AMBIGUOUS,
-                    block_reason_message=f"{stage} 범위에 일치하는 적격심사 규칙이 여러 개입니다.",
-                    rule=None,
-                    effective_lwlt_rate=None,
-                    rate_source=None,
-                )
-                scope_stage = stage
-                break
-            if stage_rules:
-                selected = stage_rules[0]
-                if result.rate_source == "RULE_DEFAULT":
-                    warnings = [
-                        warning
-                        for warning in result.warnings
-                        if not warning.startswith("공고에 낙찰하한율이 명시되지 않아 별표 기본값(")
-                    ]
-                    warnings.append(
-                        f"공고에 낙찰하한율이 명시되지 않아 별표 기본값({selected.lwlt_rate}%)을 적용합니다."
-                    )
-                    result = replace(
-                        result,
-                        rule=selected,
-                        effective_lwlt_rate=selected.lwlt_rate,
-                        warnings=warnings,
-                    )
-                else:
-                    result = replace(result, rule=selected)
-                scope_stage = stage
-                break
-        if scope_stage is None:
-            result = replace(
-                result,
-                is_blocked=True,
-                block_reason_code=BLOCK_CODE_RULE_NOT_FOUND,
-                block_reason_message="공고의 판정 문맥에 일치하는 적격심사 규칙이 없습니다.",
-                rule=None,
-                effective_lwlt_rate=None,
-                rate_source=None,
-            )
     elif result.rule is not None:
         scope_stage = RULE_SCOPE_ALL
     if institution_warnings:
@@ -7007,6 +7082,7 @@ def resolve_evaluation_rule_from_raw_data(
     region_name: str | None = None,
     local_service_type: str | None = None,
     estimated_price: Decimal | str | float | int | None = None,
+    education_institution: bool = False,
 ) -> RuleResolutionResult:
     """raw_data 딕셔너리에서 기관 필드를 추출하여 적격심사 규칙을 판별합니다.
 
@@ -7014,6 +7090,8 @@ def resolve_evaluation_rule_from_raw_data(
     region_code/region_name 은 LOCAL 판정에서 수요기관 시·도 값을 담습니다(5.4절).
     local_service_type 은 사용자가 고른 시·도 별표 세부유형(D5)입니다.
     estimated_price 는 구간별 낙찰하한율을 고르는 추정가격입니다.
+    education_institution 은 수요기관이 교육 계열인지이며, 시·도를 산출하지 못한
+    교육 계열 공고를 조달청 일반용역 세부기준으로 푸는 데 씁니다.
     """
     if raw_data is None:
         raw_data = {}
@@ -7049,6 +7127,7 @@ def resolve_evaluation_rule_from_raw_data(
         raw_data=raw_data,
         local_service_type=local_service_type,
         estimated_price=estimated_price,
+        education_institution=education_institution,
     )
 
 
