@@ -3212,6 +3212,92 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
 )
 
 # =============================================================================
+# 행정안전부 예규 학술연구용역 띠 표기 규칙
+# =============================================================================
+#
+# 낙찰방법명이 추정가격 띠만 적은 지방계약 공고('적격심사제-추정가격 1억미만',
+# '적격심사제-추정가격 2억이상')의 입찰가격 배점한도(B)·평점계수(k)·기준비율·적격통과점수는
+# 행정안전부 예규 「지방자치단체 입찰시 낙찰자 결정기준」 제2장의2 기술·학술연구 용역
+# 적격심사 세부기준 [별표 4] 학술연구용역 평가기준의 해당 열 값입니다.
+#
+# 시·도 자체 별표가 이 표기를 세부유형으로 풀어 규칙을 확정한 공고는 그 판정을 그대로 두고,
+# 시·도 규칙이 규칙을 내지 못한 공고에만 이 두 규칙을 씁니다. '추정가격 2억미만 1억이상'
+# 표기는 공고마다 기준 문서가 갈려(조달청 일반용역·행안부 제2장의2·행안부 제4장) 매칭하지
+# 않습니다.
+_SRC_MOIS_ACADEMIC_BAND = (
+    "행정안전부 예규 「지방자치단체 입찰시 낙찰자 결정기준」 [시행 2026. 7. 1.]"
+    "[행정안전부 예규 제373호] 제2장의2 기술·학술연구 용역 적격심사 세부기준 [별표 4] "
+    "학술연구용역 평가기준 (2. 입찰가격 배점한도: 추정가격 2억이상 30·2억미만 1억이상 60·"
+    "1억미만 65, 평점 = 배점한도 - 2x|88 - 입찰가격/예정가격x100|, 제5절 낙찰자 결정 1. "
+    "학술연구용역 적격통과점수 85점); docs/analysis/local_academic_band_apply_20261017.md"
+)
+# 같은 띠라도 기준 문서가 갈리는 표기입니다. 이 표기가 있으면 학술연구 열로 확정하지 않습니다.
+_MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS = ("2억미만", "1억이상")
+
+MOIS_ACADEMIC_BAND_RULES: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E",
+        service_type="ACADEMIC",
+        table_name="행안부 예규 제2장의2 [별표 4] 학술연구용역 (추정가격 1억미만)",
+        description="추정가격 1억미만 학술연구용역 평가기준 (행안부 예규 제2장의2 [별표 4])",
+        # 제325호(시행 2025-07-01)와 제373호(시행 2026-07-01)를 인용한 공고문의 낙찰하한율
+        # 80.495%·통과점수 85점이 같아 창 안(2025-10 이후) 공고를 모두 덮는 앞 시행일로 둡니다.
+        effective_date="2025-07-01",
+        source=(
+            "행정안전부 예규 제325호(시행 2025-07-01)·제373호(시행 2026-07-01) "
+            "제2장의2 [별표 4] 학술연구용역 평가기준 1억미만 열"
+        ),
+        patterns=("추정가격 1억미만", "추정가격 1억 미만"),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        max_price_score=Decimal("65"),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("85"),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=_SRC_MOIS_ACADEMIC_BAND,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20250701_OVER_2E",
+        service_type="ACADEMIC",
+        table_name="행안부 예규 제2장의2 [별표 4] 학술연구용역 (추정가격 2억이상)",
+        description="추정가격 2억이상 학술연구용역 평가기준 (행안부 예규 제2장의2 [별표 4])",
+        effective_date="2025-07-01",
+        source=(
+            "행정안전부 예규 제325호(시행 2025-07-01)·제373호(시행 2026-07-01) "
+            "제2장의2 [별표 4] 학술연구용역 평가기준 2억이상 열"
+        ),
+        patterns=("추정가격 2억이상", "추정가격 2억 이상"),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        max_price_score=Decimal("30"),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("85"),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=_SRC_MOIS_ACADEMIC_BAND,
+    ),
+)
+
+MOIS_ACADEMIC_BAND_WARNING = (
+    "낙찰방법명이 추정가격 띠만 적은 지방계약 공고라 행정안전부 예규 제2장의2 [별표 4] "
+    "학술연구용역 평가기준의 해당 열을 적용했습니다."
+)
+
+
+def select_mois_academic_band_rule(method_name: str | None) -> EvaluationRule | None:
+    """낙찰방법명이 학술연구 띠 표기일 때 행안부 [별표 4] 해당 열 규칙을 돌려줍니다.
+
+    '추정가격 2억미만 1억이상' 은 공고마다 기준 문서가 갈려 매칭하지 않습니다.
+    """
+    name = method_name or ""
+    if not name or any(marker in name for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS):
+        return None
+    for rule in MOIS_ACADEMIC_BAND_RULES:
+        if match_rule_by_mthd_nm(name, rules=(rule,)) is not None:
+            return rule
+    return None
+
+
+# =============================================================================
 # 기관(중앙부처·공기업·공단) 자체 적격심사 세부기준 규칙
 # =============================================================================
 #
@@ -6582,6 +6668,16 @@ BLOCK_CODE_RULE_SCOPE_AMBIGUOUS = "RULE_SCOPE_AMBIGUOUS"
 BLOCK_CODE_LOCAL_RULE_NOT_FOUND = "LOCAL_RULE_NOT_FOUND"
 BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED = "LOCAL_SERVICE_TYPE_UNRESOLVED"
 
+# 시·도 자체 규칙이 학술연구 띠 표기를 규칙으로 풀지 못한 차단 코드입니다. 시·도 규칙으로
+# 계산되던 공고는 규칙이 확정돼 차단되지 않으므로 이 집합에 들지 않습니다.
+_MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES = frozenset(
+    {
+        BLOCK_CODE_RULE_NOT_FOUND,
+        BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
+        BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED,
+    }
+)
+
 # 지방계약법 시행령 제42조 제4항의 시·도 예규 적용 대상에 교육청이 없고, 조달청 일반용역
 # 적격심사 세부기준 제3조가 시행령 제42조 제1항 일반용역을 심사대상으로 명시합니다.
 # 시·도를 산출하지 못한 교육 계열 공고를 조달청 기준으로 풀었을 때 붙이는 경고입니다.
@@ -7211,6 +7307,20 @@ def resolve_evaluation_rule(
         )
     elif result.rule is not None:
         scope_stage = RULE_SCOPE_ALL
+    if result.is_blocked and result.block_reason_code in _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES:
+        # 시·도 자체 별표가 이 띠 표기를 규칙으로 확정하지 못한 공고만 행안부 예규 제2장의2
+        # [별표 4] 학술연구용역 해당 열로 풉니다. 시·도 규칙으로 계산되던 공고는 위 분기에서
+        # 이미 규칙이 확정돼 차단되지 않으므로 여기 오지 않습니다.
+        academic_band_rule = select_mois_academic_band_rule(method_name)
+        if academic_band_rule is not None:
+            result = replace(
+                _apply_rule_lwlt(result, academic_band_rule, sucsfbid_lwlt_rate, estimated_price),
+                is_blocked=False,
+                block_reason_code=None,
+                block_reason_message=None,
+                warnings=[*result.warnings, MOIS_ACADEMIC_BAND_WARNING],
+            )
+            scope_stage = RULE_SCOPE_ALL
     if institution_warnings:
         result = replace(result, warnings=[*result.warnings, *institution_warnings])
     result = replace(
