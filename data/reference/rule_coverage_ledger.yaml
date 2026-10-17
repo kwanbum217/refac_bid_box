@@ -103,7 +103,7 @@ regions:
 - region_name: 광주광역시
   rule_ids:
   - SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_5
-  - SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3
+  - SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3_METRO_350
   announcements: 8
 - region_name: 세종특별자치시
   rule_ids:
