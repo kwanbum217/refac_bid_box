@@ -114,7 +114,8 @@ def test_pre_regime_announcement_is_blocked_even_when_rule_matches():
         _raw(
             sucsfbidMthdNm="적격심사제-추정가격 2억원 미만인 용역",
             sucsfbidLwltRate="87.745",
-            bidNtceDt=PRE_REGIME_DT,
+            # 2025-01-02 이후는 환경부고시 띠 규칙이 받으므로 그 이전 공고일로 시행일 대조를 본다.
+            bidNtceDt="2024-12-31 15:13:28",
         ),
     )
 
@@ -122,7 +123,7 @@ def test_pre_regime_announcement_is_blocked_even_when_rule_matches():
     assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
     assert result.rule is not None
     assert result.effective_lwlt_rate is None
-    assert "2025-08-27" in (result.block_reason_message or "")
+    assert "2024-12-31" in (result.block_reason_message or "")
 
 
 def test_tech_service_announcement_before_pre_rule_is_blocked():
