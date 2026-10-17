@@ -90,6 +90,7 @@ from src.app.services.demand_institutions import (
     classify_contract_regime,
     describe_contract_regime,
     institution_sido,
+    is_education_institution,
 )
 from src.app.services.evaluation_flat_zones import (
     FlatZone,
@@ -1699,6 +1700,7 @@ def _resolve_evaluation_inputs(
         region_name=sido_name,
         local_service_type=qualification.local_service_type,
         estimated_price=estimated_price,
+        education_institution=is_education_institution(institution),
     )
     if rule_result.is_blocked:
         # 지방계약에서 시·도 기준이 없을 때, 사용자가 B·k·기준비율·통과점수를 모두 입력하면
@@ -2102,6 +2104,7 @@ def analyze_evaluation(
             region_code=sido_code,
             region_name=sido_name,
             local_service_type=payload.qualification_input.local_service_type,
+            education_institution=is_education_institution(institution),
         )
         input_json = {
             "bid_id": payload.bid_id,
@@ -2670,6 +2673,7 @@ def list_evaluation_rules_meta(
             institution_regime=institution_regime,
             region_code=sido_code,
             region_name=sido_name,
+            education_institution=is_education_institution(institution),
         )
         matched = resolution.rule
         if matched is not None:

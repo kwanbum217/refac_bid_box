@@ -203,28 +203,41 @@ def _clean(value: Any) -> str | None:
     return text or None
 
 
-def classify_contract_regime(
+def is_education_institution(
     institution: G2BDemandInstitution | dict[str, Any] | None,
-) -> str | None:
+) -> bool:
+    """수요기관이 지방계약 교육 계열(시·도교육청·교육지원청·공립 학교·유치원)인지 판정합니다.
+
+    대분류가 교육행정조직이고 중분류가 시·도교육청·지역교육청·시·도교육청 직속기관이거나,
+    대분류가 초등학교·중학교·고등학교·특수학교·유치원이고 소분류가 공립인 경우입니다.
+    """
     if institution is None:
-        return None
-    jurisdiction = _institution_value(institution, "jrsdctn_div_nm", "jrsdctnDivNm")
+        return False
     large = _institution_value(institution, "instt_ty_lrgclsfc_nm", "insttTyCdLrgclsfcNm")
     middle = (
         _institution_value(institution, "instt_ty_midclsfc_nm", "insttTyCdMidclsfcNm") or ""
-    ).strip()
-    small = (
-        _institution_value(institution, "instt_ty_smlclsfc_nm", "insttTyCdSmlclsfcNm") or ""
     ).strip()
     if large == "교육행정조직" and middle in {
         "시, 도교육청",
         "지역교육청",
         "시, 도교육청 직속기관",
     }:
+        return True
+    small = (
+        _institution_value(institution, "instt_ty_smlclsfc_nm", "insttTyCdSmlclsfcNm") or ""
+    ).strip()
+    return large in {"초등학교", "중학교", "고등학교", "특수학교", "유치원"} and small == "공립"
+
+
+def classify_contract_regime(
+    institution: G2BDemandInstitution | dict[str, Any] | None,
+) -> str | None:
+    if institution is None:
+        return None
+    jurisdiction = _institution_value(institution, "jrsdctn_div_nm", "jrsdctnDivNm")
+    if is_education_institution(institution):
         return "LOCAL"
     if jurisdiction in {"지방자치단체", "지방공기업"}:
-        return "LOCAL"
-    if large in {"초등학교", "중학교", "고등학교", "특수학교", "유치원"} and small == "공립":
         return "LOCAL"
     if jurisdiction in {"국가기관", "공기업", "준정부기관", "정부투자기관"}:
         return "NATIONAL"

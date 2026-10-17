@@ -37,7 +37,11 @@ from src.app.services.bid_queries import (
     DEFAULT_PREDICTION_MODEL,
     DEFAULT_PREDICTION_MODEL_BY_CATEGORY,
 )
-from src.app.services.demand_institutions import classify_contract_regime, institution_sido
+from src.app.services.demand_institutions import (
+    classify_contract_regime,
+    institution_sido,
+    is_education_institution,
+)
 from src.app.services.evaluation_flat_zones import (
     FlatZone,
     flat_zone_for,
@@ -330,6 +334,7 @@ def _score_verdict(
             region_code=sido_code,
             region_name=sido_name,
             estimated_price=_band_estimated_price(bid),
+            education_institution=is_education_institution(institution),
         )
     except Exception as exc:
         rule_result = None
