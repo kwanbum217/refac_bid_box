@@ -167,7 +167,20 @@ def test_policy_denies_git_push_git_dir_and_secret_reads():
 REQUIRED_DENY_RULES = {
     # 운영 DB 직접 접근
     "Shell(mysql:*)",
+    # 앞부분 일치만으로는 for 본문, sh -c 문자열, $( ) 치환 속 명령을 막지 못한다(2026-10-18 실측).
+    "Shell(*; mysql *)",
+    "Shell(*&& mysql *)",
+    "Shell(*|| mysql *)",
+    "Shell(*| mysql *)",
+    "Shell(*do mysql *)",
+    "Shell(*then mysql *)",
+    "Shell(*$(mysql *)",
+    "Shell(sh -c *mysql*)",
+    "Shell(bash -c *mysql*)",
+    'Shell(*"mysql *)',
+    "Shell(*'mysql *)",
     "Shell(mysqldump:*)",
+    "Shell(*mysqldump*)",
     "Shell(mysqladmin:*)",
     # 앞부분 일치만으로는 for 본문, sh -c 문자열, $( ) 치환 속 명령을 막지 못한다(2026-10-18 실측).
     "Shell(*mysqladmin*)",
