@@ -29,6 +29,9 @@ from scripts.orca_cmd_launch import (
 MODEL = "deepseek/deepseek-v4.1-flash"
 GLM_MODEL = "z-ai/glm-5.3-flash"
 HY4_MODEL = "tencent/hy4-preview"
+CAT_JAM_MODEL = "stealth/cat-jam:free"
+BEAM_MODEL = "reflection/beam:free"
+GLYPH_MODEL = "stealth/glyph-cluster:free"
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +91,7 @@ def test_build_command_interactive_and_one_shot():
 
 
 def test_build_command_effort_levels():
-    """합집합 등급 다섯 가지이며 default 는 --effort 를 붙이지 않아야 합니다."""
+    """합집합 등급 여섯 가지이며 default 는 --effort 를 붙이지 않아야 합니다."""
     assert EFFORT_CHOICES == ("default", "low", "medium", "high", "max")
     assert EFFORT_DEFAULT_LEVEL == "default"
 
@@ -111,6 +114,54 @@ def test_allowed_effort_levels_follows_model_pool():
     assert allowed_effort_levels(GLM_MODEL) == ("default", "low", "high", "max")
     assert allowed_effort_levels(HY4_MODEL) == ("default", "low", "medium", "high")
     assert allowed_effort_levels("vendor/unregistered-model") == ("default",)
+
+    # cmd 무료 모델 세 개의 모델별 effort 허용 등급
+    assert allowed_effort_levels(CAT_JAM_MODEL) == (
+        "default",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    )
+    assert allowed_effort_levels(BEAM_MODEL) == (
+        "default",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    )
+    assert allowed_effort_levels(GLYPH_MODEL) == (
+        "default",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+    )
+
+
+def test_cmd_free_allowed_effort_levels():
+    assert allowed_effort_levels(CAT_JAM_MODEL) == (
+        "default",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+    )
+    assert allowed_effort_levels(BEAM_MODEL) == ("default", "low", "medium", "high", "xhigh", "max")
+    assert allowed_effort_levels(GLYPH_MODEL) == ("default", "low", "medium", "high", "xhigh")
+
+
+def test_cmd_free_glyph_rejects_effort_max(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    target = tmp_path / "preamble_glyph_max.txt"
+    target.write_text("지시문", encoding="utf-8")
+    with patch("scripts.orca_cmd_launch.run_cmd") as mock_run, pytest.raises(SystemExit) as exc:
+        main(["--model", GLYPH_MODEL, "--effort", "max", "--preamble", str(target)])
+    assert exc.value.code == 2
+    mock_run.assert_not_called()
+    assert "max" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

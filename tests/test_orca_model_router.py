@@ -1952,6 +1952,43 @@ def test_probe_accepts_normal_body_with_zero_exit(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# cmd 무료 모델 세 개 등록 검증
+# ---------------------------------------------------------------------------
+
+
+def test_pool_for_model_cmd_free_ids():
+    from scripts.orca_model_router import pool_for_model
+
+    assert pool_for_model("stealth/cat-jam:free") == "cmd-cat-jam-free"
+    assert pool_for_model("reflection/beam:free") == "cmd-beam-free"
+    assert pool_for_model("stealth/glyph-cluster:free") == "cmd-glyph-free"
+
+
+def test_cmd_free_pools_not_auto_selectable_or_tier_policy():
+    from scripts.orca_model_router import TIER_POLICY
+
+    for pool_name in ("cmd-cat-jam-free", "cmd-beam-free", "cmd-glyph-free"):
+        assert MODEL_POOL[pool_name]["auto_selectable"] is False
+    tier_values = [m for ms in TIER_POLICY.values() for m in ms]
+    for pool_name in ("cmd-cat-jam-free", "cmd-beam-free", "cmd-glyph-free"):
+        assert pool_name not in tier_values
+
+
+def test_reviewer_independence_catjam_builder_beam_reviewer_rejected():
+    # 리뷰어 독립성 검사 위치: scripts/orca_model_router.py:2469
+    # (if explicit_prov == builder_provider: raise ModelRoutingError)
+    # cat-jam 빌더(provider=cmd)와 beam 리뷰어(provider=cmd)는 같은 계열이므로 거부된다.
+    with pytest.raises(ModelRoutingError):
+        route(
+            role="reviewer",
+            risk="high",
+            explicit_model="reflection/beam:free",
+            builder_model="stealth/cat-jam:free",
+            probe=False,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Provider 판정 및 독립성 검증 테스트
 # ---------------------------------------------------------------------------
 
