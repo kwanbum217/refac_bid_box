@@ -9,30 +9,30 @@ filter:
   window_to: '2026-10-18'
   min_announcements: 5
 totals:
-  announcements: 31304
-  institutions: 3414
+  announcements: 31305
+  institutions: 3409
   applied_scope:
     INSTITUTION:
       announcements: 54
       ratio: 0.001725
     REGION:
-      announcements: 1998
-      ratio: 0.063826
+      announcements: 2009
+      ratio: 0.064175
     PPS_DEFAULT:
       announcements: 19133
-      ratio: 0.6112
+      ratio: 0.61118
     BLOCKED:
-      announcements: 10119
-      ratio: 0.323249
+      announcements: 10109
+      ratio: 0.32292
     ERROR:
       announcements: 0
       ratio: 0.0
 tail:
-  institutions: 2313
-  announcements: 3964
+  institutions: 2309
+  announcements: 3962
   applied_scope:
-    PPS_DEFAULT: 2652
-    BLOCKED: 1312
+    PPS_DEFAULT: 2653
+    BLOCKED: 1309
 regions:
 - region_name: 서울특별시
   rule_ids:
@@ -42,7 +42,8 @@ regions:
   rule_ids:
   - SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4
   - SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4
-  announcements: 307
+  - SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4
+  announcements: 318
 - region_name: 경기도
   rule_ids:
   - SERVC_LOCAL_GG_20250808_ATTACH_1_3
@@ -3054,6 +3055,24 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
+- dminstt_cd: '3190000'
+  dminstt_nm: 서울특별시 동작구
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: BLOCKED
+  scope_counts:
+    PPS_DEFAULT: 19
+    BLOCKED: 25
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 25
+  announcements: 44
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
 - dminstt_cd: '3490000'
   dminstt_nm: 인천광역시 중구
   name_variants: []
@@ -3142,24 +3161,6 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 22
-  announcements: 43
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '3190000'
-  dminstt_nm: 서울특별시 동작구
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 19
-    BLOCKED: 24
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 24
   announcements: 43
   registry_status: unregistered
   manifest_sources: null
@@ -7533,26 +7534,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '5780000'
-  dminstt_nm: 전남광주통합특별시 목포시
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 8
-    BLOCKED: 11
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 6
-    LOCAL_RULE_NOT_FOUND: 3
-    RULE_REGIME_MISMATCH: 2
-  announcements: 19
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '5875000'
   dminstt_nm: 전남광주통합특별시 영암군
   name_variants: []
@@ -8123,6 +8104,25 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 1
+  announcements: 17
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '5780000'
+  dminstt_nm: 전남광주통합특별시 목포시
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: BLOCKED
+  scope_counts:
+    PPS_DEFAULT: 8
+    BLOCKED: 9
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 6
+    LOCAL_RULE_NOT_FOUND: 3
   announcements: 17
   registry_status: unregistered
   manifest_sources: null
@@ -14995,23 +14995,6 @@ institutions:
   - SERVC_QUAL_PRE_20250901_ATTACH_06
   - SERVC_QUAL_PRE_20250901_ATTACH_01
   block_codes: {}
-  announcements: 7
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8652000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시영암교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 1
-    BLOCKED: 6
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    LOCAL_RULE_NOT_FOUND: 6
   announcements: 7
   registry_status: unregistered
   manifest_sources: null

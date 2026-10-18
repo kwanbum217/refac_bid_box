@@ -572,6 +572,7 @@ def _rule_signature(rule: EvaluationRule) -> dict[str, object]:
 # 2026-10-17 전남광주 통합 지침 이전 공고용 전라남도·광주광역시 구판 규칙. 통합 규칙 곁에 놓여 있어
 # 기존·신규 순서 단정에서는 빼고, 존재만 따로 단정한다.
 PREDECESSOR_RULE_IDS = (
+    "SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4",
     "SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4",
     "SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4",
     "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3",
