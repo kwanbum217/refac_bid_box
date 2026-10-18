@@ -358,6 +358,10 @@ class TestModelPoolAndSelection:
             "cmd-hy4-preview",
             # 2026-10-13 등록. qwen CLI 경유 OpenRouter 무료 리뷰어, 명시 지정 전용입니다.
             "qwen-nemotron-ultra-free",
+            # 2026-10-18 등록. cmd 무료 모델 세 개, 명시 지정 전용입니다.
+            "cmd-cat-jam-free",
+            "cmd-beam-free",
+            "cmd-glyph-free",
         }
 
 

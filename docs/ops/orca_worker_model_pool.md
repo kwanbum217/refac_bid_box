@@ -56,6 +56,9 @@
 | `cmd-glm-flash` | `z-ai/glm-5.3-flash` | Command Code | X (`False`) | 2026-09-21 등록. 명시 지정 전용 저가 후보. `--effort` 는 `default`/`low`/`high`/`max` 이며 `medium` 없음 |
 | `cmd-hy4-preview` | `tencent/hy4-preview` | Command Code | X (`False`) | 2026-09-21 등록. 명시 지정 전용. `--effort` 는 `default`/`low`/`medium`/`high` 이며 `max` 없음. 입력 단가가 기본 빌더의 약 5배 |
 | `qwen-nemotron-ultra-free` | `nvidia/nemotron-3-ultra-550b-a55b:free` | Qwen (OpenRouter 경유) | X (`False`) | 2026-10-13 등록. 명시 지정 전용 리뷰어. qwen CLI 의 OpenRouter 프로바이더 경유, `-i` 대화형 TUI |
+| `cmd-cat-jam-free` | `stealth/cat-jam:free` | Command Code | X (`False`) | 2026-10-18 등록. 명시 지정 전용 무료 빌더/조사. `--effort` 는 `default`/`low`/`medium`/`high`/`xhigh`/`max` |
+| `cmd-beam-free` | `reflection/beam:free` | Command Code | X (`False`) | 2026-10-18 등록. 명시 지정 전용 무료 리뷰어. `--effort` 는 `default`/`low`/`medium`/`high`/`xhigh`/`max` |
+| `cmd-glyph-free` | `stealth/glyph-cluster:free` | Command Code | X (`False`) | 2026-10-18 등록. 명시 지정 전용 무료 빌더/조사 보조. `--effort` 는 `default`/`low`/`medium`/`high`/`xhigh` (max 없음) |
 
 `gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5`, `cmd-glm-flash`, `cmd-hy4-preview`, `qwen-nemotron-ultra-free` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
 
@@ -80,6 +83,23 @@ Command Code CLI 는 추론 등급을 모델 ID 가 아니라 `--effort` 플래�
 | `tencent/hy4-preview` | `low` | `--effort low` | 명시 지정 전용 |
 | `tencent/hy4-preview` | `medium` | `--effort medium` | `medium` |
 | `tencent/hy4-preview` | `high` | `--effort high` | `high` |
+| `stealth/cat-jam:free` | `default` | (플래그 없음) | `low` |
+| `stealth/cat-jam:free` | `low` | `--effort low` | 명시 지정 전용 |
+| `stealth/cat-jam:free` | `medium` | `--effort medium` | 명시 지정 전용 |
+| `stealth/cat-jam:free` | `high` | `--effort high` | 명시 지정 전용 |
+| `stealth/cat-jam:free` | `xhigh` | `--effort xhigh` | 명시 지정 전용 |
+| `stealth/cat-jam:free` | `max` | `--effort max` | `high` |
+| `reflection/beam:free` | `default` | (플래그 없음) | `low` |
+| `reflection/beam:free` | `low` | `--effort low` | 명시 지정 전용 |
+| `reflection/beam:free` | `medium` | `--effort medium` | 명시 지정 전용 |
+| `reflection/beam:free` | `high` | `--effort high` | 명시 지정 전용 |
+| `reflection/beam:free` | `xhigh` | `--effort xhigh` | 명시 지정 전용 |
+| `reflection/beam:free` | `max` | `--effort max` | `high` |
+| `stealth/glyph-cluster:free` | `default` | (플래그 없음) | `low` |
+| `stealth/glyph-cluster:free` | `low` | `--effort low` | 명시 지정 전용 |
+| `stealth/glyph-cluster:free` | `medium` | `--effort medium` | 명시 지정 전용 |
+| `stealth/glyph-cluster:free` | `high` | `--effort high` | 명시 지정 전용 |
+| `stealth/glyph-cluster:free` | `xhigh` | `--effort xhigh` | `high` |
 
 정리하면 `deepseek/deepseek-v4.1-flash` 와 `z-ai/glm-5.3-flash` 는 `medium` 이 없고,
 `tencent/hy4-preview` 는 `max` 가 없습니다. `default` 는 `--effort` 를 붙이지 않는
