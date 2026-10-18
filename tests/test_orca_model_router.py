@@ -53,6 +53,7 @@ from scripts.orca_model_router import (
     load_reliability_history,
     load_repo_env,
     main,
+    model_family,
     preflight,
     probe_model,
     provider_for_model,
@@ -1974,18 +1975,73 @@ def test_cmd_free_pools_not_auto_selectable_or_tier_policy():
         assert pool_name not in tier_values
 
 
-def test_reviewer_independence_catjam_builder_beam_reviewer_rejected():
-    # 리뷰어 독립성 검사 위치: scripts/orca_model_router.py:2469
-    # (if explicit_prov == builder_provider: raise ModelRoutingError)
-    # cat-jam 빌더(provider=cmd)와 beam 리뷰어(provider=cmd)는 같은 계열이므로 거부된다.
+def test_reviewer_independence_catjam_builder_beam_reviewer_allowed():
+    # 리뷰어 독립성 검사: provider 가 같더라도 모델 계열이 다르면 허용된다.
+    # cat-jam 빌더(family=stealth)와 beam 리뷰어(family=reflection)는 같은 cmd CLI 이지만
+    # 계열이 달라 허용된다.
+    result = route(
+        role="reviewer",
+        risk="high",
+        explicit_model="reflection/beam:free",
+        builder_model="stealth/cat-jam:free",
+        probe=False,
+    )
+    assert result.primary_model == "reflection/beam:free"
+
+
+def test_model_family_examples():
+    assert model_family("stealth/cat-jam:free") == "stealth"
+    assert model_family("reflection/beam:free") == "reflection"
+    assert model_family("deepseek/deepseek-v4.1-flash") == "deepseek"
+    assert model_family("z-ai/glm-5.3-flash") == "z-ai"
+    assert model_family("opencode/deepseek-v4-flash-free") == "opencode"
+    # codex 의 gpt-6-luna -> codex (no slash)
+    assert model_family("gpt-6-luna") == "codex"
+
+
+def test_reviewer_independence_catjam_builder_glyph_reviewer_rejected():
+    with pytest.raises(ModelRoutingError):
+        route(
+            role="reviewer",
+            risk="high",
+            explicit_model="stealth/glyph-cluster:free",
+            builder_model="stealth/cat-jam:free",
+            probe=False,
+        )
+
+
+def test_reviewer_independence_deepseek_builder_glm_reviewer_allowed():
+    result = route(
+        role="reviewer",
+        risk="high",
+        explicit_model="z-ai/glm-5.3-flash",
+        builder_model="deepseek/deepseek-v4.1-flash",
+        probe=False,
+    )
+    assert result.primary_model == "z-ai/glm-5.3-flash"
+
+
+def test_reviewer_independence_unknown_builder_model_rejected():
     with pytest.raises(ModelRoutingError):
         route(
             role="reviewer",
             risk="high",
             explicit_model="reflection/beam:free",
-            builder_model="stealth/cat-jam:free",
+            builder_model=None,
+            builder_provider="cmd",
             probe=False,
         )
+
+
+def test_reviewer_independence_provider_different_allowed():
+    result = route(
+        role="reviewer",
+        risk="high",
+        explicit_model="gemini-3.7-flash-high",
+        builder_provider="cmd",
+        probe=False,
+    )
+    assert result.primary_model == "gemini-3.7-flash-high"
 
 
 # ---------------------------------------------------------------------------

@@ -332,6 +332,12 @@ L4 상신 모델을 쓰더라도 이 네 가지는 위임하지 않습니다.
 로 직접 확인한 결과입니다. GOAT 요금제 한도 때문에 저가 모델만 워커 후보로 보고
 probe 했으며, 리뷰어 독립성은 CLI 단위 provider 분리를 그대로 유지합니다.
 
+2026-10-18 사용자 결정으로 명시 지정 리뷰어는 모델 계열(family) 단위로
+판정합니다. 같은 cmd CLI 라도 계열이 다른 빌더·리뷰어 조합
+(stealth/cat-jam:free 와 reflection/beam:free)은 허용하며, 계열이 같거나
+확인할 수 없으면 지금처럼 거부합니다. 자동 선택 경로의 provider 단위 제외는
+그대로 유지합니다.
+
 | 모델 ID | 종료 코드 | 응답 | 소요 | 받는 등급 | 받지 않는 등급 | 조치 |
 | --- | :---: | :---: | :---: | --- | --- | --- |
 | `z-ai/glm-5.3-flash` | 0 | `pong` | 8초 | `low`, `high`, `max` | `medium`, `xhigh`, `zzzz` | 풀 등록 (`cmd-glm-flash`), 명시 지정 전용 |
@@ -349,7 +355,10 @@ probe 했으며, 리뷰어 독립성은 CLI 단위 provider 분리를 그대로 
 3. **자동 배정하지 않는다**: 두 풀 모두 `auto_selectable=False` 이며 `TIER_POLICY`
    와 무료 순서에 넣지 않았습니다. `suitable_for` 는 `builder`, `investigator`,
    `benchmarker`, `documenter` 이고 `reviewer` 는 두지 않습니다. 빌더 기본값이 같은
-   cmd 계열이므로 리뷰어로 쓰면 독립 판정이 되지 않습니다.
+    cmd 계열이므로 리뷰어로 쓰면 독립 판정이 되지 않습니다. 다만 2026-10-18
+    결정에 따라 명시 지정 리뷰어는 모델 계열 단위로 판정하므로, cmd CLI 안에서도
+    계열이 다른 조합(stealth/cat-jam:free 빌더와 reflection/beam:free 리뷰어)은
+    허용됩니다.
 4. **Hy4 는 고난도 전용**: `tencent/hy4-preview` 의 입력 단가가 기본 빌더
    (`cmd-deepseek-flash`)의 약 5배이므로 저가 후보 탐색의 목적에 맞지 않습니다.
    고난도 과제에만 `--model` 로 명시 지정하고 `WORKER_MODEL_NOTICE` 를 남깁니다.
