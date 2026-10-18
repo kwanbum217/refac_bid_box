@@ -6748,6 +6748,61 @@ def _narrow_to_current_regime(
     return narrowed
 
 
+_JEONNAM_CITIES_FOR_LEGACY = (
+    "목포",
+    "여수",
+    "순천",
+    "나주",
+    "광양",
+    "담양",
+    "곡성",
+    "구례",
+    "고흥",
+    "보성",
+    "화순",
+    "장흥",
+    "강진",
+    "해남",
+    "영암",
+    "무안",
+    "함평",
+    "영광",
+    "장성",
+    "완도",
+    "진도",
+    "신안",
+)
+_GWANGJU_DISTRICTS_FOR_LEGACY = ("동구", "서구", "남구", "북구", "광산구")
+
+
+def _legacy_merged_institution_code(name: str | None) -> tuple[str, str] | None:
+    """통합 명칭으로 등록된 수요기관명에서 옛 계열 시·도 코드를 판별합니다."""
+    if not name:
+        return None
+    text = re.sub(r"\s+", "", str(name))
+    prefixes = ("전남광주통합특별시교육청", "전남광주통합특별시")
+    changed = True
+    while changed:
+        changed = False
+        for prefix in prefixes:
+            if text.startswith(prefix):
+                text = text[len(prefix) :]
+                changed = True
+                break
+    if not text:
+        return None
+    token = text
+    if token.startswith("광주"):
+        return ("29", "광주광역시")
+    if token in _GWANGJU_DISTRICTS_FOR_LEGACY:
+        return ("29", "광주광역시")
+    if token.startswith("무안청사") or token.startswith("전라남도"):
+        return ("46", "전라남도")
+    if any(token.startswith(city) for city in _JEONNAM_CITIES_FOR_LEGACY):
+        return ("46", "전라남도")
+    return None
+
+
 def _is_gwangju_metro_institution(name: str | None) -> bool:
     """광주광역시(광역) 본청·소속기관 공고인지 판정합니다.
 
@@ -6792,6 +6847,28 @@ def _select_local_rule(
     def _applied(rule: EvaluationRule) -> tuple[EvaluationRule, str | None, str, list[str]]:
         return rule, None, "", list(warnings)
 
+    # 통합특별시 출범(2026-07-16) 이전 공고에서 수요기관이 통합 명칭으로 등록돼 지역 코드가
+    # 12 로 잡힌 경우, 수요기관명으로 옛 계열(전라남도 46·광주광역시 29)을 판별해 그 코드로
+    # 지역 규칙 후보를 고릅니다. 판별 불가면 지금 동작(차단)을 유지합니다.
+    effective_sido_code = sido_code
+    effective_sido_name = sido_name
+    legacy_determined = False
+    merged_regime_change = date.fromisoformat("2026-07-16")
+    if (
+        announced is not None
+        and announced < merged_regime_change
+        and (sido_code == MERGED_REGION_CODE or sido_name == "전남광주통합특별시")
+    ):
+        legacy_name = institution_name
+        if legacy_name is None and isinstance(raw_data, dict):
+            legacy_name = raw_data.get("dminsttNm") or raw_data.get("demandInsttNm")
+        if legacy_name is None:
+            legacy_name = announcement_institution_name
+        legacy = _legacy_merged_institution_code(legacy_name)
+        if legacy is not None:
+            effective_sido_code, effective_sido_name = legacy
+            legacy_determined = True
+
     # 광주광역시(광역) 본청·소속기관 공고는 국제입찰 고시 금액(3.3억/3.5억) 경계 규칙을
     # 쓰고, 자치구 등 그 밖의 공고는 기존 5억원 경계 규칙을 씁니다. 수요기관명으로 가릅니다.
     metro_name = institution_name
@@ -6808,12 +6885,17 @@ def _select_local_rule(
             rule,
             institution_code=None,
             institution_name=None,
-            region_code=sido_code,
-            region_name=sido_name,
+            region_code=effective_sido_code,
+            region_name=effective_sido_name,
             contract_regime="LOCAL",
         )
     ]
-    if sido_code == "29" or sido_name == "광주광역시":
+    # 옛 계열로 바꾼 경우 통합 규칙(12)이 등가 판정으로 후보에 섞이지 않게 한다.
+    if legacy_determined:
+        base_candidates = [
+            rule for rule in base_candidates if rule.region_code != MERGED_REGION_CODE
+        ]
+    if effective_sido_code == "29" or effective_sido_name == "광주광역시":
 
         def _is_gwangju_legacy(rule: EvaluationRule) -> bool:
             return "GWANGJU_20221115" in rule.rule_id
