@@ -31,6 +31,11 @@ from src.app.services.document_extraction.credit_certificate import (
     FieldResult,
 )
 
+# 시험 모듈이 임포트되는 시점의 원본 get_engine 을 보관합니다. 다른 시험이
+# monkeypatch 로 get_engine 을 대역으로 바꾼 뒤 복구가 누락되어도 본 시험은 원본
+# 구현으로 되돌릴 수 있도록 _reset_ocr_engine 이 이 값을 씁니다.
+_ORIGINAL_OCR_GET_ENGINE = ocr.get_engine
+
 EXTRACT_URL = "/api/v1/documents/extract"
 PDF_HEADERS = {"Content-Type": "application/pdf"}
 PAGE_WIDTH, PAGE_HEIGHT = 1240, 1754
@@ -133,9 +138,42 @@ class _FakeEngine:
 
 @pytest.fixture(autouse=True)
 def _reset_ocr_engine(monkeypatch):
-    """엔진 싱글톤과 사용 불가 표시를 시험마다 초기 상태로 되돌립니다."""
+    """엔진 싱글톤과 사용 불가 표시를 시험마다 초기 상태로 되돌립니다.
+
+    get_engine 도 원본 구현으로 되돌립니다. 다른 시험이 monkeypatch 로 get_engine 을
+    대역으로 바꾼 뒤 복구가 누락되면 본 시험의 모델 부재 경로가 대역을 호출해
+    status=unavailable 로그 수가 달라질 수 있으므로 명시적으로 복구합니다.
+    """
     monkeypatch.setattr(ocr, "_engine", None)
     monkeypatch.setattr(ocr, "_engine_unavailable", False)
+    monkeypatch.setattr(ocr, "get_engine", _ORIGINAL_OCR_GET_ENGINE)
+
+
+@pytest.fixture(autouse=True)
+def _await_free_extraction_slots():
+    """이전 시험의 느린 추출 스레드가 자리를 반납할 때까지 기다립니다.
+
+    동시 처리 세마포어는 프로세스 전역이라, 제한 시간을 넘긴 스레드가 남아 있으면
+    본 시험의 요청이 spurious 503 을 받아 OCR 경로에 도달하지 못하고
+    status=unavailable 로그 수가 달라질 수 있습니다. 시작 시점에 두 자리가 모두
+    비기를 기다립니다.
+    """
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        acquired = 0
+        while acquired < documents.MAX_CONCURRENT_EXTRACTIONS and (
+            documents._EXTRACTION_SLOTS.acquire(blocking=False)
+        ):
+            acquired += 1
+        if acquired == documents.MAX_CONCURRENT_EXTRACTIONS:
+            for _ in range(acquired):
+                documents._EXTRACTION_SLOTS.release()
+            yield
+            return
+        for _ in range(acquired):
+            documents._EXTRACTION_SLOTS.release()
+        time.sleep(0.02)
+    pytest.fail("문서 추출 동시 처리 자리가 이전 시험에서 반납되지 않았습니다")
 
 
 @pytest.fixture
