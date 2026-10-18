@@ -349,6 +349,71 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
         ),
     },
+    "cmd-cat-jam-free": {
+        "id": "stealth/cat-jam:free",
+        "provider": "cmd",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": None,
+        "effort_levels": ("default", "low", "medium", "high", "xhigh", "max"),
+        "effort_default_level": "default",
+        "effort_by_risk": {"low": "default", "medium": "high", "high": "max"},
+        "suitable_for": [
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "Command Code(cmd) CLI 경유 stealth Cat Jam 무료 모델. 명시 지정 전용이며 "
+            "자동 배정하지 않는다. 2026-10-18 probe: --effort bogus 가 "
+            "Supported: low, medium, high, xhigh, max 를 돌려주었다. "
+            "cat-jam max 는 숨김 시험 81/81, 8분 47초, 사양 준수. "
+            "빌더 cat-jam max, 리뷰어 beam max 조합으로 2026-10-17·18 사용자 결정. "
+            "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
+        ),
+    },
+    "cmd-beam-free": {
+        "id": "reflection/beam:free",
+        "provider": "cmd",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": None,
+        "effort_levels": ("default", "low", "medium", "high", "xhigh", "max"),
+        "effort_default_level": "default",
+        "effort_by_risk": {"low": "default", "medium": "high", "high": "max"},
+        "suitable_for": [
+            "reviewer",
+        ],
+        "notes": (
+            "Command Code(cmd) CLI 경유 reflection Beam 무료 모델. 명시 지정 전용이며 "
+            "자동 배정하지 않는다. 2026-10-18 probe: --effort bogus 가 "
+            "Supported: low, medium, high, xhigh, max 를 돌려주었다. "
+            "리뷰어 beam max 로 빌더 cat-jam 과 함께 쓴다 (2026-10-17·18 사용자 결정). "
+            "같은 cmd CLI 이지만 모델 계열(stealth 대 reflection)이 다르다. "
+            "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
+        ),
+    },
+    "cmd-glyph-free": {
+        "id": "stealth/glyph-cluster:free",
+        "provider": "cmd",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": None,
+        "effort_levels": ("default", "low", "medium", "high", "xhigh"),
+        "effort_default_level": "default",
+        "effort_by_risk": {"low": "default", "medium": "high", "high": "xhigh"},
+        "suitable_for": [
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "Command Code(cmd) CLI 경유 stealth Glyph Cluster 무료 모델. 명시 지정 전용이며 "
+            "자동 배정하지 않는다. 2026-10-18 probe: --effort bogus 가 "
+            "Supported: low, medium, high, xhigh 를 돌려주었다. "
+            "glyph xhigh 는 81/81 이나 33분 42초, 슬롯 획득 순서 사양 위반, "
+            "전량 시험 미실행, 하루 100회 한도라 보조로만 쓴다. "
+            "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
+        ),
+    },
     "gemini-flash-high": {
         "id": "gemini-3.8-flash-high",
         "provider": "gemini",
@@ -1432,6 +1497,8 @@ MODEL_PROVIDER_PREFIXES: tuple[tuple[str, str], ...] = (
     ("openrouter/", "openrouter"),
     ("or-free", "kimi-openrouter"),
     ("kimi", "kimi-openrouter"),
+    ("stealth/", "cmd"),
+    ("reflection/", "cmd"),
 )
 
 
