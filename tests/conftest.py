@@ -257,20 +257,6 @@ def _fast_fail_local_services(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", fast_create_connection)
 
 
-@pytest.fixture(autouse=True)
-def _reset_ocr_globals(monkeypatch):
-    """OCR 모듈 전역 상태를 시험마다 초기화합니다.
-
-    ocr.get_engine 의 싱글톤(_engine)과 사용 불가 표시(_engine_unavailable)는
-    프로세스 전역이라, 한 시험이 남긴 상태가 다음 시험의 status=unavailable 로그
-    수나 엔진 사용 여부에 영향을 줄 수 있습니다. 시험마다 None/False 로 되돌립니다.
-    """
-    import src.app.services.document_extraction.ocr as _ocr
-
-    monkeypatch.setattr(_ocr, "_engine", None)
-    monkeypatch.setattr(_ocr, "_engine_unavailable", False)
-
-
 @pytest.fixture
 def isolated_db():
     """SQLite 인메모리 DB 세션. accounts 등 DB 쓰기 테스트를 격리합니다."""

@@ -31,11 +31,6 @@ from src.app.services.document_extraction.credit_certificate import (
     FieldResult,
 )
 
-# 시험 모듈이 임포트되는 시점의 원본 get_engine 을 보관합니다. 다른 시험이
-# monkeypatch 로 get_engine 을 대역으로 바꾼 뒤 복구가 누락되어도 본 시험은 원본
-# 구현으로 되돌릴 수 있도록 _reset_ocr_engine 이 이 값을 씁니다.
-_ORIGINAL_OCR_GET_ENGINE = ocr.get_engine
-
 EXTRACT_URL = "/api/v1/documents/extract"
 PDF_HEADERS = {"Content-Type": "application/pdf"}
 PAGE_WIDTH, PAGE_HEIGHT = 1240, 1754
@@ -138,15 +133,9 @@ class _FakeEngine:
 
 @pytest.fixture(autouse=True)
 def _reset_ocr_engine(monkeypatch):
-    """엔진 싱글톤과 사용 불가 표시를 시험마다 초기 상태로 되돌립니다.
-
-    get_engine 도 원본 구현으로 되돌립니다. 다른 시험이 monkeypatch 로 get_engine 을
-    대역으로 바꾼 뒤 복구가 누락되면 본 시험의 모델 부재 경로가 대역을 호출해
-    status=unavailable 로그 수가 달라질 수 있으므로 명시적으로 복구합니다.
-    """
+    """엔진 싱글톤과 사용 불가 표시를 시험마다 초기 상태로 되돌립니다."""
     monkeypatch.setattr(ocr, "_engine", None)
     monkeypatch.setattr(ocr, "_engine_unavailable", False)
-    monkeypatch.setattr(ocr, "get_engine", _ORIGINAL_OCR_GET_ENGINE)
 
 
 @pytest.fixture(autouse=True)
