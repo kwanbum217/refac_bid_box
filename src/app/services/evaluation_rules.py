@@ -1980,7 +1980,7 @@ _SRC_DAEJEON_20240120 = (
     "대전광역시 공고 제2024-2호, 시행 2024-01-20, 대전광역시 고시공고 게시글 "
     "https://www.daejeon.go.kr/drh/drhGosiView.do?gosigbn=A&sno=45050&menuSeq=1908&pageIndex=1 "
     "첨부 HWP, sha256 05f8bd0b2f03f9515b35a5cba23fee90209cd707082d6da763dd4be1db97423f; "
-    ".cache/daejeon_2024_2.hwp (별표 6)"
+    "EXT/daejeon/daejeon_2024_2.hwp (별표 6)"
 )
 _SRC_CHUNGNAM_ATTACH_01 = (
     f"{_SRC_RECOVER}:170-202 (충청남도 일반용역 적격심사 세부기준, 공고 2026-1235호, "
