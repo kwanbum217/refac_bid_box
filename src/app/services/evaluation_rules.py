@@ -1976,6 +1976,12 @@ _SRC_DAEJEON = (
     "(262 입찰가격 평가: 소프트웨어·폐기물·기타 일반용역 10억원 이상 30억원 미만 77.995%, "
     "30억원 이상 72.995%; 청소·시설물경비·시설물관리 87.745%)"
 )
+_SRC_DAEJEON_20240120 = (
+    "대전광역시 공고 제2024-2호, 시행 2024-01-20, 대전광역시 고시공고 게시글 "
+    "https://www.daejeon.go.kr/drh/drhGosiView.do?gosigbn=A&sno=45050&menuSeq=1908&pageIndex=1 "
+    "첨부 HWP, sha256 05f8bd0b2f03f9515b35a5cba23fee90209cd707082d6da763dd4be1db97423f; "
+    "EXT/daejeon/daejeon_2024_2.hwp (별표 6)"
+)
 _SRC_CHUNGNAM_ATTACH_01 = (
     f"{_SRC_RECOVER}:170-202 (충청남도 일반용역 적격심사 세부기준, 공고 2026-1235호, "
     "시행 2026-07-13, 별표 1 시설분야용역); EXT/chungnam/chungnam_2026_1235.txt:"
@@ -3432,6 +3438,41 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         # 단순노무 행의 낙찰하한율은 구간 구분 없이 87.745% 입니다(원문 :149).
         price_bands=_four_band_price(_SRC_BUSAN, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_BUSAN),
+        lwlt_rate="87.745",
+    ),
+    # 대전광역시 구판 (공고 제2024-2호, 시행 2024-01-20) — 현행 규칙(공고 제2025-9528호,
+    # 시행 2026-01-01) 시행일 이전 공고 전용. 같은 세부유형의 현행 규칙이 함께 등록되어
+    # 공고일로 하나를 가립니다. 값 구조는 현행과 같습니다.
+    _local_rule(
+        "SERVC_LOCAL_DAEJEON_20240120_ATTACH_01",
+        sido_code="30",
+        sido_name="대전광역시",
+        service_type="GENERAL",
+        effective_date="2024-01-20",
+        superseded_date="2026-01-01",
+        source=_SRC_DAEJEON_20240120,
+        description="대전광역시 일반용역 적격심사 (소프트웨어·폐기물처리·기타 일반용역, 구판)",
+        # 별표 6 소프트웨어·폐기물처리·기타 일반용역 행은 구간마다 낙찰하한율을
+        # 인쇄합니다. 10억원 이상은 30억원 경계로 30억원 미만 77.995%,
+        # 30억원 이상 72.995% 로 갈립니다.
+        price_bands=_five_band_price(
+            _SRC_DAEJEON_20240120,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_DAEJEON_20240120),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_DAEJEON_20240120_SIMPLE_LABOR",
+        sido_code="30",
+        sido_name="대전광역시",
+        service_type="SIMPLE_LABOR",
+        effective_date="2024-01-20",
+        superseded_date="2026-01-01",
+        source=_SRC_DAEJEON_20240120,
+        description="대전광역시 일반용역 적격심사 (청소·시설물경비·시설물관리용역, 구판)",
+        # 청소·시설물경비·시설물관리 행의 낙찰하한율은 구간 구분 없이 87.745% 입니다.
+        price_bands=_four_band_price(_SRC_DAEJEON_20240120, simple_labor=True),
+        threshold_bands=_single_threshold("95", "전 구간 95", _SRC_DAEJEON_20240120),
         lwlt_rate="87.745",
     ),
     # 대전광역시 (공고 제2025-9528호, 시행 2026-01-01) — 별표 6 이 두 행 묶음으로 인쇄됩니다.

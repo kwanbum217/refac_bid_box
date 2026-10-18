@@ -190,6 +190,17 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         assert metro_rules[rule_id].region_code == "29"
         assert metro_rules[rule_id].effective_date == effective
         assert metro_rules[rule_id].superseded_date == superseded_on
+    # 2026-10-18 대전광역시 구판(공고 제2024-2호)은 현행(공고 제2025-9528호) 시행일에서 끝난다.
+    daejeon_windows = {
+        "SERVC_LOCAL_DAEJEON_20240120_ATTACH_01": ("2024-01-20", "2026-01-01"),
+        "SERVC_LOCAL_DAEJEON_20240120_SIMPLE_LABOR": ("2024-01-20", "2026-01-01"),
+    }
+    daejeon_rules = {rule.rule_id: rule for rule in LOCAL_RULES if rule.rule_id in daejeon_windows}
+    assert set(daejeon_rules) == set(daejeon_windows)
+    for rule_id, (effective, superseded_on) in daejeon_windows.items():
+        assert daejeon_rules[rule_id].region_code == "30"
+        assert daejeon_rules[rule_id].effective_date == effective
+        assert daejeon_rules[rule_id].superseded_date == superseded_on
     superseded = {rule.rule_id for rule in LOCAL_RULES if rule.superseded_date is not None}
     assert superseded == {
         PREDECESSOR_WASTE_ID,
@@ -197,6 +208,7 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         GWANGJU_PREDECESSOR_WASTE_ID,
         GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID,
         *metro_windows,
+        *daejeon_windows,
     }
 
 

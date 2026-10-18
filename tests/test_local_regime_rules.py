@@ -859,6 +859,20 @@ def test_local_rule_resolution_never_keeps_stale_block(rule: EvaluationRule) -> 
     result = _resolve_for_rule(rule, method)
 
     if rule.superseded_date is not None:
+        successors = [
+            other
+            for other in LOCAL_RULES
+            if other.superseded_date is None
+            and other.region_code == rule.region_code
+            and other.service_type == rule.service_type
+        ]
+        if successors and all(other.rule_id in _LOCAL_SELECTION_REQUIRED for other in successors):
+            # 후속 현행 규칙이 사용자 선택형이면 시행일 이후 공고도 선택을 요구한다.
+            assert result.rule is None, rule.rule_id
+            assert result.block_reason_code == BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED, (
+                rule.rule_id
+            )
+            return
         assert result.rule is not None, rule.rule_id
         assert result.rule.rule_id != rule.rule_id, rule.rule_id
         assert result.rule.superseded_date is None, rule.rule_id
