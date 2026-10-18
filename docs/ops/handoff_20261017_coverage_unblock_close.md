@@ -13,10 +13,10 @@
 | 우선 | 과제 | 선행 |
 | --- | --- | --- |
 | 1 | 이 문서 13절 병합 커밋의 main CI 녹색 확인 | 없음 |
-| 2 | 런처 `EFFORT_CHOICES` 에 `xhigh` 추가(glyph xhigh 기동 불가, 13.3절) | 없음 |
+| 2 | (완료 `723b60d0`) 런처 `EFFORT_CHOICES` 에 `xhigh` 추가(13.6절) | - |
 | 3 | 라우터 리뷰어 독립성 검사가 cat-jam 빌더·beam 리뷰어를 같은 cmd 로 거부한다. 모델 계열 단위로 바꿀지(13.3절) | 사용자 결정 |
 | 4 | rework Intent 템플릿에 누적 `changed_files`·실행 가능한 검증 명령 규칙 반영(13.4절) | 없음 |
-| 5 | `tests/test_orca_cmd_launch.py` 중복 단정·docstring 등급 수 정리(13.3절) | 없음 |
+| 5 | (완료 `723b60d0`) `tests/test_orca_cmd_launch.py` 중복 단정·docstring 등급 수 정리(13.6절) | - |
 | 6 | 교육청 소속 공고 지역제한 금액 경계. 원문으로는 근거 부족, 유권해석 확보 시 재판정(13.2절) | 근거 확보 |
 | 7 | 남은 계산 차단 중 `MANUAL_EVALUATION` 외 자동 차단 대응(11.3절) | 사용자 결정 |
 | 8 | 띠 표기 `2억미만 1억이상` 처리 방식(10.2절 B1) | 사용자 결정 |
@@ -497,3 +497,9 @@ cmd deepseek-v4.1-flash 크레딧 소진으로 사용자가 무료 후보 둘의
 | Run `run_67bd1fa37412` | 빌더 6 Task(A·A rework·B·B rework·C·E), 리뷰 5 Task 모두 completed |
 | 워커 터미널·워크트리 | 빌더·리뷰어 터미널과 워커 워크트리 전부 회수·제거. 비교 시험 브랜치 3개만 로컬에 남김 |
 | main CI | `2be40d4f`·`620b02fc`·`33a973a8` 녹색, `b3899e52` 와 이 문서 병합은 0절 1번 |
+
+### 13.6 런처 xhigh (Run `run_c6227e3637f1`)
+
+| 커밋 | 내용 | 리뷰 |
+| --- | --- | --- |
+| `723b60d0` | `scripts/orca_cmd_launch.py` 의 `EFFORT_CHOICES` 에 `xhigh` 추가, 도움말·주석 등급 나열 수정. `tests/test_orca_cmd_launch.py` 의 중복 단정 블록 삭제, 등급 단정 6개 기준 수정, glyph xhigh 허용·deepseek xhigh 거부 시험 추가. 13.3절 런처 `xhigh`·시험 중복 항목 해소 | 통과(cmd beam max). rework 보고 규칙을 Intent 에 미리 넣어 Level 1 strict 10개 게이트가 게이트 5·6 포함 첫 시도에 통과 |
