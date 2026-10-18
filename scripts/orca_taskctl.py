@@ -850,6 +850,20 @@ BASE_GROUND_TRUTH: tuple[tuple[str, str], ...] = (
     ),
 )
 
+# 재작업 Capsule ground_truth 에 고정으로 붙는 worker_done 보고 작성 규칙.
+# Level 1 게이트 6 이 changed_files 를 git diff main...HEAD 와, verification 의
+# command 를 문자 그대로 재실행해 대조하므로 보고 작성 규칙을 상수로 못박는다.
+REWORK_REPORT_RULES_FACT: str = (
+    "worker_done.json 의 changed_files 는 git diff --name-only main...HEAD 결과 그대로"
+    "(이전 시도 커밋 포함 main 대비 누적) 적고, verification 의 각 command 는 그대로 셸에서"
+    " 실행 가능한 한 줄로 적으며 (x20) 같은 꼬리말을 붙이지 않고, 반복 실행 결과는 note 에"
+    " 문장으로 적고, 결과 건수는 실제 출력의 passed 수를 그대로 옮긴다."
+)
+# 호환 별칭 (테스트/호출부가 다른 이름을 쓸 수 있음)
+REWORK_REPORT_RULE_FACT = REWORK_REPORT_RULES_FACT
+REWORK_WORKER_DONE_REPORT_RULES_FACT = REWORK_REPORT_RULES_FACT
+WORKER_DONE_REPORT_RULES_FACT = REWORK_REPORT_RULES_FACT
+
 
 def _format_ground_truth(extra_facts: list[str]) -> str:
     """기본 사실 4건 뒤에 Intent 가 주입한 사실을 덧붙입니다.
@@ -4458,6 +4472,13 @@ def create_rework_capsule(
                 f'    evidence: "이전 worker_done 보고서"\n'
                 f"    recheck: false\n"
             )
+
+    # worker_done 보고 작성 규칙은 previous_report 유무와 무관하게 항상 고정 항목으로 붙인다.
+    gt_addition += (
+        f'  - fact: "{_escape(REWORK_REPORT_RULES_FACT)}"\n'
+        f'    evidence: "{_escape("2026-10-18 Level 1 게이트 6 실패 사례")}"\n'
+        f"    recheck: false\n"
+    )
 
     if "ground_truth:\n" in new_text:
         new_text = new_text.replace("ground_truth:\n", f"ground_truth:\n{gt_addition}", 1)
