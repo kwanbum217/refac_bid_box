@@ -85,6 +85,7 @@ __all__ = [
     "load_reliability_history",
     "load_repo_env",
     "main",
+    "model_family",
     "pool_for_model",
     "preflight",
     "probe_model",
@@ -1536,6 +1537,49 @@ def provider_for_model(model_or_pool: str, strict: bool = True) -> str:
     return "unknown"
 
 
+def model_family(model_or_pool: str | None) -> str | None:
+    """모델 ID 또는 풀 이름에서 모델 계열(family)을 판정합니다."""
+    if not model_or_pool or not isinstance(model_or_pool, str):
+        return None
+
+    cleaned = model_or_pool.strip()
+    if not cleaned:
+        return None
+
+    pool_info = None
+    if cleaned in MODEL_POOL:
+        pool_info = MODEL_POOL[cleaned]
+    else:
+        for info in MODEL_POOL.values():
+            if cleaned == info.get("id"):
+                pool_info = info
+                break
+
+    if pool_info is not None:
+        family_field = pool_info.get("family")
+        if isinstance(family_field, str) and family_field.strip():
+            return family_field.strip()
+        model_id = str(pool_info.get("id", cleaned))
+        provider_raw = pool_info.get("provider", "unknown")
+    else:
+        model_id = cleaned
+        try:
+            provider_raw = provider_for_model(cleaned, strict=False)
+        except Exception:
+            provider_raw = "unknown"
+
+    provider_norm = normalize_provider_hint(provider_raw)
+    if provider_norm == UNKNOWN_PROVIDER:
+        return None
+
+    if "/" in model_id:
+        prefix = model_id.split("/", 1)[0].strip()
+        if prefix and prefix.lower() != provider_norm:
+            return prefix
+
+    return provider_norm
+
+
 def free_order_for_role(role: str) -> list[str]:
     """역할에 맞는 무료 후보 순서를 돌려줍니다.
 
@@ -2466,13 +2510,28 @@ def route(
         if role == "reviewer":
             explicit_prov = provider_for_model(explicit_model, strict=False)
             if builder_provider and builder_provider != "unknown":
-                if explicit_prov == builder_provider:
-                    raise ModelRoutingError(
-                        f"리뷰어 명시 지정 모델({explicit_model}, provider={explicit_prov})이 "
-                        f"빌더 provider({builder_provider})와 동일하여 독립 리뷰 정책을 위반합니다.",
-                        role=role,
-                        risk=risk,
-                    )
+                if explicit_prov != builder_provider:
+                    pass
+                else:
+                    builder_family = model_family(builder_model) if builder_model else None
+                    explicit_family = model_family(explicit_model)
+                    if (
+                        builder_family is not None
+                        and explicit_family is not None
+                        and builder_family != explicit_family
+                        and builder_family != builder_provider
+                        and explicit_family != explicit_prov
+                    ):
+                        pass
+                    else:
+                        raise ModelRoutingError(
+                            f"리뷰어 명시 지정 모델({explicit_model}, provider={explicit_prov}, "
+                            f"family={explicit_family})이 빌더 provider({builder_provider})와 "
+                            f"동일하고 계열(builder={builder_family}, reviewer={explicit_family})이 "
+                            f"독립적이지 않아 독립 리뷰 정책을 위반합니다.",
+                            role=role,
+                            risk=risk,
+                        )
             elif risk in ("medium", "high") or has_write_scope:
                 raise ModelRoutingError(
                     f"리뷰어 명시 모델({explicit_model}) 지정 시 위험도 {risk} 에서는 "
