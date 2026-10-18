@@ -859,10 +859,6 @@ REWORK_REPORT_RULES_FACT: str = (
     " 실행 가능한 한 줄로 적으며 (x20) 같은 꼬리말을 붙이지 않고, 반복 실행 결과는 note 에"
     " 문장으로 적고, 결과 건수는 실제 출력의 passed 수를 그대로 옮긴다."
 )
-# 호환 별칭 (테스트/호출부가 다른 이름을 쓸 수 있음)
-REWORK_REPORT_RULE_FACT = REWORK_REPORT_RULES_FACT
-REWORK_WORKER_DONE_REPORT_RULES_FACT = REWORK_REPORT_RULES_FACT
-WORKER_DONE_REPORT_RULES_FACT = REWORK_REPORT_RULES_FACT
 
 
 def _format_ground_truth(extra_facts: list[str]) -> str:
