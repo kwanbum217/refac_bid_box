@@ -15,7 +15,7 @@
 | 1 | 이 문서 13절 병합 커밋의 main CI 녹색 확인 | 없음 |
 | 2 | (완료 `723b60d0`) 런처 `EFFORT_CHOICES` 에 `xhigh` 추가(13.6절) | - |
 | 3 | (완료 `413f4bba`) 리뷰어 명시 지정 독립성 검사를 모델 계열 단위로 변경(13.7절, 사용자 결정) | - |
-| 4 | rework Intent 템플릿에 누적 `changed_files`·실행 가능한 검증 명령 규칙 반영(13.4절) | 없음 |
+| 4 | (완료 `d8c43d01`) 재작업 Capsule 에 worker_done 보고 작성 규칙 고정(13.8절) | - |
 | 5 | (완료 `723b60d0`) `tests/test_orca_cmd_launch.py` 중복 단정·docstring 등급 수 정리(13.6절) | - |
 | 6 | 교육청 소속 공고 지역제한 금액 경계. 원문으로는 근거 부족, 유권해석 확보 시 재판정(13.2절) | 근거 확보 |
 | 7 | 남은 계산 차단 중 `MANUAL_EVALUATION` 외 자동 차단 대응(11.3절) | 사용자 결정 |
@@ -511,3 +511,11 @@ cmd deepseek-v4.1-flash 크레딧 소진으로 사용자가 무료 후보 둘의
 | `413f4bba` | `scripts/orca_model_router.py` 에 `model_family()` 추가. 계열은 MODEL_POOL `family` 필드, 없으면 모델 id 의 `/` 앞 접두사(provider 이름과 다를 때만), 그 밖에는 provider 이름, 미상은 None. `route()` 의 리뷰어 명시 지정 검사는 provider 가 같아도 두 계열이 모두 확인되고 서로 다를 때만 허용하고, 빌더 모델 미상·같은 계열·계열이 provider 로 떨어지는 경우는 거부한다. 자동 선택 `select_model` 의 provider 단위 제외는 그대로다 | 통과(cmd beam max). 코디네이터가 `route` 직접 호출로 cat-jam→beam·deepseek→glm·cmd→codex 허용, cat-jam→glyph·beam→beam·빌더 모델 미상·opencode 끼리 거부를 확인 |
 
 이제 cat-jam 빌더·beam 리뷰어 조합을 `taskctl dispatch` 라우팅으로도 쓸 수 있다. 리뷰 Intent 에는 `builder_model` 을 반드시 적는다. 없으면 계열을 알 수 없어 거부된다. 13.3절 리뷰어 독립성 항목은 이것으로 해소됐다.
+
+### 13.8 재작업 Capsule 보고 작성 규칙 고정 (Run `run_6b11e3b7f924`)
+
+| 커밋 | 내용 | 리뷰 |
+| --- | --- | --- |
+| `d8c43d01` | `scripts/orca_taskctl.py` 에 `REWORK_REPORT_RULES_FACT` 상수를 두고 `create_rework_capsule` 이 모든 재작업 Capsule ground_truth 에 세 번째 fact 로 붙인다. changed_files 는 `git diff --name-only main...HEAD`(누적), 검증 명령은 그대로 실행 가능한 한 줄(`(x20)` 같은 꼬리말 금지), 건수는 실제 출력 그대로. 1차에 붙은 쓰이지 않는 별칭 상수 3개는 코디네이터 반려로 재작업해 지웠다 | 통과(cmd beam max). 리뷰어가 previous_report 유무 두 경우로 직접 호출해 규칙 fact·기존 fact 순서 확인 |
+
+이제 `orca_taskctl.py rework` 를 쓸 때 반려 사유에 보고 작성 규칙을 따로 적지 않아도 된다. 같은 세션 운영 교훈 하나를 덧붙인다. 감시 스크립트는 보고 파일 생성만 보므로, 리뷰어가 `orca orchestration send` 를 보내기 전에 회수하면 Dispatch 가 failed 로 남는다(13.7절 리뷰 Task 를 `task-update` 로 정리). 회수는 `dispatch-show` 가 completed 일 때만 한다.
