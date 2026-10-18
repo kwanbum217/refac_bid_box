@@ -92,13 +92,13 @@ def test_build_command_interactive_and_one_shot():
 
 def test_build_command_effort_levels():
     """합집합 등급 여섯 가지이며 default 는 --effort 를 붙이지 않아야 합니다."""
-    assert EFFORT_CHOICES == ("default", "low", "medium", "high", "max")
+    assert EFFORT_CHOICES == ("default", "low", "medium", "high", "xhigh", "max")
     assert EFFORT_DEFAULT_LEVEL == "default"
 
     assert "--effort" not in build_command(MODEL, "지시문", effort=EFFORT_DEFAULT_LEVEL)
     assert "--effort" not in build_command(MODEL, "지시문", effort=None)
 
-    for level in ("low", "medium", "high", "max"):
+    for level in ("low", "medium", "high", "xhigh", "max"):
         cmd = build_command(MODEL, "지시문", effort=level)
         assert cmd[:5] == ["cmd", "--model", MODEL, "--effort", level]
         assert cmd[-1] == "지시문"
@@ -114,31 +114,6 @@ def test_allowed_effort_levels_follows_model_pool():
     assert allowed_effort_levels(GLM_MODEL) == ("default", "low", "high", "max")
     assert allowed_effort_levels(HY4_MODEL) == ("default", "low", "medium", "high")
     assert allowed_effort_levels("vendor/unregistered-model") == ("default",)
-
-    # cmd 무료 모델 세 개의 모델별 effort 허용 등급
-    assert allowed_effort_levels(CAT_JAM_MODEL) == (
-        "default",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-    )
-    assert allowed_effort_levels(BEAM_MODEL) == (
-        "default",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max",
-    )
-    assert allowed_effort_levels(GLYPH_MODEL) == (
-        "default",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-    )
 
 
 def test_cmd_free_allowed_effort_levels():
@@ -162,6 +137,38 @@ def test_cmd_free_glyph_rejects_effort_max(tmp_path: Path, capsys: pytest.Captur
     assert exc.value.code == 2
     mock_run.assert_not_called()
     assert "max" in capsys.readouterr().err
+
+
+@patch("scripts.orca_cmd_launch.run_cmd", return_value=0)
+def test_cmd_free_glyph_accepts_effort_xhigh(mock_run: MagicMock, tmp_path: Path):
+    target = tmp_path / "preamble_glyph_xhigh.txt"
+    target.write_text("지시문", encoding="utf-8")
+    code = main(
+        [
+            "--model",
+            GLYPH_MODEL,
+            "--effort",
+            "xhigh",
+            "--preamble",
+            str(target),
+            "--no-commit-notice",
+            "--one-shot",
+            "--no-keep-open",
+        ]
+    )
+    assert code == 0
+    executed = mock_run.call_args[0][0]
+    assert executed[:5] == ["cmd", "--model", GLYPH_MODEL, "--effort", "xhigh"]
+
+
+def test_cmd_deepseek_rejects_effort_xhigh(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    target = tmp_path / "preamble_deepseek_xhigh.txt"
+    target.write_text("지시문", encoding="utf-8")
+    with patch("scripts.orca_cmd_launch.run_cmd") as mock_run, pytest.raises(SystemExit) as exc:
+        main(["--model", MODEL, "--effort", "xhigh", "--preamble", str(target)])
+    assert exc.value.code == 2
+    mock_run.assert_not_called()
+    assert "xhigh" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
