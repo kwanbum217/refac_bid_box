@@ -8,7 +8,7 @@ Command Code CLI 를 Orca 워커로 씁니다. 터미널을 런처를 명령으�
 완주시킨 뒤 대화형 셸로 이어받아 터미널 창을 유지합니다.
 
 추론 등급은 모델 ID 에 포함되지 않고 --effort 플래그로 지정하며 모델마다 받는
-값이 다릅니다. --effort 의 argparse choices 는 (default, low, medium, high, max)
+값이 다릅니다. --effort 의 argparse choices 는 (default, low, medium, high, xhigh, max)
 합집합으로 넓히고, 인자 해석 직후 MODEL_POOL 에서 모델별로 허용 등급을 검사합니다.
 목록 밖의 값은 CLI 가 종료 코드 0 으로 "Unknown effort" 만 출력하고 조용히 기본
 등급으로 진행하므로 런처가 먼저 거부합니다.
@@ -48,7 +48,7 @@ REVIEWER_NOTICE = common.REVIEWER_NOTICE
 # allowed_effort_levels() 로 모델별 허용 등급을 검사합니다. default 는 --effort 를
 # 붙이지 않고 기동하는 모델 기본값이라 CLI 인자로는 나가지 않습니다.
 EFFORT_DEFAULT_LEVEL = "default"
-EFFORT_CHOICES = ("default", "low", "medium", "high", "max")
+EFFORT_CHOICES = ("default", "low", "medium", "high", "xhigh", "max")
 
 
 def allowed_effort_levels(model: str) -> tuple[str, ...]:
@@ -157,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--effort",
         choices=EFFORT_CHOICES,
-        help="추론 등급 (default, low, medium, high, max). 모델마다 받는 값이 "
+        help="추론 등급 (default, low, medium, high, xhigh, max). 모델마다 받는 값이 "
         "다르며 MODEL_POOL 의 effort_levels 에 없는 값은 거부합니다. default 와 "
         "미지정은 모두 --effort 를 붙이지 않고 모델 기본값으로 기동합니다.",
     )
