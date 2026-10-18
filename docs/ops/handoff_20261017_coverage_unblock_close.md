@@ -4,7 +4,7 @@
 > **작성**: Claude 코디네이터 (Orca Run `run_7fc80bfcde31`)
 > **기준 커밋**: `63a61a7b` (이 문서와 원장 재생성이 들어가는 병합의 부모)
 > **직전 인수인계**: [handoff_20261014_detail_page_coverage_close.md](handoff_20261014_detail_page_coverage_close.md)
-> **보강**: 같은 날 후속 조사 Run `run_2ee1edb1090f` 결과를 8절, 코드 반영 Run `run_5614217efbdd` 결과를 9절, 마지막 조사 Run `run_a8eeebe0566d` 결과를 10절에 덧붙였다(기준 커밋 `c7fa51ea`). 2026-10-18 규칙 반영 Run `run_e176c7341827` 결과를 11절에 덧붙였다(기준 커밋 `7ec861e1`). 같은 날 원문 재확인·지역제한 금액 Run `run_158b8fe08ee7` 결과와 워커 DB 사고를 12절에 덧붙였다(기준 커밋 `f32f913f`).
+> **보강**: 같은 날 후속 조사 Run `run_2ee1edb1090f` 결과를 8절, 코드 반영 Run `run_5614217efbdd` 결과를 9절, 마지막 조사 Run `run_a8eeebe0566d` 결과를 10절에 덧붙였다(기준 커밋 `c7fa51ea`). 2026-10-18 규칙 반영 Run `run_e176c7341827` 결과를 11절에 덧붙였다(기준 커밋 `7ec861e1`). 같은 날 원문 재확인·지역제한 금액 Run `run_158b8fe08ee7` 결과와 워커 DB 사고를 12절에 덧붙였다(기준 커밋 `f32f913f`). 같은 날 cmd 무료 빌더 비교 Run `run_8c1452a052ce` 와 0절 병렬 처리 Run `run_67bd1fa37412` 결과를 13절에 덧붙였다(기준 커밋 `b3899e52`).
 
 ---
 
@@ -12,15 +12,15 @@
 
 | 우선 | 과제 | 선행 |
 | --- | --- | --- |
-| 1 | 이 문서 12절 병합 커밋의 main CI 녹색 확인 | 없음 |
-| 2 | cmd 워커 기동 경로 확인. 런처(`scripts/orca_cmd_launch.py`)를 거치지 않고 `cmd` 를 직접 띄우면 정책 deny 가 하나도 적용되지 않는다. 직접 띄울 때는 `orca_worker_launch_common.deploy_worker_settings` 로 먼저 배치(12.3절) | 없음 |
-| 3 | 교육청 소속 기관 공고(광주 구판 규칙 12건, 경계 사이 8건)가 국제입찰 고시 대상 `광주광역시` 에 드는지 판단. 지금은 5억원 경계 유지(12.2절) | 근거 확보 |
-| 4 | cmd 정책 `Shell(mysql:*)`·`Shell(mysqldump:*)` 도 반복문·`sh -c`·`$( )` 우회가 가능하다. 중간 와일드카드 보강 여부(12.3절) | 사용자 결정 |
-| 5 | 병렬 부하에서 간헐 실패하는 `tests/test_document_extraction_ocr.py::test_missing_model_disables_ocr_once` 안정화(12.4절) | 없음 |
-| 6 | 워커 풀 확인. 빌더 cmd cat-jam(무료) max, 리뷰어 cmd beam(무료) max 로 운용 중 | 사용자 결정 |
-| 7 | 남은 계산 차단 중 `MANUAL_EVALUATION` 은 화면 직접 입력으로 계산 가능. 남은 자동 차단 대응(11.3절) | 사용자 결정 |
+| 1 | 이 문서 13절 병합 커밋의 main CI 녹색 확인 | 없음 |
+| 2 | 런처 `EFFORT_CHOICES` 에 `xhigh` 추가(glyph xhigh 기동 불가, 13.3절) | 없음 |
+| 3 | 라우터 리뷰어 독립성 검사가 cat-jam 빌더·beam 리뷰어를 같은 cmd 로 거부한다. 모델 계열 단위로 바꿀지(13.3절) | 사용자 결정 |
+| 4 | rework Intent 템플릿에 누적 `changed_files`·실행 가능한 검증 명령 규칙 반영(13.4절) | 없음 |
+| 5 | `tests/test_orca_cmd_launch.py` 중복 단정·docstring 등급 수 정리(13.3절) | 없음 |
+| 6 | 교육청 소속 공고 지역제한 금액 경계. 원문으로는 근거 부족, 유권해석 확보 시 재판정(13.2절) | 근거 확보 |
+| 7 | 남은 계산 차단 중 `MANUAL_EVALUATION` 외 자동 차단 대응(11.3절) | 사용자 결정 |
 | 8 | 띠 표기 `2억미만 1억이상` 처리 방식(10.2절 B1) | 사용자 결정 |
-| 9 | 한국공항공사 별표 3·5·5의 2·8·9 근거 보강 | 근거 확보 |
+| 9 | 한국공항공사 별표 3·5·5의 2·8·9. 새 공고에서 표기가 나오면 재조사 | 외부 대기 |
 | 10 | ML 특징용 고시금액 2021~2022 년 값 정정 여부, 2027 년 고시금액 반영(2026-12 예정) | 사용자 결정·외부 대기 |
 
 --- | --- | --- |
@@ -432,3 +432,68 @@ A 는 세부유형 미확정(`LOCAL_SERVICE_TYPE_UNRESOLVED`) 공고도 의도�
 | 워커 터미널·워크트리 | 전부 회수·제거 |
 | main CI | `8ed21071`·`5d328108`·`81086dca`·`5dea802a`·`f32f913f` 녹색 |
 | Docker Compose | 세션 종료 시 정지(사용자 지시) |
+
+---
+
+## 13. cmd 무료 빌더 비교와 인수인계 0절 병렬 처리 (Run `run_8c1452a052ce`, `run_67bd1fa37412`)
+
+> **작성일**: 2026-10-18
+> **마지막 병합 커밋**: `b3899e52`
+> **워커**: 빌더 cmd `stealth/cat-jam:free` max, 리뷰어 cmd `reflection/beam:free` max (사용자 결정)
+
+### 13.1 빌더 후보 비교 (Run `run_8c1452a052ce`)
+
+cmd deepseek-v4.1-flash 크레딧 소진으로 사용자가 무료 후보 둘의 비교를 지시했다. 기준 브랜치 `bench/builder-compare-base`(`6ec17d4b`)는 `e5b87c6f`(진단형)·`648b9f02`(기능형)의 src 변경을 역적용하고 그 시험을 뺀 것이며, 원본 커밋 시험을 숨김 시험으로 채점했다. 기준선에서 숨김 시험 4건이 실패했다.
+
+| 항목 | Cat Jam max | Glyph Cluster xhigh |
+| --- | --- | --- |
+| 소요 | 8분 47초 | 33분 42초 |
+| 숨김 시험 | 81/81 | 81/81 |
+| 추가 시험 | 6 | 2 |
+| 전량 시험(지시) | 실행 | 미실행 |
+| 사양 준수 | 슬롯 획득 전 크기 검사 준수 | 슬롯 획득 뒤 스트림 읽기(위반), 자기 대입·중복 import |
+| 한도 표시 | 공유 용량 | 공유 용량, 계정당 하루 100회 요청 |
+
+판정은 Cat Jam 이다. 비교 브랜치 3개(`bench/builder-compare-base`, `kwanbum217/bench-catjam`, `kwanbum217/bench-glyph`)는 병합 대상이 아니며 로컬에만 남아 있다.
+
+### 13.2 병합
+
+| 0절 | 커밋 | 내용 | 리뷰 |
+| --- | --- | --- | --- |
+| 3 | `2be40d4f` | 광주광역시교육청의 국제입찰 고시 대상 판정([gwangju_edu_intl_bid_scope_20261018.md](../analysis/gwangju_edu_intl_bid_scope_20261018.md)). 라벨 근거 부족. 고시는 `광주광역시` 만 열거하고, 지방계약법 제3조는 교육 사항의 장을 교육감으로 읽는 규칙일 뿐 대상기관 범위를 정하지 않는다. 교육청 소속 8건은 5억원 경계 유지 | 통과. 리뷰어가 원문 5개 해시 재대조, 코디네이터가 지방계약법 해시 재계산 |
+| 4 | `620b02fc` | cmd 워커 정책에 mysql·mysqldump 중간 와일드카드 12개 추가([cmd_policy_mysql_wildcard_20261018.md](../analysis/cmd_policy_mysql_wildcard_20261018.md)). 실측 차단 7·통과 3 기대대로 | 통과 |
+| 5 | `33a973a8` | OCR 시험 파일에 동시 처리 슬롯 반납 대기 fixture 추가([ocr_flaky_test_20261018.md](../analysis/ocr_flaky_test_20261018.md)). 결정적 재현은 실패. 하드닝 시험의 같은 fixture 가 선례 | 1차 fail(근거 없는 원인 1), 재작업 후 통과 |
+| 2 | `b3899e52` | cmd 무료 풀 3개(`cmd-cat-jam-free`, `cmd-beam-free`, `cmd-glyph-free`) 등록. tier free, 자동 선택 제외. 이제 런처가 cat-jam·beam 의 `--effort max` 를 받고 정책을 배치한다 | 1차 코디네이터 반려(시험 부족), 재작업 후 통과 |
+
+0절 1번(CI 확인)은 코디네이터가 직접 확인했다. 9번(한국공항공사 별표)은 남은 근거가 새 공고에만 있어 워커를 배정하지 않았다(`kac_unregistered_annex_20261017.md` 결론: 별표 3·5·5의 2 공고 표기 0건, 별표 8 공고 0건, 별표 9 는 공고가 값을 정함).
+
+### 13.3 후속 과제
+
+| 항목 | 내용 |
+| --- | --- |
+| 런처 `xhigh` | `scripts/orca_cmd_launch.py` 의 `EFFORT_CHOICES` 에 `xhigh` 가 없어 glyph `--effort xhigh` 는 argparse 에서 거부된다. cat-jam·beam max 는 정상 |
+| 리뷰어 독립성 | `scripts/orca_model_router.py` 의 provider 비교(`explicit_prov == builder_provider`)가 cat-jam 빌더와 beam 리뷰어를 같은 cmd 로 보고 거부한다. `taskctl dispatch` 로는 이 조합을 못 쓰고 `worker-start --terminal` 직접 연결만 된다. 규칙 변경은 사용자 결정 |
+| mysql deny 오탐 | `Shell(*"mysql *)`·`Shell(*'mysql *)`·`Shell(sh -c *mysql*)` 는 따옴표 바로 뒤 mysql 검색, `sh -c "... test_mysql_concurrency.py"`, `git commit -m 'mysql ...'` 도 막을 수 있다. 워커가 이유 없이 막히면 이 규칙부터 본다 |
+| 시험 중복 | `tests/test_orca_cmd_launch.py` 의 기존 함수에 덧붙인 등급 단정이 새 함수와 중복이고 docstring 의 등급 수가 틀렸다 |
+| OCR 간헐 실패 | 재현 없이 선례 fixture 로 막았다. 다시 실패하면 실패 출력(503 여부)을 남긴다 |
+| 교육청 경계 | 확정하려면 행정안전부 질의회신 같은 유권해석이 필요하다 |
+
+### 13.4 운영 교훈
+
+| 항목 | 내용 |
+| --- | --- |
+| 런처 우회 기동 | 미등록 모델은 `deploy_worker_settings` 로 정책을 먼저 배치하고 `cmd ... --trust --yolo` TUI 를 직접 띄운 뒤 `worker-start --terminal` 로 붙였다. 이제 cat-jam·beam 은 런처로 띄울 수 있다 |
+| Capsule 경로 | 워커 preamble 은 Intent 이름 경로(`task_<intent>`)를, rework 워커는 `task_<원 Task>_rework` 경로를 읽는다. 두 경로 모두에 사본을 둔다 |
+| 리뷰가 잡은 것 | A 의 근거 없는 원인 주장은 리뷰 체크리스트 `cause_unverified` 가 잡았다. B 의 시험 부족은 코디네이터가 diff 에서 잡았다 |
+| 병합 증거 | 전량 시험 증거와 Level 1 strict 증거는 파일이 하나라 다음 기록이 덮어쓴다. 브랜치마다 기록, 병합, 푸시, CI 확인을 끝낸 뒤 다음 브랜치로 넘어간다. `git merge -F -` 는 표준 입력을 받지 않는다 |
+| 감시기 | `orca_worker_watch.py` 의 `실패 정체` 는 중간 `Exit code: 1` 화면을 정체로 잡았다. 정체 판정은 git·보고 파일 변화로 한다 |
+| rework 보고서 | A·B rework 빌더가 `changed_files` 를 자기 커밋 기준으로 적고(누적 diff 와 불일치), A 는 검증 명령을 `... (x20)` 처럼 실행 불가 문자열로 적어 Level 1 게이트 6 이 실패했다. 코드 결함은 아니었다. 코디네이터가 20회 반복·전량 시험·누적 변경을 직접 재현한 뒤 코디네이터 Capsule(`coord_ocr-flaky-merge-20261018`, `coord_cmd-pools-merge-20261018`)로 strict 증거를 남겼다. 워커 보고서는 고치지 않았다. rework Intent 에 "changed_files 는 main 대비 누적, 검증 명령은 그대로 실행 가능한 문자열" 을 적어야 한다 |
+
+### 13.5 종료 상태
+
+| 항목 | 상태 |
+| --- | --- |
+| Run `run_8c1452a052ce` | 빌더 2 Task completed |
+| Run `run_67bd1fa37412` | 빌더 6 Task(A·A rework·B·B rework·C·E), 리뷰 5 Task 모두 completed |
+| 워커 터미널·워크트리 | 빌더·리뷰어 터미널과 워커 워크트리 전부 회수·제거. 비교 시험 브랜치 3개만 로컬에 남김 |
+| main CI | `2be40d4f`·`620b02fc`·`33a973a8` 녹색, `b3899e52` 와 이 문서 병합은 0절 1번 |
