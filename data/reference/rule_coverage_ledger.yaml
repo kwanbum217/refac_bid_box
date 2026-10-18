@@ -10,34 +10,39 @@ filter:
   min_announcements: 5
 totals:
   announcements: 31304
-  institutions: 3416
+  institutions: 3414
   applied_scope:
     INSTITUTION:
       announcements: 54
       ratio: 0.001725
     REGION:
-      announcements: 1813
-      ratio: 0.057916
+      announcements: 1998
+      ratio: 0.063826
     PPS_DEFAULT:
       announcements: 19133
       ratio: 0.6112
     BLOCKED:
-      announcements: 10304
-      ratio: 0.329159
+      announcements: 10119
+      ratio: 0.323249
     ERROR:
       announcements: 0
       ratio: 0.0
 tail:
-  institutions: 2304
-  announcements: 3949
+  institutions: 2313
+  announcements: 3964
   applied_scope:
-    PPS_DEFAULT: 2642
-    BLOCKED: 1307
+    PPS_DEFAULT: 2652
+    BLOCKED: 1312
 regions:
 - region_name: 서울특별시
   rule_ids:
   - SERVC_LOCAL_SEOUL_20240812_ATTACH_01
   announcements: 366
+- region_name: 전라남도
+  rule_ids:
+  - SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4
+  - SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4
+  announcements: 307
 - region_name: 경기도
   rule_ids:
   - SERVC_LOCAL_GG_20250808_ATTACH_1_3
@@ -49,11 +54,6 @@ regions:
   rule_ids:
   - SERVC_LOCAL_GN_20230105_ATTACH_01
   announcements: 238
-- region_name: 전라남도
-  rule_ids:
-  - SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4
-  - SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4
-  announcements: 150
 - region_name: 경상북도
   rule_ids:
   - SERVC_LOCAL_GB_20260108_ATTACH_03
@@ -99,12 +99,14 @@ regions:
 - region_name: 대전광역시
   rule_ids:
   - SERVC_LOCAL_DAEJEON_20260101_ATTACH_01
-  announcements: 22
+  - SERVC_LOCAL_DAEJEON_20240120_ATTACH_01
+  announcements: 31
 - region_name: 광주광역시
   rule_ids:
   - SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_5
   - SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3_METRO_350
-  announcements: 8
+  - SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3
+  announcements: 27
 - region_name: 세종특별자치시
   rule_ids:
   - SERVC_LOCAL_SEJONG_20251201_ATTACH_04
@@ -323,28 +325,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '6130769'
-  dminstt_nm: 전남광주통합특별시 무안청사
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 84
-    BLOCKED: 68
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
-  block_codes:
-    MANUAL_EVALUATION: 24
-    RULE_REGIME_MISMATCH: 23
-    LOCAL_RULE_NOT_FOUND: 13
-    NON_PRED_PRICE: 8
-  announcements: 152
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '1613187'
   dminstt_nm: 국토교통부 서울지방국토관리청 의정부국토관리사무소
   name_variants: []
@@ -417,6 +397,27 @@ institutions:
   block_codes:
     MANUAL_EVALUATION: 47
   announcements: 137
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '6130769'
+  dminstt_nm: 전남광주통합특별시 무안청사
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 84
+    BLOCKED: 45
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
+  block_codes:
+    MANUAL_EVALUATION: 24
+    LOCAL_RULE_NOT_FOUND: 13
+    NON_PRED_PRICE: 8
+  announcements: 129
   registry_status: unregistered
   manifest_sources: null
   investigation: null
@@ -1079,26 +1080,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '5790000'
-  dminstt_nm: 전남광주통합특별시 순천시
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 33
-    BLOCKED: 42
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 29
-    LOCAL_RULE_NOT_FOUND: 8
-    RULE_REGIME_MISMATCH: 5
-  announcements: 75
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '1613234'
   dminstt_nm: 국토교통부 대전지방국토관리청 충주국토관리사무소
   name_variants: []
@@ -1302,6 +1283,25 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
+- dminstt_cd: '5790000'
+  dminstt_nm: 전남광주통합특별시 순천시
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: BLOCKED
+  scope_counts:
+    PPS_DEFAULT: 33
+    BLOCKED: 37
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 29
+    LOCAL_RULE_NOT_FOUND: 8
+  announcements: 70
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
 - dminstt_cd: '4610000'
   dminstt_nm: 충청남도 예산군
   name_variants: []
@@ -1458,27 +1458,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '5800000'
-  dminstt_nm: 전남광주통합특별시 광양시
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 39
-    BLOCKED: 26
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
-  block_codes:
-    MANUAL_EVALUATION: 15
-    LOCAL_RULE_NOT_FOUND: 6
-    RULE_REGIME_MISMATCH: 5
-  announcements: 65
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '1613277'
   dminstt_nm: 국토교통부 익산지방국토관리청 전주국토관리사무소
   name_variants: []
@@ -1535,25 +1514,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '6300207'
-  dminstt_nm: 대전광역시 건설관리본부
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 44
-    BLOCKED: 20
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 19
-    RULE_REGIME_MISMATCH: 1
-  announcements: 64
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: Z007503
   dminstt_nm: 인천도시공사
   name_variants: []
@@ -1590,6 +1550,24 @@ institutions:
     LOCAL_RULE_NOT_FOUND: 18
     MANUAL_EVALUATION: 9
     NON_PRED_PRICE: 6
+  announcements: 63
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '6300207'
+  dminstt_nm: 대전광역시 건설관리본부
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 44
+    BLOCKED: 19
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 19
   announcements: 63
   registry_status: unregistered
   manifest_sources: null
@@ -1636,29 +1614,6 @@ institutions:
   manifest_sources:
   - source: inan
     files: 29
-  investigation: null
-- dminstt_cd: '6300000'
-  dminstt_nm: 대전광역시
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 48
-    BLOCKED: 14
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
-  block_codes:
-    MANUAL_EVALUATION: 7
-    RULE_REGIME_MISMATCH: 6
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
-  announcements: 62
-  registry_status: unregistered
-  manifest_sources:
-  - source: daejeon
-    files: 3
   investigation: null
 - dminstt_cd: '1613229'
   dminstt_nm: 국토교통부 대전지방국토관리청 논산국토관리사무소
@@ -1711,6 +1666,26 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 30
+  announcements: 60
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '5800000'
+  dminstt_nm: 전남광주통합특별시 광양시
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 39
+    BLOCKED: 21
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
+  block_codes:
+    MANUAL_EVALUATION: 15
+    LOCAL_RULE_NOT_FOUND: 6
   announcements: 60
   registry_status: unregistered
   manifest_sources: null
@@ -2009,25 +1984,27 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '6130768'
-  dminstt_nm: 전남광주통합특별시 광주청사
+- dminstt_cd: '6300000'
+  dminstt_nm: 대전광역시
   name_variants: []
   jurisdiction: 지방자치단체
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 30
-    BLOCKED: 26
+    PPS_DEFAULT: 48
+    BLOCKED: 8
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
   block_codes:
-    MANUAL_EVALUATION: 21
-    RULE_REGIME_MISMATCH: 4
-    LOCAL_RULE_NOT_FOUND: 1
+    MANUAL_EVALUATION: 7
+    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 56
   registry_status: unregistered
-  manifest_sources: null
+  manifest_sources:
+  - source: daejeon
+    files: 3
   investigation: null
 - dminstt_cd: '3520000'
   dminstt_nm: 인천광역시 연수구
@@ -2203,6 +2180,25 @@ institutions:
   manifest_sources:
   - source: ulsan
     files: 19
+  investigation: null
+- dminstt_cd: '6130768'
+  dminstt_nm: 전남광주통합특별시 광주청사
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 30
+    BLOCKED: 23
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 21
+    LOCAL_RULE_NOT_FOUND: 2
+  announcements: 53
+  registry_status: unregistered
+  manifest_sources: null
   investigation: null
 - dminstt_cd: '6510000'
   dminstt_nm: 제주특별자치도 제주시
@@ -2888,46 +2884,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '5850000'
-  dminstt_nm: 전남광주통합특별시 보성군
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 31
-    BLOCKED: 15
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 7
-    RULE_REGIME_MISMATCH: 7
-    LOCAL_RULE_NOT_FOUND: 1
-  announcements: 46
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '5900000'
-  dminstt_nm: 전남광주통합특별시 완도군
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 28
-    BLOCKED: 18
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 11
-    RULE_REGIME_MISMATCH: 6
-    LOCAL_RULE_NOT_FOUND: 1
-  announcements: 46
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '6270000'
   dminstt_nm: 대구광역시
   name_variants: []
@@ -3168,27 +3124,6 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 4
-  announcements: 44
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '5890000'
-  dminstt_nm: 전남광주통합특별시 영광군
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 21
-    BLOCKED: 23
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 10
-    RULE_REGIME_MISMATCH: 6
-    NON_PRED_PRICE: 6
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 44
   registry_status: unregistered
   manifest_sources: null
@@ -3654,25 +3589,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '5860000'
-  dminstt_nm: 전남광주통합특별시 장흥군
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 24
-    BLOCKED: 17
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    RULE_REGIME_MISMATCH: 11
-    MANUAL_EVALUATION: 6
-  announcements: 41
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '6260361'
   dminstt_nm: 부산광역시 건설본부
   name_variants: []
@@ -3787,6 +3703,25 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
+- dminstt_cd: '5900000'
+  dminstt_nm: 전남광주통합특별시 완도군
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 28
+    BLOCKED: 12
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 11
+    LOCAL_RULE_NOT_FOUND: 1
+  announcements: 40
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
 - dminstt_cd: D150509
   dminstt_nm: 한국농어촌공사 경남지역본부
   name_variants: []
@@ -3838,6 +3773,25 @@ institutions:
   - SERVC_LOCAL_MOIS_ACADEMIC_20250701_OVER_2E
   block_codes:
     MANUAL_EVALUATION: 9
+  announcements: 39
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '5850000'
+  dminstt_nm: 전남광주통합특별시 보성군
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 31
+    BLOCKED: 8
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 7
+    LOCAL_RULE_NOT_FOUND: 1
   announcements: 39
   registry_status: unregistered
   manifest_sources: null
@@ -3910,6 +3864,26 @@ institutions:
     MANUAL_EVALUATION: 17
     RULE_REGIME_MISMATCH: 6
     LOCAL_RULE_NOT_FOUND: 6
+  announcements: 38
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '5890000'
+  dminstt_nm: 전남광주통합특별시 영광군
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 21
+    BLOCKED: 17
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 10
+    NON_PRED_PRICE: 6
+    LOCAL_RULE_NOT_FOUND: 1
   announcements: 38
   registry_status: unregistered
   manifest_sources: null
@@ -4188,28 +4162,6 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 19
-  announcements: 35
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '5855000'
-  dminstt_nm: 전남광주통합특별시 화순군
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 14
-    BLOCKED: 21
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
-  block_codes:
-    NON_PRED_PRICE: 10
-    RULE_REGIME_MISMATCH: 8
-    MANUAL_EVALUATION: 2
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 35
   registry_status: unregistered
   manifest_sources: null
@@ -5192,6 +5144,24 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
+- dminstt_cd: '5860000'
+  dminstt_nm: 전남광주통합특별시 장흥군
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 24
+    BLOCKED: 6
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 6
+  announcements: 30
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
 - dminstt_cd: B350021
   dminstt_nm: 한국과학기술원
   name_variants: []
@@ -5927,6 +5897,27 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 11
+  announcements: 27
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '5855000'
+  dminstt_nm: 전남광주통합특별시 화순군
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 14
+    BLOCKED: 13
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
+  block_codes:
+    NON_PRED_PRICE: 10
+    MANUAL_EVALUATION: 2
+    LOCAL_RULE_NOT_FOUND: 1
   announcements: 27
   registry_status: unregistered
   manifest_sources: null
@@ -7562,26 +7553,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '5820000'
-  dminstt_nm: 전남광주통합특별시 북구
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 11
-    BLOCKED: 8
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 5
-    RULE_REGIME_MISMATCH: 2
-    LOCAL_RULE_NOT_FOUND: 1
-  announcements: 19
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '5875000'
   dminstt_nm: 전남광주통합특별시 영암군
   name_variants: []
@@ -8152,6 +8123,25 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 1
+  announcements: 17
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '5820000'
+  dminstt_nm: 전남광주통합특별시 북구
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 11
+    BLOCKED: 6
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 5
+    LOCAL_RULE_NOT_FOUND: 1
   announcements: 17
   registry_status: unregistered
   manifest_sources: null
@@ -8961,26 +8951,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '5825000'
-  dminstt_nm: 전남광주통합특별시 광산구
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 11
-    BLOCKED: 4
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  block_codes:
-    MANUAL_EVALUATION: 2
-    RULE_REGIME_MISMATCH: 1
-    NON_PRED_PRICE: 1
-  announcements: 15
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '6112819'
   dminstt_nm: 서울특별시 도로사업소 서부도로사업소
   name_variants: []
@@ -9047,37 +9017,6 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_QUAL_PRE_20250901_ATTACH_01
   block_codes: {}
-  announcements: 15
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8512000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시여수교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    BLOCKED: 15
-  rule_ids: []
-  block_codes:
-    RULE_REGIME_MISMATCH: 15
-  announcements: 15
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8662000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시무안교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    BLOCKED: 15
-  rule_ids: []
-  block_codes:
-    RULE_REGIME_MISMATCH: 12
-    LOCAL_RULE_NOT_FOUND: 3
   announcements: 15
   registry_status: unregistered
   manifest_sources: null
@@ -9340,6 +9279,25 @@ institutions:
   - SERVC_LOCAL_MOIS_ACADEMIC_20250701_OVER_2E
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes: {}
+  announcements: 14
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '5825000'
+  dminstt_nm: 전남광주통합특별시 광산구
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 11
+    BLOCKED: 3
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  block_codes:
+    MANUAL_EVALUATION: 2
+    NON_PRED_PRICE: 1
   announcements: 14
   registry_status: unregistered
   manifest_sources: null
@@ -9981,23 +9939,6 @@ institutions:
   - SERVC_QUAL_PRE_20250901_ATTACH_02
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   block_codes: {}
-  announcements: 13
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '7402000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시광주서부교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 3
-    BLOCKED: 10
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  block_codes:
-    RULE_REGIME_MISMATCH: 10
   announcements: 13
   registry_status: unregistered
   manifest_sources: null
@@ -11112,24 +11053,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: Z004979
-  dminstt_nm: 대전광역시 시설관리공단
-  name_variants: []
-  jurisdiction: 지방공기업
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 1
-    BLOCKED: 11
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  block_codes:
-    MANUAL_EVALUATION: 10
-    RULE_REGIME_MISMATCH: 1
-  announcements: 12
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: Z006809
   dminstt_nm: 주식회사킨텍스
   name_variants: []
@@ -11789,6 +11712,23 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
+- dminstt_cd: Z004979
+  dminstt_nm: 대전광역시 시설관리공단
+  name_variants: []
+  jurisdiction: 지방공기업
+  contract_regime: LOCAL
+  applied_scope: BLOCKED
+  scope_counts:
+    PPS_DEFAULT: 1
+    BLOCKED: 10
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  block_codes:
+    MANUAL_EVALUATION: 10
+  announcements: 11
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
 - dminstt_cd: Z009510
   dminstt_nm: 서울특별시영등포구시설관리공단
   name_variants: []
@@ -12324,42 +12264,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '8652000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시영암교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 1
-    BLOCKED: 9
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    RULE_REGIME_MISMATCH: 6
-    LOCAL_RULE_NOT_FOUND: 3
-  announcements: 10
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8692000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시장성교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 2
-    BLOCKED: 8
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  block_codes:
-    LOCAL_RULE_NOT_FOUND: 4
-    RULE_REGIME_MISMATCH: 4
-  announcements: 10
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: B551913
   dminstt_nm: 한국원자력의학원
   name_variants: []
@@ -12849,7 +12753,7 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
-    RULE_REGIME_MISMATCH: 1
+    LOCAL_RULE_NOT_FOUND: 1
   announcements: 9
   registry_status: unregistered
   manifest_sources: null
@@ -13176,55 +13080,6 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_QUAL_PRE_20250901_ATTACH_08
   block_codes: {}
-  announcements: 9
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8642000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시해남교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    BLOCKED: 9
-  rule_ids: []
-  block_codes:
-    RULE_REGIME_MISMATCH: 8
-    LOCAL_RULE_NOT_FOUND: 1
-  announcements: 9
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8702000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시완도교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 1
-    BLOCKED: 8
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  block_codes:
-    RULE_REGIME_MISMATCH: 8
-  announcements: 9
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8722000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시신안교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    BLOCKED: 9
-  rule_ids: []
-  block_codes:
-    RULE_REGIME_MISMATCH: 7
-    LOCAL_RULE_NOT_FOUND: 2
   announcements: 9
   registry_status: unregistered
   manifest_sources: null
@@ -13560,23 +13415,6 @@ institutions:
   rule_ids: []
   block_codes:
     MANUAL_EVALUATION: 9
-  announcements: 9
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: Z009240
-  dminstt_nm: 광양만권경제자유구역청
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 7
-    BLOCKED: 2
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  block_codes:
-    RULE_REGIME_MISMATCH: 2
   announcements: 9
   registry_status: unregistered
   manifest_sources: null
@@ -14231,41 +14069,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '8522000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시순천교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 3
-    BLOCKED: 5
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    RULE_REGIME_MISMATCH: 5
-  announcements: 8
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8612000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시화순교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 1
-    BLOCKED: 7
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    RULE_REGIME_MISMATCH: 4
-    LOCAL_RULE_NOT_FOUND: 3
-  announcements: 8
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '8781000'
   dminstt_nm: 경상북도교육청 경상북도김천교육지원청
   name_variants: []
@@ -14361,24 +14164,6 @@ institutions:
   - SERVC_QUAL_PRE_20250901_ATTACH_01
   - SERVC_QUAL_MOE_CDW_ATTACH_04
   block_codes: {}
-  announcements: 8
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: B553860
-  dminstt_nm: 여수시도시관리공단
-  name_variants: []
-  jurisdiction: 지방공기업
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 1
-    BLOCKED: 7
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  block_codes:
-    MANUAL_EVALUATION: 6
-    RULE_REGIME_MISMATCH: 1
   announcements: 8
   registry_status: unregistered
   manifest_sources: null
@@ -14966,24 +14751,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '4830113'
-  dminstt_nm: 전라남도 나주시 하수도사업소
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 6
-    BLOCKED: 1
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    RULE_REGIME_MISMATCH: 1
-  announcements: 7
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '5670140'
   dminstt_nm: 경상남도 창원시 성산구
   name_variants: []
@@ -15232,8 +14999,8 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '8682000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시영광교육지원청
+- dminstt_cd: '8652000'
+  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시영암교육지원청
   name_variants: []
   jurisdiction: 교육기관
   contract_regime: LOCAL
@@ -15244,8 +15011,7 @@ institutions:
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
-    LOCAL_RULE_NOT_FOUND: 3
-    RULE_REGIME_MISMATCH: 3
+    LOCAL_RULE_NOT_FOUND: 6
   announcements: 7
   registry_status: unregistered
   manifest_sources: null
@@ -15435,6 +15201,23 @@ institutions:
   - SERVC_QUAL_PRE_20250901_ATTACH_01
   - SERVC_QUAL_POST_20260526_ATTACH_02
   block_codes: {}
+  announcements: 7
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: B553860
+  dminstt_nm: 여수시도시관리공단
+  name_variants: []
+  jurisdiction: 지방공기업
+  contract_regime: LOCAL
+  applied_scope: BLOCKED
+  scope_counts:
+    PPS_DEFAULT: 1
+    BLOCKED: 6
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  block_codes:
+    MANUAL_EVALUATION: 6
   announcements: 7
   registry_status: unregistered
   manifest_sources: null
@@ -15685,6 +15468,21 @@ institutions:
   rule_ids: []
   block_codes:
     MANUAL_EVALUATION: 7
+  announcements: 7
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: Z009240
+  dminstt_nm: 광양만권경제자유구역청
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 7
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  block_codes: {}
   announcements: 7
   registry_status: unregistered
   manifest_sources: null
@@ -16142,6 +15940,22 @@ institutions:
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_QUAL_MOE_CDW_ATTACH_02
+  block_codes: {}
+  announcements: 6
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '4830113'
+  dminstt_nm: 전라남도 나주시 하수도사업소
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 6
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes: {}
   announcements: 6
   registry_status: unregistered
@@ -16647,18 +16461,19 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '8502000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시목포교육지원청
+- dminstt_cd: '8692000'
+  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시장성교육지원청
   name_variants: []
   jurisdiction: 교육기관
   contract_regime: LOCAL
   applied_scope: BLOCKED
   scope_counts:
-    BLOCKED: 6
-  rule_ids: []
+    PPS_DEFAULT: 2
+    BLOCKED: 4
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   block_codes:
     LOCAL_RULE_NOT_FOUND: 4
-    RULE_REGIME_MISMATCH: 2
   announcements: 6
   registry_status: unregistered
   manifest_sources: null
@@ -18382,23 +18197,6 @@ institutions:
   rule_ids:
   - SERVC_QUAL_PRE_20250901_ATTACH_03
   block_codes: {}
-  announcements: 5
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
-- dminstt_cd: '8622000'
-  dminstt_nm: 전남광주통합특별시교육청 전남광주통합특별시장흥교육지원청
-  name_variants: []
-  jurisdiction: 교육기관
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 1
-    BLOCKED: 4
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  block_codes:
-    RULE_REGIME_MISMATCH: 4
   announcements: 5
   registry_status: unregistered
   manifest_sources: null
