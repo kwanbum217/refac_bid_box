@@ -1,8 +1,8 @@
 # 낙찰방법명이 '적격심사제-추정가격 2억미만 1억이상'인 용역 공고의 적용 기준 판별 근거
 
 > **작성일**: 2026-10-18
-> **작업**: Orca Task `task_ca83b7d12016` (investigator), Run `run_2205c09c7738`, Dispatch `ctx_9c3485e76085`
-> **정본 사양**: `.orca/capsules/task_band_2to1_basis_20261018/capsule.yaml` (`ORCA_TASK_CAPSULE_V2`)
+> **작업**: Orca Task `task_c9c2ee9430f5` (investigator), Run `run_2205c09c7738`, Dispatch `ctx_3575c1d18556`
+> **정본 사양**: `.orca/capsules/task_ca83b7d12016_rework/capsule.yaml` (`ORCA_TASK_CAPSULE_V2`)
 > **조회 조건**: `announcements.json` 모집단(118행, 고유 공고번호 99, 2025-10-18 이후 Servc, `sucsfbidMthdNm` = `적격심사제-추정가격 2억미만 1억이상`)
 > **증거**: 공고 첨부·표준 공고문 원문(`ntceSpecDocUrl`/`stdNtceDocUrl`). 내려받은 파일은 `.cache/band_2to1/raw/` 에만 두었고 커밋하지 않았습니다.
 > **판정**: `candidate`. 결론 라벨은 `첨부 원문으로만 판별 가능`입니다.
@@ -55,15 +55,18 @@
 
 ### 4.1 수요기관 유형별
 
-| 갈래 | 지자체 | 교육청 | 의료원 | 공사/공단 | 기타/공공 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 행안부 예규 제2장의2 별표 4 | 44 | 0 | 4 | 1 | 7 |
-| 미확인 | 28 | 0 | 7 | 0 | 4 |
-| 그 밖 | 4 | 0 | 0 | 0 | 0 |
-| 조달청 일반용역 학술연구 | 0 | 1 | 0 | 0 | 1 |
-| 행안부 예규 제4장 물품 | 0 | 0 | 1 | 0 | 0 |
+분류 규칙(한 줄): 의료원·공사·공단은 `지방공기업·의료원`, 주식회사·추진단·사업소·농업기술센터·교육청은 `기타공공`, 그 외 시·군·구·도·특별자치·광역시 발주는 `지자체`로 둔다.
 
-지자체 발주 76건(99건 중) 가운데 44건은 행안부 예규 제2장의2, 28건은 미확인입니다. 같은 유형에서 갈래가 갈리므로 유형만으로는 판별할 수 없습니다.
+| 갈래 | 지자체 | 지방공기업·의료원 | 기타공공 |
+| --- | ---: | ---: | ---: |
+| 행안부 예규 제2장의2 별표 4 | 49 | 5 | 2 |
+| 미확인 | 25 | 7 | 4 |
+| 그 밖 | 4 | 0 | 0 |
+| 조달청 일반용역 학술연구 | 0 | 0 | 2 |
+| 행안부 예규 제4장 물품 | 0 | 1 | 0 |
+| 합계 | 78 | 13 | 8 |
+
+각 행 합이 갈래 건수(56·36·4·2·1)와 같고 전체 합은 99입니다. 지자체 78건 가운데 49건은 행안부 예규 제2장의2, 25건은 미확인입니다. 같은 유형에서 갈래가 갈리므로 유형만으로는 판별할 수 없습니다.
 
 ### 4.2 업무분류(`pubPrcrmntClsfcNm`)별
 
@@ -101,6 +104,40 @@
 - 수요기관 유형·업무분류·분류명만으로는 갈래를 가를 수 없습니다. 행안부 예규 제2장의2 갈래와 미확인이 모두 지자체·`기타연구조사서비스`에 집중되기 때문입니다.
 - 따라서 이 띠 표기 공고는 **첨부·표준 공고문 원문의 지정 문구를 읽어야만** 적용 기준을 판별할 수 있습니다. 기계적 판별은 공고문 텍스트 추출과 지정 문구 매칭 단계를 거쳐야 하며, 첨부가 없거나 텍스트 추출에 실패한 25건(12+13)은 판별 불가로 남깁니다.
 - `sucsfbidMthdAppStd` 는 거의 모두 `학술연구용역 적격심사 세부기준`으로 같아 판별 키로 쓸 수 없습니다.
+
+---
+
+## 부록. 4.1 교차표 재계산 스크립트
+
+아래를 한 번에 실행하면 `announcements.json`(공고번호별 최대 차수 행)과 `result.csv`에서 교차표를 재계산합니다.
+
+```sh
+python3 - <<'PY'
+import csv, json
+from collections import Counter, defaultdict
+d=json.load(open('.cache/band_2to1/announcements.json'))
+best={}
+for r in d:
+    no=r['bid_ntce_no']
+    if no not in best or r['bid_ntce_ord']>best[no]['bid_ntce_ord']:
+        best[no]=r
+buckets={}
+with open('.cache/band_2to1/result.csv') as f:
+    for row in csv.DictReader(f):
+        buckets[row['bid_ntce_no']]=row['bucket']
+def agency_type(name):
+    if '의료원' in name: return '지방공기업·의료원'
+    if any(k in name for k in ['공사','공단','진흥원','테크노파크']): return '지방공기업·의료원'
+    if any(k in name for k in ['주식회사','(주)','추진단','사업소','농업기술센터','교육청']): return '기타공공'
+    return '지자체'
+ct=defaultdict(Counter)
+for no,r in best.items():
+    ct[buckets[no]][agency_type(r['dminstt_nm'])]+=1
+for b in ['행안부 예규 제2장의2 [별표 4]','미확인','그 밖','조달청 일반용역 학술연구','행안부 예규 제4장 물품']:
+    row=ct[b]
+    print(b, row['지자체'], row['지방공기업·의료원'], row['기타공공'], 'sum', sum(row.values()))
+PY
+```
 
 ---
 
