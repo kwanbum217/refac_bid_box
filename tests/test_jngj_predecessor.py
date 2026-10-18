@@ -144,16 +144,22 @@ def test_announcement_without_date_keeps_current_rule() -> None:
 
 def test_predecessor_rules_declare_supersede_window() -> None:
     """전라남도·광주광역시 구판 규칙이 폐지 시행일을 선언한다."""
+    JEONNAM_FACILITY_ID = "SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4"
     jeonnam_predecessors = {
         rule.rule_id: rule
         for rule in LOCAL_RULES
         if rule.rule_id
         in {
+            JEONNAM_FACILITY_ID,
             PREDECESSOR_WASTE_ID,
             PREDECESSOR_LAND_TRANSPORT_ID,
         }
     }
-    assert set(jeonnam_predecessors) == {PREDECESSOR_WASTE_ID, PREDECESSOR_LAND_TRANSPORT_ID}
+    assert set(jeonnam_predecessors) == {
+        JEONNAM_FACILITY_ID,
+        PREDECESSOR_WASTE_ID,
+        PREDECESSOR_LAND_TRANSPORT_ID,
+    }
     for rule in jeonnam_predecessors.values():
         assert rule.region_code == "46"
         assert rule.region_name == "전라남도"
@@ -203,6 +209,7 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         assert daejeon_rules[rule_id].superseded_date == superseded_on
     superseded = {rule.rule_id for rule in LOCAL_RULES if rule.superseded_date is not None}
     assert superseded == {
+        "SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4",
         PREDECESSOR_WASTE_ID,
         PREDECESSOR_LAND_TRANSPORT_ID,
         GWANGJU_PREDECESSOR_WASTE_ID,
