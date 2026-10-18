@@ -34,6 +34,7 @@ from scripts.orca_taskctl import (
     _to_glob,
     check_write_concurrency,
     classify_file_edit_auto_approve_support,
+    create_rework_capsule,
     create_worktree,
     detect_antigravity_mode,
     dispatch_worker,
@@ -5026,6 +5027,107 @@ def test_detect_antigravity_mode_unknown_and_spinner():
 
     plan_screen = "gemini-3.7-flash-medium · plan mode · 12k tokens"
     assert detect_antigravity_mode(plan_screen) == "plan"
+
+
+def test_create_rework_capsule_includes_report_rules_fact(tmp_path: Path):
+    original = (
+        "schema: ORCA_TASK_CAPSULE_V2\n"
+        'task_id: "task_orig"\n'
+        "why_now: >\n"
+        "  최초 작업\n"
+        "ground_truth:\n"
+        '  - fact: "사실1"\n'
+        '    evidence: "ev"\n'
+        "    recheck: false\n"
+        "required_change:\n"
+        '  - "변경1"\n'
+        'report_path: ".orca/capsules/task_orig/worker_done.json"\n'
+        "allowed_read_files:\n"
+        '  - ".orca/capsules/task_orig/capsule.yaml"\n'
+    )
+    original_path = tmp_path / "orig_capsule.yaml"
+    original_path.write_text(original, encoding="utf-8")
+    new_path = tmp_path / "new_capsule.yaml"
+
+    new_text = create_rework_capsule(
+        original_capsule_text=original,
+        new_task_id="task_rework",
+        new_capsule_path=new_path,
+        rejection_reason="테스트 실패",
+        previous_report={"commit": "abc1234"},
+    )
+    new_path.write_text(new_text, encoding="utf-8")
+
+    import yaml
+
+    data = yaml.safe_load(new_text)
+    assert isinstance(data, dict)
+    facts = [item.get("fact", "") for item in data.get("ground_truth", [])]
+    assert any("worker_done.json" in f and "changed_files" in f for f in facts)
+    assert any("main...HEAD" in f for f in facts)
+    assert any("실행 가능" in f for f in facts)
+    # evidence check
+    rule_items = [
+        item for item in data.get("ground_truth", []) if "changed_files" in item.get("fact", "")
+    ]
+    assert rule_items
+    assert rule_items[0].get("evidence") == "2026-10-18 Level 1 게이트 6 실패 사례"
+
+
+def test_create_rework_capsule_report_rules_without_previous_report(tmp_path: Path):
+    original = (
+        "schema: ORCA_TASK_CAPSULE_V2\n"
+        'task_id: "task_orig2"\n'
+        "why_now: >\n"
+        "  최초 작업\n"
+        "ground_truth:\n"
+        '  - fact: "사실1"\n'
+        '    evidence: "ev"\n'
+        "    recheck: false\n"
+        "required_change:\n"
+        '  - "변경1"\n'
+        'report_path: ".orca/capsules/task_orig2/worker_done.json"\n'
+    )
+    new_path = tmp_path / "new_capsule2.yaml"
+
+    new_text = create_rework_capsule(
+        original_capsule_text=original,
+        new_task_id="task_rework2",
+        new_capsule_path=new_path,
+        rejection_reason="린트 오류",
+        previous_report=None,
+    )
+    new_path.write_text(new_text, encoding="utf-8")
+
+    import yaml
+
+    data = yaml.safe_load(new_text)
+    assert isinstance(data, dict)
+    facts = [item.get("fact", "") for item in data.get("ground_truth", [])]
+    assert any("changed_files" in f and "main...HEAD" in f for f in facts)
+
+
+def test_create_rework_capsule_yaml_parses(tmp_path: Path):
+    original = (
+        "schema: ORCA_TASK_CAPSULE_V2\n"
+        'task_id: "task_orig3"\n'
+        "why_now: >\n"
+        "  최초 작업\n"
+        "ground_truth:\n"
+        '  - fact: "사실1"\n'
+        '    evidence: "ev"\n'
+        "    recheck: false\n"
+    )
+    new_text = create_rework_capsule(
+        original_capsule_text=original,
+        new_task_id="task_rework3",
+        new_capsule_path=tmp_path / "c.yaml",
+        rejection_reason="사유",
+    )
+    import yaml
+
+    data = yaml.safe_load(new_text)
+    assert data is not None
 
 
 def test_enable_file_edit_auto_approve_unknown_skips_keys(monkeypatch: pytest.MonkeyPatch):
