@@ -2029,6 +2029,21 @@ _SRC_CHUNGNAM_ATTACH_04 = (
     "고시금액 미만 k=4·84.245%, 고시금액 이상 k=2·80.495%, 배점 5억원 미만 70·이상 60); "
     f"{_SRC_CHUNGNAM_HWPX_REVIEW}:53,64,71 (원문 격자 재검증 일치)"
 )
+_SRC_CHUNGNAM_20200201 = (
+    "신·구 대비표 HWPX .cache/chungnam_2019/singu.hwpx (충청남도 일반용역 적격심사 세부기준, "
+    "공고 제2019-2047호, 행정안전부 협의 2019. 12. 20., sha256 "
+    "11c48edac4f7e4233ab5cc0939d59992691d62ba4ec3c86ead1447e70cae368e, 325333 bytes); "
+    "비교표 최상위 셀 colAddr=0 이 구판(공고 2019-2047호) 열, colAddr=1 이 개정(2026-1235호) 열. "
+    "부칙(colAddr=0): '행정안전부장관 협의 완료 후 2020년 2월 1일 입찰공고부터 적용한다.' "
+    "별표 1 시설(colAddr=0; [별표 1] offset 8478; B '60 70' offset 8501): 추정가격 5억원 미만/이상, "
+    "B 70/60, k 5, 기준비율 91%, 통과점수 85, 평탄 상한 94%, 낙찰하한율 원문 미인쇄, 계산값 87.995%. "
+    "별표 3 폐기물(colAddr=0; [별표 3] offset 16027; B '60 70' offset 16051; "
+    "hp:equation offset 16293·16512): B 5억원 미만/이상 70/60, k 고시금액 미만 4/이상 2, "
+    "기준비율 88%, 통과점수 85, 평탄 상한 91.75%/95.5%, 낙찰하한율 원문 미인쇄, 계산값 84.245%/80.495%. "
+    "별표 4 육상운송(colAddr=0; [별표 4] offset 19296; B '60 70' offset 19319; "
+    "hp:equation offset 19919·19763): 별표 3 과 같은 값. "
+    "낙찰하한율은 원문 미인쇄, 계산값: 통과점수와 평점산식으로 역산."
+)
 _SRC_JEONBUK = (
     f"{_SRC_RECOVER}:204-230 (전북특별자치도 일반용역 적격심사 세부기준, 부칙 제2024-10호, "
     "시행 2024-01-18, 별표 1); EXT/jeonbuk/jb_general_2024_10.tbl.txt:"
@@ -3606,6 +3621,59 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         price_bands=_four_band_price(_SRC_DAEJEON, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_DAEJEON),
         lwlt_rate="87.745",
+    ),
+    # 충청남도 구판 (공고 제2019-2047호, 시행 2020-02-01) — 현행 규칙 시행일 이전 공고 전용.
+    _local_rule(
+        "SERVC_LOCAL_CHUNGNAM_20200201_ATTACH_01",
+        sido_code="44",
+        sido_name="충청남도",
+        service_type="FACILITY",
+        effective_date="2020-02-01",
+        superseded_date="2026-07-13",
+        source=_SRC_CHUNGNAM_20200201,
+        description="충청남도 시설분야용역 적격심사 (별표 1, 구판)",
+        price_bands=(
+            _local_price_band(
+                "500000000",
+                "70",
+                "5",
+                "추정가격 5억원 미만",
+                _SRC_CHUNGNAM_20200201,
+                base_rate="0.91",
+            ),
+            _local_price_band(
+                None, "60", "5", "추정가격 5억원 이상", _SRC_CHUNGNAM_20200201, base_rate="0.91"
+            ),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_CHUNGNAM_20200201),
+        base_rate="0.91",
+        lwlt_rate="87.995",
+    ),
+    _local_rule(
+        "SERVC_LOCAL_CHUNGNAM_20200201_ATTACH_03",
+        sido_code="44",
+        sido_name="충청남도",
+        service_type="WASTE",
+        effective_date="2020-02-01",
+        superseded_date="2026-07-13",
+        source=_SRC_CHUNGNAM_20200201,
+        description="충청남도 폐기물처리용역 적격심사 (별표 3, 구판)",
+        lwlt_rate="84.245",
+        price_bands=_chungnam_notice_band_price(_SRC_CHUNGNAM_20200201),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_CHUNGNAM_20200201),
+    ),
+    _local_rule(
+        "SERVC_LOCAL_CHUNGNAM_20200201_ATTACH_04",
+        sido_code="44",
+        sido_name="충청남도",
+        service_type="LAND_TRANSPORT",
+        effective_date="2020-02-01",
+        superseded_date="2026-07-13",
+        source=_SRC_CHUNGNAM_20200201,
+        description="충청남도 육상운송용역 적격심사 (별표 4, 구판)",
+        lwlt_rate="84.245",
+        price_bands=_chungnam_notice_band_price(_SRC_CHUNGNAM_20200201),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_CHUNGNAM_20200201),
     ),
     # 충청남도 (공고 2026-1235호, 시행 2026-07-13) — 별표 1·2·2의1·3·4·5 를 등록합니다.
     # 별표 2·3·4 는 배점 B 가 추정가격 5억원 축(미만 70·이상 60)이고 계수 k·기준비율·낙찰하한율이

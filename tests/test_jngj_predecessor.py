@@ -218,6 +218,20 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         assert gb_rules[rule_id].region_code == "47"
         assert gb_rules[rule_id].effective_date == effective
         assert gb_rules[rule_id].superseded_date == superseded_on
+    # 2026-10-19 충청남도 구판(공고 제2019-2047호)은 현행(공고 제2026-1235호) 시행일에서 끝난다.
+    chungnam_windows = {
+        "SERVC_LOCAL_CHUNGNAM_20200201_ATTACH_01": ("2020-02-01", "2026-07-13"),
+        "SERVC_LOCAL_CHUNGNAM_20200201_ATTACH_03": ("2020-02-01", "2026-07-13"),
+        "SERVC_LOCAL_CHUNGNAM_20200201_ATTACH_04": ("2020-02-01", "2026-07-13"),
+    }
+    chungnam_rules = {
+        rule.rule_id: rule for rule in LOCAL_RULES if rule.rule_id in chungnam_windows
+    }
+    assert set(chungnam_rules) == set(chungnam_windows)
+    for rule_id, (effective, superseded_on) in chungnam_windows.items():
+        assert chungnam_rules[rule_id].region_code == "44"
+        assert chungnam_rules[rule_id].effective_date == effective
+        assert chungnam_rules[rule_id].superseded_date == superseded_on
     superseded = {rule.rule_id for rule in LOCAL_RULES if rule.superseded_date is not None}
     assert superseded == {
         "SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4",
@@ -228,6 +242,7 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         *metro_windows,
         *daejeon_windows,
         *gb_windows,
+        *chungnam_windows,
     }
 
 
