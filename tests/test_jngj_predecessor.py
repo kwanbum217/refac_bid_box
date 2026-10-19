@@ -207,6 +207,17 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         assert daejeon_rules[rule_id].region_code == "30"
         assert daejeon_rules[rule_id].effective_date == effective
         assert daejeon_rules[rule_id].superseded_date == superseded_on
+    # 2026-10-19 경상북도 구판(예규 제1568호)은 현행(예규 제1571호) 시행일에서 끝난다.
+    gb_windows = {
+        "SERVC_LOCAL_GB_20241212_ATTACH_01": ("2024-12-12", "2026-01-08"),
+        "SERVC_LOCAL_GB_20241212_ATTACH_05": ("2024-12-12", "2026-01-08"),
+    }
+    gb_rules = {rule.rule_id: rule for rule in LOCAL_RULES if rule.rule_id in gb_windows}
+    assert set(gb_rules) == set(gb_windows)
+    for rule_id, (effective, superseded_on) in gb_windows.items():
+        assert gb_rules[rule_id].region_code == "47"
+        assert gb_rules[rule_id].effective_date == effective
+        assert gb_rules[rule_id].superseded_date == superseded_on
     superseded = {rule.rule_id for rule in LOCAL_RULES if rule.superseded_date is not None}
     assert superseded == {
         "SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4",
@@ -216,6 +227,7 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID,
         *metro_windows,
         *daejeon_windows,
+        *gb_windows,
     }
 
 

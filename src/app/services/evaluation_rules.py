@@ -1897,6 +1897,14 @@ _SRC_GB = (
     f"{_LOCAL_COLLECTION}:249-273 (경상북도 일반용역 등 적격심사 세부기준, "
     "경상북도 예규 제1571호, 시행 2026-01-08, 별표 1~4)"
 )
+_SRC_GB_20241212 = (
+    "자치법규정보시스템 https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=47000006006048&histNo=002 "
+    "(경상북도 예규 제1568호, 시행 2024-12-12, 별표 1·5); "
+    ".cache/gb_1568/att001 (별표 1-7 HWP) sha256 0f60839f893e3ea8a9b23db825274f2bcdd4c85c5dff22ad5c6aaf53ade55180; "
+    "별표 5 폐기물처리(수집·운반, 처리)용역, 별표 1 일반용역 적격심사 세부기준. "
+    "낙찰하한율은 원문 미인쇄, 계산값: base_rate 88%·통과점수(10억 미만 95, 10~30억 90, 30억 이상 85)·"
+    "평점산식으로 역산 (87.745/86.745/85.495/77.995/72.995)."
+)
 _SRC_ULSAN = (
     f"{_LOCAL_COLLECTION}:275-306 (울산광역시 일반용역 적격심사 세부기준, "
     "울산광역시 공고 제2022-1100호, 시행 2022-08-10, 별표 1·1-1·2); "
@@ -2592,6 +2600,39 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         ),
         threshold_bands=_single_threshold("88", "전 구간 88", _SRC_SEJONG_LT_TARGET),
         lwlt_rate="84.995",
+    ),
+    # 경상북도 구판 (예규 제1568호, 시행 2024-12-12) — 현행 규칙 시행일 이전 공고 전용.
+    _local_rule(
+        "SERVC_LOCAL_GB_20241212_ATTACH_01",
+        sido_code="47",
+        sido_name="경상북도",
+        service_type="GENERAL",
+        effective_date="2024-12-12",
+        superseded_date="2026-01-08",
+        source=_SRC_GB_20241212,
+        description="경상북도 기타 일반용역 적격심사 (별표 1, 구판)",
+        price_bands=_five_band_price(
+            _SRC_GB_20241212,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_GB_20241212),
+        lwlt_rate="87.745",
+    ),
+    _local_rule(
+        "SERVC_LOCAL_GB_20241212_ATTACH_05",
+        sido_code="47",
+        sido_name="경상북도",
+        service_type="WASTE",
+        effective_date="2024-12-12",
+        superseded_date="2026-01-08",
+        source=_SRC_GB_20241212,
+        description="경상북도 폐기물처리용역 적격심사 (별표 5, 구판)",
+        price_bands=_five_band_price(
+            _SRC_GB_20241212,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_GB_20241212),
+        lwlt_rate="87.745",
     ),
     # 경상북도 (예규 제1571호, 시행 2026-01-08)
     _local_rule(
