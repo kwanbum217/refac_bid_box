@@ -162,7 +162,7 @@ def test_confirmed_institution_band_values_match_yaml() -> None:
     code_total = 0
     for institution in confirmed:
         name = institution["institution_name"]
-        rules = _rules_for(name)
+        rules = [r for r in _rules_for(name) if r.superseded_date is None]
         assert rules, name
 
         expected: list[tuple] = []
@@ -187,7 +187,7 @@ def test_institution_band_labels_and_sources_trace_yaml() -> None:
     for institution in _confirmed_institutions():
         name = institution["institution_name"]
         yaml_bands = {band["band"]: band for band in institution["bands"]}
-        for rule in _rules_for(name):
+        for rule in [r for r in _rules_for(name) if r.superseded_date is None]:
             for band in rule.price_bands or ():
                 if band.label.startswith(MERGED_LABEL_PREFIX):
                     assert band.label in (
@@ -234,7 +234,7 @@ def test_institution_effective_dates_codes_and_aliases_match_yaml() -> None:
     """규칙 시행일·수요기관 코드·name_aliases 가 명세와 결정값에 맞는다."""
     for institution in _confirmed_institutions():
         name = institution["institution_name"]
-        rules = _rules_for(name)
+        rules = [r for r in _rules_for(name) if r.superseded_date is None]
         assert rules
         aliases = set(institution.get("name_aliases") or ())
         assert name in aliases
@@ -494,7 +494,7 @@ def test_kac_waste_token_does_not_cover_construction_waste() -> None:
 
 def test_kac_registers_general_service_tables_and_software_sme_rule() -> None:
     """한국공항공사는 통과점수 85점 별표와 대상 표기로 확정된 별표 3의 2 를 등록한다."""
-    rules = _rules_for("한국공항공사")
+    rules = [r for r in _rules_for("한국공항공사") if r.superseded_date is None]
     assert {rule.service_type for rule in rules} == {
         "ACADEMIC",
         "FACILITY",
@@ -513,7 +513,11 @@ def test_kac_registers_general_service_tables_and_software_sme_rule() -> None:
 
 def test_kac_software_sme_rule_bands_match_spec() -> None:
     """별표 3의 2 는 B 70·60, k 4, 기준비율 93, 통과 88, 하한율 89.995 두 구간이다."""
-    rules = [rule for rule in _rules_for("한국공항공사") if rule.service_type == "SOFTWARE"]
+    rules = [
+        rule
+        for rule in _rules_for("한국공항공사")
+        if rule.service_type == "SOFTWARE" and rule.superseded_date is None
+    ]
     assert len(rules) == 1
     rule = rules[0]
     assert rule.rule_id == KAC_SOFTWARE_SME_ID
