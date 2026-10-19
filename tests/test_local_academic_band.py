@@ -238,7 +238,7 @@ def test_daegu_regime_mismatch_is_preserved() -> None:
         METHOD_UNDER_1E,
         sido=SIDO_DAEGU,
         contract_regime="LOCAL",
-        bid_ntce_dt="2026-01-15",
+        bid_ntce_dt="2022-09-29",
     )
     assert result.is_blocked is True
     assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
