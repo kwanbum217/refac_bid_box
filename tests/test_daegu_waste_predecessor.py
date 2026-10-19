@@ -128,7 +128,24 @@ def test_waste_band_values() -> None:
     rule = next(r for r in LOCAL_RULES if r.rule_id == PREDECESSOR_WASTE_ID)
     cases = (
         ("100000000", "70", "2", "80.495", Decimal("85")),
-        ("300000000", "60", "2", "80.495", Decimal("85")),
+        ("262000000", "70", "2", "80.495", Decimal("85")),
+        ("600000000", "60", "2", "80.495", Decimal("85")),
+    )
+    for price, b, k, lwlt, t in cases:
+        result = resolve_score_params(rule, Decimal(price), None, None)
+        assert result.max_price_score == Decimal(b), price
+        assert result.multiplier == Decimal(k), price
+        assert result.pass_threshold == t, price
+        assert (result.base_rate or rule.base_rate) == Decimal("0.88"), price
+        band = rule.price_bands[result.price_band_index]
+        assert band.lwlt_rate == Decimal(lwlt), price
+
+
+def test_waste_band_values_current() -> None:
+    rule = next(r for r in LOCAL_RULES if r.rule_id == CURRENT_WASTE_ID)
+    cases = (
+        ("262000000", "70", "2", "80.495", Decimal("85")),
+        ("600000000", "60", "2", "80.495", Decimal("85")),
     )
     for price, b, k, lwlt, t in cases:
         result = resolve_score_params(rule, Decimal(price), None, None)
