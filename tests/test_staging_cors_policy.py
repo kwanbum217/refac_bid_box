@@ -7,10 +7,11 @@ CORS_ALLOWED_ORIGINS 명시는 production 과 같은 기동 시 필수 조건입
 from __future__ import annotations
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from src.app.core.config import Settings
-from src.app.main import _cors_kwargs
+from src.app.main import _cors_kwargs, create_app
 
 STAGING_BASE = {
     "ENVIRONMENT": "staging",
@@ -70,7 +71,7 @@ def test_development_empty_origins_with_allow_all_still_wildcard():
     assert _cors_kwargs(configured)["allow_origins"] == ["*"]
 
 
-def test_development_empty_origins_with_allow_all_disabled_is_empty():
+def test_development_empty_origins_with_allow_all_disabled_uses_local_list():
     configured = Settings(
         **DEVELOPMENT_BASE,
         CORS_ALLOWED_ORIGINS="",
@@ -78,7 +79,60 @@ def test_development_empty_origins_with_allow_all_disabled_is_empty():
         _env_file=None,
     )
 
-    assert _cors_kwargs(configured)["allow_origins"] == []
+    assert _cors_kwargs(configured)["allow_origins"] == [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    assert "*" not in _cors_kwargs(configured)["allow_origins"]
+
+
+def test_development_empty_origins_unspecified_allow_all_uses_local_list():
+    # (a) CORS_DEV_ALLOW_ALL 미지정 → 기본값 False → 로컬 목록 4개, * 없음
+    configured = Settings(
+        **DEVELOPMENT_BASE,
+        CORS_ALLOWED_ORIGINS="",
+        _env_file=None,
+    )
+
+    kwargs = _cors_kwargs(configured)
+    assert kwargs["allow_origins"] == [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+    assert "*" not in kwargs["allow_origins"]
+
+
+def test_settings_default_cors_dev_allow_all_is_false():
+    # (b) Settings() 기본값의 CORS_DEV_ALLOW_ALL 이 False
+    configured = Settings(
+        SECRET_KEY="test-only-secret-key-at-least-32-characters",
+        _env_file=None,
+    )
+
+    assert configured.CORS_DEV_ALLOW_ALL is False
+
+
+def test_development_default_app_rejects_foreign_origin_allows_local():
+    # (c) TestClient 로 개발 기본 설정 앱
+    client = TestClient(
+        create_app(
+            Settings(
+                **DEVELOPMENT_BASE,
+                CORS_ALLOWED_ORIGINS="",
+                _env_file=None,
+            )
+        )
+    )
+
+    foreign = client.get("/api/v1/health", headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in foreign.headers
+
+    local = client.get("/api/v1/health", headers={"Origin": "http://localhost:5173"})
+    assert local.headers.get("access-control-allow-origin") == "http://localhost:5173"
 
 
 def test_production_rejection_is_unchanged():

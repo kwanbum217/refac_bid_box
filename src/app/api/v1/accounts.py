@@ -393,10 +393,10 @@ def _issue_session(response: Response, user: CustomUser) -> None:
         token,
         max_age=SESSION_TTL_SECONDS,
         httponly=True,
-        # samesite 는 lax 를 유지합니다. main.py 의 CORS 가 allow_origins=["*"] 에
-        # allow_credentials=True 라 쿠키가 실린 요청에 요청 Origin 을 그대로
-        # 반사합니다. none 으로 완화하면 임의 사이트가 사용자 세션으로 API 를
-        # 호출할 수 있게 됩니다. CORS 를 먼저 좁히기 전에는 건드리지 마십시오.
+        # samesite 는 lax 를 유지합니다. development CORS 기본값은 이제 로컬
+        # 오리진 목록만 허용하므로 임의 Origin 반사가 사라졌지만, SameSite=None
+        # 으로 완화하면 임의 사이트가 사용자 세션으로 API 를 호출할 수 있게
+        # 됩니다. 따라서 lax 를 유지합니다.
         samesite="lax",
         # http://localhost 개발에서는 secure 쿠키가 저장되지 않아 로그인이
         # 깨집니다. 기존 ENVIRONMENT 게이트를 그대로 씁니다.
