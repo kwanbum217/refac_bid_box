@@ -103,14 +103,21 @@ def test_production_allows_listed_origin(production_client):
     assert response.headers.get("access-control-allow-credentials") == "true"
 
 
-def test_development_reflects_origin_for_local_work(development_client):
-    """로컬 개발은 기존 범위를 유지합니다. 좁히면 화면이 깨집니다."""
-    response = development_client.get(
+def test_development_default_does_not_reflect_foreign_origin_allows_local_origin(
+    development_client,
+):
+    """개발 기본값은 외부 Origin 을 반사하지 않고 로컬 오리진(http://localhost:5173)은 허용합니다."""
+    foreign = development_client.get(
         "/api/v1/health",
         headers={"Origin": FOREIGN_ORIGIN},
     )
+    assert "access-control-allow-origin" not in foreign.headers
 
-    assert response.headers.get("access-control-allow-origin") in {FOREIGN_ORIGIN, "*"}
+    local = development_client.get(
+        "/api/v1/health",
+        headers={"Origin": "http://localhost:5173"},
+    )
+    assert local.headers.get("access-control-allow-origin") == "http://localhost:5173"
 
 
 def test_development_with_explicit_origins_stops_reflecting():

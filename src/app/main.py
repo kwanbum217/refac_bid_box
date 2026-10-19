@@ -221,6 +221,17 @@ def _docs_kwargs(app_settings: Settings) -> dict[str, str | None]:
     return {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
 
 
+# development 기본값으로 쓰는 로컬 개발 오리진 목록입니다. app(8000)과
+# frontend/vite 개발 서버(5173)를 커버합니다. CORS_ALLOWED_ORIGINS 가 비고
+# CORS_DEV_ALLOW_ALL 이 False 인 경우에 이 목록을 씁니다.
+LOCAL_DEV_ORIGINS: list[str] = [
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+
 def _cors_kwargs(app_settings: Settings) -> _CorsKwargs:
     """자격증명 허용 CORS 의 오리진 범위를 환경에 따라 좁힙니다.
 
@@ -236,8 +247,11 @@ def _cors_kwargs(app_settings: Settings) -> _CorsKwargs:
     """
     origins = app_settings.cors_allowed_origins
     development = app_settings.ENVIRONMENT == "development"
-    if not origins and development and app_settings.CORS_DEV_ALLOW_ALL:
-        origins = ["*"]
+    if not origins and development:
+        # 명시적으로 켠 경우에만 기존 와일드카드 동작을 유지합니다.
+        # 쿠키가 실린 교차 출처 요청에 임의 Origin 을 반사하므로
+        # (allow_origins=["*"] + allow_credentials=True) 보안 위험이 있습니다.
+        origins = ["*"] if app_settings.CORS_DEV_ALLOW_ALL else list(LOCAL_DEV_ORIGINS)
 
     return {
         "allow_origins": origins,

@@ -61,4 +61,4 @@ def test_default_compose_forwards_cors_settings_to_every_python_service():
     compose = COMPOSE_FILE.read_text(encoding="utf-8")
 
     assert compose.count("CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}") == 2
-    assert compose.count("CORS_DEV_ALLOW_ALL=${CORS_DEV_ALLOW_ALL:-true}") == 2
+    assert compose.count("CORS_DEV_ALLOW_ALL=${CORS_DEV_ALLOW_ALL:-false}") == 2

@@ -135,9 +135,12 @@ class Settings(BaseSettings):
     # development 에서만 비어 있어도 되며, 그 경우 아래 CORS_DEV_ALLOW_ALL
     # 정책이 적용됩니다. staging 과 production 에서 비면 validator 가 기동을 거부합니다.
     CORS_ALLOWED_ORIGINS: str = ""
-    # development 에서만 임의 오리진을 허용할지 여부입니다. 로컬 개발 편의를 위해
-    # 기본 활성이며, staging 과 production 에서는 이 값과 무관하게 항상 목록만 허용합니다.
-    CORS_DEV_ALLOW_ALL: bool = True
+    # development 에서만 임의 오리진(*) 을 허용할지 여부입니다. 기본값은 False 이며,
+    # True 로 켜면 쿠키가 실린 교차 출처 요청에 임의 Origin 을 반사하므로
+    # (allow_origins=["*"] + allow_credentials=True) 보안 위험이 있습니다.
+    # 로컬 개발 편의가 필요한 경우에만 명시적으로 켜십시오.
+    # staging 과 production 에서는 이 값과 무관하게 항상 목록만 허용합니다.
+    CORS_DEV_ALLOW_ALL: bool = False
 
     # 인증 보안 및 DoS 방어 설정
     # 로그인 시도 제한: IP 축 최대 허용 횟수 (기본 10회)
