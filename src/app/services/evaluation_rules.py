@@ -136,6 +136,11 @@ class EvaluationRule:
     subunit_code_prefixes: tuple[str, ...] = ()
     region_code: str | None = None
     region_name: str | None = None
+    # 대구 세부기준 원문은 '폐기물처리용역 … 이 경우 건설폐기물 처리용역은 제외한다' 고 정의한다.
+    # 낙찰방법명이 환경부고시 건설폐기물 띠 표기에 맞는 공고에는 대구 폐기물 규칙을 적용하지
+    # 않도록 _select_local_rule 에서 select_moe_cdw_rule(method_name) 이 None 이 아닐 때 후보에서
+    # 뺀다. 기본값 False 이며 대구 폐기물 두 규칙만 True 로 둔다.
+    excludes_moe_cdw_bands: bool = False
 
     def __post_init__(self) -> None:
         if self.max_price_score is not None and self.max_price_score_by_500m is not None:
@@ -1954,6 +1959,7 @@ _SRC_DAEGU_20220930 = (
     "별표 1 단순노무: data/sources/qualification/files/daegu/a15ebda73ce5_byp1.txt:16 (최저 낙찰하한율 87.745%); "
     "별표 4 폐기물: 제238호 ELIS 첨부 HWP(7560ea7a)와 동일 값, 낙찰하한율 원문 미인쇄 계산값 80.495%; "
     "지역제한 금액은 행안부 고시 변수이며 광주·전남 구판 관례대로 5억원으로 등록, 광역 본청·소속기관 3.3억/3.5억 분리는 하지 않음; "
+    "원문 정의 조항: '폐기물처리용역 … 이 경우 건설폐기물 처리용역은 제외한다' (856673076d70_elis_daegu_main.txt); "
     "낙찰하한율 계산식: B70: 85-30=55, 70-2x>=55, x<=7.5 / B60: 85-40=45, 60-2x>=45, x<=7.5 → 88-7.5=80.5"
 )
 _SRC_DAEGU_ATTACH_04 = (
@@ -1963,6 +1969,7 @@ _SRC_DAEGU_ATTACH_04 = (
     "별표 4 표: 입찰가격 배점한도 지역제한 금액 이상 60·미만 70, 평점산식 k=2·기준비율 88, "
     "고정 상한 투찰률 95.5%, 통과점수 85; 낙찰하한율 원문 미인쇄, 계산값 80.495; "
     "지역제한 금액은 행안부 고시 변수이며 광주·전남 구판 관례대로 5억원으로 등록, 광역 본청·소속기관 3.3억/3.5억 분리는 하지 않음; "
+    "원문 정의 조항: '폐기물처리용역 … 이 경우 건설폐기물 처리용역은 제외한다' (856673076d70_elis_daegu_main.txt); "
     "낙찰하한율 계산식: B70: 85-30=55, 70-2x>=55, x<=7.5 / B60: 85-40=45, 60-2x>=45, x<=7.5 → 88-7.5=80.5"
 )
 _SRC_GG = (
@@ -2421,6 +2428,7 @@ def _local_rule(
     base_rate: str = "0.88",
     superseded_date: str | None = None,
     bounded_price_top: bool = False,
+    excludes_moe_cdw_bands: bool = False,
 ) -> EvaluationRule:
     return EvaluationRule(
         rule_id=rule_id,
@@ -2430,6 +2438,7 @@ def _local_rule(
         effective_date=effective_date,
         superseded_date=superseded_date,
         bounded_price_top=bounded_price_top,
+        excludes_moe_cdw_bands=excludes_moe_cdw_bands,
         source=source,
         patterns=(),
         lwlt_rate=Decimal(lwlt_rate or _LOCAL_LWLT_BY_SERVICE[service_type]),
@@ -3488,6 +3497,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU_20220930),
         lwlt_rate="80.495",
         bounded_price_top=False,
+        excludes_moe_cdw_bands=True,
     ),
     # 대구광역시 구판 (예규 제223호, 시행 2022-09-30) — 별표 1 단순노무
     _local_rule(
@@ -3990,6 +4000,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         ),
         threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU_ATTACH_04),
         lwlt_rate="80.495",
+        excludes_moe_cdw_bands=True,
     ),
 )
 
@@ -7394,6 +7405,12 @@ def _select_local_rule(
             base_candidates = [
                 r for r in base_candidates if not (_is_gwangju_legacy(r) and "_METRO_" in r.rule_id)
             ]
+
+    # 대구 세부기준 원문 정의 조항: '폐기물처리용역 … 이 경우 건설폐기물 처리용역은 제외한다'.
+    # excludes_moe_cdw_bands 가 True 인 규칙(대구 폐기물 두 규칙)은 낙찰방법명이
+    # 환경부고시 건설폐기물 띠 표기에 맞는 공고에는 적용하지 않고 기존 MoE 경로를 쓴다.
+    if select_moe_cdw_rule(method_name) is not None:
+        base_candidates = [rule for rule in base_candidates if not rule.excludes_moe_cdw_bands]
 
     region_rules = _narrow_to_current_regime(base_candidates, announced)
     if not region_rules:

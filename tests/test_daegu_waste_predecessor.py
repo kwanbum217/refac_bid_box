@@ -124,6 +124,20 @@ def test_before_effective_date_stays_blocked() -> None:
     assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
 
 
+def test_moe_cdw_band_method_uses_moe_rule_not_daegu_waste() -> None:
+    raw = _raw(
+        "2026-03-10 10:00:00",
+        "적격심사제-추정가격 15억원 미만 5억원 이상인 용역",
+        "262000000",
+        bidNtceNm="조야~동명 광역도로 건설공사(2공구) 건설폐기물 운반 및 처리용역",
+    )
+    result = _resolve(raw, estimated_price=Decimal("262000000"), local_service_type="WASTE")
+    assert result.rule is not None
+    assert result.rule.rule_id.startswith("SERVC_QUAL_MOE_CDW_")
+    assert result.is_blocked is False
+    assert result.block_reason_code is None
+
+
 def test_waste_band_values() -> None:
     rule = next(r for r in LOCAL_RULES if r.rule_id == PREDECESSOR_WASTE_ID)
     cases = (
