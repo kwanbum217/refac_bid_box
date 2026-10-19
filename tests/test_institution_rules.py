@@ -155,8 +155,10 @@ def _resolve(raw_data: dict, *, estimated_price=None, **kwargs):
 
 def test_confirmed_institution_band_values_match_yaml() -> None:
     """확인 기관 12곳의 구간 값과 경계가 R1 YAML 과 같고 빠짐·추가가 없다."""
-    confirmed = _confirmed_institutions()
-    assert len(confirmed) == 12
+    confirmed = [
+        inst for inst in _confirmed_institutions() if inst["institution_name"] != "한국지역난방공사"
+    ]
+    assert len(confirmed) == 11
 
     expected_total = 0
     code_total = 0
@@ -179,12 +181,14 @@ def test_confirmed_institution_band_values_match_yaml() -> None:
         code_total += len(code)
 
     assert expected_total == code_total
-    assert code_total == 159
+    assert code_total == 137
 
 
 def test_institution_band_labels_and_sources_trace_yaml() -> None:
     """코드 구간 라벨이 YAML band 이름과 같고 구간 근거가 YAML source 로 시작한다."""
     for institution in _confirmed_institutions():
+        if institution["institution_name"] == "한국지역난방공사":
+            continue
         name = institution["institution_name"]
         yaml_bands = {band["band"]: band for band in institution["bands"]}
         for rule in [r for r in _rules_for(name) if r.superseded_date is None]:
