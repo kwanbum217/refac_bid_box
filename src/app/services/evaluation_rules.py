@@ -1946,6 +1946,21 @@ _SRC_DAEGU = (
     "EXT/daegu/tbl1_daegu.txt:150 (최저 낙찰하한율 87.745%), "
     "EXT/supplement/daegu/R25BK01157938_f1.txt:47 (공고문 낙찰하한율 87.745%)"
 )
+_SRC_DAEGU_20220930 = (
+    "data/sources/qualification/files/daegu/560b82365946_대구광역시 일반용역 적격심사세부기준(대구광역시예규제223호_2022.9.30).pdf "
+    "(sha256 560b82365946fb006c5ba282a779198d62fc69ce5ceed80d103653d1bcdd5c47); "
+    "ELIS 대구광역시 일반용역 적격심사 세부기준 [시행 2022.09.30] (예규 제223호) 부칙 제1조 시행일 2022-09-30, "
+    "제2조 적용례 시행일 이후 입찰공고; "
+    "별표 1 단순노무: data/sources/qualification/files/daegu/a15ebda73ce5_byp1.txt:16 (최저 낙찰하한율 87.745%); "
+    "별표 4 폐기물: 제238호 ELIS 첨부 HWP(7560ea7a)와 동일 값, 낙찰하한율 원문 미인쇄 계산값 80.495%"
+)
+_SRC_DAEGU_ATTACH_04 = (
+    "data/sources/qualification/files/daegu/7560ea7a13d3_[별표 4] 폐기물처리용역 적격심사 평가기준.hwp "
+    "(sha256 7560ea7a13d3ef8e6e13a86b38310c0153348373e670c57646c7befc7ed426e0); "
+    "ELIS 대구광역시 일반용역 적격심사 세부기준 [시행 2026.05.11] (예규 제238호) 제4조① 4, 제8조, 제12조④; "
+    "별표 4 표: 입찰가격 배점한도 지역제한 금액 이상 60·미만 70, 평점산식 k=2·기준비율 88, "
+    "고정 상한 투찰률 95.5%, 통과점수 85; 낙찰하한율 원문 미인쇄, 계산값 80.495"
+)
 _SRC_GG = (
     f"{_LOCAL_COLLECTION}:396-463 (경기도 일반용역 적격심사 세부기준 지침, "
     "경기도 예규 제748호, 시행 2025-08-08, 별표 1-2~1-6); "
@@ -3443,6 +3458,50 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         # 별표 1 은 최저 낙찰하한율을 87.745% 이상으로 인쇄합니다(원문 tbl1_daegu.txt:150).
         lwlt_rate="87.745",
     ),
+    # 대구광역시 구판 (예규 제223호, 시행 2022-09-30) — 별표 4 폐기물처리용역
+    _local_rule(
+        "SERVC_LOCAL_DAEGU_20220930_ATTACH_04",
+        sido_code="27",
+        sido_name="대구광역시",
+        service_type="WASTE",
+        effective_date="2022-09-30",
+        superseded_date="2026-05-11",
+        source=_SRC_DAEGU_20220930,
+        description="대구광역시 폐기물처리용역 적격심사 (별표 4, 구판)",
+        price_bands=(
+            _local_price_band(
+                "200000000",
+                "70",
+                "2",
+                "추정가격 2억원 미만",
+                _SRC_DAEGU_20220930,
+                lwlt_rate="80.495",
+            ),
+            _local_price_band(
+                None, "60", "2", "추정가격 2억원 이상", _SRC_DAEGU_20220930, lwlt_rate="80.495"
+            ),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU_20220930),
+        lwlt_rate="80.495",
+        bounded_price_top=False,
+    ),
+    # 대구광역시 구판 (예규 제223호, 시행 2022-09-30) — 별표 1 단순노무
+    _local_rule(
+        "SERVC_LOCAL_DAEGU_20220930_ATTACH_01",
+        sido_code="27",
+        sido_name="대구광역시",
+        service_type="SIMPLE_LABOR",
+        effective_date="2022-09-30",
+        superseded_date="2026-05-11",
+        source=_SRC_DAEGU_20220930,
+        description="대구광역시 단순노무 일반용역 적격심사 (별표 1, 구판)",
+        price_bands=(
+            _local_price_band("200000000", "70", "60", "추정가격 2억원 미만", _SRC_DAEGU_20220930),
+            _local_price_band(None, "60", "60", "추정가격 2억원 이상", _SRC_DAEGU_20220930),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU_20220930),
+        lwlt_rate="87.745",
+    ),
     # 경기도 (예규 제748호, 시행 2025-08-08) — 별표 1-1(단순노무)은 원문 산식 미확인
     # (기준비율 0.25 불일치)이라 87.745% 를 적용하지 않고 규칙을 만들지 않습니다.
     _local_rule(
@@ -3902,6 +3961,31 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         price_bands=_four_band_price(_SRC_JEONBUK, simple_labor=True),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_JEONBUK),
         lwlt_rate="87.745",
+    ),
+    # 대구광역시 (예규 제238호, 시행 2026-05-11) — 별표 4 폐기물처리용역
+    _local_rule(
+        "SERVC_LOCAL_DAEGU_20260511_ATTACH_04",
+        sido_code="27",
+        sido_name="대구광역시",
+        service_type="WASTE",
+        effective_date="2026-05-11",
+        source=_SRC_DAEGU_ATTACH_04,
+        description="대구광역시 폐기물처리용역 적격심사 (별표 4)",
+        price_bands=(
+            _local_price_band(
+                "200000000",
+                "70",
+                "2",
+                "추정가격 2억원 미만",
+                _SRC_DAEGU_ATTACH_04,
+                lwlt_rate="80.495",
+            ),
+            _local_price_band(
+                None, "60", "2", "추정가격 2억원 이상", _SRC_DAEGU_ATTACH_04, lwlt_rate="80.495"
+            ),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU_ATTACH_04),
+        lwlt_rate="80.495",
     ),
 )
 

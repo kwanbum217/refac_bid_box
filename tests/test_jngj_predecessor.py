@@ -242,6 +242,17 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         assert incheon_rules[rule_id].region_code == "28"
         assert incheon_rules[rule_id].effective_date == effective
         assert incheon_rules[rule_id].superseded_date == superseded_on
+    # 2026-10-19 대구광역시 구판(예규 제223호)은 현행(예규 제238호) 시행일에서 끝난다.
+    daegu_windows = {
+        "SERVC_LOCAL_DAEGU_20220930_ATTACH_01": ("2022-09-30", "2026-05-11"),
+        "SERVC_LOCAL_DAEGU_20220930_ATTACH_04": ("2022-09-30", "2026-05-11"),
+    }
+    daegu_rules = {rule.rule_id: rule for rule in LOCAL_RULES if rule.rule_id in daegu_windows}
+    assert set(daegu_rules) == set(daegu_windows)
+    for rule_id, (effective, superseded_on) in daegu_windows.items():
+        assert daegu_rules[rule_id].region_code == "27"
+        assert daegu_rules[rule_id].effective_date == effective
+        assert daegu_rules[rule_id].superseded_date == superseded_on
     superseded = {rule.rule_id for rule in LOCAL_RULES if rule.superseded_date is not None}
     assert superseded == {
         "SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4",
@@ -254,6 +265,7 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         *gb_windows,
         *chungnam_windows,
         *incheon_windows,
+        *daegu_windows,
     }
 
 
