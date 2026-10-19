@@ -10,29 +10,29 @@ filter:
   min_announcements: 5
 totals:
   announcements: 31305
-  institutions: 3408
+  institutions: 3407
   applied_scope:
     INSTITUTION:
-      announcements: 62
-      ratio: 0.001981
+      announcements: 63
+      ratio: 0.002012
     REGION:
-      announcements: 2192
-      ratio: 0.070021
+      announcements: 2198
+      ratio: 0.070212
     PPS_DEFAULT:
       announcements: 19133
       ratio: 0.61118
     BLOCKED:
-      announcements: 9918
-      ratio: 0.316818
+      announcements: 9911
+      ratio: 0.316595
     ERROR:
       announcements: 0
       ratio: 0.0
 tail:
-  institutions: 2310
-  announcements: 3967
+  institutions: 2309
+  announcements: 3965
   applied_scope:
     PPS_DEFAULT: 2660
-    BLOCKED: 1307
+    BLOCKED: 1305
 regions:
 - region_name: 서울특별시
   rule_ids:
@@ -114,14 +114,16 @@ regions:
   - SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3_METRO_350
   - SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3
   announcements: 27
+- region_name: 대구광역시
+  rule_ids:
+  - SERVC_LOCAL_DAEGU_20220930_ATTACH_04
+  - SERVC_LOCAL_DAEGU_20220930_ATTACH_01
+  - SERVC_LOCAL_DAEGU_20260511_ATTACH_01
+  announcements: 7
 - region_name: 세종특별자치시
   rule_ids:
   - SERVC_LOCAL_SEJONG_20251201_ATTACH_04
   announcements: 7
-- region_name: 대구광역시
-  rule_ids:
-  - SERVC_LOCAL_DAEGU_20260511_ATTACH_01
-  announcements: 1
 institutions:
 - dminstt_cd: '6110000'
   dminstt_nm: 서울특별시
@@ -2060,16 +2062,16 @@ institutions:
   contract_regime: NATIONAL
   applied_scope: INSTITUTION
   scope_counts:
-    INSTITUTION: 29
+    INSTITUTION: 30
     PPS_DEFAULT: 16
-    BLOCKED: 10
+    BLOCKED: 9
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_INST_KDHC_20260101_WASTE
   - SERVC_INST_KDHC_20260101_FACILITY
   block_codes:
     MANUAL_EVALUATION: 8
-    RULE_REGIME_MISMATCH: 2
+    RULE_REGIME_MISMATCH: 1
   announcements: 55
   registry_status: confirmed
   manifest_sources:
@@ -2815,29 +2817,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '6270000'
-  dminstt_nm: 대구광역시
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 34
-    BLOCKED: 12
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_QUAL_MOE_CDW_ATTACH_04
-  block_codes:
-    MANUAL_EVALUATION: 8
-    LOCAL_RULE_NOT_FOUND: 2
-    RULE_REGIME_MISMATCH: 2
-  announcements: 46
-  registry_status: unregistered
-  manifest_sources:
-  - source: daegu
-    files: 47
-  investigation: null
 - dminstt_cd: '1192358'
   dminstt_nm: 해양수산부 인천지방해양수산청
   name_variants: []
@@ -3056,6 +3035,28 @@ institutions:
   announcements: 44
   registry_status: unregistered
   manifest_sources: null
+  investigation: null
+- dminstt_cd: '6270000'
+  dminstt_nm: 대구광역시
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 34
+    BLOCKED: 10
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_QUAL_MOE_CDW_ATTACH_04
+  block_codes:
+    MANUAL_EVALUATION: 8
+    LOCAL_RULE_NOT_FOUND: 2
+  announcements: 44
+  registry_status: unregistered
+  manifest_sources:
+  - source: daegu
+    files: 47
   investigation: null
 - dminstt_cd: '3140000'
   dminstt_nm: 서울특별시 양천구
@@ -3794,27 +3795,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '6271260'
-  dminstt_nm: 대구광역시 도시건설본부
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: PPS_DEFAULT
-  scope_counts:
-    PPS_DEFAULT: 30
-    BLOCKED: 8
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_QUAL_MOE_CDW_ATTACH_03
-  block_codes:
-    MANUAL_EVALUATION: 6
-    LOCAL_RULE_NOT_FOUND: 1
-    NON_PRED_PRICE: 1
-  announcements: 38
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '6280147'
   dminstt_nm: 인천광역시 종합건설본부
   name_variants: []
@@ -3920,6 +3900,26 @@ institutions:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 15
+  announcements: 37
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '6271260'
+  dminstt_nm: 대구광역시 도시건설본부
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: PPS_DEFAULT
+  scope_counts:
+    PPS_DEFAULT: 30
+    BLOCKED: 7
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_QUAL_MOE_CDW_ATTACH_03
+  block_codes:
+    MANUAL_EVALUATION: 6
+    NON_PRED_PRICE: 1
   announcements: 37
   registry_status: unregistered
   manifest_sources: null
@@ -10462,25 +10462,6 @@ institutions:
   registry_status: unregistered
   manifest_sources: null
   investigation: null
-- dminstt_cd: '3410000'
-  dminstt_nm: 대구광역시 중구
-  name_variants: []
-  jurisdiction: 지방자치단체
-  contract_regime: LOCAL
-  applied_scope: BLOCKED
-  scope_counts:
-    PPS_DEFAULT: 5
-    BLOCKED: 7
-  rule_ids:
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
-  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    MANUAL_EVALUATION: 6
-    RULE_REGIME_MISMATCH: 1
-  announcements: 12
-  registry_status: unregistered
-  manifest_sources: null
-  investigation: null
 - dminstt_cd: '3800000'
   dminstt_nm: 경기도 성남시 중원구
   name_variants: []
@@ -11110,6 +11091,24 @@ institutions:
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes: {}
+  announcements: 11
+  registry_status: unregistered
+  manifest_sources: null
+  investigation: null
+- dminstt_cd: '3410000'
+  dminstt_nm: 대구광역시 중구
+  name_variants: []
+  jurisdiction: 지방자치단체
+  contract_regime: LOCAL
+  applied_scope: BLOCKED
+  scope_counts:
+    PPS_DEFAULT: 5
+    BLOCKED: 6
+  rule_ids:
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  block_codes:
+    MANUAL_EVALUATION: 6
   announcements: 11
   registry_status: unregistered
   manifest_sources: null
