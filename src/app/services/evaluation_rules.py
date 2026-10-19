@@ -4087,6 +4087,7 @@ def _institution_rule(
     subunit_name_prefixes: tuple[str, ...] = (),
     subunit_code_prefixes: tuple[str, ...] = (),
     quant_table: bool = True,
+    superseded_date: str | None = None,
 ) -> EvaluationRule:
     """기관 규칙 하나를 구간별 price_bands·threshold_bands 로 만듭니다.
 
@@ -4144,6 +4145,7 @@ def _institution_rule(
         institution_aliases=institution_aliases,
         subunit_name_prefixes=subunit_name_prefixes,
         subunit_code_prefixes=subunit_code_prefixes,
+        superseded_date=superseded_date,
     )
 
 
@@ -6875,6 +6877,129 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         ),
         quant_table=False,
     ),
+    # 한국공항공사 구판 (지침 제777호, 시행 2026-03-02 입찰공고부터, superseded 2026-08-14).
+    # 신구대비표(.cache/incheon_inst/raw/kac_3553810_file2.bin) "현 행" 열 값.
+    _institution_rule(
+        "SERVC_INST_KAC_20260302_ACADEMIC",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="ACADEMIC",
+        table_name="한국공항공사 일반용역 적격심사 (학술연구용역, 제777호)",
+        description="한국공항공사 별표 1 학술연구용역 3구간 (제777호)",
+        effective_date="2026-03-02",
+        superseded_date="2026-08-14",
+        source=f"{_SRC_INST_KAC}:4.2 (신구대비표 현 행, 지침 제777호, 시행 2026-03-02; "
+        "KAC 규정 게시판 BBS_SEQ 3553791, 신구대비표_260227.hwpx sha256 a50fb34744d9d51e2281bd15e652202398ff832bfb1b5465ecd586d7e0f50736)",
+        patterns=("학술연구용역",),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                "84.245",
+                "별표 1 학술연구용역 · 고시금액 미만 (제777호)",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 1 학술연구용역 · 고시금액 이상 5억원 미만 (제777호)",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                None,
+                "40",
+                "2",
+                "88",
+                "85",
+                "80.495",
+                "별표 1 학술연구용역 · 5억원 이상 (제777호)",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KAC_20260302_INSURANCE",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="INSURANCE",
+        table_name="한국공항공사 일반용역 적격심사 (보험용역, 제777호)",
+        description="한국공항공사 별표 6 보험용역 2구간 (제777호)",
+        effective_date="2026-03-02",
+        superseded_date="2026-08-14",
+        source=f"{_SRC_INST_KAC}:4.2 (신구대비표 변경 없음, 지침 제777호, 시행 2026-03-02; "
+        "KAC 규정 게시판 BBS_SEQ 3553791)",
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 미만 (제777호)",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 이상 (제777호)",
+                f"{_SRC_INST_KAC}:4.2",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KAC_20260302_SOFTWARE_SME",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="SOFTWARE",
+        table_name="한국공항공사 일반용역 적격심사 (소프트웨어용역 중소기업자간 경쟁제품 대상, 제777호)",
+        description="한국공항공사 별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) 2구간 (제777호)",
+        effective_date="2026-03-02",
+        superseded_date="2026-08-14",
+        source=f"{_SRC_INST_KAC_ANNEX32}:3 (신구대비표 현 행, 지침 제777호, 시행 2026-03-02; "
+        "KAC 규정 게시판 BBS_SEQ 3553791)",
+        patterns=("소프트웨어용역중소기업자간경쟁제품대상",),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) · 5억원 미만 (제777호)",
+                f"{_SRC_INST_KAC_ANNEX32}:3",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) · 5억원 이상 (제777호)",
+                f"{_SRC_INST_KAC_ANNEX32}:3",
+            ),
+        ),
+        quant_table=False,
+    ),
 )
 
 # 낙찰방법명·조달분류에서 시·도 별표의 용역 세부유형을 정하는 신호. 자동 확정이 아니라
@@ -7330,6 +7455,11 @@ def _select_institution_rule(
             contract_regime=None,
         )
     ]
+    # 같은 기관·세부유형에 구판·현행이 함께 있으면 공고일 효력 구간으로 가립니다.
+    # (지방계약 _narrow_to_current_regime 와 같은 원리)
+    data_for_date = raw_data if isinstance(raw_data, dict) else {}
+    announced = _parse_announcement_date(data_for_date.get("bidNtceDt"))
+    candidates = _narrow_to_current_regime(candidates, announced)
     if not candidates:
         return None, None, "", warnings
     if EXCLUDE_INSTITUTION_RULES_FOR_PPS_PROXY and _is_pps_proxy_announcement(
