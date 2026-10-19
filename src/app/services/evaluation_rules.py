@@ -1878,6 +1878,17 @@ _SRC_INCHEON = (
     "인천광역시 예규 제488호, 시행 2025-12-24, 별표 1); "
     "EXT/qual_raw/3.txt:170,314,457,600 (별표 1 1~4. 추정가격 구간별 입찰가격 평점산식)"
 )
+_SRC_INCHEON_20241204 = (
+    "자치법규정보시스템(ELIS) https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=28000032005015&histNo=007 "
+    "(인천광역시 예규 제484호, 일부개정 2024-11-18, 시행 2024-12-04); "
+    "인천광역시 계약정보공개시스템 게시글 https://www.incheon.go.kr/contract/CTRT050100/3061306 "
+    "(첨부 HWP sha256 ed0ed1ae0a694bc12948a4e1c2895528788ab43a7c923ba7c84b7ab3189b7356); "
+    "제5조 ① '종합평점이 추정가격 30억원 이상 용역은 85점 이상, 30억원 미만 10억원 이상인 용역은 "
+    "90점 이상, 10억원 미만인 용역은 95점 이상'; 부칙 제1조 시행일 2024-12-04, 제2조 적용례 시행일 "
+    "이후 최초 입찰공고; 별표 1 rows 7·38·69·99 (일반용역 4구간 B·k·기준비율 88·가격점수 고정 구간 "
+    "상한 투찰률 98/90.5/89.25/88.25). 낙찰하한율은 원문 미인쇄, 계산값: base_rate 88%·통과점수"
+    "(10억 미만 95, 10~30억 90)·평점산식으로 역산 (87.745/86.745/85.495/77.995)."
+)
 _SRC_JEJU = (
     f"{_LOCAL_COLLECTION}:148-173 (제주특별자치도 일반용역 적격심사 세부기준, "
     "제주특별자치도 예규 제82호, 시행 2024-01-01, 별표 1); "
@@ -2390,6 +2401,7 @@ def _local_rule(
     lwlt_rate: str | None = None,
     base_rate: str = "0.88",
     superseded_date: str | None = None,
+    bounded_price_top: bool = False,
 ) -> EvaluationRule:
     return EvaluationRule(
         rule_id=rule_id,
@@ -2398,6 +2410,7 @@ def _local_rule(
         description=description,
         effective_date=effective_date,
         superseded_date=superseded_date,
+        bounded_price_top=bounded_price_top,
         source=source,
         patterns=(),
         lwlt_rate=Decimal(lwlt_rate or _LOCAL_LWLT_BY_SERVICE[service_type]),
@@ -2414,6 +2427,54 @@ def _local_rule(
 
 
 LOCAL_RULES: tuple[EvaluationRule, ...] = (
+    # 인천광역시 구판 (예규 제484호, 시행 2024-12-04) — 현행 규칙 시행일 이전 공고 전용.
+    _local_rule(
+        "SERVC_LOCAL_INCHEON_20241204_ATTACH_01",
+        sido_code="28",
+        sido_name="인천광역시",
+        service_type="GENERAL",
+        effective_date="2024-12-04",
+        superseded_date="2025-12-24",
+        source=_SRC_INCHEON_20241204,
+        description="인천광역시 일반용역 적격심사 (단순노무 외, 구판)",
+        price_bands=(
+            _local_price_band(
+                "200000000",
+                "90",
+                "20",
+                "추정가격 2억원 미만",
+                _SRC_INCHEON_20241204,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "500000000",
+                "70",
+                "4",
+                "5억원 미만 2억원 이상",
+                _SRC_INCHEON_20241204,
+                lwlt_rate="86.745",
+            ),
+            _local_price_band(
+                "1000000000",
+                "50",
+                "2",
+                "10억원 미만 5억원 이상",
+                _SRC_INCHEON_20241204,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                "3000000000",
+                "30",
+                "1",
+                "30억원 미만 10억원 이상",
+                _SRC_INCHEON_20241204,
+                lwlt_rate="77.995",
+            ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_INCHEON_20241204),
+        base_rate="0.88",
+        bounded_price_top=True,
+    ),
     # 인천광역시 (예규 제488호, 시행 2025-12-24)
     _local_rule(
         "SERVC_LOCAL_INCHEON_20251224_ATTACH_01",
