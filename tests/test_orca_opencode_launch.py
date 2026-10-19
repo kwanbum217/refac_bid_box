@@ -101,9 +101,15 @@ def test_opencode_main_consumes_and_deletes_unique_preamble(
 
 
 def test_build_command_interactive_and_one_shot():
-    """대화형은 opencode --prompt [prompt], 단발은 opencode run [message] 형태여야 합니다."""
+    """대화형은 opencode --standalone --prompt, 단발은 opencode run --model 형태여야 합니다.
+
+    opencode v2.0.32 최상위 TUI 에는 --model 과 --agent 가 없으므로 대화형 명령에
+    모델을 싣지 않습니다. 모델은 build_env 가 OPENCODE_CONFIG_CONTENT 로 주입합니다.
+    """
     interactive_cmd = build_command("openai/gpt-5.6-turbo", "지시문", one_shot=False)
-    assert interactive_cmd == ["opencode", "--model", "openai/gpt-5.6-turbo", "--prompt", "지시문"]
+    assert interactive_cmd == ["opencode", "--standalone", "--prompt", "지시문"]
+    assert "--model" not in interactive_cmd
+    assert "--agent" not in interactive_cmd
 
     one_shot_cmd = build_command("openai/gpt-5.6-turbo", "지시문", one_shot=True)
     assert one_shot_cmd == ["opencode", "run", "--model", "openai/gpt-5.6-turbo", "지시문"]
@@ -123,8 +129,7 @@ def test_build_command_never_forwards_auto_flag():
 
     assert build_command("openai/gpt-5.6-turbo", "지시문", auto=True) == [
         "opencode",
-        "--model",
-        "openai/gpt-5.6-turbo",
+        "--standalone",
         "--prompt",
         "지시문",
     ]
@@ -327,6 +332,23 @@ def test_build_command_kilo_binary_with_variant():
     assert "--auto" not in cmd
 
 
+def test_opencode_interactive_command_has_standalone_without_unknown_flags():
+    """opencode 대화형 명령에는 v2.0.32 가 모르는 플래그가 없어야 합니다."""
+    cmd = build_command("opencode/deepseek-v4.1-flash-free", "지시문")
+    assert "--standalone" in cmd
+    assert "--prompt" in cmd
+    assert "--model" not in cmd
+    assert "--agent" not in cmd
+    assert "--variant" not in cmd
+
+
+def test_build_command_opencode_one_shot_embeds_variant_in_model_id():
+    """opencode 단발 등급은 --variant 플래그가 아니라 모델 ID 뒤 #variant 로 붙입니다."""
+    cmd = build_command("opencode/space-bunny-free", "지시문", one_shot=True, variant="max")
+    assert cmd == ["opencode", "run", "--model", "opencode/space-bunny-free#max", "지시문"]
+    assert "--variant" not in cmd
+
+
 def test_build_command_rejects_variant_in_opencode_interactive_mode():
     """opencode 대화형 TUI 에는 --variant 가 없으므로 조용히 버리지 않고 거부해야 합니다."""
     with pytest.raises(ValueError):
@@ -365,9 +387,21 @@ def test_build_env_injects_kilo_agent_with_model_and_variant():
     assert env["PATH"] == "/bin"
 
 
-def test_build_env_leaves_env_untouched_without_kilo_interactive_variant():
+def test_build_env_injects_opencode_model_config():
+    """opencode 대화형 모델은 TUI 플래그가 아니라 OPENCODE_CONFIG_CONTENT 로 주입합니다."""
+    env = build_env({"PATH": "/bin"}, "opencode/space-bunny-free")
+    assert env["OPENCODE_CONFIG_CONTENT"] == json.dumps({"model": "opencode/space-bunny-free"})
+    assert env["PATH"] == "/bin"
+
+
+def test_build_env_refuses_to_overwrite_existing_opencode_config():
+    with pytest.raises(ValueError):
+        build_env({"OPENCODE_CONFIG_CONTENT": "{}"}, "m")
+
+
+def test_build_env_leaves_env_untouched_for_one_shot_and_kilo_without_variant():
     base = {"PATH": "/bin"}
-    assert build_env(base, "m", binary="opencode", variant=None) == base
+    assert build_env(base, "m", binary="opencode", one_shot=True, variant="max") == base
     assert build_env(base, "m", binary="kilo", variant=None) == base
     assert build_env(base, "m", binary="kilo", one_shot=True, variant="max") == base
 
@@ -375,6 +409,30 @@ def test_build_env_leaves_env_untouched_without_kilo_interactive_variant():
 def test_build_env_refuses_to_overwrite_existing_kilo_config():
     with pytest.raises(ValueError):
         build_env({"KILO_CONFIG_CONTENT": "{}"}, "m", binary="kilo", variant="max")
+
+
+@patch("scripts.orca_opencode_launch.os.execvpe")
+def test_main_opencode_interactive_execs_tui_with_injected_model(
+    mock_exec: MagicMock, tmp_path: Path, monkeypatch
+):
+    """opencode 대화형은 --standalone 으로 TUI 를 exec 하고 모델은 환경변수로 넘깁니다."""
+    monkeypatch.delenv("OPENCODE_CONFIG_CONTENT", raising=False)
+    target = tmp_path / "preamble_opencode_tui.txt"
+    target.write_text("지시문", encoding="utf-8")
+    code = main(
+        [
+            "--model",
+            "opencode/space-bunny-free",
+            "--preamble",
+            str(target),
+            "--auto",
+            "--no-commit-notice",
+        ]
+    )
+    assert code == 0
+    cmd, env = mock_exec.call_args[0][1], mock_exec.call_args[0][2]
+    assert cmd == ["opencode", "--standalone", "--prompt", "지시문"]
+    assert json.loads(env["OPENCODE_CONFIG_CONTENT"])["model"] == "opencode/space-bunny-free"
 
 
 @patch("scripts.orca_opencode_launch.os.execvpe")

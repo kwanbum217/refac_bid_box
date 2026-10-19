@@ -363,6 +363,10 @@ class TestModelPoolAndSelection:
             "cmd-cat-jam-free",
             "cmd-beam-free",
             "cmd-glyph-free",
+            # 2026-10-19 등록. OpenCode Zen 무료 모델 세 개, 명시 지정 전용입니다.
+            "opencode-deepseek-v41",
+            "opencode-space-bunny",
+            "opencode-glm-flash",
         }
 
 
@@ -2042,6 +2046,59 @@ def test_reviewer_independence_provider_different_allowed():
         probe=False,
     )
     assert result.primary_model == "gemini-3.7-flash-high"
+
+
+# ---------------------------------------------------------------------------
+# opencode 무료 모델 3종 등록 및 계열 독립성 검증
+# ---------------------------------------------------------------------------
+
+
+def test_opencode_free_pool_registration_and_families():
+    """2026-10-19 시험 통과 모델 3종이 계열과 함께 명시 지정 전용으로 등록됩니다."""
+    expected = {
+        "opencode-deepseek-v41": ("opencode/deepseek-v4.1-flash-free", "deepseek"),
+        "opencode-space-bunny": ("opencode/space-bunny-free", "space-bunny"),
+        "opencode-glm-flash": ("opencode/glm-5.3-flash-free", "glm"),
+    }
+    for pool_name, (model_id, family) in expected.items():
+        info = MODEL_POOL[pool_name]
+        assert info["id"] == model_id
+        assert info["provider"] == "opencode"
+        assert info["tier"] == "free"
+        assert info["auto_selectable"] is False
+        assert info["max_tokens"] == 1_000_000
+        assert info["family"] == family
+        assert model_family(pool_name) == family
+        assert model_family(model_id) == family
+
+    registered_ids = {info["id"] for info in MODEL_POOL.values()}
+    assert "opencode/mimo-v2.6-flash-free" not in registered_ids
+
+
+def test_reviewer_independence_opencode_same_provider_different_family_allowed():
+    """provider 가 같은 opencode 라도 빌더 deepseek, 리뷰어 space-bunny 는 허용됩니다."""
+    result = route(
+        role="reviewer",
+        risk="medium",
+        explicit_model="opencode/space-bunny-free",
+        builder_model="opencode/deepseek-v4.1-flash-free",
+        builder_provider="opencode",
+        probe=False,
+    )
+    assert result.primary_model == "opencode/space-bunny-free"
+
+
+def test_reviewer_independence_opencode_same_family_rejected():
+    """같은 계열(빌더·리뷰어 모두 deepseek)은 독립 리뷰 정책이 거부합니다."""
+    with pytest.raises(ModelRoutingError):
+        route(
+            role="reviewer",
+            risk="medium",
+            explicit_model="opencode/deepseek-v4.1-flash-free",
+            builder_model="opencode/deepseek-v4.1-flash-free",
+            builder_provider="opencode",
+            probe=False,
+        )
 
 
 # ---------------------------------------------------------------------------

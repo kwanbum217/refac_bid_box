@@ -1070,6 +1070,76 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "추론 등급은 capability_unknown 이다."
         ),
     },
+    # ------------------------------------------------------------------
+    # OpenCode Zen 무료 모델 (2026-10-19 시험)
+    # ------------------------------------------------------------------
+    # provider 는 모두 opencode 이지만 계열(family)은 서로 다릅니다. family 를
+    # 적지 않으면 model_family 가 id 접두사 opencode 를 돌려주어, 같은 provider
+    # 를 쓰는 빌더·리뷰어 조합이 독립 리뷰 검사에서 거부됩니다.
+    # MiMo-V2.6-Flash 는 리뷰 보고에 실패하고 데이터 수집이 가능해 등록하지
+    # 않습니다. 세 항목 모두 자동 배정하지 않고 --model 명시 지정으로만 씁니다.
+    "opencode-deepseek-v41": {
+        "id": "opencode/deepseek-v4.1-flash-free",
+        "provider": "opencode",
+        "family": "deepseek",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "variant": "capability_unknown",
+        "suitable_for": [
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "OpenCode Zen 무료 DeepSeek V4.1 Flash. 2026-10-19 시험: 빌더 숨김 시험 "
+            "78/78(약 9분), 리뷰어 시드 결함 4문항 중 3/4(약 25분, 항목 이름 오류 "
+            "결함을 놓침). 명시 지정 전용이며 자동 배정하지 않는다. 사용자 결정: "
+            "빌더 DeepSeek, 리뷰어 Space Bunny. 기동은 "
+            "scripts/orca_opencode_launch.py --model opencode/deepseek-v4.1-flash-free."
+        ),
+    },
+    "opencode-space-bunny": {
+        "id": "opencode/space-bunny-free",
+        "provider": "opencode",
+        "family": "space-bunny",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "variant": "capability_unknown",
+        "suitable_for": [
+            "reviewer",
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "OpenCode Zen 무료 Space Bunny. 2026-10-19 시험: 빌더 숨김 시험 "
+            "78/78(약 11분), 리뷰어 시드 결함 4문항 중 3/4(약 4분, 항목 이름 오류 "
+            "결함을 놓침). OpenCode Zen 문서상 stealth 모델이며 무보존·학습 "
+            "미사용이다. 명시 지정 전용이며 자동 배정하지 않는다. 사용자 결정: "
+            "빌더 DeepSeek, 리뷰어 Space Bunny. 기동은 "
+            "scripts/orca_opencode_launch.py --model opencode/space-bunny-free."
+        ),
+    },
+    "opencode-glm-flash": {
+        "id": "opencode/glm-5.3-flash-free",
+        "provider": "opencode",
+        "family": "glm",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "variant": "capability_unknown",
+        "suitable_for": [
+            "reviewer",
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "OpenCode Zen 무료 GLM-5.3-Flash. 2026-10-19 시험: 빌더 숨김 시험 "
+            "78/78(약 20분), 리뷰어 시드 결함 4문항 중 3/4(약 13분, 항목 이름 오류 "
+            "결함을 놓침). 명시 지정 전용이며 자동 배정하지 않는다. 기동은 "
+            "scripts/orca_opencode_launch.py --model opencode/glm-5.3-flash-free."
+        ),
+    },
     "or-free-north-mini": {
         "id": "or-free/north-mini",
         "provider": "kimi-openrouter",

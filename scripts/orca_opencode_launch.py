@@ -3,18 +3,23 @@
 OpenCode CLI 와 그 포크인 Kilo CLI(--binary kilo)를 Orca 워커로 씁니다. 터미널을 런처를 명령으로 지정해 먼저 만들고,
 런처는 preamble 파일이 나타날 때까지 기다렸다가 opencode 를 기동합니다.
 
-대화형 모드는 opencode --prompt [prompt] 로 기동하며 os.execvpe 로 제어권을 넘깁니다.
---one-shot 을 주면 opencode run [message] 단발 실행으로 바뀌며, subprocess.run 으로
-완주시킨 뒤 대화형 셸로 이어받아 터미널 창을 유지합니다.
+대화형 모드는 opencode --standalone --prompt [prompt] 로 기동하며 os.execvpe 로
+제어권을 넘깁니다. opencode v2.0.32 의 최상위 TUI 에는 --model 과 --agent 가 없으므로
+모델은 OPENCODE_CONFIG_CONTENT 환경변수({"model": <provider/model>})로 주입합니다.
+같은 환경변수가 이미 있으면 덮어쓰지 않고 거부합니다. --one-shot 을 주면
+opencode run --model [provider/model#variant] [message] 단발 실행으로 바뀌며,
+subprocess.run 으로 완주시킨 뒤 대화형 셸로 이어받아 터미널 창을 유지합니다.
 
     orca terminal create --worktree path:<워크트리> --title "<섹션명>" \
       --command "uv run python scripts/orca_opencode_launch.py --model openai/gpt-5.6-turbo"
     orca orchestration dispatch --task <task_id> --to <handle> --return-preamble --json
 
 추론 등급(--variant)은 두 CLI 모두 모르는 값을 오류 없이 무시하므로 허용 값을 여기서
-제한합니다. 단발 모드는 run --variant 로 넘깁니다. 대화형 TUI 에는 --variant 가 없어,
-kilo 는 KILO_CONFIG_CONTENT 로 model·variant 를 고정한 전용 에이전트를 주입하고
---agent 로 선택합니다. 사용자가 왼쪽 워크트리에서 TUI 로 진행을 볼 수 있습니다.
+제한합니다. opencode 단발은 run --model 의 모델 ID 뒤에 #variant 를 붙이며 --variant
+플래그를 넘기지 않습니다. opencode 대화형 TUI 에는 --variant 전달 경로가 검증되지
+않아 거부합니다. kilo 는 KILO_CONFIG_CONTENT 로 model·variant 를 고정한 전용
+에이전트를 주입하고 --agent 로 선택하며, 단발은 run --variant 로 넘깁니다.
+사용자가 왼쪽 워크트리에서 TUI 로 진행을 볼 수 있습니다.
 
     --binary kilo --model openrouter/stealth/space-bunny-alpha --variant max
 
@@ -43,6 +48,7 @@ SUPPORTED_BINARIES = ("opencode", "kilo")
 SUPPORTED_VARIANTS = ("low", "medium", "high", "xhigh", "max")
 KILO_AGENT_NAME = "orca-worker"
 KILO_CONFIG_ENV = "KILO_CONFIG_CONTENT"
+OPENCODE_CONFIG_ENV = "OPENCODE_CONFIG_CONTENT"
 COMMIT_NOTICE = common.COMMIT_NOTICE
 REVIEWER_NOTICE = common.REVIEWER_NOTICE
 
@@ -60,8 +66,14 @@ def build_command(
 ) -> list[str]:
     """opencode 기동 명령 배열을 조립합니다.
 
-    대화형은 opencode --prompt [prompt] 이고 단발은 opencode run [message] 입니다.
-    모델은 -m 또는 --model 로 provider/model 형태입니다.
+    opencode v2.0.32 기준입니다. 대화형은 opencode --standalone --prompt [prompt] 이고
+    모델은 build_env 가 OPENCODE_CONFIG_CONTENT 로 주입합니다. 최상위 TUI 에는
+    --model, --agent, --variant 가 없습니다. 단발은
+    opencode run --model [provider/model#variant] [message] 이며 --variant 플래그를
+    넘기지 않고 모델 ID 뒤에 #variant 를 붙입니다.
+
+    kilo 경로는 종전과 같습니다. 대화형 등급은 --agent [주입 에이전트] 로 고르고,
+    단발 등급은 run --variant 로 넘깁니다.
 
     auto 인자는 호환을 위해 남겨 두지만 opencode 에 --auto 를 넘기지 않습니다.
     --auto 는 명시 deny 가 아닌 모든 승인 요청을 자동 승인하므로(opencode --help:
@@ -74,14 +86,17 @@ def build_command(
             "opencode 대화형 모드에는 --variant 가 없어 --one-shot 과 함께만 쓸 수 있습니다"
         )
     if one_shot:
-        cmd = [binary, "run", "--model", model]
-        if variant is not None:
+        model_arg = f"{model}#{variant}" if binary == "opencode" and variant is not None else model
+        cmd = [binary, "run", "--model", model_arg]
+        if variant is not None and binary != "opencode":
             cmd.extend(["--variant", variant])
         cmd.append(prompt)
         return cmd
 
     if variant is not None:
         cmd = [binary, "--agent", KILO_AGENT_NAME]
+    elif binary == "opencode":
+        cmd = [binary, "--standalone"]
     else:
         cmd = [binary, "--model", model]
     cmd.extend(["--prompt", prompt])
@@ -96,13 +111,29 @@ def build_env(
     binary: str = "opencode",
     variant: str | None = None,
 ) -> dict[str, str]:
-    """kilo 대화형에서 등급을 쓰면 model·variant 를 고정한 전용 에이전트를 주입합니다."""
-    if binary != "kilo" or one_shot or variant is None:
+    """기동 환경에 모델 설정을 주입합니다.
+
+    opencode 대화형은 최상위 TUI 에 --model 이 없어 OPENCODE_CONFIG_CONTENT 에
+    {"model": <provider/model>} 를 넣습니다. 이미 값이 있으면 덮어쓰지 않고
+    거부합니다. kilo 대화형에서 등급을 쓰면 model·variant 를 고정한 전용
+    에이전트를 KILO_CONFIG_CONTENT 로 주입합니다. 단발은 모델이 명령 인자로
+    나가므로 환경을 바꾸지 않습니다.
+    """
+    if one_shot:
         return env
-    if env.get(KILO_CONFIG_ENV):
-        raise ValueError(f"{KILO_CONFIG_ENV} 가 이미 설정되어 있어 에이전트를 주입할 수 없습니다")
-    agent = {"model": model, "variant": variant, "mode": "primary", "description": "Orca 워커"}
-    return {**env, KILO_CONFIG_ENV: json.dumps({"agent": {KILO_AGENT_NAME: agent}})}
+    if binary == "kilo":
+        if variant is None:
+            return env
+        if env.get(KILO_CONFIG_ENV):
+            raise ValueError(
+                f"{KILO_CONFIG_ENV} 가 이미 설정되어 있어 에이전트를 주입할 수 없습니다"
+            )
+        agent = {"model": model, "variant": variant, "mode": "primary", "description": "Orca 워커"}
+        return {**env, KILO_CONFIG_ENV: json.dumps({"agent": {KILO_AGENT_NAME: agent}})}
+
+    if env.get(OPENCODE_CONFIG_ENV):
+        raise ValueError(f"{OPENCODE_CONFIG_ENV} 가 이미 설정되어 있어 모델을 주입할 수 없습니다")
+    return {**env, OPENCODE_CONFIG_ENV: json.dumps({"model": model})}
 
 
 def build_completion_message(exit_code: int, model: str) -> str:
@@ -241,7 +272,15 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     mode = "run 단발" if args.one_shot else "대화형"
-    print(f"기동: {args.binary} --model {args.model} ({mode}, 지시문 {len(prompt)}자)", flush=True)
+    if not args.one_shot and args.binary == "opencode":
+        print(
+            f"기동: opencode --standalone (모델 {args.model} 주입, {mode}, 지시문 {len(prompt)}자)",
+            flush=True,
+        )
+    else:
+        print(
+            f"기동: {args.binary} --model {args.model} ({mode}, 지시문 {len(prompt)}자)", flush=True
+        )
 
     if args.one_shot:
         exit_code = run_opencode(cmd, env)
