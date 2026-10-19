@@ -47,6 +47,7 @@ KAC_NO_TABLE_IDS = (
     "SERVC_INST_KAC_20260302_INSURANCE",
     "SERVC_INST_KAC_20260302_SOFTWARE_SME",
 )
+KDHC_NO_TABLE_IDS = ("SERVC_INST_KDHC_20230719_WASTE",)
 
 
 def _spec() -> dict:
@@ -76,6 +77,7 @@ def test_all_confirmed_rules_have_a_table_and_partial_rules_do_not() -> None:
         "SERVC_INST_KOGAS_20260709_FACILITY",
         KOEM_NO_TABLE_ID,
         *KAC_NO_TABLE_IDS,
+        *KDHC_NO_TABLE_IDS,
     }
     for rule in INSTITUTION_RULES:
         if rule.rule_id in other_ids:
