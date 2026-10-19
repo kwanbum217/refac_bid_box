@@ -158,6 +158,17 @@ def test_predecessor_band_values_software() -> None:
     assert rule.effective_date == "2026-03-02"
 
 
+NON_SME_SOFTWARE_METHOD = "적격심사제-소프트웨어용역 적격심사 추정가격 5억원 미만"
+
+
+def test_non_sme_software_not_routed_to_sme_predecessor() -> None:
+    """구판 기간의 소프트웨어 비대상 공고가 중소기업 대상 구판 규칙으로 가지 않는다."""
+    raw = _raw("2026-04-09 10:00:00", NON_SME_SOFTWARE_METHOD, "100000000")
+    result = _resolve(raw, estimated_price=Decimal("100000000"))
+    if result.rule is not None:
+        assert result.rule.rule_id != PREDECESSOR_SOFTWARE_ID
+
+
 def test_predecessor_superseded_date() -> None:
     for rid in (PREDECESSOR_ACADEMIC_ID, PREDECESSOR_INSURANCE_ID, PREDECESSOR_SOFTWARE_ID):
         rule = next(r for r in INSTITUTION_RULES if r.rule_id == rid)
