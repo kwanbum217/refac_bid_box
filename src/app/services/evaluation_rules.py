@@ -140,7 +140,7 @@ class EvaluationRule:
     # 낙찰방법명이 환경부고시 건설폐기물 띠 표기에 맞는 공고에는 대구 폐기물 규칙을 적용하지
     # 않도록 _select_local_rule 에서 select_moe_cdw_rule(method_name) 이 None 이 아닐 때 후보에서
     # 뺀다. 기본값 False 이며 대구 폐기물 두 규칙만 True 로 둔다.
-    excludes_moe_cdw_bands: bool = False
+    cdw_exclusion: str | None = None
 
     def __post_init__(self) -> None:
         if self.max_price_score is not None and self.max_price_score_by_500m is not None:
@@ -2428,7 +2428,7 @@ def _local_rule(
     base_rate: str = "0.88",
     superseded_date: str | None = None,
     bounded_price_top: bool = False,
-    excludes_moe_cdw_bands: bool = False,
+    cdw_exclusion: str | None = None,
 ) -> EvaluationRule:
     return EvaluationRule(
         rule_id=rule_id,
@@ -2438,7 +2438,7 @@ def _local_rule(
         effective_date=effective_date,
         superseded_date=superseded_date,
         bounded_price_top=bounded_price_top,
-        excludes_moe_cdw_bands=excludes_moe_cdw_bands,
+        cdw_exclusion=cdw_exclusion,
         source=source,
         patterns=(),
         lwlt_rate=Decimal(lwlt_rate or _LOCAL_LWLT_BY_SERVICE[service_type]),
@@ -2464,6 +2464,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-12-04",
         superseded_date="2025-12-24",
         source=_SRC_INCHEON_20241204,
+        cdw_exclusion="named",  # 원문: "3. 폐기물처리용역(건설폐기물 및 음식물류 폐기물은 제외한다) 적격심사 세부기준: 별표 2, 별표 3 및 별표 5" (ELIS https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=28000032005015&histNo=007, sha256 a44aa6b09defdd28d19665525640e112bfc4ed99cba659179a2fae62e2987c54)
         description="인천광역시 일반용역 적격심사 (단순노무 외, 구판)",
         price_bands=(
             _local_price_band(
@@ -2511,6 +2512,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2025-12-24",
         source=_SRC_INCHEON,
+        cdw_exclusion="named",  # 원문: "3. 폐기물처리용역(건설폐기물 및 음식물류 폐기물은 제외한다) 적격심사 세부기준: 별표 2, 별표 3 및 별표 5" (ELIS https://www.elis.go.kr/allalr/selectAlrBdtOne?alrNo=28000032005015&histNo=007, sha256 a44aa6b09defdd28d19665525640e112bfc4ed99cba659179a2fae62e2987c54)
         description="인천광역시 일반용역 적격심사 (단순노무 외)",
         # 별표 1 1~4 는 구간별 입찰가격 평점산식을 인쇄합니다. 10억원 이상은 30억원 경계로
         # 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
@@ -2571,6 +2573,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2023-06-11",
         source=_SRC_GANGWON,
+        cdw_exclusion="named",  # 원문: "3. '폐기물처리용역'이란 ... 단, 생활폐기물 수집·운반 대행용역 및 건설폐기물 처리용역은 제외한다." (.cache/local_src/gwd/0ab5d0ce1041_elis_gwd_main.txt, sha256 0ab5d0ce10418097bb3f3ae6cb6bc1b30b73cf0e24560debea807ca4452892c0)
         description="강원특별자치도 일반용역 적격심사 (단순노무 외)",
         # 별표 1 1~4 는 구간별 입찰가격 평점산식과 낙찰하한율을 인쇄합니다(원문 :1996-2032).
         # 10억원 이상은 30억원 경계로 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
@@ -2648,6 +2651,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="WASTE",
         effective_date="2025-12-01",
         source=_SRC_SEJONG_WASTE,
+        cdw_exclusion="named",  # 원문: "5. '폐기물처리용역'이란 ... 다만, 생활폐기물처리용역 및 건설폐기물처리용역은 제외한다." (.cache/local_src/sejong/d9b290e93e43_sejong_body_2025.txt, sha256 d9b290e93e43fc979f73bb58ffb1bd2f7c9cd448bb27f954f9c4844c4b76e533)
         description="세종특별자치시 폐기물처리용역 적격심사 (별표 4)",
         price_bands=(
             _local_price_band("500000000", "70", "60", "추정가격 5억원 미만", _SRC_SEJONG_WASTE),
@@ -2730,6 +2734,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-12-12",
         superseded_date="2026-01-08",
         source=_SRC_GB_20241212,
+        cdw_exclusion="named",  # 원문: "5. '폐기물처리용역'이란 ... (단 건설폐기물의 재활용 촉진에 관한 법률에 따른 '건설폐기물'은 제외한다.)" (.cache/local_src/gb/ab55faa1b1a3_gb_body.txt, sha256 ab55faa1b1a30752252aad8fc530fcd21d9f7141f3236e9df1fcd436b063e121)
         description="경상북도 폐기물처리용역 적격심사 (별표 5, 구판)",
         price_bands=_five_band_price(
             _SRC_GB_20241212,
@@ -2778,6 +2783,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="WASTE",
         effective_date="2026-01-08",
         source=_SRC_GB,
+        cdw_exclusion="named",  # 원문: "5. '폐기물처리용역'이란 ... (단 건설폐기물의 재활용 촉진에 관한 법률에 따른 '건설폐기물'은 제외한다.)" (.cache/local_src/gb/ab55faa1b1a3_gb_body.txt, sha256 ab55faa1b1a30752252aad8fc530fcd21d9f7141f3236e9df1fcd436b063e121)
         description="경상북도 폐기물처리용역 적격심사 (별표 3)",
         price_bands=(
             _local_price_band("500000000", "70", "20", "추정가격 5억원 미만", _SRC_GB),
@@ -2884,6 +2890,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="WASTE",
         effective_date="2022-08-10",
         source=_SRC_ULSAN,
+        cdw_exclusion="named_except_haul",  # 원문: "3. 폐기물처리용역이란 ... 단, 생활폐기물 수집·운반 대행용역 및 건설폐기물 처리용역은 제외하나 건설폐기물 중 중간처리를 포함하지 않는 수집·운반용역은 포함한다." (.cache/local_src/ulsan/c6a460417140_ulsan.txt, sha256 c6a460417140c9e849521fbc1489b53391d09ff21b2b885063ca30185382f829)
         description="울산광역시 폐기물처리용역 적격심사 (별표 2)",
         # 폐기물용역 행도 별표 1 참고 산식과 같은 구간별 낙찰하한율을 인쇄합니다.
         price_bands=_five_band_price(
@@ -2900,6 +2907,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2023-10-20",
         source=_SRC_CB,
+        cdw_exclusion="named",  # 원문: "② 건설폐기물처리용역 적격심사는 이 세부기준 시행과 동시에 환경부고시 제2007-37호 '건설폐기물처리용역 적격업체 평가기준'을 적용한다." (.cache/local_src/cb/cb8c86236f3b_cb.txt, sha256 cb8c86236f3b688c7499718d50d05e378800e4860ee0df3622ea1118ba82c69e)
         description="충청북도 일반용역 적격심사 (별표 1, 단순노무 외)",
         # 별표 1 3. 입찰가격 평가는 구간마다 낙찰하한율을 인쇄합니다(원문 :1513-1659).
         # 10억원 이상은 30억원 경계로 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
@@ -3497,7 +3505,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU_20220930),
         lwlt_rate="80.495",
         bounded_price_top=False,
-        excludes_moe_cdw_bands=True,
+        cdw_exclusion="band",
     ),
     # 대구광역시 구판 (예규 제223호, 시행 2022-09-30) — 별표 1 단순노무
     _local_rule(
@@ -3551,6 +3559,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="WASTE",
         effective_date="2025-08-08",
         source=_SRC_GG,
+        cdw_exclusion="named",  # 원문: "3. 폐기물처리용역: ... 처리하는 영업을 말하며 ... 4. ... 건설폐기물 처리용역은 '건설폐기물처리용역 적격업체 평가기준'에 따른다." (.cache/local_src/gg/c231f0609a39_gg_g2b_20251210_coord.txt, sha256 c231f0609a398c298fd8dd45f1d0834dfbbfe94d35a58e631ad2ed492fa2fba9)
         description="경기도 폐기물처리용역 적격심사 (별표 1-3)",
         # 별표 1-3 도 구간마다 낙찰하한율을 인쇄합니다(원문 coord:537-569).
         price_bands=(
@@ -3701,6 +3710,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2024-01-20",
         superseded_date="2026-01-01",
         source=_SRC_DAEJEON_20240120,
+        cdw_exclusion="named",  # 원문: "⑥ '폐기물처리용역'이란 ... 다만 건설폐기물 처리용역은 제외한다." (.cache/local_src/daejeon/6cfe2e0ddf33_daejeon_2025_9528.txt, sha256 6cfe2e0ddf338fe1e5406dabc1f51c634980e447c713b3dbf0d681c922815077)
         description="대전광역시 일반용역 적격심사 (소프트웨어·폐기물처리·기타 일반용역, 구판)",
         # 별표 6 소프트웨어·폐기물처리·기타 일반용역 행은 구간마다 낙찰하한율을
         # 인쇄합니다. 10억원 이상은 30억원 경계로 30억원 미만 77.995%,
@@ -3733,6 +3743,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2026-01-01",
         source=_SRC_DAEJEON,
+        cdw_exclusion="named",  # 원문: "⑥ '폐기물처리용역'이란 ... 다만 건설폐기물 처리용역은 제외한다." (.cache/local_src/daejeon/6cfe2e0ddf33_daejeon_2025_9528.txt, sha256 6cfe2e0ddf338fe1e5406dabc1f51c634980e447c713b3dbf0d681c922815077)
         description="대전광역시 일반용역 적격심사 (소프트웨어·폐기물처리·기타 일반용역)",
         # 별표 6 소프트웨어·폐기물처리·기타 일반용역 행은 구간마다 낙찰하한율을
         # 인쇄합니다(원문 :262). 10억원 이상은 30억원 경계로 30억원 미만 77.995%,
@@ -3953,6 +3964,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2024-01-18",
         source=_SRC_JEONBUK,
+        cdw_exclusion="named",  # 원문: "③ '폐기물처리용역'이란 ... 단, 건설폐기물 및 음식물류 폐기물처리용역은 제외한다." (.cache/local_src/jeonbuk/2d58643f0a49_jb_general_2024_10.hwp5txt.txt, sha256 2d58643f0a498654f9d01460ab4e89a1e667b25da3d7c6cc8eb43062605b592a)
         description="전북특별자치도 일반용역 적격심사 (별표 1, 단순노무 외)",
         # 별표 1 단순노무 외 행은 구간마다 낙찰하한율을 인쇄합니다(원문 :127-145,
         # :357-366, :583-592, :792-799). 10억원 이상은 30억원 경계로 30억원 미만
@@ -4000,7 +4012,7 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         ),
         threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU_ATTACH_04),
         lwlt_rate="80.495",
-        excludes_moe_cdw_bands=True,
+        cdw_exclusion="band",
     ),
 )
 
@@ -7461,13 +7473,39 @@ def _select_local_rule(
                 r for r in base_candidates if not (_is_gwangju_legacy(r) and "_METRO_" in r.rule_id)
             ]
 
-    # 대구 세부기준 원문 정의 조항: '폐기물처리용역 … 이 경우 건설폐기물 처리용역은 제외한다'.
-    # excludes_moe_cdw_bands 가 True 인 규칙(대구 폐기물 두 규칙)은 낙찰방법명이
-    # 환경부고시 건설폐기물 띠 표기에 맞는 공고에는 적용하지 않고 기존 MoE 경로를 쓴다.
+    # 세부기준 원문 정의 조항: 건설폐기물 처리용역 제외.
+    # cdw_exclusion 이 선언된 규칙은 낙찰방법명이 환경부고시 건설폐기물 띠 표기에 맞는
+    # 공고에는 적용하지 않고 기존 MoE 경로(SERVC_QUAL_MOE_CDW_*)를 쓴다.
+    # 'band': 낙찰방법명 일치만으로 제외(대구).
+    # 'named': 위 조건에 더해 공고명(bidNtceNm)에 '건설폐기물' 이 있을 때만 제외.
+    # 'named_except_haul': 'named' 조건에 더해 공고명에 '처리' 가 있을 때만 제외(울산).
+    cdw_excluded_any = False
     if select_moe_cdw_rule(method_name) is not None:
-        base_candidates = [rule for rule in base_candidates if not rule.excludes_moe_cdw_bands]
+        bid_name = ""
+        if isinstance(raw_data, dict):
+            bid_name = str(raw_data.get("bidNtceNm") or "")
+
+        def _cdw_excluded(rule: EvaluationRule) -> bool:
+            mode = rule.cdw_exclusion
+            if not mode:
+                return False
+            if mode == "band":
+                return True
+            if "건설폐기물" not in bid_name:
+                return False
+            if mode == "named":
+                return True
+            if mode == "named_except_haul":
+                return "처리" in bid_name
+            return False
+
+        removed = [rule for rule in base_candidates if _cdw_excluded(rule)]
+        cdw_excluded_any = len(removed) > 0
+        base_candidates = [rule for rule in base_candidates if not _cdw_excluded(rule)]
 
     region_rules = _narrow_to_current_regime(base_candidates, announced)
+    if cdw_excluded_any:
+        return None, BLOCK_CODE_LOCAL_RULE_NOT_FOUND, _LOCAL_NOT_FOUND_MESSAGE, warnings
     if not region_rules:
         return None, BLOCK_CODE_LOCAL_RULE_NOT_FOUND, _LOCAL_NOT_FOUND_MESSAGE, warnings
 
