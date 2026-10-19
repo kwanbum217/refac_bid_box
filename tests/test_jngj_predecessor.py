@@ -232,6 +232,16 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         assert chungnam_rules[rule_id].region_code == "44"
         assert chungnam_rules[rule_id].effective_date == effective
         assert chungnam_rules[rule_id].superseded_date == superseded_on
+    # 2026-10-19 인천광역시 구판(예규 제484호)은 현행(예규 제488호) 시행일에서 끝난다.
+    incheon_windows = {
+        "SERVC_LOCAL_INCHEON_20241204_ATTACH_01": ("2024-12-04", "2025-12-24"),
+    }
+    incheon_rules = {rule.rule_id: rule for rule in LOCAL_RULES if rule.rule_id in incheon_windows}
+    assert set(incheon_rules) == set(incheon_windows)
+    for rule_id, (effective, superseded_on) in incheon_windows.items():
+        assert incheon_rules[rule_id].region_code == "28"
+        assert incheon_rules[rule_id].effective_date == effective
+        assert incheon_rules[rule_id].superseded_date == superseded_on
     superseded = {rule.rule_id for rule in LOCAL_RULES if rule.superseded_date is not None}
     assert superseded == {
         "SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4",
@@ -243,6 +253,7 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         *daejeon_windows,
         *gb_windows,
         *chungnam_windows,
+        *incheon_windows,
     }
 
 
