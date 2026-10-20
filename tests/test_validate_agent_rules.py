@@ -27,6 +27,7 @@ from scripts.validate_agent_rules import (
     check_current_state_sections,
     check_current_state_unknowns_contradictions,
     check_cursor_references_agents,
+    check_handoff_doc_locations,
     check_hook_installation,
     check_no_new_task_analysis_docs,
     check_opencode_json,
@@ -44,7 +45,7 @@ from scripts.validate_agent_rules import (
 def test_real_repo_validation_passes():
     """실제 저장소의 v2 정합성 검증이 100% 통과하는지 확인."""
     checks = get_all_checks(PROJECT_ROOT)
-    assert len(checks) == 21
+    assert len(checks) == 22
     for chk in checks:
         assert chk.ok, f"Check failed: {chk.name} -> {chk.detail}"
     assert run_all_checks(PROJECT_ROOT, quiet=True) == 0
@@ -1411,3 +1412,45 @@ def test_check_no_new_task_analysis_docs_is_diff_based_not_count_based(tmp_path:
     )
     res = check_no_new_task_analysis_docs(tmp_path)
     assert res.ok
+
+
+# ===========================================================================
+# 인수인계 문서 위치 검사 테스트
+# ===========================================================================
+
+
+def _init_test_repo(root: Path) -> None:
+    _run_git_test_command(root, "init")
+
+
+def _write_and_track(root: Path, relative: str) -> None:
+    target = root / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("# 인수인계\n", encoding="utf-8")
+    _run_git_test_command(root, "add", relative)
+
+
+def test_check_handoff_doc_locations_rejects_doc_outside_allowed_dirs(tmp_path: Path):
+    """지정된 위치 밖에 남은 인수인계 문서는 실패해야 합니다.
+
+    흩어짐을 막으려면 새 인수인계가 지정된 위치 밖에 생기는 경우를 기계로
+    잡아야 합니다. docs/ops/ 에 남은 handoff 문서가 그 예입니다.
+    """
+    _init_test_repo(tmp_path)
+    _write_and_track(tmp_path, "docs/ops/handoff_x.md")
+
+    res = check_handoff_doc_locations(tmp_path)
+
+    assert not res.ok
+    assert "docs/ops/handoff_x.md" in res.detail
+
+
+def test_check_handoff_doc_locations_accepts_live_and_archive_dirs(tmp_path: Path):
+    """작성 위치와 월별 보관 위치에만 있으면 통과해야 합니다."""
+    _init_test_repo(tmp_path)
+    _write_and_track(tmp_path, "docs/handoff/handoff_x.md")
+    _write_and_track(tmp_path, "docs/archive/handoff/2026-08/handoff_y.md")
+
+    res = check_handoff_doc_locations(tmp_path)
+
+    assert res.ok, res.detail

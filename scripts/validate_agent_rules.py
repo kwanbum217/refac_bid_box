@@ -18,6 +18,7 @@ v2 자동 주입 계약:
   8. Task Capsule v2 템플릿 (.agents/templates/*) 스키마 및 필수 필드 정합성
   9. orca-section-coordination 스킬의 v2 계약 포함 여부
   10. CURRENT_STATE 판정 사실 원장의 주장·앵커·증거 정합성
+  11. 인수인계 문서가 docs/handoff/ 또는 docs/archive/handoff/ 밖에 없는지
 
 사용:
   python3 scripts/validate_agent_rules.py          # 전체 검증
@@ -1594,6 +1595,67 @@ def check_no_new_task_analysis_docs(root: Path = PROJECT_ROOT) -> CheckResult:
     return CheckResult(name, True, "신규 Task 분석 문서 추가 없음 (git diff 통과)")
 
 
+# 인수인계 문서가 머물러 있어야 하는 위치. 새 인수인계는 docs/handoff/ 에 쓰고,
+# 작성 후 30일이 지나면 docs/archive/handoff/YYYY-MM/ 로 옮깁니다.
+HANDOFF_DOC_ALLOWED_PREFIXES = ("docs/handoff/", "docs/archive/handoff/")
+
+
+def check_handoff_doc_locations(root: Path = PROJECT_ROOT) -> CheckResult:
+    """인수인계 문서가 지정된 위치 밖에 있으면 실패합니다.
+
+    흩어진 인수인계 문서를 한 곳으로 모으려면 새 문서가 지정된 위치 밖에 생기는
+    경우를 기계로 막아야 합니다. 그래야 흩어짐이 다시 늘지 않습니다.
+    판정 대상은 git 이 추적하는 파일이므로, 아직 커밋하지 않은 새 파일은
+    pre-commit 단계에서 git add 이후에 잡힙니다.
+    """
+    name = "인수인계 문서 위치"
+    try:
+        result = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+            ["git", "-C", str(root), "ls-files", "--", "docs"],
+            capture_output=True,
+            text=True,
+            timeout=GIT_PROBE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        # git 조회를 못 하면 검사 대상 목록을 알 수 없습니다. 조회가 실패한 채로
+        # 통과시키면 게이트가 조용히 꺼집니다. 같은 파일의 다른 검사
+        # (분석 문서 수치 정합성)처럼 실패로 보고합니다.
+        return CheckResult(name, False, f"git ls-files 실행 실패 ({exc})")
+
+    if result.returncode != 0:
+        lines = (result.stderr or result.stdout).strip().splitlines()
+        reason = lines[0] if lines else "(출력 없음)"
+        return CheckResult(name, False, f"git ls-files 실패 (코드 {result.returncode}): {reason}")
+
+    misplaced: list[str] = []
+    tracked = 0
+    for raw in result.stdout.splitlines():
+        path = raw.strip().replace("\\", "/")
+        if not path.lower().endswith(".md"):
+            continue
+        if "handoff" not in Path(path).name.lower():
+            continue
+        tracked += 1
+        if path.startswith(HANDOFF_DOC_ALLOWED_PREFIXES):
+            continue
+        misplaced.append(path)
+
+    if misplaced:
+        detail = ", ".join(sorted(misplaced))
+        return CheckResult(
+            name,
+            False,
+            f"지정된 위치 밖의 인수인계 문서 {len(misplaced)}건: {detail}. "
+            "새 인수인계는 docs/handoff/ 에 쓰고, 작성 후 30일이 지나면 "
+            "docs/archive/handoff/YYYY-MM/ 로 옮기십시오.",
+        )
+    return CheckResult(
+        name,
+        True,
+        f"인수인계 문서 {tracked}건이 docs/handoff/ 또는 docs/archive/handoff/ 에만 있음",
+    )
+
+
 def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
     return [
         check_claude_is_pointer(root),
@@ -1616,6 +1678,7 @@ def get_all_checks(root: Path = PROJECT_ROOT) -> list[CheckResult]:
         check_current_state_fact_ledger(root),
         check_current_state_unknowns_contradictions(root),
         check_analysis_metrics_docs(root),
+        check_handoff_doc_locations(root),
         check_hook_installation(root),
     ]
 
