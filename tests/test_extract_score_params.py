@@ -26,6 +26,7 @@ from scripts.extract_score_params import (
     _hwp_formula_rows,
     _hwp_record_text,
     _hwp_records,
+    _hwp_section_flat,
     _hwp_table_rows,
     band_matches,
     extract_document_text,
@@ -559,3 +560,57 @@ def test_hwp_formula_rows_recovers_paragraph_lost_by_flat_decode() -> None:
 
     rows = _hwp_formula_rows(_hwp_records(section))
     assert [formula.multiplier for formula in parse_price_formula(rows)] == [Decimal("20")]
+
+
+# ----------------------------------------------------------------------------
+# 바이너리 HWP 평문(레코드 단위 문단 텍스트)
+# ----------------------------------------------------------------------------
+
+# 실측 원문: 한국농어촌공사 일반용역 적격심사 세부기준(20251001판) 제10조.
+# 이 문단은 PARA_TEXT 레코드에 있지만, 본문 스트림 전체 디코딩으로는 유실되어
+# 평문(flat)에서 '85점' 이 0회였다.
+_HWP_ARTICLE_10 = (
+    "제10조(낙찰자 결정) ① 최저가 입찰자에 대한 심사결과 종합평점이 85점(다만, "
+    "소프트웨어용역의 중소기업자간 경쟁제품, 여객 육상운송용역은 88점)이상이면 "
+    "낙찰자로 결정한다."
+)
+
+
+def _section_with_odd_sized_record() -> bytes:
+    """홀수 크기 레코드 뒤에 PARA_TEXT 문단이 오는 본문 스트림 섹션을 만든다."""
+    odd = _record(_HWP_TAG_PARA_HEADER, 1, b"\x00" * 21)  # payload 길이 21(홀수)
+    paragraph = _record(_HWP_TAG_PARA_TEXT, 1, _HWP_ARTICLE_10.encode("utf-16le"))
+    return odd + paragraph
+
+
+def test_hwp_section_flat_recovers_paragraph_after_odd_sized_record() -> None:
+    """홀수 크기 레코드 뒤 문단은 평문(flat)에서 유실되지 않아야 한다."""
+    section = _section_with_odd_sized_record()
+
+    # 고치기 전 방식(본문 스트림 전체 디코딩)에서는 정렬이 어긋나 문단이 사라진다.
+    whole_stream = section.decode("utf-16le", "ignore")
+    assert "85점" not in whole_stream
+    assert "낙찰자로 결정" not in whole_stream
+
+    flat = _hwp_section_flat(section)
+    assert "85점" in flat
+    assert "낙찰자로 결정" in flat
+    assert parse_pass_threshold(flat)[0] == Decimal("85")
+
+
+def test_hwp_section_flat_falls_back_to_stream_decode_when_records_unusable() -> None:
+    """레코드 파싱이 비어 있으면 기존 스트림 전체 디코딩으로 대체한다."""
+    section = b"\x00\x00" + "평문이 그대로 남아야 한다".encode("utf-16le")
+    assert _hwp_records(section) == []
+
+    flat = _hwp_section_flat(section)
+    assert flat == _HWP_KEEP_RE.sub("", section.decode("utf-16le", "ignore"))
+    assert "평문이 그대로 남아야 한다" in flat
+
+
+def test_hwp_section_flat_reads_paragraph_text_when_records_available() -> None:
+    """레코드가 있으면 레코드 단위 문단 텍스트를 평문으로 쓴다."""
+    section = _record(_HWP_TAG_PARA_TEXT, 1, _HWP_ARTICLE_10.encode("utf-16le"))
+    flat = _hwp_section_flat(section)
+    assert flat == _hwp_record_text(_hwp_records(section))
+    assert "종합평점이 85점" in flat
