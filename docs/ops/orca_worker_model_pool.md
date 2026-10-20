@@ -58,6 +58,7 @@
 | `qwen-nemotron-ultra-free` | `nvidia/nemotron-3-ultra-550b-a55b:free` | Qwen (OpenRouter 경유) | X (`False`) | 2026-10-13 등록. 명시 지정 전용 리뷰어. qwen CLI 의 OpenRouter 프로바이더 경유, `-i` 대화형 TUI |
 | `cmd-cat-jam-free` | `stealth/cat-jam:free` | Command Code | X (`False`) | 2026-10-18 등록. 명시 지정 전용 무료 빌더/조사. `--effort` 는 `default`/`low`/`medium`/`high`/`xhigh`/`max` |
 | `cmd-beam-free` | `reflection/beam:free` | Command Code | X (`False`) | 2026-10-18 등록. 명시 지정 전용 무료 리뷰어. `--effort` 는 `default`/`low`/`medium`/`high`/`xhigh`/`max` |
+| `cmd-minimax-flash-free` | `minimax/minimax-m3.1-flash:free` | Command Code | X (`False`) | 2026-10-20 등록. 명시 지정 전용 무료 빌더/조사. `--effort` 는 `default`/`low`/`medium`/`high`/`xhigh`/`max` |
 | `cmd-glyph-free` | `stealth/glyph-cluster:free` | Command Code | X (`False`) | 2026-10-18 등록. 명시 지정 전용 무료 빌더/조사 보조. `--effort` 는 `default`/`low`/`medium`/`high`/`xhigh` (max 없음) |
 
 `gemini-3.7-flash-*`, `deepseek-pro`, `glm`, `qwen-max`, `grok-4.6`, `grok-4.5`, `cmd-glm-flash`, `cmd-hy4-preview`, `qwen-nemotron-ultra-free` 모델은 `auto_selectable=False`로 설정되어 자동 배정되지 않으며, `--model` 명시 지정과 `WORKER_MODEL_NOTICE`를 거쳐야 사용됩니다.
@@ -95,6 +96,12 @@ Command Code CLI 는 추론 등급을 모델 ID 가 아니라 `--effort` 플래�
 | `reflection/beam:free` | `high` | `--effort high` | 명시 지정 전용 |
 | `reflection/beam:free` | `xhigh` | `--effort xhigh` | 명시 지정 전용 |
 | `reflection/beam:free` | `max` | `--effort max` | `high` |
+| `minimax/minimax-m3.1-flash:free` | `default` | (플래그 없음) | `low` |
+| `minimax/minimax-m3.1-flash:free` | `low` | `--effort low` | 명시 지정 전용 |
+| `minimax/minimax-m3.1-flash:free` | `medium` | `--effort medium` | 명시 지정 전용 |
+| `minimax/minimax-m3.1-flash:free` | `high` | `--effort high` | 명시 지정 전용 |
+| `minimax/minimax-m3.1-flash:free` | `xhigh` | `--effort xhigh` | 명시 지정 전용 |
+| `minimax/minimax-m3.1-flash:free` | `max` | `--effort max` | `high` |
 | `stealth/glyph-cluster:free` | `default` | (플래그 없음) | `low` |
 | `stealth/glyph-cluster:free` | `low` | `--effort low` | 명시 지정 전용 |
 | `stealth/glyph-cluster:free` | `medium` | `--effort medium` | 명시 지정 전용 |

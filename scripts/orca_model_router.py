@@ -393,6 +393,28 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
         ),
     },
+    "cmd-minimax-flash-free": {
+        "id": "minimax/minimax-m3.1-flash:free",
+        "provider": "cmd",
+        "tier": "free",
+        "auto_selectable": False,
+        "max_tokens": None,
+        "effort_levels": ("default", "low", "medium", "high", "xhigh", "max"),
+        "effort_default_level": "default",
+        "effort_by_risk": {"low": "default", "medium": "high", "high": "max"},
+        "suitable_for": [
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "Command Code(cmd) CLI 경유 MiniMax M3.1 Flash 무료 모델. 명시 지정 전용이며 "
+            "자동 배정하지 않는다. 2026-10-20 probe: --effort bogus 가 "
+            "Supported: low, medium, high, xhigh, max 를 돌려주었다. "
+            "빌더 minimax max, 리뷰어 beam max 조합으로 2026-10-20 사용자 지시. "
+            "계열은 id 접두사 minimax 이며 beam(reflection)과 다르다. "
+            "기동은 scripts/orca_cmd_launch.py 런처를 터미널 명령으로 지정한다."
+        ),
+    },
     "cmd-glyph-free": {
         "id": "stealth/glyph-cluster:free",
         "provider": "cmd",
