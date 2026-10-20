@@ -24,7 +24,7 @@
 | 목표 | 세부 항목 | 현재 실측 | 목표치 | 판정 | 근거 |
 | --- | --- | ---: | ---: | --- | --- |
 | G1 | DB 스키마·행 수·가중치 보존 | 100% 무손실 | 100% | 통과 | `scripts/verify_migration.py` |
-| G2 | 크로스 플랫폼 (macOS / Windows) | macOS 완료 | 양대 OS | 부분 완료 | Windows Docker Desktop 실기 검증 잔여 |
+| G2 | 크로스 플랫폼 (macOS / Windows) | macOS 완료 | 양대 OS | 보류 | Windows Docker Desktop 실기 검증 잔여 |
 | G3 | 성능 지표 (예측 API, SSE) | 항목별 실측 | 항목별 기준 | **항목별 판정** | [`docs/context/CURRENT_STATE.md`](docs/context/CURRENT_STATE.md) 2장 |
 
 > **G3 실측값은 이 표에 두지 않습니다.** 레이턴시 지표는 측정마다 바뀌므로 정본은
@@ -58,6 +58,60 @@
 | LLM | Ollama gemma4:e2b (기본), Google Gemini (대체/선택) | 의도 분류, 요약, RAG |
 | 패키지 관리 | uv + pyproject.toml | pip 대체 |
 | 컨테이너 | Docker + docker-compose | 크로스 플랫폼 표준 (G2) |
+
+## 주요 기능
+
+| 기능 | 설명 | API |
+| --- | --- | --- |
+| 낙찰가 예측 | 공고 기반 낙찰가 예측과 예측 구간 | `POST /api/v1/predictions/predict-price` |
+| 적격심사 정량평가 | 규칙 판별·가격점수 산출·통과 가능 낙찰가 구간 역산 | `POST /api/v1/evaluations/analyze` |
+| 신용평가등급확인서 자동 입력 | 등급확인서 PDF 에서 등급·평가일을 뽑아 입력란을 미리 채웁니다 | `POST /api/v1/documents/extract` |
+| 스캔본 OCR | 텍스트로 등급을 못 찾은 이미지 PDF 를 로컬 OCR 로 한 번 더 읽습니다 | 같은 API (OCR 토글) |
+| 수기심사 직접 입력 | 수기심사 공고와 기준 미확보 공고는 B·k·기준비율·통과점수를 직접 넣어 계산합니다 | `POST /api/v1/evaluations/analyze` |
+
+### 적격심사 규칙 범위
+
+`src/app/services/evaluation_rules.py` 는 적격심사 산식 규칙을 규칙 ID 기준 206종으로
+담고 있습니다. 표의 건수는 규칙 항목 수이고, 상수 사이에 같은 규칙 ID 가 겹쳐 252개
+항목이 206종이 됩니다.
+
+| 구분 | 규칙 상수 | 항목 수 |
+| --- | --- | ---: |
+| 조달청 일반용역 현행 | `POST_20260727_RULES` | 20 |
+| 조달청 일반용역 개정 | `POST_20260526_RULES` | 20 |
+| 조달청 일반용역 구판 | `PRE_20260526_RULES` / `PRE_20250901_RULES` / `PRE_20230501_RULES` | 56 |
+| 시·도 자체 별표 | `LOCAL_RULES` | 70 |
+| 기관 배점표와 구판 | `INSTITUTION_RULES` | 78 |
+| 환경부 건설폐기물처리용역 | `MOE_CDW_RULES` | 6 |
+| 행안부 학술연구 띠 | `MOIS_ACADEMIC_BAND_RULES` | 2 |
+
+최근 12개월 Servc 적격심사 공고 31,305건 기준(2026-10-19 판정) 지역 규칙 1,872건,
+조달청·전국 기준 19,459건, 기관 규칙 63건에 적용됐고 9,911건은 계산이 차단됩니다.
+차단된 공고 가운데 지자체 기준 미확보(`LOCAL_RULE_NOT_FOUND`)와 수기심사 공고는
+B·k·기준비율·통과점수를 직접 입력해 계산합니다. 근거는
+[`docs/ops/handoff_20261019_close.md`](docs/ops/handoff_20261019_close.md) 7절입니다.
+
+### 기능 활성화 설정
+
+기능은 기본값이 꺼져 있습니다. 켜려면 환경 변수를 설정합니다. 전체 목록은
+[`docs/ops/environment_variables.md`](docs/ops/environment_variables.md) 를 봅니다.
+
+| 환경 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `DOCUMENT_EXTRACTION_ENABLED` | `false` | 신용평가등급확인서 PDF 추출 API 를 엽니다. 꺼져 있으면 `POST /api/v1/documents/extract` 가 404 입니다 |
+| `DOCUMENT_OCR_ENABLED` | `false` | 텍스트 추출로 등급을 못 찾은 스캔본 PDF 를 로컬 OCR 로 한 번 더 읽습니다 |
+| `DOCUMENT_OCR_MODEL_DIR` | `data/ocr_models` | OCR 인식 모델 파일 위치입니다. 상대 경로는 프로젝트 루트 기준입니다 |
+
+OCR 인식 모델은 실행 중에 내려받지 않습니다. Docker 이미지는 빌드 단계에서 모델을
+넣지만, 로컬 개발은 미리 받아 두십시오.
+
+```bash
+uv run python scripts/fetch_ocr_models.py
+uv run python scripts/fetch_ocr_models.py --dest data/ocr_models
+```
+
+Docker 로 실행할 때 컨테이너는 `.env` 를 읽지 않으므로, `docker-compose.yml` 이 넘기는
+`DOCUMENT_EXTRACTION_ENABLED` 와 `DOCUMENT_OCR_ENABLED` 로 켭니다.
 
 ## 빠른 시작
 
