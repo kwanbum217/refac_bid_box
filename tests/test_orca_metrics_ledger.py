@@ -7,6 +7,7 @@ scripts/orca_metrics_ledger.py 의 단위 테스트입니다.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -708,6 +709,10 @@ def test_record_session_selection_rules(
         ),
         encoding="utf-8",
     )
+
+    # 최신 판정은 mtime 기준이라 연달아 쓴 두 파일의 mtime 이 같을 수 있습니다. 시각을 못박습니다.
+    os.utime(old_file, (1_000_000_000, 1_000_000_000))
+    os.utime(new_file, (1_000_000_100, 1_000_000_100))
 
     # (1) 기본: 최신 1개 세션(sess_new.jsonl)만 집계
     ledger1 = tmp_path / "ledger1.jsonl"
