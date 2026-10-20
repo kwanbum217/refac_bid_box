@@ -372,6 +372,23 @@ def _hwp_record_text(records: list[tuple[int, int, bytes]]) -> str:
     return "\n".join(parts)
 
 
+def _hwp_section_flat(section: bytes, records: list[tuple[int, int, bytes]] | None = None) -> str:
+    """본문 스트림 섹션 하나의 평문 텍스트를 만든다.
+
+    본문 스트림 전체를 UTF-16LE 로 통째로 디코딩하면 레코드 크기가 홀수일 때
+    정렬이 한 바이트씩 어긋나 뒤따르는 문단 텍스트가 통째로 유실된다. 그래서
+    레코드 단위 문단(PARA_TEXT)·수식 개체(EQEDIT) 텍스트를 모아 평문을 만든다.
+    레코드에서 읽은 텍스트가 비어 있을 때(레코드 파싱 실패)만 기존 스트림 전체
+    디코딩으로 대체한다.
+    """
+    if records is None:
+        records = _hwp_records(section)
+    text = _hwp_record_text(records)
+    if text:
+        return text
+    return _HWP_KEEP_RE.sub("", section.decode("utf-16le", "ignore"))
+
+
 def _hwp_cell_text(
     records: list[tuple[int, int, bytes]], start: int, cell_level: int
 ) -> tuple[str, int]:
@@ -480,10 +497,11 @@ def _hwp_formula_rows(records: list[tuple[int, int, bytes]]) -> list[tuple[str, 
 def _binary_hwp_document(data: bytes) -> DocumentText:
     """바이너리 HWP 의 BodyText 스트림에서 본문 텍스트와 표 행을 뽑는다.
 
-    HWP 5.0 은 본문을 UTF-16LE 로 저장한다. 문단 텍스트는 기존과 같이 평문으로
-    잇고, 추가로 TABLE/LIST_HEADER 레코드에서 행·열 격자를 복원해 rows 에 넣는다.
-    표 복원이 실패해도 평문 추출은 유지한다. 레코드 단위로도 문단·수식 개체
-    텍스트를 읽어, 전체 스트림 디코딩이 정렬 오차로 놓친 계산식을 보강한다.
+    HWP 5.0 은 본문을 UTF-16LE 로 저장하지만, 본문 스트림 전체를 통째로 디코딩하면
+    홀수 크기 레코드 뒤에서 정렬이 어긋나 뒤따르는 문단 텍스트가 통째로 유실된다.
+    그래서 평문은 레코드 단위 문단·수식 개체 텍스트로 만든다. 추가로 TABLE/LIST_HEADER
+    레코드에서 행·열 격자를 복원해 rows 에 넣는다. 표 복원이 실패해도 평문 추출은
+    유지한다.
     """
     try:
         streams = _ole_streams(data)
@@ -496,16 +514,18 @@ def _binary_hwp_document(data: bytes) -> DocumentText:
         if not (name.startswith("BodyText/") or re.fullmatch(r"(BodyText/)?Section\d+", name)):
             continue
         section = streams[name]
-        chunks.append(_HWP_KEEP_RE.sub("", section.decode("utf-16le", "ignore")))
         records = _hwp_records(section)
+        chunks.append(_hwp_section_flat(section, records))
         # 표 복원이 실패해도 평문 추출은 유지한다.
         with contextlib.suppress(Exception):
             rows.extend(_hwp_table_rows(records))
+        # 계산식 문단은 여기서 한 번만 승격한다. 평문도 같은 레코드 텍스트로 만들어지므로
+        # flat 에서 다시 승격하면 같은 계산식이 후보로 두 번 들어가 복수 후보가 되어
+        # 배점계수 k 확정에 실패한다.
         rows.extend(_hwp_formula_rows(records))
     flat = _WHITESPACE_RE.sub(" ", "\n".join(chunks)).strip()
     if not flat and not rows:
         return DocumentText(reason="HWP 본문 텍스트 없음")
-    rows.extend(_formula_text_rows(flat))
     return DocumentText(rows=tuple(rows), flat=flat)
 
 
