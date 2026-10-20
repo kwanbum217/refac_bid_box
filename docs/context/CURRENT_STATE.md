@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
-> **updated_at**: 2026-10-19
-> **source_commit**: `8b2626ca`
+> **updated_at**: 2026-10-20
+> **source_commit**: `f0274da5`
 > **version**: 0.1.0rc1 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -99,7 +99,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **negotiation_contract_support**: 협상 공고를 NEGOTIATION_CONTRACT 로 판별하고 공고에 실린 기술능력·입찰가격 평가비율과 변종 식별자를 화면에 제공합니다. 가격점수는 공고서 원문 필요 판정으로 계산하지 않으며 낙찰률 참고 분포 제공까지 완료했습니다.
 
-- **price_score_verification**: 입찰가격 평점 산식 검증기와 통과 가능 낙찰가 구간 역산을 추가해 predict-price 응답의 score_verdict 로 연결했습니다. 조달청 일반용역 14종 규칙에 한정되고 B·k·T 는 사용자 입력이라 자동 판정은 아니며 가이드 원본 규칙을 회귀 검증합니다.
+- **price_score_verification**: 입찰가격 평점 산식 검증기와 통과 가능 낙찰가 구간 역산을 추가해 predict-price 응답의 score_verdict 로 연결했습니다. 범위는 조달청 일반용역을 넘어 시·도·기관까지 늘었으나 B·k·T 는 사용자 입력이라 자동 판정은 아니며 가이드 원본 규칙을 회귀 검증합니다.
 
 - **score_params_absence**: B·k·T 는 나라장터 OpenAPI 113개 항목과 공고 본문에 없음이 실측 확정됐고, 유일한 획득 경로는 공고에 첨부된 적격심사 세부기준 별표 문서입니다.
 
@@ -107,7 +107,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **drift_job**: 드리프트 감시는 Servc·Thng·Cnstwk 세 baseline을 모두 갖춰 전 카테고리 진행 중입니다(ML_DRIFT_MONITOR_ENABLED 기본값 True). Thng b_20260915_thng_post_regime(18,069건) 적재로 건너뛰기 예외는 없어졌고, ml_registry는 Git 미추적이라 운영 재생성이 필요합니다.
 
-- **institution_formula_absence**: 기관별·지역별 산식 확장은 진행 중이며 아직 코드에 없고 조달청 일반용역 14종만 evaluation_rules.py 에 있습니다. 2026-09-30 재검산에서 한국수자원공사는 11구간 중 5구간 일치·6구간 미확정, 한국도로공사는 10행 중 7행 일치·3행 미확정입니다.
+- **rule_coverage**: 기관·지역 산식 규칙은 규칙 ID 206종이 evaluation_rules.py 에 있고 시·도 70종과 기관 78종까지 담고 있습니다. 최근 12개월 Servc 공고 31,305건 중 지역 1,872건·전국 기준 19,459건·기관 63건에 적용되고 9,911건은 차단됩니다. 남은 구판 원문 보완은 진행 중입니다.
 
 ### blocked 사실
 

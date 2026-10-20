@@ -1,6 +1,6 @@
 version: "2.0"
 description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
-updated_at: "2026-09-21"
+updated_at: "2026-10-20"
 facts:
   - id: gate_g1
     status: closed
@@ -251,6 +251,17 @@ facts:
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/analysis/negotiation_price_score_feasibility_20260918.md
+  - id: price_score_verification
+    status: closed
+    decision_date: "2026-10-20"
+    claim: "입찰가격 평점 산식 검증기와 통과 가능 낙찰가 구간 역산을 추가해 predict-price 응답의 score_verdict 로 연결했습니다. 범위는 조달청 일반용역을 넘어 시·도·기관까지 늘었으나 B·k·T 는 사용자 입력이라 자동 판정은 아니며 가이드 원본 규칙을 회귀 검증합니다."
+    document_anchor: "입찰가격 평점 산식 검증기와 통과 가능 낙찰가 구간 역산을 추가해"
+    evidence:
+      - src/app/services/price_score_verification.py
+      - src/app/api/v1/predictions.py
+      - tests/test_price_score_verification.py
+    related_documents:
+      - docs/context/CURRENT_STATE.md
   - id: compare_stats_latency
     status: closed
     decision_date: "2026-09-10"
@@ -445,6 +456,17 @@ facts:
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/ops/psi_drift_monitoring.md
+  - id: rule_coverage
+    status: active
+    decision_date: "2026-10-20"
+    claim: "기관·지역 산식 규칙은 규칙 ID 206종이 evaluation_rules.py 에 있고 시·도 70종과 기관 78종까지 담고 있습니다. 최근 12개월 Servc 공고 31,305건 중 지역 1,872건·전국 기준 19,459건·기관 63건에 적용되고 9,911건은 차단됩니다. 남은 구판 원문 보완은 진행 중입니다."
+    document_anchor: "기관·지역 산식 규칙은 규칙 ID 206종이"
+    evidence:
+      - src/app/services/evaluation_rules.py
+      - docs/ops/handoff_20261019_close.md
+    related_documents:
+      - docs/context/CURRENT_STATE.md
+      - docs/ops/handoff_20261019_close.md
   - id: coldsql_rerun
     status: closed
     decision_date: "2026-09-13"
