@@ -60,7 +60,8 @@ class PriceBoundsResult:
     """사정률 하한·상한 시나리오의 통과 투찰금액 구간.
 
     min_bid_amount·max_bid_amount 는 각 시나리오 예정가격에서 통과점수를 넘기는 금액이며
-    낙찰하한율 이상입니다. status 가 blocked 면 reasons 에 사유가 담기고 금액은 None 입니다.
+    공고 낙찰하한율이 있으면 그 하한율 이상입니다(하한율 미상이면 통과 구간 그대로입니다).
+    status 가 blocked 면 reasons 에 사유가 담기고 금액은 None 입니다.
     """
 
     status: Literal["ok", "blocked"]
@@ -104,7 +105,7 @@ def compute_price_bounds(
     base_rate: Decimal,
     max_price_score: Decimal,
     multiplier: Decimal,
-    announcement_lwlt_rate: Decimal,
+    announcement_lwlt_rate: Decimal | None,
     flat_ratio: Decimal | None = None,
     flat_score: Decimal | None = None,
 ) -> PriceBoundsResult:
@@ -118,6 +119,13 @@ def compute_price_bounds(
     invert_pass_bid_range 의 유효 금액(effective_amount_*)을 그대로 쓰므로 두 금액 모두
     낙찰하한율 이상이고, 원 단위 격자와 평탄 규정이 반영됩니다. 사정률 범위(rate_low·
     rate_high)를 인자로 받아, 실측 분포가 확보되면 이 값만 바꿔 주입할 수 있습니다.
+
+    [공고 낙찰하한율 미상]
+    announcement_lwlt_rate 는 공고의 낙찰하한율이라 None 이면 미상(제도적 부재 포함)을
+    뜻합니다. 이때는 하한율 제약을 걸지 않으므로 평점 통과 구간이 그대로 최저가·최상가가
+    되며, 하한율을 준 경우보다 하한 금액이 낮거나 같습니다. 하한율은
+    invert_pass_bid_range 가 Decimal | None 을 받아 처리하므로 이 함수에서 따로 가공하지
+    않고 그대로 넘깁니다.
     """
     reasons: list[str] = []
     if base_amount <= 0:
