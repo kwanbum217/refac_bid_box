@@ -4,7 +4,7 @@
 > **버전**: v1.0.0
 > **상태**: 기각. 앙상블 축 종결
 > **대상**: Servc (용역) 낙찰률 예측 모델 `servc_institution_v1`
-> **선행 문서**: [`2026-08-07_servc_next_axis_handoff.md`](../handoff/2026-08-07_servc_next_axis_handoff.md) 3장
+> **선행 문서**: [`2026-08-07_servc_next_axis_handoff.md`](../archive/handoff/2026-08/2026-08-07_servc_next_axis_handoff.md) 3장
 > **측정 스크립트**: [`scripts/eval_servc_ensemble_headroom.py`](../../scripts/eval_servc_ensemble_headroom.py)
 
 ---

@@ -8,7 +8,7 @@
 
 ## 1. 동기
 
-`docs/handoff/2026-08-22_post_1a45ad5_audit.md` P2-2: 기존 `_settings_lock`은 lock 파일에 보유 PID만 기록하고 finally 블록에서 소유권 확인 없이 같은 경로를 unlink 한다. 동시 trust 워커가 돌면 silent 로서 다른 프로세스의 lock을 지울 가능성이 남아 있으며, `finally` 블록의 무조건 unlink는 경쟁 시 정상 종료 후 lock 이 사라지지 않는 회귀를 만든다.
+`docs/archive/handoff/2026-08/2026-08-22_post_1a45ad5_audit.md` P2-2: 기존 `_settings_lock`은 lock 파일에 보유 PID만 기록하고 finally 블록에서 소유권 확인 없이 같은 경로를 unlink 한다. 동시 trust 워커가 돌면 silent 로서 다른 프로세스의 lock을 지울 가능성이 남아 있으며, `finally` 블록의 무조건 unlink는 경쟁 시 정상 종료 후 lock 이 사라지지 않는 회귀를 만든다.
 
 ## 2. 변경 요약
 

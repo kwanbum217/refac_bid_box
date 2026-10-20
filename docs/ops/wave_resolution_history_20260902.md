@@ -82,7 +82,7 @@
 | 3.5 CSRF | signup, login, logout 세 SSR 폼에 이중 제출 토큰 검증을 겁니다. 토큰이 없으면 403 으로 fail-closed 입니다. JSON API 와 워커 콜백은 제외했습니다 |
 | 3.1 G1 대조 | 이행 시점 이전 구간의 행 수를 따로 세어 기준선과 대조합니다. 경계는 `data/backups/data_assets_checksums.json` 의 `generated_at` 에서 왔습니다 |
 
-> **세션 종료 인수인계 (2026-09-02)**: Wave G 잔여를 `565105f` 까지 병합·푸시한 뒤 세션을 닫았습니다. 다음 코디네이터는 [`../ops/handoff_20260902_wave_g_session_close.md`](./handoff_20260902_wave_g_session_close.md) 를 읽으십시오. 이전 인계는 [`../ops/handoff_20260902_grok_coordinator.md`](./handoff_20260902_grok_coordinator.md) 입니다. Grok 운영 절차는 [`../ops/grok_coordinator_operating_prompt.md`](./grok_coordinator_operating_prompt.md) 입니다. Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다.
+> **세션 종료 인수인계 (2026-09-02)**: Wave G 잔여를 `565105f` 까지 병합·푸시한 뒤 세션을 닫았습니다. 다음 코디네이터는 [`../ops/handoff_20260902_wave_g_session_close.md`](../archive/handoff/2026-09/handoff_20260902_wave_g_session_close.md) 를 읽으십시오. 이전 인계는 [`../ops/handoff_20260902_grok_coordinator.md`](../archive/handoff/2026-09/handoff_20260902_grok_coordinator.md) 입니다. Grok 운영 절차는 [`../ops/grok_coordinator_operating_prompt.md`](./grok_coordinator_operating_prompt.md) 입니다. Orca Run 은 `run_971584ddb4a0` 을 계속 씁니다.
 
 ### 1.5.7 Wave G 부분 해소 (2026-09-02)
 

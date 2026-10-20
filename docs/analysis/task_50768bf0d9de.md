@@ -12,11 +12,11 @@
 ## 1. 발단 사실 (확인됨)
 
 - 2026-08-31 에 qwen3.7-plus 리뷰어가 JSON 이 아닌 응답을 두 번 연속 돌려주어 실패했다.
-  - 출처: `docs/ops/handoff_20260831_wave_gh.md:96-100`
+  - 출처: `docs/archive/handoff/2026-08/handoff_20260831_wave_gh.md:96-100`
 - 같은 날 Wave G4 검증에서는 정상 완주했으므로 간헐적이다.
-  - 출처: `docs/ops/handoff_20260831_wave_gh.md:96-98`
+  - 출처: `docs/archive/handoff/2026-08/handoff_20260831_wave_gh.md:96-98`
 - 현재 실무 대체재는 claude-sonnet-4-6 이다. Antigravity 5시간 한도를 쓴다.
-  - 출처: `docs/ops/handoff_20260831_wave_gh.md:98-100`
+  - 출처: `docs/archive/handoff/2026-08/handoff_20260831_wave_gh.md:98-100`
 - TIER_POLICY 의 reviewer 주 모델은 qwen-plus 이다. (`scripts/orca_model_router.py:1109-1114`)
   - `("reviewer", "high"): ["qwen-plus", "gemini-flash-high"]`
   - `("reviewer", "medium"): ["qwen-plus", "gemini-flash-medium"]`

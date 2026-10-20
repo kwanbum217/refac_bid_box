@@ -56,7 +56,7 @@
 | 5 | `docs/README.md` | 문서 인덱스 정정일/버전 표기 갱신 | `main` 최신 문서 체계로 누적 반영 완료 | **폐기 권고** |
 | 6 | `docs/changelogs/work_log.md` | 2026-08-05 당시 커밋 12개에 대한 작업 로그 | `main`의 `work_log.md`가 2026-08-26 현재까지 최신 유지 | **폐기 권고** |
 | 7 | `docs/design/REFACTORING_DESIGN.md` | 로컬 Ollama 12초 SLO 및 Arq 워커 설계 반영 | `main` 설계 문서에 상위 호환 반영 완료 | **폐기 권고** |
-| 8 | `docs/handoff/2026-08-04_phase7_handoff.md` | Phase 7 인수인계 문서 내 12초 SLO 타겟 갱신 | `main` 인수인계 문서에 반영 완료 | **폐기 권고** |
+| 8 | `docs/archive/handoff/2026-08/2026-08-04_phase7_handoff.md` | Phase 7 인수인계 문서 내 12초 SLO 타겟 갱신 | `main` 인수인계 문서에 반영 완료 | **폐기 권고** |
 | 9 | `docs/ops/cross_platform_guide.md` | Arq 워커 컨테이너 기동 및 환경변수 가이드 | `main` 크로스플랫폼 가이드에 완전 반영 완료 | **폐기 권고** |
 | 10 | `docs/ops/environment_variables.md` | 워커 스케줄 플래그 2종 환경변수 설명 추가 | `main` 환경변수 가이드에 완전 반영 완료 | **폐기 권고** |
 | 11 | `docs/ops/latency_benchmark.md` | 컷오버 보고서 참조 링크 및 상태 설명 갱신 | `main` 벤치마크 가이드에 완전 반영 완료 | **폐기 권고** |

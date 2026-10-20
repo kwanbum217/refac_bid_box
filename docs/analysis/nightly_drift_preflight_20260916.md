@@ -9,7 +9,7 @@
 
 ## 1. 개요 및 점검 배경
 
-- 2026-09-16 세션 인수인계(`docs/handoff/session_20260916_rollout_release_workers.md`) 시점 개발 DB의 `retrain_logs` 내 `trigger_source='drift_monitor'` 건수는 **0건**이었습니다.
+- 2026-09-16 세션 인수인계(`docs/archive/handoff/2026-09/session_20260916_rollout_release_workers.md`) 시점 개발 DB의 `retrain_logs` 내 `trigger_source='drift_monitor'` 건수는 **0건**이었습니다.
 - 세 개 카테고리(`Cnstwk`, `Servc`, `Thng`)의 baseline 아티팩트가 모두 준비된 상태에서, 2026-09-17 04:00 KST에 첫 주기적 드리프트 감시(`drift_monitor_task`)가 실행될 예정입니다.
 - 본 사전점검에서는 스케줄 실행, 컨테이너 조작, 데이터 쓰기 없이 읽기 전용 질의와 API 엔드포인트 실측만으로 스택 상태를 확인하고, 04:00 이후 Thng 모델이 `INSUFFICIENT_DATA`가 아닌 실제 PSI 판정(`STABLE` 또는 `DRIFT_DETECTED`)으로 남는지 확인하는 절차와 원인 분기를 명시합니다.
 
@@ -133,7 +133,7 @@ id | execution_id                          | run_mode                 | status  
 
 ### 4.2 Baseline 아티팩트 보존 상태
 
-워커 컨테이너 내 실측 결과, 3개 대상 모델 모두 baseline 아티팩트(`feature_distributions_v1.json`, `metadata.json`)가 정상 보존되어 있습니다 (`docs/handoff/session_20260916_rollout_release_workers.md` 21행 및 코디네이터 실측 사실).
+워커 컨테이너 내 실측 결과, 3개 대상 모델 모두 baseline 아티팩트(`feature_distributions_v1.json`, `metadata.json`)가 정상 보존되어 있습니다 (`docs/archive/handoff/2026-09/session_20260916_rollout_release_workers.md` 21행 및 코디네이터 실측 사실).
 
 | 카테고리 | 등록 모델명 (`CATEGORY_MODEL_NAMES`) | Baseline 아티팩트 경로 | 보존 파일 | 학습 표본 수 (컨테이너 실측) |
 | --- | --- | --- | --- | --- |

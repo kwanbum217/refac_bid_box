@@ -1,6 +1,6 @@
 """후보 B: 요청당 특징 맵 단일 구축을 검증합니다.
 
-/docs/handoff/2026-08-13_prediction_p95_diagnosis.md 후보 B. /predict 요청
+/docs/archive/handoff/2026-08/2026-08-13_prediction_p95_diagnosis.md 후보 B. /predict 요청
 경로(predictor -> predict_optimal_price -> _prepare_full_frame ->
 wrapper.predict -> prepare_input_frame)에서 build_default_feature_map 이
 3회 재구성되던 것을 1회로 줄였습니다. 이 파일은 그 계약을 고정합니다.

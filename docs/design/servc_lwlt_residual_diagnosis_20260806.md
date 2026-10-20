@@ -10,7 +10,7 @@
 
 ## 1. 배경과 질문
 
-[`2026-08-06_model_improvement_handoff.md`](../handoff/2026-08-06_model_improvement_handoff.md) 3.2 절이 세 가지를 물었습니다.
+[`2026-08-06_model_improvement_handoff.md`](../archive/handoff/2026-08/2026-08-06_model_improvement_handoff.md) 3.2 절이 세 가지를 물었습니다.
 
 1. 결측 집단의 큰 오차가 특정 낙찰방법의 **안정적인 편향**인가.
 2. 그 편향이 과거 학습 구간과 미래 평가 구간에서 **같은 방향**인가.

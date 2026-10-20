@@ -20,9 +20,9 @@ Phase 7 또는 G3 성능 게이트를 정의하거나 참조하는 `docs/` 내 �
 | [`docs/ops/phase7_latency_recheck_20260813.md`](phase7_latency_recheck_20260813.md) | 후보 A/B 재측정, 동시성별 판정 |
 | [`docs/ops/phase8_predict_microbatch_20260814.md`](phase8_predict_microbatch_20260814.md) | 마이크로배칭 c10 반복 측정 |
 | [`docs/design/sse_first_token_20260805.md`](../design/sse_first_token_20260805.md) | SSE 첫 토큰 측정, 표본 10회 |
-| [`docs/handoff/2026-08-13_future_work_backlog.md:96-133`](../handoff/2026-08-13_future_work_backlog.md#L96-L133) | 컷오버 차단 해소, 완료 기준 |
-| [`docs/handoff/2026-08-13_prediction_p95_diagnosis.md:210-233`](../handoff/2026-08-13_prediction_p95_diagnosis.md#L210-L233) | 재측정 매트릭스, 판정 기준 표 |
-| [`docs/handoff/2026-08-14_session_handoff.md:58-76`](../handoff/2026-08-14_session_handoff.md#L58-L76) | 표본 수에 따라 통과/미달이 갈리는 문제 인식 |
+| [`docs/archive/handoff/2026-08/2026-08-13_future_work_backlog.md:96-133`](../archive/handoff/2026-08/2026-08-13_future_work_backlog.md#L96-L133) | 컷오버 차단 해소, 완료 기준 |
+| [`docs/archive/handoff/2026-08/2026-08-13_prediction_p95_diagnosis.md:210-233`](../archive/handoff/2026-08/2026-08-13_prediction_p95_diagnosis.md#L210-L233) | 재측정 매트릭스, 판정 기준 표 |
+| [`docs/archive/handoff/2026-08/2026-08-14_session_handoff.md:58-76`](../archive/handoff/2026-08/2026-08-14_session_handoff.md#L58-L76) | 표본 수에 따라 통과/미달이 갈리는 문제 인식 |
 
 ### A.2 항목별 판정
 

@@ -259,7 +259,7 @@ flowchart TD
 ## 8. 참고 파일
 
 - `docs/handoff/session_20260930_servc_formula_collection.md` — 33곳 수집 대장과 판정 규칙 10개
-- `docs/ops/handoff_20260929_qual_rates_session_close.md` — 조달청 기준비율 세션 종료 기록
+- `docs/handoff/handoff_20260929_qual_rates_session_close.md` — 조달청 기준비율 세션 종료 기록
 - `/tmp/qual-formulas/hermes-servc/kwater/kw15571_tbl.txt` — 한국수자원공사 표 추출물
 - `/tmp/qual-formulas/hermes-servc/kwater/kw15571.txt` — 한국수자원공사 본문 추출물(표 비어 있음)
 - `/tmp/qual-formulas/hermes-servc/koex/q2022_table.txt` — 한국도로공사 표 추출물

@@ -86,7 +86,7 @@
 - **반례(승인 경로).** `cat .env`, `cat ~/.ssh/id_rsa`, `mysql -h 127.0.0.1 -u root`, `docker run --rm -v /:/host alpine`, `git push origin main` 이 1단계 설정에서 보류 또는 거부되는지 확인한다.
 - **반례(컨테이너 경로).** 같은 명령이 컨테이너 안에서 실패하거나 호스트 자산에 닿지 못하는지 확인한다.
 - **G2.** 위 시나리오를 macOS 와 Windows(PowerShell) 양쪽에서 실행한다.
-- **회귀 시험 배치.** 새 시험 파일은 `tests/` 아래에 두고, CI 의 개별 커버리지 목록에도 추가한다(`docs/ops/handoff_20261012_z_q_waves_close.md` 4절 함정).
+- **회귀 시험 배치.** 새 시험 파일은 `tests/` 아래에 두고, CI 의 개별 커버리지 목록에도 추가한다(`docs/handoff/handoff_20261012_z_q_waves_close.md` 4절 함정).
 - **감시기 단위 시험.** `classify_command` 의 자산별 거부 분기를 기존 시험과 같은 방식으로 고정한다.
 
 ---
@@ -105,5 +105,5 @@
 ## 6. 참고 자료
 
 - 저장소 코드: `scripts/orca_auto_approve.py`, `scripts/orca_cmd_launch.py`, `scripts/orca_opencode_launch.py`, `scripts/orca_agy_launch.py`, `scripts/orca_taskctl.py`, `docker-compose.yml`, `Dockerfile`
-- 저장소 문서: `docs/ops/orca_control_plane_tools.md`, `docs/ops/handoff_20261012_z_q_waves_close.md`, `docs/context/CURRENT_STATE.md`
+- 저장소 문서: `docs/ops/orca_control_plane_tools.md`, `docs/handoff/handoff_20261012_z_q_waves_close.md`, `docs/context/CURRENT_STATE.md`
 - 벤더 문서: commandcode.ai/docs/permissions, opencode.ai/docs/permissions, antigravity.google/docs/sandbox, antigravity.google/docs/permissions, developers.openai.com/codex/sandboxing

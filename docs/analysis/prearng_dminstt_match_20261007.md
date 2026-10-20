@@ -5,7 +5,7 @@
 > **범위**: `bid_prearng_prices.dminstt_nm` 을 `bid_announcements` 의 (공고번호, 정규화 차수, category) 로 잇는 조회 작성과 매칭률 측정
 > **코드 변경**: `scripts/link_prearng_dminstt.py`, `tests/test_link_prearng_dminstt.py`
 > **DB 변경**: 없음. 운영 DB 는 읽기 전용 조회만 수행했고 대량 갱신은 실행하지 않았다.
-> **근거**: [prearng_price_collection_feasibility_20261006.md](prearng_price_collection_feasibility_20261006.md) 7.1·12장, [handoff_20261006_web_feedback_session_close.md](../ops/handoff_20261006_web_feedback_session_close.md) 1장 11번
+> **근거**: [prearng_price_collection_feasibility_20261006.md](prearng_price_collection_feasibility_20261006.md) 7.1·12장, [handoff_20261006_web_feedback_session_close.md](../handoff/handoff_20261006_web_feedback_session_close.md) 1장 11번
 > **선행**: 8번 예비가격 소급 수집(`bid_prearng_prices` 353,012건, 3장)
 
 ---

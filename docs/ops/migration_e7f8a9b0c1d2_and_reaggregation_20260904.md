@@ -3,7 +3,7 @@
 > **작성일**: 2026-09-04
 > **수행자**: 코디네이터 (담당자 승인 후 직접 수행)
 > **대상 DB**: compose `db` 서비스, 볼륨 `refac_bid_box_mysql_data` (40.5G), `127.0.0.1:3306/procurement`
-> **관련 문서**: [`handoff_20260904_wave_q_ci_recovery.md`](handoff_20260904_wave_q_ci_recovery.md) 5.3절, [`announcement_amount_outliers_20260904.md`](announcement_amount_outliers_20260904.md)
+> **관련 문서**: [`handoff_20260904_wave_q_ci_recovery.md`](../archive/handoff/2026-09/handoff_20260904_wave_q_ci_recovery.md) 5.3절, [`announcement_amount_outliers_20260904.md`](announcement_amount_outliers_20260904.md)
 
 ---
 

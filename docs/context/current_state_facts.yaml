@@ -241,7 +241,7 @@ facts:
     evidence:
       - docs/analysis/aq2_servc_scope_extension_survey_20260910.md
       - docs/analysis/ng2a_negotiation_price_score_survey_20260910.md
-      - docs/ops/handoff_20260910_wave_aq_ng_session_close.md
+      - docs/archive/handoff/2026-09/handoff_20260910_wave_aq_ng_session_close.md
       - docs/analysis/bm1_negotiation_price_source_recount_20260911.md
       - src/app/services/evaluation_rules.py
       - src/app/services/negotiation_stats.py
@@ -268,7 +268,7 @@ facts:
     claim: "GET /api/v1/bids/stats 웜 레이턴시는 3.34ms(P95 3.80ms)입니다."
     document_anchor: "GET /api/v1/bids/stats 웜 레이턴시는 3.34ms"
     evidence:
-      - docs/ops/handoff_20260910_wave_aq_ng_session_close.md
+      - docs/archive/handoff/2026-09/handoff_20260910_wave_aq_ng_session_close.md
     related_documents:
       - docs/context/CURRENT_STATE.md
   - id: compare_stats_attribution
@@ -463,10 +463,10 @@ facts:
     document_anchor: "기관·지역 산식 규칙은 규칙 ID 206종이"
     evidence:
       - src/app/services/evaluation_rules.py
-      - docs/ops/handoff_20261019_close.md
+      - docs/handoff/handoff_20261019_close.md
     related_documents:
       - docs/context/CURRENT_STATE.md
-      - docs/ops/handoff_20261019_close.md
+      - docs/handoff/handoff_20261019_close.md
   - id: coldsql_rerun
     status: closed
     decision_date: "2026-09-13"

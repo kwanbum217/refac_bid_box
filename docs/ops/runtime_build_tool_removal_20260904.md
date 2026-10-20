@@ -4,7 +4,7 @@
 > **작성자**: 코디네이터 (직접 실행)
 > **Run**: `run_93509f926948` (Wave R)
 > **기준 커밋**: `41db0b0`
-> **관련 문서**: [`handoff_20260904_wave_q_ci_recovery.md`](handoff_20260904_wave_q_ci_recovery.md) 5.1절, [`supply_chain_policy.md`](supply_chain_policy.md)
+> **관련 문서**: [`handoff_20260904_wave_q_ci_recovery.md`](../archive/handoff/2026-09/handoff_20260904_wave_q_ci_recovery.md) 5.1절, [`supply_chain_policy.md`](supply_chain_policy.md)
 
 ---
 

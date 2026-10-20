@@ -38,7 +38,7 @@
 - **main 현재 코드와의 대조 결과**:
   1. **크로스 플랫폼 지원 (G2 목표)**: `kwanbum217/orca-w1-concurrency-2` 방식은 전역 Barrier 객체를 참조하므로 Windows(`spawn`) 환경에서 동작하지 않아 `if os.name == "nt": pytest.skip(...)` 처리를 강제합니다.
   2. **프로세스 정상 종료 단언**: main 브랜치의 구현(`ctx.Process`)은 프로세스별 `proc.exitcode == 0`을 명시적으로 검증하여 경쟁 시 프로세스 충돌 여부를 정확히 잡아냅니다.
-  3. **기각 이력**: 이미 `docs/handoff/session_20260826_branch_cleanup_orca.md` 3.1절에서 main 판본의 우수성으로 인해 병합 기각된 바 있습니다.
+  3. **기각 이력**: 이미 `docs/archive/handoff/2026-08/session_20260826_branch_cleanup_orca.md` 3.1절에서 main 판본의 우수성으로 인해 병합 기각된 바 있습니다.
 - **판정**: **폐기 권고** (기각 유지, 크로스플랫폼 및 검증 정밀도 측면에서 main 판본이 상위)
 
 ---

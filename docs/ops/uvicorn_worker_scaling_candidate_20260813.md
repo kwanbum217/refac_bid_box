@@ -13,7 +13,7 @@
 ## 1. 배경 (초기 신호 — 이후 실제 Docker 재실측으로 기각됨)
 
 [`docs/ops/phase7_latency_recheck_20260813.md`](phase7_latency_recheck_20260813.md)와
-[`docs/handoff/2026-08-13_p1_predict_instrumentation.md`](../handoff/2026-08-13_p1_predict_instrumentation.md)에서
+[`docs/archive/handoff/2026-08/2026-08-13_p1_predict_instrumentation.md`](../archive/handoff/2026-08/2026-08-13_p1_predict_instrumentation.md)에서
 `/predict` 동시성 10 조건의 P95가 단일 Uvicorn 워커 기준 199.18ms로 목표(100ms)를
 충족하지 못했습니다. 코디네이터가 워커 프로세스 수만 바꿔 c10 P95를 재측정한
 초기 결과는 다음과 같았습니다.

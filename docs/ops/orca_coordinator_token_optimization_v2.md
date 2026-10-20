@@ -68,7 +68,7 @@ flowchart TD
 
 ### 2.2 오래된 전역 문서가 새 워커에게 잘못된 사실을 주입할 수 있습니다
 
-현재 `README.md`에는 예측 API warm c10 P95가 `199.18ms`, 목표 미달로 남아 있습니다. 그러나 최신 handoff인 `docs/handoff/2026-08-14_late_session_handoff.md`에는 c10 P95 `56.45ms`, 목표 통과로 기록되어 있습니다.
+현재 `README.md`에는 예측 API warm c10 P95가 `199.18ms`, 목표 미달로 남아 있습니다. 그러나 최신 handoff인 `docs/archive/handoff/2026-08/2026-08-14_late_session_handoff.md`에는 c10 P95 `56.45ms`, 목표 통과로 기록되어 있습니다.
 
 즉 날짜 없는 baseline 문서가 최신 운영 사실보다 뒤처질 수 있습니다. 모든 새 워커가 README를 정본처럼 다시 읽는 구조에서는 **토큰 낭비와 stale-context 위험이 동시에 발생**합니다.
 

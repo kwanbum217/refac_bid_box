@@ -11,7 +11,7 @@
 ## 1. 요약 (결론)
 
 1. **출처 판정: 확정된 것은 "추적되지 않은 임시 경로(에이전트 세션의 inline 명령 또는 미추적 스크립트) 삽입"이다.** 저장소 추적 파일 전체에서 `DBG` 문자열이 검색되지 않고(코디네이터 확인 사실, 본 조사에서 재확인), 수집 파이프라인 기록(`pipeline_executions` id 22, 02:53:10~03:02:33 UTC)이 삽입 시각 03:08:12 UTC 보다 5분 39초 먼저 종료됐으므로 수집기 출처는 배제된다. 커밋된 하니스(`scripts/benchmark_read_path_concurrency.py`)는 GET 요청만 보내는 읽기 전용 측정 도구이고(`scripts/benchmark_read_path_concurrency.py:53-73` 측정 경로 정의), `tests/test_mysql_concurrency.py`는 운영 스키마가 아닌 전용 `concurrency_test` 스키마에서만 동작하므로(`tests/test_mysql_concurrency.py:24-27`) 둘 다 배제된다.
-2. **가장 유력한 맥락: 2026-09-19 읽기 경로 동시성 측정 하니스 제작 세션(Orca Run `run_1dbced5f03c6`)이다.** DB 시각은 UTC이고 워커 로그 시각은 로컬(KST)이라는 사실이 당일 인수인계에 명시돼 있고(`docs/handoff/session_20260919_measurement_harnesses.md` 4장), 삽입 시각 03:08:12 UTC = 12:08:12 KST는 하니스 첫 커밋 12:17:41 KST(`48c0f648`) 직전, 즉 하니스 개발 중이다. 공고·낙찰이 17ms 간격으로 짝지어 삽입된 것은 선채움 경로 검증에 필요한 "공고-낙찰 매칭 짝" 시딩의 특징이다. 단, 정확한 명령은 Docker 로그 미조회(계약상 접속 금지)로 특정하지 못했다.
+2. **가장 유력한 맥락: 2026-09-19 읽기 경로 동시성 측정 하니스 제작 세션(Orca Run `run_1dbced5f03c6`)이다.** DB 시각은 UTC이고 워커 로그 시각은 로컬(KST)이라는 사실이 당일 인수인계에 명시돼 있고(`docs/archive/handoff/2026-09/session_20260919_measurement_harnesses.md` 4장), 삽입 시각 03:08:12 UTC = 12:08:12 KST는 하니스 첫 커밋 12:17:41 KST(`48c0f648`) 직전, 즉 하니스 개발 중이다. 공고·낙찰이 17ms 간격으로 짝지어 삽입된 것은 선채움 경로 검증에 필요한 "공고-낙찰 매칭 짝" 시딩의 특징이다. 단, 정확한 명령은 Docker 로그 미조회(계약상 접속 금지)로 특정하지 못했다.
 3. **영향: 기록된 드리프트 판정에는 미포함, 09-26 수동 재학습 챌린저 1건에 포함(기각됨), 통계 집계 3곳에 오염.** 상세는 4장. 운영 champion 모델 가중치는 무영향이다.
 4. **삭제는 실행하지 않았다.** 대상 조건 SQL, 백업 절차, 재집계 목록을 5장에 후보로만 둔다. G1(데이터 무손실) 원칙상 삭제 여부는 사용자 결정 사항이다.
 
@@ -43,7 +43,7 @@
 
 ### 2.3 시각 정합성 (UTC 기준)
 
-당일 인수인계가 "워커 컨테이너 로그 시각은 로컬, DB 시각은 UTC"임을 확정했다(`docs/handoff/session_20260919_measurement_harnesses.md` 4장 표 마지막 행). 이 기준으로:
+당일 인수인계가 "워커 컨테이너 로그 시각은 로컬, DB 시각은 UTC"임을 확정했다(`docs/archive/handoff/2026-09/session_20260919_measurement_harnesses.md` 4장 표 마지막 행). 이 기준으로:
 
 | 사건 | DB 시각 (UTC) | 로컬 (KST) | 근거 |
 | --- | --- | --- | --- |
@@ -80,7 +80,7 @@
 | 88,000,000 | `git log --all -S 88000000` | 히트 20건 모두 레이턴시·RAG 실측 문서. DBG 행과 무관 |
 | 2026-09-19 커밋 | `git log --since --until` | 하니스·인증 하니스·게이트 계열. 시딩 코드 커밋 없음 |
 | `.orca/` | ripgrep `DBG` | 본 조사 캡슐 4개뿐 (`task_g1_dbg_rows_origin`, `task_685f8ba3bb57`, `task_ba49498d7627`, `task_f1_review`) |
-| 당일 세션 인수인계 | `docs/handoff/session_20260919_measurement_harnesses.md` | 시딩 언급 없음. DB 시각 UTC 확정 정보와 세션 타임라인만 확보 |
+| 당일 세션 인수인계 | `docs/archive/handoff/2026-09/session_20260919_measurement_harnesses.md` | 시딩 언급 없음. DB 시각 UTC 확정 정보와 세션 타임라인만 확보 |
 | A/B 실측 보고서 | `docs/analysis/read_path_ab_confirmation_20260919.md` | 측정은 GET 부하뿐. 시딩 언급 없음 |
 
 ---
@@ -182,4 +182,4 @@ WHERE bid_ntce_no LIKE 'DBG%'
 - 드리프트: `SELECT id, trigger_source, champion_version, status, created_at FROM retrain_logs ORDER BY id`
 - 파이프라인: `SELECT id, pipeline_name, status, started_at, ended_at FROM pipeline_executions WHERE started_at >= '2026-09-19 00:00:00'`
 
-git 근거: `git log --all -S DBG --since=2026-08-01 --oneline`, `git show --stat 48c0f648`, `git show 8b5aa7ef:docs/handoff/session_20260919_measurement_harnesses.md`.
+git 근거: `git log --all -S DBG --since=2026-08-01 --oneline`, `git show --stat 48c0f648`, `git show 8b5aa7ef:docs/archive/handoff/2026-09/session_20260919_measurement_harnesses.md`.

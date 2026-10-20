@@ -3,7 +3,7 @@
 > **작성일**: 2026-09-04
 > **작성자**: 코디네이터 (직접 실측)
 > **대상**: `bid_announcements` 5,497,840건 전수
-> **선행 문서**: [`handoff_20260904_docker_check_and_amount_integrity.md`](../ops/handoff_20260904_docker_check_and_amount_integrity.md) 6.3절
+> **선행 문서**: [`handoff_20260904_docker_check_and_amount_integrity.md`](../archive/handoff/2026-09/handoff_20260904_docker_check_and_amount_integrity.md) 6.3절
 > **판정**: 집계를 `base_amount` 컬럼 기반으로 전환해도 **안전합니다.**
 
 ---

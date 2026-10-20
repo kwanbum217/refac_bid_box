@@ -199,9 +199,9 @@
 - **작업자**: 관범 & AI 에이전트
 - **커밋**: `docs: complete final handoff report and update documentation index for Phase 0-7 refactoring`
 - **주요 변경사항**:
-  - `docs/handoff/2026-07-31_skill_system_handoff.md`: 스킬 시스템 및 Phase 0~7 전체 리팩토링 완수 인수인계 문서 갱신
+  - `docs/archive/handoff/2026-07/2026-07-31_skill_system_handoff.md`: 스킬 시스템 및 Phase 0~7 전체 리팩토링 완수 인수인계 문서 갱신
   - `docs/README.md`: 문서 인덱스 상태를 "리팩토링 이행 및 컷오버 검증 완료 단계 (Phase 0~7 완수)"로 최종 업데이트
-- **관련 파일**: `docs/handoff/2026-07-31_skill_system_handoff.md`, `docs/README.md`, `docs/changelogs/work_log.md`
+- **관련 파일**: `docs/archive/handoff/2026-07/2026-07-31_skill_system_handoff.md`, `docs/README.md`, `docs/changelogs/work_log.md`
 - **검증 결과**: `validate_agent_rules.py` 6/6 PASS, `pytest` 8/8 passed, `benchmark_latency.py` PASS
 
 ---
@@ -316,7 +316,7 @@
   - `scripts/audit_servc_lwlt_coverage.py`: 미개찰 용역 공고를 낙찰방법별로 집계하고 하한율 적용 방식의 실제 누락을 분리하는 감사 도구 신설
   - `docs/design/servc_lwlt_availability_20260804.md`: DB와 조달청 대체 API 실측 결과 기록
   - 하한율 결측을 수집 누락으로 간주하던 인수인계 우선순위 정정
-- **관련 파일**: `scripts/audit_servc_lwlt_coverage.py`, `tests/test_audit_servc_lwlt_coverage.py`, `docs/design/servc_lwlt_availability_20260804.md`, `docs/handoff/2026-08-04_servc_serving_handoff.md`
+- **관련 파일**: `scripts/audit_servc_lwlt_coverage.py`, `tests/test_audit_servc_lwlt_coverage.py`, `docs/design/servc_lwlt_availability_20260804.md`, `docs/archive/handoff/2026-08/2026-08-04_servc_serving_handoff.md`
 - **검증 결과**: 2026년 7월 이후 미개찰 용역 10,434건 중 하한율 명시 방식 3,587건은 100% 보유해 실제 누락 0건. 결측 6,792건은 협상계약·규격가격동시입찰·수의시담 등에 집중. 용역 기초금액 API 첫 100건과 변경이력 API 전체 10건에는 하한율 필드가 없어 보강 원천으로 기각
 
 ---
@@ -327,7 +327,7 @@
 - **주요 변경사항**:
   - `scripts/tune_servc_hyperparams.py`: 절대 출력 경로 사용 시 결과 저장 후 표시 단계에서 발생하던 `ValueError` 수정
   - `subsample_freq` 0/1/5를 동일한 2025년 홀드아웃에서 비교
-- **관련 파일**: `scripts/tune_servc_hyperparams.py`, `tests/test_tune_servc_hyperparams.py`, `docs/design/servc_hyperparam_search_20260804.md`, `docs/handoff/2026-08-04_servc_serving_handoff.md`
+- **관련 파일**: `scripts/tune_servc_hyperparams.py`, `tests/test_tune_servc_hyperparams.py`, `docs/design/servc_hyperparam_search_20260804.md`, `docs/archive/handoff/2026-08/2026-08-04_servc_serving_handoff.md`
 - **검증 결과**: 빈도 5는 MAE 1.2829 -> 1.2828, 0.5%p 적중 60.57% -> 60.53%, 학습 시간 11.4초 -> 13.8초. 정확도 이득이 측정 분해능 수준이고 적중률·시간이 악화되어 현행 `subsample_freq=0` 유지
 
 ---
@@ -339,7 +339,7 @@
   - `scripts/audit_servc_lwlt_coverage.py`: `--skip-db --parquet` 로 학습 모집단의 결측을 낙찰방법별로 분해하는 감사 추가. 방법명이 결측을 완전히 결정하는 그룹과 그렇지 않은 그룹을 가름
   - `docs/design/servc_lwlt_availability_20260804.md`: v2.0.0 으로 정정. 기각 판정 철회
   - 인수인계 기각 목록과 잔여 과제 우선순위 원복
-- **관련 파일**: `scripts/audit_servc_lwlt_coverage.py`, `tests/test_audit_servc_lwlt_coverage.py`, `docs/design/servc_lwlt_availability_20260804.md`, `docs/handoff/2026-08-04_servc_serving_handoff.md`
+- **관련 파일**: `scripts/audit_servc_lwlt_coverage.py`, `tests/test_audit_servc_lwlt_coverage.py`, `docs/design/servc_lwlt_availability_20260804.md`, `docs/archive/handoff/2026-08/2026-08-04_servc_serving_handoff.md`
 - **검증 결과**: 학습 데이터 917,629행의 결측 205,238건 중 **76.8%(157,647건)가 낙찰방법으로 설명되지 않습니다.** 거의 전부가 `공고서참조` 한 방법이며, 이 방법은 765,620건 중 79.4%가 하한율을 보유합니다. 결측 건의 낙찰률 표준편차는 6.35 로 보유 건 2.77 의 2.3배이고, 연도별 결측률이 14.7%~26.3% 로 움직여 제도 속성으로 볼 수 없습니다
 - **방법론**: 초판 기각은 2026-07 이후 미개찰 공고 10,434건만 보고 내렸습니다. 그 표본에는 `공고서참조` 가 등장하지 않습니다. **표본의 결론을 다른 모집단으로 옮길 때는 두 모집단의 구성이 같은지를 먼저 확인해야 합니다**
 ### 2026-08-04 | Phase 7 컷오버 보강 | 무손실 기준선·모델 호환성·크로스 플랫폼 검증 강화
@@ -512,7 +512,7 @@
 ### 2026-08-05 | 문서 정합성 | 기관 이력 TODO 문서를 완료 기록으로 갱신
 
 - **작업자**: 관범 & AI 에이전트
-- **배경**: `docs/handoff/inst_hist_rate_impl_todo.md` 가 "학습·추론 경로에 미연결" 상태로 남아 있었으나, 실제로는 `bd4bb55` 에서 연결이 끝났습니다
+- **배경**: `docs/archive/handoff/2026-08/inst_hist_rate_impl_todo.md` 가 "학습·추론 경로에 미연결" 상태로 남아 있었으나, 실제로는 `bd4bb55` 에서 연결이 끝났습니다
 - **주요 변경사항**: TODO-1~5 의 결정값과 근거, 배치 집계로 32시간 제약을 해소한 경위, train/serve 연결 지점 5곳, 검증 수단을 기록으로 정리
 
 ---
@@ -655,7 +655,7 @@
 
 - **작업자**: 관범 & Codex
 - **현재 상태 확인**: Servc `v_20260806_025423_494`, Thng `v_20260806_043408_749`가 기본 서빙 중이며 feature store 불변조건 917,629행 × 28컬럼과 784,266행 × 12컬럼을 확인했습니다
-- **주요 변경사항**: 두 모델의 승격·실측·롤백 기준과 다음 Servc 하한율 결측 집단 진단의 평가 설계·중단 기준을 `docs/handoff/2026-08-06_model_improvement_handoff.md`에 정리했습니다
+- **주요 변경사항**: 두 모델의 승격·실측·롤백 기준과 다음 Servc 하한율 결측 집단 진단의 평가 설계·중단 기준을 `docs/archive/handoff/2026-08/2026-08-06_model_improvement_handoff.md`에 정리했습니다
 - **문서 정합성**: 이미 기각된 낙찰방법별 분리 모델을 유망 과제로 적은 문구를 정정하고, 하한율 결측 규칙 복원과 분리 학습을 재시도하지 않도록 문서 우선순위를 명시했습니다
 
 ---
@@ -719,7 +719,7 @@
 
 - **작업자**: 관범 & Claude
 - **근거 보강**: champion 특징 중요도에서 낙찰방법이 35개 중 16위(1.84%)임을 확인해 "학습 표본의 90.8%에서 상수" 진단에 직접 증거를 붙였습니다. 기관 이력 3종 합계는 24.55%로 단일 최대 블록이며, 최근 가중이 실패한 이유를 수치로 설명합니다
-- **인수인계**: `docs/handoff/2026-08-06_servc_diagnosis_handoff.md`에 기각 5건, 알아 둘 사실 3건, 미검증 후보 2건, 판정 규칙 2건을 정리했습니다
+- **인수인계**: `docs/archive/handoff/2026-08/2026-08-06_servc_diagnosis_handoff.md`에 기각 5건, 알아 둘 사실 3건, 미검증 후보 2건, 판정 규칙 2건을 정리했습니다
 - **검증**: 전체 테스트 736 passed 2 skipped, `validate_agent_rules.py` 6/6 통과
 
 ---
@@ -1038,7 +1038,7 @@
   - A4 (`253e4b7`, `865cb2b`, `e7898c5`, `d4b094d`): 예측 라우팅 단일화 및 Servc 명시적 비예가 공고 차단, 챗봇 투찰가 출처 계약 교정
   - A5 (`423a9a5`, `767a05b`, `be14c58`): 용역 쌍대 비교 모델 출처(provenance) 검증 가드 및 승격 차단 구현
 - **관련 파일**: `src/tasks/automation.py`, `src/app/api/ui.py`, `src/app/api/v1/chatbot.py`, `src/app/api/v1/predictions.py`, `src/ml/compare_models.py`, `tests/*`
-- **검증 결과**: 백엔드 **965 passed / 2 skipped**, 프런트엔드 11 passed, `validate_agent_rules.py` 6/6 통과 ([`docs/handoff/2026-08-13_next_session_todo.md:32`](../handoff/2026-08-13_next_session_todo.md#L32))
+- **검증 결과**: 백엔드 **965 passed / 2 skipped**, 프런트엔드 11 passed, `validate_agent_rules.py` 6/6 통과 ([`docs/archive/handoff/2026-08/2026-08-13_next_session_todo.md:32`](../archive/handoff/2026-08/2026-08-13_next_session_todo.md#L32))
 
 ---
 
@@ -1076,7 +1076,7 @@
 - **안전 계약**: 재학습은 `high_cost=True`로 확인 토큰 전에는 큐에 들어가지 않으며, 기존 검색 단계·개발 데이터 수집 태스크·cron 3건을 보존했습니다
 - **검증**: 표적 테스트 38건 통과. 자산이 있는 주 저장소에서 백엔드 965건 통과·2건 skip, 프런트 11건 통과를 확인했습니다
 - **정리**: 기능 통합 뒤 구 원격 2개와 이번 Run의 완료 원격 4개를 삭제해 원격 브랜치를 `main` 하나로 정리했습니다
-- **관련 문서**: `docs/handoff/2026-08-13_servc_oos_readiness_gate.md`, `docs/handoff/2026-08-13_retrain_api_reimplementation_plan.md`
+- **관련 문서**: `docs/archive/handoff/2026-08/2026-08-13_servc_oos_readiness_gate.md`, `docs/archive/handoff/2026-08/2026-08-13_retrain_api_reimplementation_plan.md`
 
 ---
 
@@ -1108,9 +1108,9 @@
 
 - **작업자**: 관범 & GPT
 - **주요 변경사항**:
-  - `2ff1d3f`, `d6a73fd`, `b56475e`, `4602e26`: 과거 분산되어 있던 인수인계 TODO 문서들을 단일 진실 원천인 `docs/handoff/2026-08-13_future_work_backlog.md`로 통합 정리했습니다
+  - `2ff1d3f`, `d6a73fd`, `b56475e`, `4602e26`: 과거 분산되어 있던 인수인계 TODO 문서들을 단일 진실 원천인 `docs/archive/handoff/2026-08/2026-08-13_future_work_backlog.md`로 통합 정리했습니다
   - `0f1358b`, `312c8ab`: 완료된 원격 브랜치들을 일괄 삭제하고 `main` 브랜치 단일 상태로 정리했습니다
-- **관련 파일**: `docs/handoff/2026-08-13_future_work_backlog.md`, `docs/handoff/2026-08-13_next_session_todo.md`
+- **관련 파일**: `docs/archive/handoff/2026-08/2026-08-13_future_work_backlog.md`, `docs/archive/handoff/2026-08/2026-08-13_next_session_todo.md`
 - **검증 결과**: `validate_agent_rules.py` 6/6 PASS
 
 ---
@@ -1119,11 +1119,11 @@
 
 - **작업자**: 관범 & AI 에이전트
 - **주요 변경사항**:
-  - `25ddc6d`, `60f2f8b`: GPT 5.6 이 작성한 32절 외부 정적 분석 보고를 저장소 코드·문서와 정밀 대조 검증했습니다 (`docs/handoff/2026-08-14_gpt_analysis_verification.md`)
+  - `25ddc6d`, `60f2f8b`: GPT 5.6 이 작성한 32절 외부 정적 분석 보고를 저장소 코드·문서와 정밀 대조 검증했습니다 (`docs/archive/handoff/2026-08/2026-08-14_gpt_analysis_verification.md`)
   - 컷오버 차단 요인이 Windows 실기 검증뿐만 아니라 예측 API c10 P95(199.18ms) 성능 미달을 포함한 2건임을 확정했습니다
   - 02:00 cron 중복 우려는 3중 방어(코드 상호배제, 기본값 분리, 회귀 테스트 18건 통과)로 이미 해결되었음을 확인했습니다
   - README G3 세분화 및 Thng 서빙 지표 아티팩트 부재를 문서 동기화 부채로 식별했습니다
-- **관련 파일**: `docs/handoff/2026-08-14_gpt_analysis_verification.md`, `tests/test_scheduled_tasks.py`, `tests/test_worker_compose.py`
+- **관련 파일**: `docs/archive/handoff/2026-08/2026-08-14_gpt_analysis_verification.md`, `tests/test_scheduled_tasks.py`, `tests/test_worker_compose.py`
 - **검증 결과**: 테스트 18건 통과, `validate_agent_rules.py` 6/6 PASS
 
 ### 2026-09-15 | Claude Opus 5 | 용역 모델 최신 데이터 재학습·승격
