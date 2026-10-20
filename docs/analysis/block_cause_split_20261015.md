@@ -75,7 +75,7 @@ flowchart TD
 
 - 222곳의 기관 유형은 국가기관 59, 기타기관 50, 준정부기관 41, 기타공공기관 32, 공기업 21, 교육기관 14, 지자체 출자출연기관 3, 유형 미분류 2다. 지방자치단체는 없다. 시·도 규칙 부재로 차단되는 `LOCAL_RULE_NOT_FOUND`(1,184건)와 다른 경로다.
 - 222곳 중 120곳(241건)은 `RULE_NOT_FOUND` 가 그 기관의 유일한 차단 코드다. 나머지 102곳은 다른 차단 코드와 섞여 있다.
-- 선행 인수인계 [handoff_20261014_detail_page_coverage_close.md](../ops/handoff_20261014_detail_page_coverage_close.md) 3절의 조사 대상과 겹친다. 해양환경공단 11건, 산림청 서부지방산림청 4건 등이 같은 목록에 있다.
+- 선행 인수인계 [handoff_20261014_detail_page_coverage_close.md](../handoff/handoff_20261014_detail_page_coverage_close.md) 3절의 조사 대상과 겹친다. 해양환경공단 11건, 산림청 서부지방산림청 4건 등이 같은 목록에 있다.
 
 ### 3.2 갈래 B — 명단에 있으나 별표 식별 문자열이 맞지 않는 수요기관
 

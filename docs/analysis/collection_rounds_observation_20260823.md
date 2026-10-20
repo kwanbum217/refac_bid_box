@@ -3,7 +3,7 @@
 > **작성일**: 2026-08-23
 > **작업 브랜치**: `kwanbum217/collect-obs`
 > **관찰 대상**: G2B 데이터 수집 2·3회차 실행 이력, DB 적재 현황, 후속 파이프라인 연계 무결성
-> **원출처 근거**: `docs/context/handoff_20260818.md` 38줄 및 `docs/context/CURRENT_STATE.md` 4장 운영 검증 항목
+> **원출처 근거**: `docs/archive/handoff/2026-08/handoff_20260818.md` 38줄 및 `docs/context/CURRENT_STATE.md` 4장 운영 검증 항목
 
 ---
 
@@ -11,7 +11,7 @@
 
 ### 1.1 과업 배경 및 원출처
 
-`docs/context/handoff_20260818.md` 38줄의 실측 과업 목록 및 `docs/context/CURRENT_STATE.md` 4.1절의 운영 검증 우선순위 1번에 "수집 2·3회차 관찰"이 명시되어 있습니다.
+`docs/archive/handoff/2026-08/handoff_20260818.md` 38줄의 실측 과업 목록 및 `docs/context/CURRENT_STATE.md` 4.1절의 운영 검증 우선순위 1번에 "수집 2·3회차 관찰"이 명시되어 있습니다.
 본 과업은 초기 이식(1회차) 이후 스케줄러(`nightly_schedule_task` / `development_data_refresh_task`)를 통해 정기 수집이 연속 가동될 때의 안정성, 멱등성, 그리고 후속 파이프라인(검색, ChromaDB RAG, 랭킹 스냅샷, 기관 승률 통계) 연계 완주 여부를 검증하고 문서화하는 것을 목표로 합니다.
 
 ### 1.2 관찰 요구사항 및 판정 기준

@@ -3,7 +3,7 @@
 > **작성일**: 2026-08-23
 > **Task ID**: `c2_disposition_20260822`
 > **대상 지표**: 예측 API c2 동시성 P95 레이턴시 (순차 측정 22.68ms vs 기준선 21.77ms)
-> **관련 문서**: [`CURRENT_STATE.md`](../context/CURRENT_STATE.md), [`predict_ab_20260822.md`](../ops/predict_ab_20260822.md), [`latency_gate_protocol.md`](../ops/latency_gate_protocol.md), [`2026-08-22_post_1a45ad5_audit.md`](../handoff/2026-08-22_post_1a45ad5_audit.md)
+> **관련 문서**: [`CURRENT_STATE.md`](../context/CURRENT_STATE.md), [`predict_ab_20260822.md`](../ops/predict_ab_20260822.md), [`latency_gate_protocol.md`](../ops/latency_gate_protocol.md), [`2026-08-22_post_1a45ad5_audit.md`](../archive/handoff/2026-08/2026-08-22_post_1a45ad5_audit.md)
 > **문서 목적**: c2 P95 임계치 초과(+4.2%) 및 통제 교차 A/B 벤치마크 결과에 대한 기술적 분석과 사용자 최종 확정을 위한 3가지 판정 선택지(조건부 PASS / 비-PASS 회기 / 보류) 제시
 
 ---
@@ -66,7 +66,7 @@
    - 호스트 부하가 안정화된 r3~r5 구간에서는 Current P95가 20.15~21.05ms로 기존 기준선(21.77ms) 이내에 안정적으로 정착했습니다.
    - 따라서 순차 재측정에서 관측된 22.68ms는 코드 변경에 의한 고정 오버헤드가 아니라, 단일 시점 측정 시의 호스트 스케줄링 변동이 반영된 결과로 분석됩니다.
 
-3. **보수적 감사 원칙 준수 ([`2026-08-22_post_1a45ad5_audit.md`](../handoff/2026-08-22_post_1a45ad5_audit.md) 3장)**:
+3. **보수적 감사 원칙 준수 ([`2026-08-22_post_1a45ad5_audit.md`](../archive/handoff/2026-08/2026-08-22_post_1a45ad5_audit.md) 3장)**:
    - 통제 A/B에서 -0.97ms 중앙 델타가 확인되었더라도, 정본 규약에 명시된 순차 게이트 수치(22.68ms)를 임의로 덮어쓰거나 승격으로 간주하지 않고 '미달' 상태를 유지하며 정식 절차에 따라 처리합니다.
 
 ---

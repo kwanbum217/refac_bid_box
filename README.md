@@ -36,7 +36,7 @@
 > 통과로 바뀐 뒤에도 README 는 2026-08-16 까지 미달로 표시했습니다.
 > **G3 는 일괄 통과로 선언하지 않고 항목별로 판정합니다.**
 
-자세한 내용은 [`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md)와 [`docs/handoff/2026-08-14_gpt_analysis_verification.md`](docs/handoff/2026-08-14_gpt_analysis_verification.md)를 참고하세요.
+자세한 내용은 [`docs/design/REFACTORING_DESIGN.md`](docs/design/REFACTORING_DESIGN.md)와 [`docs/archive/handoff/2026-08/2026-08-14_gpt_analysis_verification.md`](docs/archive/handoff/2026-08/2026-08-14_gpt_analysis_verification.md)를 참고하세요.
 
 ## 주요 목표
 
@@ -89,7 +89,7 @@
 조달청·전국 기준 19,459건, 기관 규칙 63건에 적용됐고 9,911건은 계산이 차단됩니다.
 차단된 공고 가운데 지자체 기준 미확보(`LOCAL_RULE_NOT_FOUND`)와 수기심사 공고는
 B·k·기준비율·통과점수를 직접 입력해 계산합니다. 근거는
-[`docs/ops/handoff_20261019_close.md`](docs/ops/handoff_20261019_close.md) 7절입니다.
+[`docs/handoff/handoff_20261019_close.md`](docs/handoff/handoff_20261019_close.md) 7절입니다.
 
 ### 기능 활성화 설정
 

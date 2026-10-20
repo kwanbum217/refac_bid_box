@@ -10,7 +10,7 @@
 
 ## 1. 개요 및 보류 항목 총괄 현황
 
-본 보고서는 2026-09-17 세션 인수인계([`session_20260917_grok_shutdown.md`](../handoff/session_20260917_grok_shutdown.md))에서 이관된 보류 결정 항목들이 현재 실행 조건에 도달했는지 문서 및 GitHub CLI(`gh`)를 통해 확인한 읽기 전용 점검 인벤토리입니다.
+본 보고서는 2026-09-17 세션 인수인계([`session_20260917_grok_shutdown.md`](../archive/handoff/2026-09/session_20260917_grok_shutdown.md))에서 이관된 보류 결정 항목들이 현재 실행 조건에 도달했는지 문서 및 GitHub CLI(`gh`)를 통해 확인한 읽기 전용 점검 인벤토리입니다.
 
 조사 결과, 모든 항목이 여전히 실행 조건 미충족 상태이거나 예정 일정이 도래하지 않았음을 확인하였습니다. 따라서 운영 반영, Release 초안 변경, 재학습 실행, ChromaDB 버전 변경을 일체 수행하지 않고 기존 확정 결정을 유지합니다.
 
@@ -19,7 +19,7 @@
 | 번호 | 관리 항목 | 확정 결정 사항 | 현재 상태 | 실행 선행 조건 | 정본 사양/문서 | 후속 조치 방침 |
 | :---: | --- | --- | --- | --- | --- | --- |
 | **1** | 운영 환경 반영 | **경로 A** (운영 서버 내 파이프라인 재현) | **실행 조건 미충족 (보류)** | 운영 서버 인프라 접근권 확보 | [`production_rollout_checklist_20260916.md`](../ops/production_rollout_checklist_20260916.md) | 로컬 실행 금지, 운영 접근 확보 전까지 대기 |
-| **2** | GitHub Release | `v0.1.0`, `v0.1.0-rc.1` **둘 다 Draft 유지** | **초안 상태 보존 확인 (Draft)** | 공개 또는 정리에 관한 사용자 최종 결정 | [`session_20260916_rollout_release_workers.md`](../handoff/session_20260916_rollout_release_workers.md) | 공개·삭제·태그 push 금지, 초안 유지 |
+| **2** | GitHub Release | `v0.1.0`, `v0.1.0-rc.1` **둘 다 Draft 유지** | **초안 상태 보존 확인 (Draft)** | 공개 또는 정리에 관한 사용자 최종 결정 | [`session_20260916_rollout_release_workers.md`](../archive/handoff/2026-09/session_20260916_rollout_release_workers.md) | 공개·삭제·태그 push 금지, 초안 유지 |
 | **3** | 주간 재학습 | 매주 월요일 03:00 KST 정기 실행 | **일정 미도래 (대기)** | 2026-09-21 02:00 수집 성공 및 03:00 도래 | [`weekly_retrain_verification.md`](../ops/weekly_retrain_verification.md) | 조기 실행 금지, LIVE 포인터(`v_20260915_133523_756`) 유지 |
 | **4** | ChromaDB CVE | 상류 패치 부재로 **2026-12-31 재확인 유지** | **상류 미수정 유지 (보류)** | 2026-12-31 도래 및 상류 패치 배포 | [`windows_chromadb_status_20260916.md`](windows_chromadb_status_20260916.md) | 1.x 업그레이드 제안 금지, `chroma_db/` 접근 금지 |
 | *5* | 용역 표본외 재비교 | 2026-10 중순 이후 실행 | **축적 기간 미도래 (대기)** | 2026-09-15 이후 1개월 이상 개찰 데이터 축적 | `compare_servc_models_paired.py` | 2026-10 중순 전 실행 금지 (`as5-servc-oos` 미실행) |

@@ -4,7 +4,7 @@
 > **작성자**: Claude Opus 5 (Orca 코디네이터)
 > **기준 커밋**: `main` `639c60f1`
 > **Orca Run**: `run_f2a82124eb58`
-> **이어받은 문서**: [`session_20260919_measurement_harnesses.md`](session_20260919_measurement_harnesses.md)
+> **이어받은 문서**: [`session_20260919_measurement_harnesses.md`](../archive/handoff/2026-09/session_20260919_measurement_harnesses.md)
 
 ---
 
@@ -19,7 +19,7 @@
 | 커밋 | 내용 | 검증 |
 | --- | --- | --- |
 | `a32d3db8` | [`exists_plan_flip_investigation_20260920.md`](../analysis/exists_plan_flip_investigation_20260920.md) 단일 EXISTS 계획 전환 조사 (w3) | Level 1 pass, 리뷰 pass, 전량 5,133 |
-| `227f1c24` | [`handoff_backlog_reaudit_20260920.md`](../analysis/handoff_backlog_reaudit_20260920.md) 잔여 과업 전수 재판정 (w1) | Level 1 pass, 리뷰 pass, 전량 5,133 |
+| `227f1c24` | [`handoff_backlog_reaudit_20260920.md`](handoff_backlog_reaudit_20260920.md) 잔여 과업 전수 재판정 (w1) | Level 1 pass, 리뷰 pass, 전량 5,133 |
 | `68f60687` | [`weekly_retrain_prep_20260920.md`](../analysis/weekly_retrain_prep_20260920.md) 주간 재학습 사전 점검 (w4) | Level 1 pass, 리뷰 pass, 전량 5,133 |
 | `639c60f1` | [`read_path_g3_rescan_20260920.md`](../analysis/read_path_g3_rescan_20260920.md) 읽기 경로 N+1·동기 I/O 조사 (w2) | Level 1 pass, 리뷰 pass, 전량 5,133 |
 
@@ -31,7 +31,7 @@ Antigravity 계열은 `worker-start --agent` 가 받지 않으므로 **터미널
 
 ## 3. 잔여 과업 재판정 결과
 
-상세는 [`handoff_backlog_reaudit_20260920.md`](../analysis/handoff_backlog_reaudit_20260920.md) 입니다. 네 출처(최신·직전 인수인계 7장, `handoff_20260818.md` 2장, `CURRENT_STATE.md` 6.1절) 26행, 고유 20건을 코드 근거로 대조했습니다.
+상세는 [`handoff_backlog_reaudit_20260920.md`](handoff_backlog_reaudit_20260920.md) 입니다. 네 출처(최신·직전 인수인계 7장, `handoff_20260818.md` 2장, `CURRENT_STATE.md` 6.1절) 26행, 고유 20건을 코드 근거로 대조했습니다.
 
 | 판정 | 건수 | 대표 항목 |
 | --- | ---: | --- |

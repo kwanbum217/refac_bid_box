@@ -150,7 +150,7 @@ orca orchestration dispatch-show --task task_7bc94af1d54e --json
   - `completed_at`: `2026-09-17T12:25:54.370Z`
 
 ### 4.2 조치 및 준수 사항
-- `as9-review` 태스크는 인수인계(`docs/handoff/session_20260917_grok_shutdown.md`)에 명시된 바와 같이 Qwen 리뷰어 세션 종료 후 `blocked` 상태로 잔류하고 있으며, 해당 디스패치는 `failed` 상태로 권한이 회수 완료되었습니다.
+- `as9-review` 태스크는 인수인계(`docs/archive/handoff/2026-09/session_20260917_grok_shutdown.md`)에 명시된 바와 같이 Qwen 리뷰어 세션 종료 후 `blocked` 상태로 잔류하고 있으며, 해당 디스패치는 `failed` 상태로 권한이 회수 완료되었습니다.
 - 본 태스크 규약에 따라 해당 리뷰를 재 Dispatch하거나 재실행하지 않고 실측 상태 그대로 확인하여 보존합니다.
 
 ---

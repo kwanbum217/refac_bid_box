@@ -5,7 +5,7 @@
 > **상태**: 1~2단계 완료. **3단계에서 후보 전량 탈락으로 축이 종결됐습니다**
 > **후속 문서**: [`servc_raw_data_candidate_screen_20260809.md`](servc_raw_data_candidate_screen_20260809.md)
 > **대상**: Servc (용역) 낙찰률 예측 모델 `servc_institution_v1`
-> **선행 문서**: [`2026-08-07_servc_next_axis_handoff.md`](../handoff/2026-08-07_servc_next_axis_handoff.md) 4.3
+> **선행 문서**: [`2026-08-07_servc_next_axis_handoff.md`](../archive/handoff/2026-08/2026-08-07_servc_next_axis_handoff.md) 4.3
 > **측정 스크립트**: [`scripts/audit_servc_raw_data_keys.py`](../../scripts/audit_servc_raw_data_keys.py)
 
 ---

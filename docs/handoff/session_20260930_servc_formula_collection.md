@@ -3,7 +3,7 @@
 > **작성일**: 2026-09-30
 > **작성자**: Grok 코디네이터
 > **기준 커밋**: `main` `61a13221`. 이 세션에서 코드 커밋은 없다
-> **선행 문서**: [`handoff_20260929_qual_rates_session_close.md`](../ops/handoff_20260929_qual_rates_session_close.md)
+> **선행 문서**: [`handoff_20260929_qual_rates_session_close.md`](handoff_20260929_qual_rates_session_close.md)
 > **상세 대장**: `/tmp/qual-formulas/hermes-servc/REPORT.md` (저장소 밖, 재부팅 시 사라질 수 있음)
 > **증거 등급**: 코디네이터가 원문을 다시 읽은 행과, Hermes 보고만 있고 재검산하지 않은 행을 구분한다
 

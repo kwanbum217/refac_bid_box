@@ -9,7 +9,7 @@
 
 ## 1. 왜 이 판정이 필요했는가
 
-[`2026-08-14_session_handoff.md`](../handoff/2026-08-14_session_handoff.md) 2장이 이
+[`2026-08-14_session_handoff.md`](../archive/handoff/2026-08/2026-08-14_session_handoff.md) 2장이 이
 브랜치의 병합 관문으로 다음을 지정했습니다.
 
 > 계측 비활성 시 추가 호출과 객체 생성이 0 인지. `e023bd2` 시점에는

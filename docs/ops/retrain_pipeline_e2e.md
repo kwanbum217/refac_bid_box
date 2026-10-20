@@ -141,6 +141,6 @@ PY
 
 ## 7. 참조
 
-- 정기 실행 스케줄: [`../handoff/2026-08-01_session_todo.md`](../handoff/2026-08-01_session_todo.md)
+- 정기 실행 스케줄: [`../handoff/2026-08-01_session_todo.md`](../archive/handoff/2026-08/2026-08-01_session_todo.md)
 - 인코딩 손상 (건설 문자열): [`../migration/encoding_corruption_analysis.md`](../migration/encoding_corruption_analysis.md)
 - 설계서 재학습 파이프라인: [`../design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 7장

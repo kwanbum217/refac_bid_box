@@ -19,7 +19,7 @@
 | 번호 | 점검 항목 | 대상 파일 | 조치 내용 |
 | :---: | --- | --- | --- |
 | 1 | **독해 순서 및 구조 정비** | `docs/README.md` | 독해 순서를 `AGENTS -> CURRENT_STATE -> 프로토콜/ADR -> 최신 실측 -> 과거 handoff`로 개편, `context/` 및 `analysis/` 폴더 구조 반영 |
-| 2 | **구 백로그 정본 해제** | `docs/README.md`, `docs/handoff/2026-08-13_future_work_backlog.md` | `future_work_backlog.md` 상단에 SUPERSEDED 배너 부착 및 `CURRENT_STATE.md` 수렴 안내 |
+| 2 | **구 백로그 정본 해제** | `docs/README.md`, `docs/archive/handoff/2026-08/2026-08-13_future_work_backlog.md` | `future_work_backlog.md` 상단에 SUPERSEDED 배너 부착 및 `CURRENT_STATE.md` 수렴 안내 |
 | 3 | **과거 컷오버 보고서 배너** | `docs/ops/phase7_cutover_report_20260804.md` | 2026-08-14 규약 제정 이전 결과임을 명시하는 HISTORICAL 배너 부착 |
 | 4 | **크로스플랫폼 상태 및 큐 정정** | `docs/ops/cross_platform_guide.md` | macOS 실기 PASS, Ubuntu CI PASS, macOS CI PASS, 최신 Windows CI FAIL(SHA d95efd5), Windows Docker 실기 대기 정정 및 Celery -> Arq 통일 |
 | 5 | **LLM 스택 표기 정합성** | `AGENTS.md`, `SKILLS.md` | 운영 기본 Ollama `gemma4:e4b`, Gemini 대체/선택 provider로 정정 |

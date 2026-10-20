@@ -3,8 +3,8 @@
 > **작성일**: 2026-09-01
 > **관련 Task**: `task_d33cbcec73c1` (Wave J)
 > **전제 조건**: 사용자 명시적 승인 없이 이 런북의 어떤 단계도 실행하지 않습니다.
-> **참조 근거**: [`handoff_wave_f_20260830.md`](handoff_wave_f_20260830.md),
-> [`handoff_20260831_wave_gh.md`](handoff_20260831_wave_gh.md)
+> **참조 근거**: [`handoff_wave_f_20260830.md`](../archive/handoff/2026-08/handoff_wave_f_20260830.md),
+> [`handoff_20260831_wave_gh.md`](../archive/handoff/2026-08/handoff_20260831_wave_gh.md)
 
 ---
 

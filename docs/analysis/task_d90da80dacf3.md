@@ -3,7 +3,7 @@
 > **작성일**: 2026-08-28
 > **태스크**: task_d90da80dacf3 (run_973af8e258f4)
 > **대상 파일**: [`scripts/benchmark_provenance.py`](../../scripts/benchmark_provenance.py), [`tests/test_cpu_utilization_metric.py`](../../tests/test_cpu_utilization_metric.py), [`tests/test_benchmark_provenance.py`](../../tests/test_benchmark_provenance.py)
-> **근거 handoff**: [`docs/handoff/session_20260828_gpt_audit_p1p2_orca.md` §5.1](../handoff/session_20260828_gpt_audit_p1p2_orca.md)
+> **근거 handoff**: [`docs/archive/handoff/2026-08/session_20260828_gpt_audit_p1p2_orca.md` §5.1](../archive/handoff/2026-08/session_20260828_gpt_audit_p1p2_orca.md)
 
 ---
 

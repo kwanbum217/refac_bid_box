@@ -329,4 +329,4 @@ flowchart TD
 - `docs/analysis/servc_formula_collection_local_20261004.md` — 지자체 12곳(울산광역시 포함)
 - `docs/analysis/servc_formula_userfiles_agency_20261004.md` — 사용자 제공 공공기관 6건(한국철도공사 승강기 한정 포함)
 - `docs/analysis/servc_formula_userfiles_existing_20261004.md` — 기관 5건(한국도로공사 2021-03-02 판 포함)
-- `docs/ops/handoff_20261004_estprice_tailwind4_datebomb_session_close.md` — 인수인계 8.3절 원문 미확보 7곳 현황
+- `docs/handoff/handoff_20261004_estprice_tailwind4_datebomb_session_close.md` — 인수인계 8.3절 원문 미확보 7곳 현황

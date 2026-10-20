@@ -15,7 +15,7 @@
 | **운영 상태 정본** | [`context/CURRENT_STATE.md`](context/CURRENT_STATE.md) | **단일 진실 원천(SSOT).** 현재 구현 상태, 테스트/CI, 런타임 지표 |
 | **리팩토링 설계서** | [`design/REFACTORING_DESIGN.md`](design/REFACTORING_DESIGN.md) | 전체 리팩토링 청사진 (설계 기준선) |
 | **프론트엔드 결정** | [`design/FRONTEND_DECISION.md`](design/FRONTEND_DECISION.md) | SSR+HTMX 확정, React SPA 중단 |
-| **공고 검색 전환** | [`handoff/2026-08-09_bid_search_meilisearch_handoff.md`](handoff/2026-08-09_bid_search_meilisearch_handoff.md) | Meilisearch 읽기 모델 구현 및 초기 색인 검증 절차 |
+| **공고 검색 전환** | [`handoff/2026-08-09_bid_search_meilisearch_handoff.md`](archive/handoff/2026-08/2026-08-09_bid_search_meilisearch_handoff.md) | Meilisearch 읽기 모델 구현 및 초기 색인 검증 절차 |
 
 ---
 
@@ -117,62 +117,62 @@ docs/
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
-| 인수인계 (정정본) | [`2026-07-31_skill_system_handoff.md`](handoff/2026-07-31_skill_system_handoff.md) | 실제 진행 상태 |
-| 원본 재현율 복원 | [`2026-07-31_parity_restoration_handoff.md`](handoff/2026-07-31_parity_restoration_handoff.md) | 데이터 유실 복구, 조작·결함 7건 수정, 스택 변경 |
-| 백필 완료 | [`2026-08-03_backfill_complete.md`](handoff/2026-08-03_backfill_complete.md) | 과거 결손 복구 결과 |
-| 용역 제도 특징 1차 | [`2026-08-03_servc_institution_handoff.md`](handoff/2026-08-03_servc_institution_handoff.md) | 제도 특징 배선 |
-| 용역 모델 개선 2차 | [`2026-08-03_servc_model_tuning_handoff.md`](handoff/2026-08-03_servc_model_tuning_handoff.md) | R2 0.6968, MAE -15.6% |
-| 용역 제도 분석 인수인계 | [`2026-08-03_servc_institution_handoff.md`](handoff/2026-08-03_servc_institution_handoff.md) | 제도 특징 배선, 세부분류 채택 |
-| 용역 모델 튜닝 인수인계 | [`2026-08-03_servc_model_tuning_handoff.md`](handoff/2026-08-03_servc_model_tuning_handoff.md) | Huber, 재발주 이력, 기각 목록 |
-| 서빙 배선 인수인계 | [`2026-08-04_servc_serving_handoff.md`](handoff/2026-08-04_servc_serving_handoff.md) | 특징 단일화, 승격 경로, 예측 구간 |
-| Phase 7 인수인계 | [`2026-08-04_phase7_handoff.md`](handoff/2026-08-04_phase7_handoff.md) | 컷오버 판정, 재현 절차, 잔여 조건 |
-| 리팩토링 세션 인수인계 | [`2026-08-06_refactoring_handoff.md`](handoff/2026-08-06_refactoring_handoff.md) | 첫 토큰·CI·승격 게이트 수정, 기각 목록, 잔여 결정 사항 |
-| 모델 성능 개선 재개 인수인계 | [`2026-08-06_model_improvement_handoff.md`](handoff/2026-08-06_model_improvement_handoff.md) | Servc·Thng 승격 상태, 하한율 결측 집단 후속 진단, 기각 경계 |
-| 공고 검색 성능 개선 | [`2026-08-09_bid_search_meilisearch_handoff.md`](handoff/2026-08-09_bid_search_meilisearch_handoff.md) | Meilisearch 구현, 초기 색인·P95 검증 절차 |
-| 용역 모델 튜닝 인수인계 | [`2026-08-10_servc_tuning_handoff.md`](handoff/2026-08-10_servc_tuning_handoff.md) | 다섯 축 기각 근거, 홀드아웃 판정 기준 0.0074 상향, 남은 사용자 결정 |
-| 쌍대 표본 기준 착수 지시 | [`2026-08-11_paired_sample_filter_todo.md`](handoff/2026-08-11_paired_sample_filter_todo.md) | 판정용·보고용 표본 분리 반영. 코드 변경 지점, 검증 절차, 금지 사항 |
-| legacy SSE 이관 착수 지시 | [`2026-08-12_legacy_sse_migration_task.md`](handoff/2026-08-12_legacy_sse_migration_task.md) | GET /chatbot/stream 제거 완료. 정본 POST /chat/stream 전면 이관 및 벤치마크 기준선 갱신 |
-| P0 후속 마감 이후 착수 목록 | [`2026-08-13_next_session_todo.md`](handoff/2026-08-13_next_session_todo.md) | A1~A5 병합 이후 잔여 과제. 신 제도 표본 1.276% 실측, 미병합 브랜치 처분, 컷오버 점검 |
-| 추후 작업 백로그 (구 정본) | [`2026-08-13_future_work_backlog.md`](handoff/2026-08-13_future_work_backlog.md) | 과거 백로그 (현재 정본은 `docs/context/CURRENT_STATE.md` 참조). 수집 안정화 관찰, P1 다중 워커 기각 이후 코드 경로 프로파일링 |
-| GPT 코디네이션 세션 인수인계 | [`2026-08-13_gpt_coordination_handoff.md`](handoff/2026-08-13_gpt_coordination_handoff.md) | 기능 기준 `d82a638`. 완료·기각 결과, Git·Docker·Orca 종료 상태, 다음 Task 사양과 재개 명령 |
-| 예측 P95 병목 감사 | [`2026-08-13_prediction_p95_diagnosis.md`](handoff/2026-08-13_prediction_p95_diagnosis.md) | /predict P95 627ms 원인(스레드 미제한·특징 3중 구축·이중 프리로드), 최소 수정 후보 A~E, 재측정 매트릭스 1/2/4/10 |
-| 용역 OOS 준비도 판정 | [`2026-08-13_servc_oos_readiness_gate.md`](handoff/2026-08-13_servc_oos_readiness_gate.md) | 현행 champion OOS 후보 2건으로 판정 불가. 수집 백필과 3,098건 축적을 다음 게이트로 확정 |
-| 수동 재학습 API 재구현 계획 | [`2026-08-13_retrain_api_reimplementation_plan.md`](handoff/2026-08-13_retrain_api_reimplementation_plan.md) | 구 브랜치 전체 병합을 기각하고 최신 main의 9파일 최소 이식 범위와 검증 절차 확정 |
-| 외부 정적 분석 검증 | [`2026-08-14_gpt_analysis_verification.md`](handoff/2026-08-14_gpt_analysis_verification.md) | GPT 5.6 저장소 감사 대조. 2026-08-04 P95 19.1ms 를 현행 근거로 쓰지 말 것, cron 중복은 해결됨, 교정된 실행 순서 |
-| 수집 관찰 1회차 | [`2026-08-14_collection_observation_round1.md`](handoff/2026-08-14_collection_observation_round1.md) | 정기 수집 실측. 완료 기준을 최신 개찰 시각 전진에서 개찰 건수 증가로 교체한 근거 |
-| Servc OOS 필터 진단 | [`2026-08-14_servc_oos_filter_diagnosis.md`](handoff/2026-08-14_servc_oos_filter_diagnosis.md) | **유효 OOS 2건 서술 폐기.** 실측 1,194건, 전환율 86.02%, 3,098 도달 약 14.0영업일. 08-03 공고 수집 공백이 조인 탈락 원인 |
-| 2026-08-14 후반 세션 인수인계 | [`2026-08-14_late_session_handoff.md`](handoff/2026-08-14_late_session_handoff.md) | 레이턴시 게이트 규약 제정, GC freeze 채택, SSE 기준선, 워커 배정 정책. **성능 작업 착수 전 필독** |
-| 2026-08-22 P95·워커 감시 인수인계 | [`2026-08-22_p95_and_worker_supervision_handoff.md`](handoff/2026-08-22_p95_and_worker_supervision_handoff.md) | 최신 G3 게이트 결과, Terra Medium·Gemini Medium 운영 정책, c1·c2·c4 회귀 원인 분리 순서 |
-| 세션 TODO (2026-08-01) | [`2026-08-01_session_todo.md`](handoff/2026-08-01_session_todo.md) | 재개 방법·완료 상태. Phase 0~6 완료, Phase 7 검증 잔존 |
-| 백필 재개 안내 | [`2026-08-02_backfill_resume.md`](handoff/2026-08-02_backfill_resume.md) | 입찰공고 10년치 결손 상태와 중단 시점 현황, 재개 명령 |
-| 용역 진단 재개 인수인계 | [`2026-08-06_servc_diagnosis_handoff.md`](handoff/2026-08-06_servc_diagnosis_handoff.md) | 잔차 구조 진단 완료, 5개 접근 기각·모델 변경 없음 |
-| KB 커버리지 인수인계 | [`2026-08-07_kb_coverage_handoff.md`](handoff/2026-08-07_kb_coverage_handoff.md) | 50만 건 색인(499,195건, top-5 98.0%), 테스트의 운영 Slack 경고 발신 문제 해결 |
-| 손실함수 승격 절차 인수인계 | [`2026-08-07_servc_loss_function_handoff.md`](handoff/2026-08-07_servc_loss_function_handoff.md) | quantile(0.5) 승격 완료 기록. 결과 정본은 설계 문서 8장 |
-| 다음 축 인수인계 | [`2026-08-07_servc_next_axis_handoff.md`](handoff/2026-08-07_servc_next_axis_handoff.md) | 승격 이후 남은 개선 축, 하이퍼파라미터·앙상블·교차·raw_data·재수집 전부 기각 |
-| 병행 세션 조율 | [`2026-08-09_parallel_session_coordination.md`](handoff/2026-08-09_parallel_session_coordination.md) | 일일 자동화와 raw_data 키 조사가 같은 트리를 밟지 않도록 범위 분리 |
-| 2026-08-11 저녁 세션 인수인계 | [`2026-08-11_evening_session_handoff.md`](handoff/2026-08-11_evening_session_handoff.md) | Orca 4섹션 결과. 제도 플래그 기각, 원천 전환이 표기 변경으로 정정 |
-| 2026-08-11 다중 섹션 인수인계 | [`2026-08-11_multi_section_handoff.md`](handoff/2026-08-11_multi_section_handoff.md) | Task 4건 완료·병합은 사용자 승인 대기 |
-| 토큰 리셋 후 착수 목록 | [`2026-08-11_next_session_todo.md`](handoff/2026-08-11_next_session_todo.md) | 하한율 결측 재분해 최우선 등 착수 후보 우선순위 |
-| 미병합 브랜치 감사 보고 | [`2026-08-13_branch_audit_report.md`](handoff/2026-08-13_branch_audit_report.md) | fix/arq-worker-compose·task-976479dbe8cb 내용과 main 흡수 확인 |
-| 예측 계측·c10 벤치마크 | [`2026-08-13_p1_predict_instrumentation.md`](handoff/2026-08-13_p1_predict_instrumentation.md) | /predict 구간 계측 통일과 c10 P95 199.18ms 목표 실패, 후속 워커 판정 |
-| Cerebras 워커 연동 점검 | [`2026-08-14_cerebras_gemma4_worker_setup.md`](handoff/2026-08-14_cerebras_gemma4_worker_setup.md) | Gemma-4 31B 워커 환경 구성과 실측 점검 |
-| 2026-08-14 세션 인수인계 | [`2026-08-14_session_handoff.md`](handoff/2026-08-14_session_handoff.md) | 마이크로배칭·Servc OOS 재측정·c10 tail 원인 규명 등 완료 내역 |
-| 코디네이터 토큰 소진 인수인계 | [`2026-08-15_coordinator_token_exhaustion_handoff.md`](handoff/2026-08-15_coordinator_token_exhaustion_handoff.md) | 주간 한도 97% 소진, 워커 산출물은 격리 브랜치 대기·main 안전 |
-| 무료 워커 builder 경합 | [`2026-08-20_free_worker_builder_bakeoff.md`](handoff/2026-08-20_free_worker_builder_bakeoff.md) | 무료 모델 10종 동일 과제 경합, 연속 이탈 카운터 구분이 변별 지점 |
-| OpenRouter 워커 자격 검증 | [`2026-08-20_openrouter_worker_qualification.md`](handoff/2026-08-20_openrouter_worker_qualification.md) | 무료 워커 probe·모델 재고 대조, 워커 보고 오기 정정 |
-| ORM Mapped 종료 인수인계 | [`2026-08-21_orm_mapped_shutdown_handoff.md`](handoff/2026-08-21_orm_mapped_shutdown_handoff.md) | ORM Mapped 전환 완료, 스키마 drift 0건·데이터 보존 검증 통과 |
-| 최신 main 후속 감사 | [`2026-08-22_post_1a45ad5_audit.md`](handoff/2026-08-22_post_1a45ad5_audit.md) | 신규 29개 커밋 검토, P0 없음·provenance 결박 P1 1건과 P2 잔여 |
-| 후속 감사 항목 처리 | [`2026-08-23_followup_audit_closure.md`](handoff/2026-08-23_followup_audit_closure.md) | 5트랙 처리, P1 런타임 소스 provenance 등 병합 |
-| 잔여 과업 명세 | [`2026-08-23_next_work_spec.md`](handoff/2026-08-23_next_work_spec.md) | 다음 세션 착수 과업 6종과 착수 조건·완료 기준 |
-| Ollama c4·RAG 계측 인수인계 | [`2026-08-23_ollama_c4_rag_segments.md`](handoff/2026-08-23_ollama_c4_rag_segments.md) | Ollama 직렬화로 두 측정이 병렬 불가한 근거와 구간 분리 설계 |
-| Orca 후속 작업 인수인계 | [`2026-08-23_orca_coordinator_handoff.md`](handoff/2026-08-23_orca_coordinator_handoff.md) | P1 benchmark provenance 결박 구현, main 병합 대기 |
-| 코디네이터 토큰 소진 인수인계 v2 | [`2026-08-23_orca_coordinator_token_exhaustion_handoff_v2.md`](handoff/2026-08-23_orca_coordinator_token_exhaustion_handoff_v2.md) | P1 결박 병합 완료, P2 start/end provenance 완료·Level 1 게이트 대기 |
-| 감사 보완 통합·종료 인수인계 | [`2026-08-24_audit_remediation_shutdown.md`](handoff/2026-08-24_audit_remediation_shutdown.md) | 공통 provenance·Orca 경계·RAG·Arq 하네스 통합, 재측정·병합 미수행 |
-| CI 복구·감사 재검증 | [`2026-08-24_ci_crossplatform_and_audit_reverify.md`](handoff/2026-08-24_ci_crossplatform_and_audit_reverify.md) | 크로스 플랫폼 CI 결함 3건 수정, 감사 13항목 재검증 병합 |
-| 2026-08-24 세션 종료 인수인계 | [`2026-08-24_session_close.md`](handoff/2026-08-24_session_close.md) | 감사 13항목 해소·3플랫폼 CI green·Arq 기준선·e2b 비교 보류 |
-| 기관 낙찰률 이력 구현 기록 | [`inst_hist_rate_impl_todo.md`](handoff/inst_hist_rate_impl_todo.md) | inst_hist_rate 구현 위치와 결정 사항, TODO에서 기록 문서로 전환 |
-| 2026-08-24 감사·기준선 세션 | [`session_20260824_audit_p1_and_calibration.md`](handoff/session_20260824_audit_p1_and_calibration.md) | 감사 P1 5건 해소·Arq 정식 기준선 확정·e4b/e2b 품질 실측 |
-| **2026-08-25 감사 종결·검색 수정 세션 (current)** | [`session_20260825_audit_closeout_and_retrieval_fix.md`](handoff/session_20260825_audit_closeout_and_retrieval_fix.md) | 외부 감사 2건 25항목 종결, 벡터 검색 필터 미적용 결함 해소(근거 적중 15/16 -> 16/16), LLM 품질 v2 재측정으로 e2b 미승격 판정 |
+| 인수인계 (정정본) | [`2026-07-31_skill_system_handoff.md`](archive/handoff/2026-07/2026-07-31_skill_system_handoff.md) | 실제 진행 상태 |
+| 원본 재현율 복원 | [`2026-07-31_parity_restoration_handoff.md`](archive/handoff/2026-07/2026-07-31_parity_restoration_handoff.md) | 데이터 유실 복구, 조작·결함 7건 수정, 스택 변경 |
+| 백필 완료 | [`2026-08-03_backfill_complete.md`](archive/handoff/2026-08/2026-08-03_backfill_complete.md) | 과거 결손 복구 결과 |
+| 용역 제도 특징 1차 | [`2026-08-03_servc_institution_handoff.md`](archive/handoff/2026-08/2026-08-03_servc_institution_handoff.md) | 제도 특징 배선 |
+| 용역 모델 개선 2차 | [`2026-08-03_servc_model_tuning_handoff.md`](archive/handoff/2026-08/2026-08-03_servc_model_tuning_handoff.md) | R2 0.6968, MAE -15.6% |
+| 용역 제도 분석 인수인계 | [`2026-08-03_servc_institution_handoff.md`](archive/handoff/2026-08/2026-08-03_servc_institution_handoff.md) | 제도 특징 배선, 세부분류 채택 |
+| 용역 모델 튜닝 인수인계 | [`2026-08-03_servc_model_tuning_handoff.md`](archive/handoff/2026-08/2026-08-03_servc_model_tuning_handoff.md) | Huber, 재발주 이력, 기각 목록 |
+| 서빙 배선 인수인계 | [`2026-08-04_servc_serving_handoff.md`](archive/handoff/2026-08/2026-08-04_servc_serving_handoff.md) | 특징 단일화, 승격 경로, 예측 구간 |
+| Phase 7 인수인계 | [`2026-08-04_phase7_handoff.md`](archive/handoff/2026-08/2026-08-04_phase7_handoff.md) | 컷오버 판정, 재현 절차, 잔여 조건 |
+| 리팩토링 세션 인수인계 | [`2026-08-06_refactoring_handoff.md`](archive/handoff/2026-08/2026-08-06_refactoring_handoff.md) | 첫 토큰·CI·승격 게이트 수정, 기각 목록, 잔여 결정 사항 |
+| 모델 성능 개선 재개 인수인계 | [`2026-08-06_model_improvement_handoff.md`](archive/handoff/2026-08/2026-08-06_model_improvement_handoff.md) | Servc·Thng 승격 상태, 하한율 결측 집단 후속 진단, 기각 경계 |
+| 공고 검색 성능 개선 | [`2026-08-09_bid_search_meilisearch_handoff.md`](archive/handoff/2026-08/2026-08-09_bid_search_meilisearch_handoff.md) | Meilisearch 구현, 초기 색인·P95 검증 절차 |
+| 용역 모델 튜닝 인수인계 | [`2026-08-10_servc_tuning_handoff.md`](archive/handoff/2026-08/2026-08-10_servc_tuning_handoff.md) | 다섯 축 기각 근거, 홀드아웃 판정 기준 0.0074 상향, 남은 사용자 결정 |
+| 쌍대 표본 기준 착수 지시 | [`2026-08-11_paired_sample_filter_todo.md`](archive/handoff/2026-08/2026-08-11_paired_sample_filter_todo.md) | 판정용·보고용 표본 분리 반영. 코드 변경 지점, 검증 절차, 금지 사항 |
+| legacy SSE 이관 착수 지시 | [`2026-08-12_legacy_sse_migration_task.md`](archive/handoff/2026-08/2026-08-12_legacy_sse_migration_task.md) | GET /chatbot/stream 제거 완료. 정본 POST /chat/stream 전면 이관 및 벤치마크 기준선 갱신 |
+| P0 후속 마감 이후 착수 목록 | [`2026-08-13_next_session_todo.md`](archive/handoff/2026-08/2026-08-13_next_session_todo.md) | A1~A5 병합 이후 잔여 과제. 신 제도 표본 1.276% 실측, 미병합 브랜치 처분, 컷오버 점검 |
+| 추후 작업 백로그 (구 정본) | [`2026-08-13_future_work_backlog.md`](archive/handoff/2026-08/2026-08-13_future_work_backlog.md) | 과거 백로그 (현재 정본은 `docs/context/CURRENT_STATE.md` 참조). 수집 안정화 관찰, P1 다중 워커 기각 이후 코드 경로 프로파일링 |
+| GPT 코디네이션 세션 인수인계 | [`2026-08-13_gpt_coordination_handoff.md`](archive/handoff/2026-08/2026-08-13_gpt_coordination_handoff.md) | 기능 기준 `d82a638`. 완료·기각 결과, Git·Docker·Orca 종료 상태, 다음 Task 사양과 재개 명령 |
+| 예측 P95 병목 감사 | [`2026-08-13_prediction_p95_diagnosis.md`](archive/handoff/2026-08/2026-08-13_prediction_p95_diagnosis.md) | /predict P95 627ms 원인(스레드 미제한·특징 3중 구축·이중 프리로드), 최소 수정 후보 A~E, 재측정 매트릭스 1/2/4/10 |
+| 용역 OOS 준비도 판정 | [`2026-08-13_servc_oos_readiness_gate.md`](archive/handoff/2026-08/2026-08-13_servc_oos_readiness_gate.md) | 현행 champion OOS 후보 2건으로 판정 불가. 수집 백필과 3,098건 축적을 다음 게이트로 확정 |
+| 수동 재학습 API 재구현 계획 | [`2026-08-13_retrain_api_reimplementation_plan.md`](archive/handoff/2026-08/2026-08-13_retrain_api_reimplementation_plan.md) | 구 브랜치 전체 병합을 기각하고 최신 main의 9파일 최소 이식 범위와 검증 절차 확정 |
+| 외부 정적 분석 검증 | [`2026-08-14_gpt_analysis_verification.md`](archive/handoff/2026-08/2026-08-14_gpt_analysis_verification.md) | GPT 5.6 저장소 감사 대조. 2026-08-04 P95 19.1ms 를 현행 근거로 쓰지 말 것, cron 중복은 해결됨, 교정된 실행 순서 |
+| 수집 관찰 1회차 | [`2026-08-14_collection_observation_round1.md`](archive/handoff/2026-08/2026-08-14_collection_observation_round1.md) | 정기 수집 실측. 완료 기준을 최신 개찰 시각 전진에서 개찰 건수 증가로 교체한 근거 |
+| Servc OOS 필터 진단 | [`2026-08-14_servc_oos_filter_diagnosis.md`](archive/handoff/2026-08/2026-08-14_servc_oos_filter_diagnosis.md) | **유효 OOS 2건 서술 폐기.** 실측 1,194건, 전환율 86.02%, 3,098 도달 약 14.0영업일. 08-03 공고 수집 공백이 조인 탈락 원인 |
+| 2026-08-14 후반 세션 인수인계 | [`2026-08-14_late_session_handoff.md`](archive/handoff/2026-08/2026-08-14_late_session_handoff.md) | 레이턴시 게이트 규약 제정, GC freeze 채택, SSE 기준선, 워커 배정 정책. **성능 작업 착수 전 필독** |
+| 2026-08-22 P95·워커 감시 인수인계 | [`2026-08-22_p95_and_worker_supervision_handoff.md`](archive/handoff/2026-08/2026-08-22_p95_and_worker_supervision_handoff.md) | 최신 G3 게이트 결과, Terra Medium·Gemini Medium 운영 정책, c1·c2·c4 회귀 원인 분리 순서 |
+| 세션 TODO (2026-08-01) | [`2026-08-01_session_todo.md`](archive/handoff/2026-08/2026-08-01_session_todo.md) | 재개 방법·완료 상태. Phase 0~6 완료, Phase 7 검증 잔존 |
+| 백필 재개 안내 | [`2026-08-02_backfill_resume.md`](archive/handoff/2026-08/2026-08-02_backfill_resume.md) | 입찰공고 10년치 결손 상태와 중단 시점 현황, 재개 명령 |
+| 용역 진단 재개 인수인계 | [`2026-08-06_servc_diagnosis_handoff.md`](archive/handoff/2026-08/2026-08-06_servc_diagnosis_handoff.md) | 잔차 구조 진단 완료, 5개 접근 기각·모델 변경 없음 |
+| KB 커버리지 인수인계 | [`2026-08-07_kb_coverage_handoff.md`](archive/handoff/2026-08/2026-08-07_kb_coverage_handoff.md) | 50만 건 색인(499,195건, top-5 98.0%), 테스트의 운영 Slack 경고 발신 문제 해결 |
+| 손실함수 승격 절차 인수인계 | [`2026-08-07_servc_loss_function_handoff.md`](archive/handoff/2026-08/2026-08-07_servc_loss_function_handoff.md) | quantile(0.5) 승격 완료 기록. 결과 정본은 설계 문서 8장 |
+| 다음 축 인수인계 | [`2026-08-07_servc_next_axis_handoff.md`](archive/handoff/2026-08/2026-08-07_servc_next_axis_handoff.md) | 승격 이후 남은 개선 축, 하이퍼파라미터·앙상블·교차·raw_data·재수집 전부 기각 |
+| 병행 세션 조율 | [`2026-08-09_parallel_session_coordination.md`](archive/handoff/2026-08/2026-08-09_parallel_session_coordination.md) | 일일 자동화와 raw_data 키 조사가 같은 트리를 밟지 않도록 범위 분리 |
+| 2026-08-11 저녁 세션 인수인계 | [`2026-08-11_evening_session_handoff.md`](archive/handoff/2026-08/2026-08-11_evening_session_handoff.md) | Orca 4섹션 결과. 제도 플래그 기각, 원천 전환이 표기 변경으로 정정 |
+| 2026-08-11 다중 섹션 인수인계 | [`2026-08-11_multi_section_handoff.md`](archive/handoff/2026-08/2026-08-11_multi_section_handoff.md) | Task 4건 완료·병합은 사용자 승인 대기 |
+| 토큰 리셋 후 착수 목록 | [`2026-08-11_next_session_todo.md`](archive/handoff/2026-08/2026-08-11_next_session_todo.md) | 하한율 결측 재분해 최우선 등 착수 후보 우선순위 |
+| 미병합 브랜치 감사 보고 | [`2026-08-13_branch_audit_report.md`](archive/handoff/2026-08/2026-08-13_branch_audit_report.md) | fix/arq-worker-compose·task-976479dbe8cb 내용과 main 흡수 확인 |
+| 예측 계측·c10 벤치마크 | [`2026-08-13_p1_predict_instrumentation.md`](archive/handoff/2026-08/2026-08-13_p1_predict_instrumentation.md) | /predict 구간 계측 통일과 c10 P95 199.18ms 목표 실패, 후속 워커 판정 |
+| Cerebras 워커 연동 점검 | [`2026-08-14_cerebras_gemma4_worker_setup.md`](archive/handoff/2026-08/2026-08-14_cerebras_gemma4_worker_setup.md) | Gemma-4 31B 워커 환경 구성과 실측 점검 |
+| 2026-08-14 세션 인수인계 | [`2026-08-14_session_handoff.md`](archive/handoff/2026-08/2026-08-14_session_handoff.md) | 마이크로배칭·Servc OOS 재측정·c10 tail 원인 규명 등 완료 내역 |
+| 코디네이터 토큰 소진 인수인계 | [`2026-08-15_coordinator_token_exhaustion_handoff.md`](archive/handoff/2026-08/2026-08-15_coordinator_token_exhaustion_handoff.md) | 주간 한도 97% 소진, 워커 산출물은 격리 브랜치 대기·main 안전 |
+| 무료 워커 builder 경합 | [`2026-08-20_free_worker_builder_bakeoff.md`](archive/handoff/2026-08/2026-08-20_free_worker_builder_bakeoff.md) | 무료 모델 10종 동일 과제 경합, 연속 이탈 카운터 구분이 변별 지점 |
+| OpenRouter 워커 자격 검증 | [`2026-08-20_openrouter_worker_qualification.md`](archive/handoff/2026-08/2026-08-20_openrouter_worker_qualification.md) | 무료 워커 probe·모델 재고 대조, 워커 보고 오기 정정 |
+| ORM Mapped 종료 인수인계 | [`2026-08-21_orm_mapped_shutdown_handoff.md`](archive/handoff/2026-08/2026-08-21_orm_mapped_shutdown_handoff.md) | ORM Mapped 전환 완료, 스키마 drift 0건·데이터 보존 검증 통과 |
+| 최신 main 후속 감사 | [`2026-08-22_post_1a45ad5_audit.md`](archive/handoff/2026-08/2026-08-22_post_1a45ad5_audit.md) | 신규 29개 커밋 검토, P0 없음·provenance 결박 P1 1건과 P2 잔여 |
+| 후속 감사 항목 처리 | [`2026-08-23_followup_audit_closure.md`](archive/handoff/2026-08/2026-08-23_followup_audit_closure.md) | 5트랙 처리, P1 런타임 소스 provenance 등 병합 |
+| 잔여 과업 명세 | [`2026-08-23_next_work_spec.md`](archive/handoff/2026-08/2026-08-23_next_work_spec.md) | 다음 세션 착수 과업 6종과 착수 조건·완료 기준 |
+| Ollama c4·RAG 계측 인수인계 | [`2026-08-23_ollama_c4_rag_segments.md`](archive/handoff/2026-08/2026-08-23_ollama_c4_rag_segments.md) | Ollama 직렬화로 두 측정이 병렬 불가한 근거와 구간 분리 설계 |
+| Orca 후속 작업 인수인계 | [`2026-08-23_orca_coordinator_handoff.md`](archive/handoff/2026-08/2026-08-23_orca_coordinator_handoff.md) | P1 benchmark provenance 결박 구현, main 병합 대기 |
+| 코디네이터 토큰 소진 인수인계 v2 | [`2026-08-23_orca_coordinator_token_exhaustion_handoff_v2.md`](archive/handoff/2026-08/2026-08-23_orca_coordinator_token_exhaustion_handoff_v2.md) | P1 결박 병합 완료, P2 start/end provenance 완료·Level 1 게이트 대기 |
+| 감사 보완 통합·종료 인수인계 | [`2026-08-24_audit_remediation_shutdown.md`](archive/handoff/2026-08/2026-08-24_audit_remediation_shutdown.md) | 공통 provenance·Orca 경계·RAG·Arq 하네스 통합, 재측정·병합 미수행 |
+| CI 복구·감사 재검증 | [`2026-08-24_ci_crossplatform_and_audit_reverify.md`](archive/handoff/2026-08/2026-08-24_ci_crossplatform_and_audit_reverify.md) | 크로스 플랫폼 CI 결함 3건 수정, 감사 13항목 재검증 병합 |
+| 2026-08-24 세션 종료 인수인계 | [`2026-08-24_session_close.md`](archive/handoff/2026-08/2026-08-24_session_close.md) | 감사 13항목 해소·3플랫폼 CI green·Arq 기준선·e2b 비교 보류 |
+| 기관 낙찰률 이력 구현 기록 | [`inst_hist_rate_impl_todo.md`](archive/handoff/2026-08/inst_hist_rate_impl_todo.md) | inst_hist_rate 구현 위치와 결정 사항, TODO에서 기록 문서로 전환 |
+| 2026-08-24 감사·기준선 세션 | [`session_20260824_audit_p1_and_calibration.md`](archive/handoff/2026-08/session_20260824_audit_p1_and_calibration.md) | 감사 P1 5건 해소·Arq 정식 기준선 확정·e4b/e2b 품질 실측 |
+| **2026-08-25 감사 종결·검색 수정 세션 (current)** | [`session_20260825_audit_closeout_and_retrieval_fix.md`](archive/handoff/2026-08/session_20260825_audit_closeout_and_retrieval_fix.md) | 외부 감사 2건 25항목 종결, 벡터 검색 필터 미적용 결함 해소(근거 적중 15/16 -> 16/16), LLM 품질 v2 재측정으로 e2b 미승격 판정 |
 
 ---
 
@@ -180,8 +180,8 @@ docs/
 
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
-| **Wave H 세션 종료 인수인계** | [`handoff_20260903_wave_h_close.md`](ops/handoff_20260903_wave_h_close.md) | 2026-09-03 세션 종료. 병합 게이트·정본 영수증 게이트 도입, SSR E2E Phase 1 병합. 다음 착수는 Phase 2a. **가장 최신 인계** |
-| **Wave G 세션 종료 인수인계** | [`handoff_20260902_wave_g_session_close.md`](ops/handoff_20260902_wave_g_session_close.md) | 2026-09-02 세션 종료. 남은 항목과 재기동 절차. 이전 인계보다 이 문서가 우선 |
+| **Wave H 세션 종료 인수인계** | [`handoff_20260903_wave_h_close.md`](archive/handoff/2026-09/handoff_20260903_wave_h_close.md) | 2026-09-03 세션 종료. 병합 게이트·정본 영수증 게이트 도입, SSR E2E Phase 1 병합. 다음 착수는 Phase 2a. **가장 최신 인계** |
+| **Wave G 세션 종료 인수인계** | [`handoff_20260902_wave_g_session_close.md`](archive/handoff/2026-09/handoff_20260902_wave_g_session_close.md) | 2026-09-02 세션 종료. 남은 항목과 재기동 절차. 이전 인계보다 이 문서가 우선 |
 | **웨이브별 해소 이력** | [`wave_resolution_history_20260902.md`](ops/wave_resolution_history_20260902.md) | CURRENT_STATE 에서 분리한 보안 P0·Wave A~G 해소 내역과 병합 커밋. 근거가 필요할 때만 조회 |
 | **SSR 브라우저 E2E 범위 조사** | [`ssr_e2e_scope_survey_20260902.md`](analysis/ssr_e2e_scope_survey_20260902.md) | 대상 화면 15종, 도구 4종 비교, 공유 자원 충돌, 4단계 분할안. 권장 pytest-playwright. 착수는 합의 대기 |
 | **레이턴시 게이트 측정 규약** | [`latency_gate_protocol.md`](ops/latency_gate_protocol.md) | **정본 규약.** 표본 `n >= 오염요청수 x 60`(예측 600, SSE 60), warmup 제외, 3회 최악값, c10 P95 100ms, 주변 부하 기록. 규약 제정 이전 측정은 통과·미달 어느 근거도 아님 |
@@ -238,7 +238,7 @@ docs/
 | 문서 | 파일 | 설명 |
 | --- | --- | --- |
 | **프로젝트 현재 운영 상태** | [`context/CURRENT_STATE.md`](context/CURRENT_STATE.md) | **단일 진실 원천(SSOT).** 현재 구현 상태, 테스트/CI 현황, 런타임 지표 |
-| 과거 인수인계 (2026-08-18) | [`context/handoff_20260818.md`](context/handoff_20260818.md) | 이전 세션 컨텍스트 인수인계 기록 |
+| 과거 인수인계 (2026-08-18) | [`context/handoff_20260818.md`](archive/handoff/2026-08/handoff_20260818.md) | 이전 세션 컨텍스트 인수인계 기록 |
 | **분석 보고서 인덱스** | [`analysis/README.md`](analysis/README.md) | **주제별 분석 문서 색인 (429건, README 제외).** 기한부 과업, 측정·벤치마크, 기각 접근, 모델, RAG, SSR 등 주제별 분류 |
 | 분석 보고서 디렉토리 | [`analysis/`](analysis/) | Arq 처리량, I/O 차단, c2/c4 배치 등 심층 성능 및 분석 보고서 모음 |
 

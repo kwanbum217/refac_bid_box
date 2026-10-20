@@ -14,7 +14,7 @@
 | 제안 필드 | 타입 | 의미와 매칭 | 근거 |
 | --- | --- | --- | --- |
 | `contract_regime` | `str \| None` | `NATIONAL`, `LOCAL` 등 적용 법령 축. 정확한 허용값 집합은 구현 전 확정 필요. | 국가·지방 계약의 기준과 예비가격 범위가 다르고 원천 데이터에 법령 구분 필드가 없다는 점 (`g2b_procurement_institution_analysis.md:241-247`). 현재 판정에서 계약방법 문자열의 “지방” 포함 여부를 별도로 확인하는 코드가 이미 있음 (`src/app/api/v1/evaluations.py:638-642`). |
-| `institution_scope` | `str` | `ALL`, `INSTITUTION`, `REGION` 범위 구분. 광역 공통 규칙과 특정 수요기관 규칙을 구별. 기본값 `ALL`은 기존 규칙 호환용. | 기관별·지역별 산식이 없다는 공백 및 기관별 공고 규모 차이 (`docs/ops/handoff_20261001_qualification_score_table.md:78-81`). |
+| `institution_scope` | `str` | `ALL`, `INSTITUTION`, `REGION` 범위 구분. 광역 공통 규칙과 특정 수요기관 규칙을 구별. 기본값 `ALL`은 기존 규칙 호환용. | 기관별·지역별 산식이 없다는 공백 및 기관별 공고 규모 차이 (`docs/handoff/handoff_20261001_qualification_score_table.md:78-81`). |
 | `institution_code` | `str \| None` | 기관 식별 코드. 기관 단위 규칙에 쓰며 이름 변경·동명이인 문제를 줄임. 코드의 원천 필드와 표준은 현재 확인 불가. | 공고에서 `dminstt_nm` 수요기관명이 강한 특징으로 쓰였으나 법령 필드는 없어 기관명 대리 상태 (`g2b_procurement_institution_analysis.md:247`, `handoff_20261001_qualification_score_table.md:81`). 코드 사용 가능성은 구현 전 확인 불가. |
 | `institution_name` | `str \| None` | 표기·감사 편의를 위한 기관명. 코드가 없거나 과거 원자료만 있는 경우 이름 비교 대안. 정규화 규칙은 확인 불가. | 수요기관명 대리 사용 근거 (`g2b_procurement_institution_analysis.md:247`). |
 | `region_code` | `str \| None` | 지역 범위 규칙 식별자. 지역 코드 체계와 데이터 필드는 확인 불가. | 기관 발주에 따라 예측 잔차 하한이 달라 지역 축을 분리할 필요가 있다는 분석 (`g2b_procurement_institution_analysis.md:247`); handoff의 서울·청주·서울교통공사·제주 기관 분포 (`handoff_20261001_qualification_score_table.md:81`). |

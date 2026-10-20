@@ -315,6 +315,6 @@ flowchart TD
 - `docs/analysis/servc_formula_collection_energy_20261004.md` — 에너지·공항 공기업 8곳(한국석유공사·한전KPS·인천국제공항공사 미확인)
 - `docs/analysis/servc_formula_collection_central_20261004.md` — 중앙부처·공단 9곳(LH 미확인)
 - `docs/analysis/servc_formula_userfiles_agency_20261004.md` — 사용자 제공 공공기관 6건(LH 미확인 유지)
-- `docs/ops/handoff_20261004_estprice_tailwind4_datebomb_session_close.md` — 8.3절 원문 미확보 7곳
+- `docs/handoff/handoff_20261004_estprice_tailwind4_datebomb_session_close.md` — 8.3절 원문 미확보 7곳
 - `docs/handoff/session_20260930_servc_formula_collection.md` — 33곳 수집 대장과 판정 규칙 10개
 - `.orca/capsules/task_afb66751579d/external/` — 내려받은 원본과 추출 텍스트(커밋하지 않음)

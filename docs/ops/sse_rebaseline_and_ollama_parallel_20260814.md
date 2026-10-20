@@ -148,6 +148,6 @@
 채워야 대표값이 유효합니다.
 
 작업 2 재개 절차는
-[`../handoff/2026-08-14_late_session_handoff.md`](../handoff/2026-08-14_late_session_handoff.md)
+[`../handoff/2026-08-14_late_session_handoff.md`](../archive/handoff/2026-08/2026-08-14_late_session_handoff.md)
 9.3 절에 있습니다. **호스트 Ollama 프로세스는 사용자 소유이므로 되돌릴 수 없다고
 판단되면 수행하지 마십시오.**

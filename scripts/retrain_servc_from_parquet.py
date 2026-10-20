@@ -38,7 +38,7 @@ import pandas as pd  # noqa: E402
 from src.ml.trainer import ModelTrainer  # noqa: E402
 
 # 이 값들 아래로 떨어지면 승격 후보로 볼 수 없습니다. 현행 champion 실측치이며
-# 근거는 docs/handoff/2026-08-04_servc_serving_handoff.md 2장입니다.
+# 근거는 docs/archive/handoff/2026-08/2026-08-04_servc_serving_handoff.md 2장입니다.
 CHAMPION_REFERENCE = {"servc_institution_v1": {"r2": 0.6881, "rmse": 2.6757, "mae": 1.3176}}
 
 

@@ -113,7 +113,7 @@ flowchart TD
 
 ## 7. 원인 코드별 대응 선택지 연결
 
-아래 선택지는 인수인계 [handoff_20261014_detail_page_coverage_close.md](../ops/handoff_20261014_detail_page_coverage_close.md) 4절·6절에 적힌 후보다. **이 중 어느 것도 이번 Task 에서 구현하지 않았으며, 대응 선택 자체도 확정하지 않았다.** 코드·화면 변경은 별도 Task 와 사용자 결정이 필요하다.
+아래 선택지는 인수인계 [handoff_20261014_detail_page_coverage_close.md](../handoff/handoff_20261014_detail_page_coverage_close.md) 4절·6절에 적힌 후보다. **이 중 어느 것도 이번 Task 에서 구현하지 않았으며, 대응 선택 자체도 확정하지 않았다.** 코드·화면 변경은 별도 Task 와 사용자 결정이 필요하다.
 
 | 원인 코드 | 공고 | 대응 선택지(미구현) | 비고 |
 | --- | ---: | --- | --- |

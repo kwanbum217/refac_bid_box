@@ -11,7 +11,7 @@
 - 첫 `--sync-downstream` 은 앱·워커와 호스트가 chroma_db SQLite 를 동시에 열어 `disk I/O error`. 앱·워커 정지 후 재실행 `RECON_EXIT:0`, KB delta 19,301, 정합성 차집합 0건.
 - as16 DB 실측 `d48ec32d`, as17 하류 실측 `56c70fc7`. 빌더 Gemini, 리뷰어 Muse Spark 1.3 free.
 - Path A·Release·Servc OOS·as9-review 는 보류 유지. 주간 재학습은 09-21 03:00. 재학습 enqueue 없음.
-- 상세는 [`session_20260918_grok_shutdown.md`](../handoff/session_20260918_grok_shutdown.md).
+- 상세는 [`session_20260918_grok_shutdown.md`](../archive/handoff/2026-09/session_20260918_grok_shutdown.md).
 
 ---
 
@@ -39,7 +39,7 @@
 - HEAD 직전 `dd5aaf9a`. 스택 재기동 후 따라잡기 수집 id=20 `success`, 드리프트 3건 `DRIFT_DETECTED` 를 병합했다.
 - XML 살균 첫 실기는 통과했다. 20260909 는 7일 상한으로 자동 회수되지 않았고 backfill 은 하지 않았다.
 - `TRIGGER_RETRAIN` 은 알림 라벨이며 재학습·승격은 실행하지 않았다.
-- 상세는 [`session_20260917_grok_shutdown.md`](../handoff/session_20260917_grok_shutdown.md).
+- 상세는 [`session_20260917_grok_shutdown.md`](../archive/handoff/2026-09/session_20260917_grok_shutdown.md).
 
 ---
 
@@ -49,7 +49,7 @@
 - chromadb GHSA 4건은 2026-09-16 재조회에서도 `first_patched_version` 이 없다. 12-31 재확인을 유지한다.
 - 개발 02:00 은 `development_data_refresh_task` 다. 2026-09-16 15:40 따라잡기는 물품 XML 금지 문자 참조로 `collect=partial_success` 가 되어 전체 failed 였다. 살균은 `faa752e4` 에 들어갔다.
 - 운영 반영은 경로 A 확정, 실행은 운영 접근 대기. Release 초안 두 건은 유지.
-- 상세는 [`session_20260916_grok_shutdown.md`](../handoff/session_20260916_grok_shutdown.md).
+- 상세는 [`session_20260916_grok_shutdown.md`](../archive/handoff/2026-09/session_20260916_grok_shutdown.md).
 
 ---
 
@@ -97,10 +97,10 @@
 로 옮겼습니다. 완료된 이력이므로 근거가 필요할 때만 조회하십시오.
 
 현재 열려 있는 잔여 항목은 본 문서 4장과
-[`../ops/handoff_20260903_wave_h_close.md`](../ops/handoff_20260903_wave_h_close.md)
+[`../ops/handoff_20260903_wave_h_close.md`](../archive/handoff/2026-09/handoff_20260903_wave_h_close.md)
 4장·5장을 정본으로 씁니다. **다음 착수는 SSR E2E Phase 2 이며 2a(DB 격리)와
 2b(시나리오)로 쪼개서 진행합니다.** 2026-09-02 Wave G 인계는
-[`../ops/handoff_20260902_wave_g_session_close.md`](../ops/handoff_20260902_wave_g_session_close.md)
+[`../ops/handoff_20260902_wave_g_session_close.md`](../archive/handoff/2026-09/handoff_20260902_wave_g_session_close.md)
 이며 4.1·4.2 항목은 Wave H 인계가 갱신했습니다.
 
 2026-09-07 에 6.1 에서 두 항목을 내렸습니다. **KB 정합성 검사 기준**은 검사가 낙찰
@@ -424,7 +424,7 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
 
 ### 6.1 알려진 미해결 사항 (Unknowns)
 
-- **Wave H 조율 평면 강화 (2026-08-31, 병합 완료)**: 문서 배정표가 `TIER_POLICY` 와 어긋나면 CI 가 실패합니다(검사 12개 -> 15개). ngram 선행필터는 기본값 OFF 플래그 뒤에 있고 기관명·업체명 집계 두 경로에만 붙습니다. 런처 승인 준비는 세 런처 공통 모듈로 통합했고 성공 판정을 `file_edit_auto_approve.ok` 로 합니다. 잔여는 [`handoff_20260831_wave_gh.md`](../ops/handoff_20260831_wave_gh.md) 3 장입니다.
+- **Wave H 조율 평면 강화 (2026-08-31, 병합 완료)**: 문서 배정표가 `TIER_POLICY` 와 어긋나면 CI 가 실패합니다(검사 12개 -> 15개). ngram 선행필터는 기본값 OFF 플래그 뒤에 있고 기관명·업체명 집계 두 경로에만 붙습니다. 런처 승인 준비는 세 런처 공통 모듈로 통합했고 성공 판정을 `file_edit_auto_approve.ok` 로 합니다. 잔여는 [`handoff_20260831_wave_gh.md`](../archive/handoff/2026-08/handoff_20260831_wave_gh.md) 3 장입니다.
 - **ngram 경계값 7 클래스 (2026-09-01, 실측 완료·종결)**: 격리 MySQL 8 스키마에서 실측했습니다. `edge_07`(K-water2026)과 `edge_11`(공사's)이 MATCH 로 LIKE 결과를 **조용히 누락**해 fail-closed 가 필수이며, 나머지 5 건은 표본 환경에서 동등했으나 운영 데이터에 표본이 없어 보수적으로 `false` 를 유지합니다([`ngram_edge_classes_measurement_20260901.md`](../analysis/ngram_edge_classes_measurement_20260901.md)). **운영 스키마에서 7 건 전부 PASS 로 보였던 것은 표본 0 건의 공집합 비교였습니다.** ngram 선행필터 자체가 기각되고 인덱스도 제거돼 이 항목은 종결입니다.
 - **Wave G 조율 평면 정합성 (2026-08-31, 병합 완료)**: 외부 감사 두 건을 HEAD `d0cb3d7` 에서 교차 검증해 실제 잔여만 닫았습니다. 한쪽 보고서는 `4aa444f`(838 커밋 뒤처짐) 기준이라 10건 중 8건이 이미 수정 완료였습니다. **감사 보고서는 기준 커밋을 확인한 뒤 수용하십시오.** 닫은 것은 모델 정책 3중 분기, 리뷰어 provider 독립성 fail-closed, `commit_count` 타입 우회, `CURRENT_STATE` q21 모순, 2.4 절 warm 범위, EXPLAIN 추정치 표기, ngram 회귀 하네스입니다.
 - **리뷰어 실행 경로 (2026-08-31, 해소)**: `orca_run_reviewer.py` 가 모델 provider 로 CLI 를 정합니다. gemini·claude·cerebras 는 `agy`, qwen 계열은 `qwen -m <id> -p` 이며 미지원·판정불가는 `ReviewerToolError` 로 막습니다. `qwen3.7-plus` 로 실제 리뷰를 완주해 확인했습니다. **provider 와 CLI 는 1:1 이 아닙니다** (Antigravity 가 Gemini·Claude·GPT-OSS 를 함께 서빙).
@@ -442,9 +442,9 @@ MATCH 포함 쿼리 delta 합만 112.29초이며, `GROUP BY` 의 `Using temporar
   확인해 정정했습니다.
   **운영 FULLTEXT 인덱스 생성과 `NGRAM_PREFILTER_ENABLED=true` 는 사용자 승인 전 보류입니다.**
   실행 절차는 [`../ops/ngram_fulltext_cutover_runbook.md`](../ops/ngram_fulltext_cutover_runbook.md) 를 따릅니다.
-  ngram 컷오버 순서는 [`../ops/handoff_20260901_cutover.md`](../ops/handoff_20260901_cutover.md) 4장입니다.
+  ngram 컷오버 순서는 [`../ops/handoff_20260901_cutover.md`](../archive/handoff/2026-09/handoff_20260901_cutover.md) 4장입니다.
   잔여(Windows 실기, 관측성 스택, RPO/RTO, SSR E2E Phase 2~4, ngram 컷오버)는
-  [`../ops/handoff_20260903_wave_h_close.md`](../ops/handoff_20260903_wave_h_close.md) 4장·5장입니다.
+  [`../ops/handoff_20260903_wave_h_close.md`](../archive/handoff/2026-09/handoff_20260903_wave_h_close.md) 4장·5장입니다.
   **CURRENT_STATE 정규화는 부분 해소입니다.** 웨이브별 해소 이력을
   [`../ops/wave_resolution_history_20260902.md`](../ops/wave_resolution_history_20260902.md) 로 분리해
   57,381바이트를 48,039바이트로 줄였습니다. 자체 권장 예산 8,000자에는 여전히 미달이며,

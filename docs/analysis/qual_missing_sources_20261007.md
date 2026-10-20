@@ -5,7 +5,7 @@
 > **대상**: 핸드오프 12번(미확보 원문 수집)
 > **보관소**: `data/sources/qualification/` (목록 `manifest.json` 은 Git 추적, 원문 `files/` 는 Git 무시)
 > **스키마**: `QUALIFICATION_SOURCES_MANIFEST_V1`
-> **직전 문서**: [handoff_20261006_web_feedback_session_close.md](../ops/handoff_20261006_web_feedback_session_close.md) 1장 12번
+> **직전 문서**: [handoff_20261006_web_feedback_session_close.md](../handoff/handoff_20261006_web_feedback_session_close.md) 1장 12번
 
 ---
 

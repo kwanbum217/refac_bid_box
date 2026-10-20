@@ -39,7 +39,7 @@
 | --- | --- |
 | `docs/context/CURRENT_STATE.md` | 6.1절 공고 상세 쿼리: 미실측 -> 실측 완료 정정. 4장 1-0항 I-F/I-H/I-C 현황 반영. 6.1절 Wave I 미병합 현황 블록 추가. `updated_at`·`source_commit` 갱신. |
 | `docs/ops/ngram_fulltext_cutover_runbook.md` | 신규 작성 (9단계 런북). |
-| `docs/ops/handoff_20260901_wave_j.md` | 신규 작성 (이 Task 인수인계). |
+| `docs/archive/handoff/2026-09/handoff_20260901_wave_j.md` | 신규 작성 (이 Task 인수인계). |
 | `docs/analysis/task_d33cbcec73c1.md` | 신규 작성 (이 문서). |
 
 ---

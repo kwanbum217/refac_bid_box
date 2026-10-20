@@ -229,7 +229,7 @@ select(column, func.count(model.id))
 
 `varchar(500)` 인덱스 추가는 **하지 않습니다.** 546만 행 대상 인덱스 생성이
 Docker MySQL 을 `fsync() returned EIO` 로 죽인 전례가 있습니다
-(`docs/handoff/2026-08-09_bid_search_meilisearch_handoff.md` 2장).
+(`docs/archive/handoff/2026-08/2026-08-09_bid_search_meilisearch_handoff.md` 2장).
 
 ### 8.8 이 판정에서 얻은 것
 

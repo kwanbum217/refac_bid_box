@@ -126,7 +126,7 @@
 0.6683). 이를 유망 후보로 다시 취급하지 않습니다. 다음 과제는 분리 학습이 아니라
 하한율 결측 집단의 큰 오차 중 재현 가능한 편향이 있는지 동일 학습 상한과 쌍대
 검정으로 확인하는 것입니다. 상세 재개 절차는
-[`2026-08-06_model_improvement_handoff.md`](../handoff/2026-08-06_model_improvement_handoff.md)에
+[`2026-08-06_model_improvement_handoff.md`](../archive/handoff/2026-08/2026-08-06_model_improvement_handoff.md)에
 정리했습니다.
 
 ---

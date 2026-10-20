@@ -68,7 +68,7 @@ v2 설계안에 따라 `opencode.json`의 instructions를 `AGENTS.md` 1개로 �
 
 | 지표 / 측정 항목 | 과거 문서 기록 (Stale) | 최신 운영 정본 기록 (Current) | 출처 및 비고 |
 | --- | ---: | ---: | --- |
-| warm c10 P95 | 199.18ms (목표 미달 표기) | **56.45ms (목표 통과)** | `docs/handoff/2026-08-14_late_session_handoff.md:51-57` |
+| warm c10 P95 | 199.18ms (목표 미달 표기) | **56.45ms (목표 통과)** | `docs/archive/handoff/2026-08/2026-08-14_late_session_handoff.md:51-57` |
 | warm c10 P50 | - | **42.45ms** | `PREDICTION_GC_MODE=freeze` 채택 결과 |
 | warm c10 P99 | - | **62.08ms** | 최악 3회 측정 중 최악값 기준 |
 | warm c10 Max | - | **73.01ms** | 100ms 초과 0건 (1,800회 측정) |
@@ -78,7 +78,7 @@ v2 설계안에 따라 `opencode.json`의 instructions를 `AGENTS.md` 1개로 �
 
 ### 4.2 SSE 스트리밍 레이턴시 지표 대조
 
-`docs/handoff/2026-08-14_late_session_handoff.md:210-230`에서 레이턴시 게이트 규약(회차당 60표본, 3회차, warmup 제외, 주변부하 기록)을 만족하여 확립된 정본 기준선입니다.
+`docs/archive/handoff/2026-08/2026-08-14_late_session_handoff.md:210-230`에서 레이턴시 게이트 규약(회차당 60표본, 3회차, warmup 제외, 주변부하 기록)을 만족하여 확립된 정본 기준선입니다.
 
 | 지표 | 정본 대표값 (3회 최악) | 목표 기준 | 판정 | 회귀 판정선 (+10%) |
 | --- | ---: | ---: | --- | ---: |
@@ -87,7 +87,7 @@ v2 설계안에 따라 `opencode.json`의 instructions를 `AGENTS.md` 1개로 �
 
 ### 4.3 에이전트 CLI 기동 및 워커 운영 사실
 
-`docs/ops/agent_worker_launch_reference.md` 및 `docs/handoff/2026-08-14_late_session_handoff.md:281-294`에 기록된 실측 운영 사실입니다.
+`docs/ops/agent_worker_launch_reference.md` 및 `docs/archive/handoff/2026-08/2026-08-14_late_session_handoff.md:281-294`에 기록된 실측 운영 사실입니다.
 
 1. **Antigravity CLI 기동**: `agy`에 대해 `dispatch --inject`를 수행하는 방식은 신뢰 확인 대화창에 키 입력이 소실되어 3/3 실패했습니다. 프로세스 실행 시점에 프롬프트를 인자로 전달하는 `agy --model <id> -i "<프롬프트>"` 방식이 신뢰성 높은 권장 기동 경로입니다.
 2. **Cerebras / Gemma-4 31B 풀**: `opencode.json`이 `AGENTS.md`와 `SKILLS.md`를 모두 자동 주입하여 매 세션 약 16KB가 선행 로드되면서 분당 토큰 한도(TPM/RPM) 초과가 발생했습니다. v2 경량화(Task Capsule 중심 전달)의 직접적 필요 근거입니다.

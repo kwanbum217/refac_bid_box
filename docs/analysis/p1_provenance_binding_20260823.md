@@ -9,7 +9,7 @@
 
 ## 1. 개요 및 배경
 
-`docs/handoff/2026-08-22_post_1a45ad5_audit.md`에서 지적된 바와 같이, 기존 레이턴시 및 SSE 벤치마크 하네스는 다음과 같은 신뢰 경계(Provenance Boundary) 결함이 존재했습니다:
+`docs/archive/handoff/2026-08/2026-08-22_post_1a45ad5_audit.md`에서 지적된 바와 같이, 기존 레이턴시 및 SSE 벤치마크 하네스는 다음과 같은 신뢰 경계(Provenance Boundary) 결함이 존재했습니다:
 
 1. **`base_url`과 실제 Docker 컨테이너 identity 미결박**:
    - `scripts/benchmark_latency.py`는 `base_url`의 포트/호스트와 무관하게 고정적으로 Docker Compose `app` 서비스를 조회했습니다.
