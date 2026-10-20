@@ -34,17 +34,30 @@ class PredictPriceRequest(BaseModel):
     selected_model: str | None = Field(None, description="선택 모델 ID (미지정 시 카테고리 기본값)")
     # 적격심사 배점표 값은 공고 데이터에 없어 사용자가 공고문을 보고 입력합니다.
     # 전부 선택이며, 하나라도 없으면 추측값을 넣지 않고 점수 판정만 하지 않습니다.
+    # 배점표는 100점 만점이므로 0 초과 100 이하만 받습니다(범위 밖 값은 422 로 거부).
     max_price_score: float | None = Field(
-        None, gt=0.0, description="가격 배점한도 B. 공고문 적격심사 배점표에서 입력 (선택)"
+        None,
+        gt=0.0,
+        le=100.0,
+        description="가격 배점한도 B. 공고문 적격심사 배점표에서 입력 (선택, 0~100)",
     )
     multiplier: float | None = Field(
-        None, gt=0.0, description="가격평점 계수 k. 공고문 적격심사 배점표에서 입력 (선택)"
+        None,
+        gt=0.0,
+        le=100.0,
+        description="가격평점 계수 k. 공고문 적격심사 배점표에서 입력 (선택, 0~100)",
     )
     pass_threshold: float | None = Field(
-        None, gt=0.0, description="적격 통과점수 T. 공고문 적격심사 배점표에서 입력 (선택)"
+        None,
+        gt=0.0,
+        le=100.0,
+        description="적격 통과점수 T. 공고문 적격심사 배점표에서 입력 (선택, 0~100)",
     )
     non_price_score: float | None = Field(
-        None, gt=0.0, description="비가격 정량점수 합계 Q. 미입력 시 0 으로 가정 (선택)"
+        None,
+        gt=0.0,
+        le=100.0,
+        description="비가격 정량점수 합계 Q. 미입력 시 0 으로 가정 (선택, 0~100)",
     )
 
 
