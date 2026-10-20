@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -154,6 +154,7 @@ from src.app.services.evaluation_rules import (
     select_quant_band,
 )
 from src.app.services.evaluation_scoring import (
+    InvertRateResult,
     PriceCompensationResult,
     calculate_min_bid_amount,
     calculate_price_score,
@@ -224,6 +225,11 @@ MANUAL_INPUT_LABELS: dict[str, str] = {
     "pass_threshold": "통과점수",  # nosec B105 - 배점표 항목의 한국어 표기이지 비밀번호가 아닙니다
     "base_rate": "기준비율",
 }
+# 공고에 낙찰하한율이 없으면 하한율을 0 으로 대체하면 최저 투찰금액이 0 으로 노출됩니다.
+# 두 사용자 입력 경로는 값을 확정하지 못했다는 사실을 경고로 남기고 금액을 비웁니다.
+LWLT_RATE_UNKNOWN_WARNING = (
+    "낙찰하한율 미상: 공고에 낙찰하한율이 없어 최저 투찰금액을 계산하지 않았습니다."
+)
 
 
 @dataclass(frozen=True)
@@ -599,6 +605,25 @@ def _manual_missing_labels(qualification: QualificationInput) -> list[str]:
     return [
         MANUAL_INPUT_LABELS[field_name] for field_name, value in supplied.items() if value is None
     ]
+
+
+def _announcement_lwlt_rate(raw_data: dict[str, Any]) -> Decimal | None:
+    """공고에 적힌 낙찰하한율(%)을 읽습니다. 없거나 0 이하이면 None(미상)입니다.
+
+    사용자 입력 경로에서 0 을 하한율로 대체하면 최저 투찰금액이 0 으로 계산되므로,
+    미상인 경우는 None 으로 구분해 그대로 알립니다.
+    """
+    raw = raw_data.get("sucsfbidLwltRate")
+    if raw is None:
+        return None
+    try:
+        text = str(raw).strip()
+        if not text:
+            return None
+        rate = Decimal(text)
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    return rate if rate > Decimal("0") else None
 
 
 # =============================================================================
@@ -1523,6 +1548,36 @@ def _price_compensation_payload(result: PriceCompensationResult) -> PriceCompens
     )
 
 
+def _invert_without_announcement_rate(
+    *,
+    pass_threshold: Decimal,
+    non_price_score: Decimal,
+    base_rate: Decimal,
+    max_price_score: Decimal,
+    multiplier: Decimal,
+) -> InvertRateResult:
+    """공고 낙찰하한율이 미상이면 점수 역산 최저 투찰률만 구합니다.
+
+    하한율은 역산에 쓰이지 않으므로 0 을 넘겨 계산하고, 실질 구속 하한을 공고 하한율이
+    아니라 점수 역산값으로 고정합니다. 0 은 응답에 노출하지 않습니다.
+    """
+    result = invert_lowest_bid_rate(
+        pass_threshold=pass_threshold,
+        non_price_score=non_price_score,
+        base_rate=base_rate,
+        max_price_score=max_price_score,
+        multiplier=multiplier,
+        announcement_lwlt_rate=Decimal("0"),
+    )
+    return replace(
+        result,
+        effective_rate_pct=result.calculated_rate_pct,
+        effective_rate_ratio=result.calculated_rate_ratio,
+        binding_constraint="CALCULATED_SCORE_RATE",
+        binding_constraint_kr="점수 역산 최저 투찰률",
+    )
+
+
 def _success_response(
     bid: BidAnnouncement,
     payload: EvaluationRequest,
@@ -1543,8 +1598,8 @@ def _success_response(
 ) -> EvaluationResponse:
     """규칙 판별 결과와 evaluation_scoring 계산 결과를 응답 스키마로 담습니다."""
     assert rule_result.rule is not None
-    assert rule_result.effective_lwlt_rate is not None
     rule = rule_result.rule
+    # 공고 낙찰하한율이 미상이면 None 입니다. 하한율을 0 으로 대체하지 않습니다.
     effective_lwlt = rule_result.effective_lwlt_rate
     candidate_bid_amount = Decimal(str(payload.candidate_bid_amount))
     qualification = payload.qualification_input
@@ -1559,39 +1614,51 @@ def _success_response(
         warnings.append(f"사용자 입력이 규칙 선언 배점표를 덮어썼습니다: {override_labels}")
 
     # 용역 적격심사는 A값을 적용하지 않습니다. 최저 투찰금액은 예정가격 * 하한율입니다.
-    min_bid_result = calculate_min_bid_amount(
-        pred_price=pred_price,
-        lwlt_rate=effective_lwlt,
-    )
-    warnings.append(
-        f"낙찰하한율 {min_bid_result.lwlt_rate_pct}% 적용 최저 투찰금액: "
-        f"{int(min_bid_result.min_bid_amount):,}원"
-    )
-    invert_result = invert_lowest_bid_rate(
-        pass_threshold=table.pass_threshold,
-        non_price_score=non_price_score,
-        base_rate=table.base_rate,
-        max_price_score=table.max_price_score,
-        multiplier=table.multiplier,
-        announcement_lwlt_rate=effective_lwlt,
-    )
+    compensation_result: PriceCompensationResult | None
+    if effective_lwlt is None:
+        # 공고 하한율이 없으면 하한 금액을 만들지 않습니다. 점수 역산 최저 투찰률만 남깁니다.
+        invert_result = _invert_without_announcement_rate(
+            pass_threshold=table.pass_threshold,
+            non_price_score=non_price_score,
+            base_rate=table.base_rate,
+            max_price_score=table.max_price_score,
+            multiplier=table.multiplier,
+        )
+        compensation_result = None
+    else:
+        min_bid_result = calculate_min_bid_amount(
+            pred_price=pred_price,
+            lwlt_rate=effective_lwlt,
+        )
+        warnings.append(
+            f"낙찰하한율 {min_bid_result.lwlt_rate_pct}% 적용 최저 투찰금액: "
+            f"{int(min_bid_result.min_bid_amount):,}원"
+        )
+        invert_result = invert_lowest_bid_rate(
+            pass_threshold=table.pass_threshold,
+            non_price_score=non_price_score,
+            base_rate=table.base_rate,
+            max_price_score=table.max_price_score,
+            multiplier=table.multiplier,
+            announcement_lwlt_rate=effective_lwlt,
+        )
+        compensation_result = resolve_price_compensation(
+            pass_threshold=table.pass_threshold,
+            non_price_score=non_price_score,
+            base_rate=table.base_rate,
+            max_price_score=table.max_price_score,
+            multiplier=table.multiplier,
+            announcement_lwlt_rate=effective_lwlt,
+            reference_pred_price=pred_price,
+            scenarios=[(s.scenario_name, s.scenario_type, s.pred_price) for s in scenarios],
+            flat_ratio=table.flat_ratio,
+            flat_score=table.flat_score,
+        )
     warnings.extend(invert_result.warnings)
-
-    compensation_result = resolve_price_compensation(
-        pass_threshold=table.pass_threshold,
-        non_price_score=non_price_score,
-        base_rate=table.base_rate,
-        max_price_score=table.max_price_score,
-        multiplier=table.multiplier,
-        announcement_lwlt_rate=effective_lwlt,
-        reference_pred_price=pred_price,
-        scenarios=[(s.scenario_name, s.scenario_type, s.pred_price) for s in scenarios],
-        flat_ratio=table.flat_ratio,
-        flat_score=table.flat_score,
-    )
-    for warning in compensation_result.warnings:
-        if warning not in warnings:
-            warnings.append(warning)
+    if compensation_result is not None:
+        for warning in compensation_result.warnings:
+            if warning not in warnings:
+                warnings.append(warning)
 
     return EvaluationResponse(
         status="success",
@@ -1604,7 +1671,7 @@ def _success_response(
         fallback_used=provenance.fallback_used,
         fallback_reason=provenance.fallback_reason,
         base_rate=_as_percent(table.base_rate),
-        lower_bound_rate=float(effective_lwlt),
+        lower_bound_rate=(float(effective_lwlt) if effective_lwlt is not None else None),
         a_value_amount=None,
         min_bid_amount_with_a=None,
         min_possible_bid_rate=float(invert_result.effective_rate_pct),
@@ -1619,7 +1686,11 @@ def _success_response(
             )
             for scenario in scenarios
         ],
-        price_compensation=_price_compensation_payload(compensation_result),
+        price_compensation=(
+            _price_compensation_payload(compensation_result)
+            if compensation_result is not None
+            else None
+        ),
         score_table=_rule_score_table_payload(
             rule,
             [],
@@ -1777,29 +1848,25 @@ def _resolve_evaluation_inputs(
         estimated_price=estimated_price,
         education_institution=is_education_institution(institution),
     )
+    user_input_lwlt_unknown = False
+    effective_lwlt: Decimal | None
+    rate_source: str | None
     if rule_result.is_blocked:
         # 지방계약에서 시·도 기준이 없을 때, 사용자가 B·k·기준비율·통과점수를 모두 입력하면
         # 그 값으로 가격점수를 계산합니다(설계 0.1). 하나라도 비면 차단을 유지합니다.
         if rule_result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND:
             synthetic_rule = _local_user_input_rule(qualification)
             if synthetic_rule is not None:
-                user_lwlt: Decimal | None = None
-                raw_lwlt = raw_data.get("sucsfbidLwltRate")
-                if raw_lwlt is not None:
-                    try:
-                        text = str(raw_lwlt).strip()
-                        if text:
-                            user_lwlt = Decimal(text)
-                    except (ArithmeticError, TypeError, ValueError):
-                        user_lwlt = None
-                lwlt_warnings = list(rule_result.warnings)
-                effective_lwlt: Decimal | None
-                if user_lwlt is None or user_lwlt <= 0:
-                    effective_lwlt = synthetic_rule.lwlt_rate
-                    rate_source = "RULE_DEFAULT"
+                user_lwlt = _announcement_lwlt_rate(raw_data)
+                if user_lwlt is None:
+                    # 공고에 하한율이 없으면 0 으로 대체하지 않고 미상으로 남깁니다.
+                    effective_lwlt = None
+                    rate_source = None
+                    lwlt_warnings = [LWLT_RATE_UNKNOWN_WARNING, *rule_result.warnings]
                 else:
                     effective_lwlt = user_lwlt
                     rate_source = "ANNOUNCEMENT"
+                    lwlt_warnings = list(rule_result.warnings)
                 lwlt_warnings.append(
                     f"{LOCAL_USER_INPUT_SOURCE} — 사용자가 입력한 B·k·기준비율·통과점수로 계산합니다."
                 )
@@ -1813,6 +1880,7 @@ def _resolve_evaluation_inputs(
                     rate_source=rate_source,
                     warnings=lwlt_warnings,
                 )
+                user_input_lwlt_unknown = user_lwlt is None
         # 관리규정외 수기심사는 발주기관 자체 심사기준표가 정본이라, 사용자가 가격배점한도(B)·
         # 평점계수(k)·기준비율·통과점수를 모두 입력하면 그 값으로 계산합니다. 일부만 들어오면
         # 부족한 항목을 안내하고 차단을 유지합니다.
@@ -1827,21 +1895,17 @@ def _resolve_evaluation_inputs(
                     f"평점계수(k)·기준비율·통과점수를 모두 입력해야 계산합니다. 부족한 항목: {labels}.",
                     rule_result,
                 )
-            manual_lwlt: Decimal | None = None
-            raw_lwlt = raw_data.get("sucsfbidLwltRate")
-            if raw_lwlt is not None:
-                try:
-                    text = str(raw_lwlt).strip()
-                    if text:
-                        manual_lwlt = Decimal(text)
-                except (ArithmeticError, TypeError, ValueError):
-                    manual_lwlt = None
-            if manual_lwlt is None or manual_lwlt <= 0:
-                effective_lwlt = manual_rule.lwlt_rate
-                rate_source = "RULE_DEFAULT"
+            manual_lwlt = _announcement_lwlt_rate(raw_data)
+            if manual_lwlt is None:
+                # 공고에 하한율이 없으면 0 으로 대체하지 않고 미상으로 남깁니다.
+                effective_lwlt = None
+                rate_source = None
+                manual_warnings = [LWLT_RATE_UNKNOWN_WARNING, *rule_result.warnings]
             else:
                 effective_lwlt = manual_lwlt
                 rate_source = "ANNOUNCEMENT"
+                manual_warnings = list(rule_result.warnings)
+            manual_warnings.append(MANUAL_USER_INPUT_NOTICE)
             rule_result = replace(
                 rule_result,
                 is_blocked=False,
@@ -1850,8 +1914,9 @@ def _resolve_evaluation_inputs(
                 rule=manual_rule,
                 effective_lwlt_rate=effective_lwlt,
                 rate_source=rate_source,
-                warnings=[*rule_result.warnings, MANUAL_USER_INPUT_NOTICE],
+                warnings=manual_warnings,
             )
+            user_input_lwlt_unknown = manual_lwlt is None
         if rule_result.is_blocked:
             return _blocked_inputs(
                 "rule",
@@ -1863,7 +1928,7 @@ def _resolve_evaluation_inputs(
     assert rule_result.rule is not None
     rule = rule_result.rule
     effective_lwlt = rule_result.effective_lwlt_rate
-    if effective_lwlt is None:
+    if effective_lwlt is None and not user_input_lwlt_unknown:
         # 구간별로 인쇄된 낙찰하한율이 서로 다른 규칙인데 추정가격을 몰라 구간을 고르지
         # 못한 경우입니다. 규칙 대표값으로 추측하지 않고 추정가격 입력을 요구합니다.
         return _blocked_inputs(
@@ -2509,10 +2574,12 @@ def _recommend_price_bounds(
     실측 범위가 있으면 그 값을, 없으면 이론 범위(기초금액 ±2%/±3%)를 호출자가 넘깁니다.
     범위를 인자로 받는 순수 함수 compute_price_bounds 에 금액 계산을 위임하며, 그 산식은
     바꾸지 않습니다.
+    공고 낙찰하한율이 미상이면 하한 제약 없이 점수 조건으로만 구간을 계산하고, 하한율
+    보증이 없는 최저가는 비워 둡니다.
     """
     assert inputs.table is not None
-    assert inputs.effective_lwlt is not None
     assert inputs.pred_price is not None
+    lwlt_unknown = inputs.effective_lwlt is None
     bounds = compute_price_bounds(
         base_amount=inputs.pred_price,
         rate_low=rate_low,
@@ -2522,13 +2589,22 @@ def _recommend_price_bounds(
         base_rate=inputs.table.base_rate,
         max_price_score=inputs.table.max_price_score,
         multiplier=inputs.table.multiplier,
-        announcement_lwlt_rate=inputs.effective_lwlt,
+        # 하한율 미상은 '하한 제약 없음' 으로 계산합니다. 역산 함수가 None 을 받으면
+        # 하한율을 적용하지 않은 통과 구간을 돌려줍니다.
+        announcement_lwlt_rate=cast(Decimal, None if lwlt_unknown else inputs.effective_lwlt),
         flat_ratio=inputs.table.flat_ratio,
         flat_score=inputs.table.flat_score,
     )
+    reasons = list(bounds.reasons)
+    if lwlt_unknown:
+        reasons.append("공고에 낙찰하한율이 없어 하한율 보증이 있는 최저가를 확정하지 못했습니다.")
     return RecommendationPriceBounds(
         status=bounds.status,
-        min_bid_amount=(int(bounds.min_bid_amount) if bounds.min_bid_amount is not None else None),
+        min_bid_amount=(
+            None
+            if lwlt_unknown
+            else (int(bounds.min_bid_amount) if bounds.min_bid_amount is not None else None)
+        ),
         max_bid_amount=(int(bounds.max_bid_amount) if bounds.max_bid_amount is not None else None),
         min_pred_price=(int(bounds.min_pred_price) if bounds.min_pred_price is not None else None),
         max_pred_price=(int(bounds.max_pred_price) if bounds.max_pred_price is not None else None),
@@ -2540,7 +2616,7 @@ def _recommend_price_bounds(
         ),
         rate_low_percent=format_decimal_plain(rate_low * Decimal("100")),
         rate_high_percent=format_decimal_plain(rate_high * Decimal("100")),
-        reasons=list(bounds.reasons),
+        reasons=reasons,
     )
 
 
@@ -2638,7 +2714,6 @@ def recommend_evaluation(
     assert inputs.table is not None
     assert inputs.quant_scores is not None
     assert inputs.rule_result is not None
-    assert inputs.effective_lwlt is not None
     assert inputs.pred_price is not None
 
     breakdown = build_non_price_breakdown(
@@ -2677,7 +2752,9 @@ def recommend_evaluation(
         rate_source=rate_source,
         rate_notice=rate_notice,
         base_rate=_as_percent(inputs.table.base_rate),
-        lower_bound_rate=float(inputs.effective_lwlt),
+        lower_bound_rate=(
+            float(inputs.effective_lwlt) if inputs.effective_lwlt is not None else None
+        ),
         max_price_score=format_decimal_plain(inputs.table.max_price_score),
         non_price_score=format_decimal_plain(non_price_score),
         pass_threshold=format_decimal_plain(inputs.table.pass_threshold),

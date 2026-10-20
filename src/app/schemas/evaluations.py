@@ -126,16 +126,19 @@ class QualificationInput(BaseModel):
     max_price_score: float | None = Field(
         default=None,
         gt=0.0,
+        le=100.0,
         description="가격 배점한도 B. 공고문 적격심사 배점표에서 입력",
     )
     multiplier: float | None = Field(
         default=None,
         gt=0.0,
+        le=100.0,
         description="가격평점 계수 k. 공고문 적격심사 배점표에서 입력",
     )
     pass_threshold: float | None = Field(
         default=None,
         gt=0.0,
+        le=100.0,
         description="적격 통과점수 T. 공고문 적격심사 배점표에서 입력",
     )
     base_rate: float | None = Field(
@@ -587,7 +590,10 @@ class EvaluationResponse(BaseModel):
     )
     price_compensation: PriceCompensation | None = Field(
         default=None,
-        description=("정량점수 부족분의 입찰가격 보완 판정. 계산을 차단한 응답에서는 null 입니다."),
+        description=(
+            "정량점수 부족분의 입찰가격 보완 판정. 계산을 차단한 응답이나 공고 낙찰하한율이 "
+            "미상인 응답에서는 null 입니다."
+        ),
     )
     score_table: RuleScoreTable | None = Field(
         default=None,
@@ -661,11 +667,13 @@ class RecommendationOverrides(BaseModel):
         default=None, description="(수정값) LOCAL 시·도 별표 용역 세부유형"
     )
     max_price_score: float | None = Field(
-        default=None, gt=0.0, description="(수정값) 가격 배점한도 B"
+        default=None, gt=0.0, le=100.0, description="(수정값) 가격 배점한도 B"
     )
-    multiplier: float | None = Field(default=None, gt=0.0, description="(수정값) 평점 계수 k")
+    multiplier: float | None = Field(
+        default=None, gt=0.0, le=100.0, description="(수정값) 평점 계수 k"
+    )
     pass_threshold: float | None = Field(
-        default=None, gt=0.0, description="(수정값) 적격 통과점수 T"
+        default=None, gt=0.0, le=100.0, description="(수정값) 적격 통과점수 T"
     )
     base_rate: float | None = Field(
         default=None, ge=0.80, le=0.95, description="(수정값) 지방계약 가격점수 기준비율"
