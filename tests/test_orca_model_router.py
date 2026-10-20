@@ -363,6 +363,8 @@ class TestModelPoolAndSelection:
             "cmd-cat-jam-free",
             "cmd-beam-free",
             "cmd-glyph-free",
+            # 2026-10-20 등록. cmd MiniMax M3.1 Flash 무료 빌더, 명시 지정 전용입니다.
+            "cmd-minimax-flash-free",
             # 2026-10-19 등록. OpenCode Zen 무료 모델 세 개, 명시 지정 전용입니다.
             "opencode-deepseek-v41",
             "opencode-space-bunny",
@@ -1967,15 +1969,26 @@ def test_pool_for_model_cmd_free_ids():
     assert pool_for_model("stealth/cat-jam:free") == "cmd-cat-jam-free"
     assert pool_for_model("reflection/beam:free") == "cmd-beam-free"
     assert pool_for_model("stealth/glyph-cluster:free") == "cmd-glyph-free"
+    assert pool_for_model("minimax/minimax-m3.1-flash:free") == "cmd-minimax-flash-free"
 
 
 def test_cmd_free_pools_not_auto_selectable_or_tier_policy():
     from scripts.orca_model_router import TIER_POLICY
 
-    for pool_name in ("cmd-cat-jam-free", "cmd-beam-free", "cmd-glyph-free"):
+    for pool_name in (
+        "cmd-cat-jam-free",
+        "cmd-beam-free",
+        "cmd-glyph-free",
+        "cmd-minimax-flash-free",
+    ):
         assert MODEL_POOL[pool_name]["auto_selectable"] is False
     tier_values = [m for ms in TIER_POLICY.values() for m in ms]
-    for pool_name in ("cmd-cat-jam-free", "cmd-beam-free", "cmd-glyph-free"):
+    for pool_name in (
+        "cmd-cat-jam-free",
+        "cmd-beam-free",
+        "cmd-glyph-free",
+        "cmd-minimax-flash-free",
+    ):
         assert pool_name not in tier_values
 
 
@@ -1991,6 +2004,18 @@ def test_reviewer_independence_catjam_builder_beam_reviewer_allowed():
         probe=False,
     )
     assert result.primary_model == "reflection/beam:free"
+
+
+def test_reviewer_independence_minimax_builder_beam_reviewer_allowed():
+    result = route(
+        role="reviewer",
+        risk="high",
+        explicit_model="reflection/beam:free",
+        builder_model="minimax/minimax-m3.1-flash:free",
+        probe=False,
+    )
+    assert result.primary_model == "reflection/beam:free"
+    assert model_family("minimax/minimax-m3.1-flash:free") == "minimax"
 
 
 def test_model_family_examples():
