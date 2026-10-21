@@ -5,7 +5,7 @@
 > **선행 조사**: [inst_predecessor_attach_20261019.md](inst_predecessor_attach_20261019.md) (한국농어촌공사 '원문 미확보', 한국공항공사 '시행 구간 하한 미확인')
 > **결론 요약**: 한국농어촌공사 2026-06-24 이전판은 **일반용역 적격심사 세부기준(20251001)** 원문을 기관 누리집에서 확보했다(시행 구간 2025-10-01 ~ 2026-06-23). 한국공항공사 제777호 이전판은 **10차판(2023-07-20 제정, 2023-07-31 입찰공고분부터 시행)** 원문을 기관 규정 게시판에서 확보했다. 따라서 한국공항공사 제777호 이전판의 **시행 구간 하한은 2023-07-31**이다. 통과점수는 두 기관 원문 제10조 제1항에서 직접 읽었다(한국농어촌공사 Section0 PARA_TEXT 레코드 순번 420, 한국공항공사 순번 533).
 > **라벨**: 한국농어촌공사 6건 = **확보**, 한국공항공사 11건 = **확보** (시행 구간 하한 2023-07-31 확정)
-> **추출기 주의**: 한국농어촌공사 20251001판의 제10조 문장은 `extract_document_text(...).flat` 에 나오지 않아 HWP 본문 레코드 단위 파싱으로만 확인된다(3.4절 참조).
+> **추출기 주의**: 한국농어촌공사 20251001판의 제10조 문장은 수정된 추출기의 `extract_document_text(...).flat` 에도 포함된다(3.4절 참조).
 > **판정**: candidate
 > **원문 보관**: `.cache/inst_regime_20261020/` (gitignore 대상, 커밋하지 않음)
 
@@ -78,7 +78,7 @@
 
 `scripts/extract_score_params.extract_document_text(open(경로,'rb').read()).rows` 로 읽은 표 행 번호(rows index)와, HWP 본문 레코드를 직접 읽어 얻은 문단 위치를 함께 적는다. 문단·수식 개체 위치는 `Section0 PARA_TEXT/EQEDIT 레코드 순번` 으로 통일해 적는다. `scripts.extract_score_params._ole_streams` 로 본문 스트림을 풀고 `scripts.extract_score_params._hwp_records` 가 돌려주는 레코드 목록의 0-based 순번이다. 표 제목은 원문 인쇄문(`[별표 N] (제4조제1항제M호 관련) …`)을 근거로 확정했다.
 
-> **추출기 주의**: 한국농어촌공사 20251001판은 `extract_document_text(open(경로,'rb').read()).flat` 에 제10조 문장이 나오지 않는다(`85점` 0회, `88점` 0회, `낙찰자로 결정` 0회, `최저가 입찰자에 대한 심사결과` 0회). `flat` 은 본문 스트림을 UTF-16LE 로 통째로 디코딩해 레코드 크기가 홀수인 지점마다 1바이트씩 어긋나고, 그 뒤따르는 문단 텍스트가 유실된다. 이 판의 제10조 통과점수는 레코드 단위 파싱(`_hwp_records` 의 Section0 PARA_TEXT 순번 420·424·428)으로만 확인된다. 한국공항공사 10차판은 `flat` 에도 제10조 문장이 남지만, 판독 경로를 통일하기 위해 레코드 단위 파싱 결과를 쓴다. 추출기 `flat` 손실 결함 자체는 별도 과제다.
+> **추출기 주의**: 한국농어촌공사 20251001판은 `extract_document_text(open(경로,'rb').read()).flat` 에 제10조 문장이 포함된다(`85점` 3회, `88점` 3회, `낙찰자로 결정` 3회, `최저가 입찰자에 대한 심사결과` 2회). 수정 전 추출기는 본문 스트림을 UTF-16LE 로 통째로 디코딩해 레코드 크기가 홀수인 지점마다 1바이트씩 어긋나고, 그 뒤따르는 문단 텍스트가 유실됐다. 이 판의 제10조 통과점수는 레코드 단위 파싱(`_hwp_records` 의 Section0 PARA_TEXT 순번 420·424·428)으로도 확인된다. 한국공항공사 10차판도 `flat` 에 제10조 문장이 남아 있어, 판독 경로를 통일하기 위해 레코드 단위 파싱 결과를 쓴다. 추출기 `flat` 손실 결함은 수정됐다.
 
 | 대상 유형 | 별표 | B (입찰가격 배점한도) | k (평점계수) | 기준비율 | 가격점수 고정 구간 상한 투찰률 | 통과점수 | 원문 위치 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -238,4 +238,4 @@ https://www.airport.co.kr/ajaxa/fileCpnt/fileDown.do?gbn=b03&BOARD_SEQ=1216&SITE
 https://www.airport.co.kr/ajaxa/fileCpnt/fileDown.do?gbn=b03&BOARD_SEQ=1216&SITE_NO=2&BBS_SEQ=3553791&FILE_SEQ=2
 ```
 
-재수령 후 sha256 은 3.2절·4.2절 표 값과 일치해야 한다. HWP 판독은 `uv run python` 에서 `scripts.extract_score_params.extract_document_text(open(경로,'rb').read()).rows` 를 사용하고, `.flat` 단독 판독은 하지 않는다. 본 조사의 별표 제목·부칙·수식 개체·조문 판독은 HWP 본문 레코드(PARA_TEXT/EQEDIT) 단위 직접 판독으로 보완했다. 3.4절·4.4절의 "레코드 순번" 은 `scripts.extract_score_params._ole_streams` 로 본문 스트림을 풀고 `scripts.extract_score_params._hwp_records` 가 돌려주는 목록의 0-based 순번이다. 인용문 검증도 이 레코드 텍스트를 이어 붙인 문자열 대조로 수행한다. 한국농어촌공사 20251001판은 `flat` 에서 제10조 문장이 빠져 있어 `flat` 대조만으로는 검증되지 않는다.
+재수령 후 sha256 은 3.2절·4.2절 표 값과 일치해야 한다. HWP 판독은 `uv run python` 에서 `scripts.extract_score_params.extract_document_text(open(경로,'rb').read()).rows` 를 사용한다. `flat` 대조로도 검증되며 레코드 순번 대조를 병행한다. 본 조사의 별표 제목·부칙·수식 개체·조문 판독은 HWP 본문 레코드(PARA_TEXT/EQEDIT) 단위 직접 판독으로 보완했다. 3.4절·4.4절의 "레코드 순번" 은 `scripts.extract_score_params._ole_streams` 로 본문 스트림을 풀고 `scripts.extract_score_params._hwp_records` 가 돌려주는 목록의 0-based 순번이다. 인용문 검증도 이 레코드 텍스트를 이어 붙인 문자열 대조로 수행한다. 한국농어촌공사 20251001판은 `flat` 에서도 제10조 문장이 확인된다.
