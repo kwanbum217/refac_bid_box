@@ -96,7 +96,7 @@ def test_after_cutoff_uses_current_rule_academic() -> None:
 
 
 def test_before_effective_date_stays_blocked() -> None:
-    raw = _raw("2026-01-08 10:00:00", ACADEMIC_METHOD, "100000000")
+    raw = _raw("2023-07-30 10:00:00", ACADEMIC_METHOD, "100000000")
     result = _resolve(raw, estimated_price=Decimal("100000000"))
     assert result.is_blocked is True
     assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH

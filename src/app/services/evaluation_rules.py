@@ -2436,6 +2436,10 @@ def _band_lwlt_rate(
     return band.lwlt_rate, band.label, None
 
 
+# 별표와 구간 어디에도 낙찰하한율이 인쇄되지 않은 규칙에 남기는 경고입니다.
+_BAND_LWLT_MISSING_WARNING = "별표에 낙찰하한율이 없어 최저 투찰금액을 비웁니다."
+
+
 def _apply_rule_lwlt(
     result: RuleResolutionResult,
     rule: EvaluationRule,
@@ -2446,7 +2450,8 @@ def _apply_rule_lwlt(
 
     공고 하한율이 없으면 추정가격으로 고른 구간의 하한율을 쓰고, 그 구간에 하한율이 없으면
     규칙 대표값을 씁니다. 다만 구간별 하한율이 서로 다른데 추정가격을 몰라 구간을 고르지
-    못하면 대표값으로 추측하지 않고 하한율을 미확정으로 남깁니다.
+    못하면 대표값으로 추측하지 않고 하한율을 미확정으로 남깁니다. 별표와 구간 어디에도
+    하한율이 인쇄되지 않은 규칙은 대표값도 None 이라 하한율을 비우고 차단하지 않습니다.
     """
     parsed: Decimal | None = None
     if sucsfbid_lwlt_rate is not None:
@@ -2481,6 +2486,15 @@ def _apply_rule_lwlt(
                     f"별표 구간 하한율({band_rate}%{label})을 적용합니다.",
                 ],
             )
+        if rule.lwlt_rate is None:
+            return replace(
+                result,
+                rule=rule,
+                effective_lwlt_rate=None,
+                rate_source=None,
+                is_blocked=False,
+                warnings=[*result.warnings, _BAND_LWLT_MISSING_WARNING],
+            )
         return replace(
             result,
             rule=rule,
@@ -2492,7 +2506,7 @@ def _apply_rule_lwlt(
             ],
         )
     warnings = list(result.warnings)
-    if parsed != rule.lwlt_rate:
+    if rule.lwlt_rate is not None and parsed != rule.lwlt_rate:
         warnings.append(
             f"공고 하한율({parsed}%)이 별표 기본값({rule.lwlt_rate}%)과 일치하지 않아 "
             "공고 하한율을 우선 적용합니다."
@@ -2954,6 +2968,18 @@ def _narrow_rule_scope(
                     for warning in result.warnings
                     if not warning.startswith("공고에 낙찰하한율이 명시되지 않아 별표 기본값(")
                 ]
+                if selected.lwlt_rate is None:
+                    warnings.append(_BAND_LWLT_MISSING_WARNING)
+                    return (
+                        replace(
+                            result,
+                            rule=selected,
+                            effective_lwlt_rate=None,
+                            rate_source=None,
+                            warnings=warnings,
+                        ),
+                        stage,
+                    )
                 warnings.append(
                     f"공고에 낙찰하한율이 명시되지 않아 별표 기본값({selected.lwlt_rate}%)을 적용합니다."
                 )
@@ -3454,12 +3480,17 @@ def _resolve_by_method_name(
             parsed_lwlt_rate = None
 
     if parsed_lwlt_rate is None or parsed_lwlt_rate <= Decimal("0"):
-        effective_rate = matched_rule.lwlt_rate
-        rate_source = "RULE_DEFAULT"
-        warnings.append(
-            f"공고에 낙찰하한율이 명시되지 않아 별표 기본값({matched_rule.lwlt_rate}%)을 적용합니다."
-        )
-    elif parsed_lwlt_rate != matched_rule.lwlt_rate:
+        if matched_rule.lwlt_rate is None:
+            effective_rate = None
+            rate_source = None
+            warnings.append(_BAND_LWLT_MISSING_WARNING)
+        else:
+            effective_rate = matched_rule.lwlt_rate
+            rate_source = "RULE_DEFAULT"
+            warnings.append(
+                f"공고에 낙찰하한율이 명시되지 않아 별표 기본값({matched_rule.lwlt_rate}%)을 적용합니다."
+            )
+    elif matched_rule.lwlt_rate is not None and parsed_lwlt_rate != matched_rule.lwlt_rate:
         effective_rate = parsed_lwlt_rate
         rate_source = "ANNOUNCEMENT"
         warnings.append(
