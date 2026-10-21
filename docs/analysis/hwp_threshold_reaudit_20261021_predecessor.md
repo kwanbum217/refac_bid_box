@@ -11,7 +11,7 @@
 ## 1. 요약
 
 1. 담당 원문 7개의 sha256·바이트를 Capsule 값과 대조해 전부 일치를 확인했다. 수정된 추출기로 읽은 통과점수 T 는 95, 95, 85, 85, 88, 85, 85 이며 Capsule 값과 같다.
-2. 인용처는 파일 이름·sha256 앞 12자·공고번호로 `docs/` 전체와 `src/app/services/` 를 `git grep` 해 찾았다. 인용 행 39개 중 7개가 조치 필요이고, 나머지 32개는 조치가 없다.
+2. 인용처는 파일 이름·sha256 앞 12자·공고번호로 `docs/` 전체와 `src/app/services/` 를 `git grep` 해 찾았다. 인용 행 41개 중 7개가 조치 필요이고, 나머지 34개는 조치가 없다.
 3. 값이 다른 규칙은 0개다. 다만 인천 2024-12-04판을 `통과점수 미인쇄` 로 적은 서술 3건과 라벨 1건은 추출기 결함 시절의 오판이 그대로 남은 것으로, 원문 제5조가 인쇄되어 있으므로 정정이 필요하다.
 4. `kac_3553810_file1.bin` 은 지침 제792호(2026-08-05, 2026-08-14 시행) 전문이며, Capsule 이 지목한 제777호 전문(sha256 `763cf491`)과 다른 파일이다. 두 파일을 같은 원문으로 합치지 않았다.
 
@@ -67,6 +67,7 @@
 | `docs/analysis/incheon_predecessor_pass_score_20261019.md:66` | 이 원문 | "2024-12-04판 별표 HWP flat 텍스트에 '통과'/'종합평점' 문구 없음(미인쇄). 낙찰하한율도 원문에 인쇄되지 않음(미인쇄)." | flat 에 `종합평점` 이 레코드 92 로 들어 있다. 추출기 수정 전 유실분이며 지금은 읽힌다. 낙찰하한율 미인쇄만 남는다. | 문서 정정 |
 | `docs/analysis/incheon_predecessor_pass_score_20261019.md:94` | 게시글 HTML (이 원문의 모체) | 출처 표의 게시글 URL 과 HTML sha256 `64ae38f5…`. | 값 주장이 없다. | 조치 없음 |
 | `docs/analysis/incheon_predecessor_pass_score_20261019.md:95` | 이 원문 | 출처 표에 "인천 2024-12-04 별표 HWP" 로 적고 sha256 `ed0ed1ae…` 를 붙였다. | 전문 HWP 이며 제5조를 포함한다. | 라벨 변경 |
+| `docs/analysis/regime_mismatch_predecessor_incheon_inst_20261019.md:14` | 이 원문 (sha256 `ed0ed1ae…`) | "인천 직전 시행판은 … (첨부 HWP, sha256 `ed0ed1ae...`)으로 확보했다. … 낙찰하한율은 원문에 인쇄되지 않았다(미인쇄)." | 이 행은 통과점수 부재를 주장하지 않는다. 가격 산식·투찰률 상한 값과 낙찰하한율 미인쇄 서술은 원문과 맞고, 통과점수는 제5조 ① 이 레코드 92 에 인쇄되어 있다. | 조치 없음 |
 | `docs/analysis/regime_mismatch_predecessor_incheon_inst_20261019.md:46` | 이 원문 | "첨부 HWP 1건." | 값 주장이 없다. | 조치 없음 |
 | `docs/analysis/regime_mismatch_predecessor_incheon_inst_20261019.md:47` | 이 원문 | "수령: 2026-10-19, sha256 `ed0ed1ae…` (113,664 bytes)." | 일치한다. | 조치 없음 |
 | `docs/analysis/regime_mismatch_predecessor_incheon_inst_20261019.md:65` | 이 원문 | "통과점수: 원문에서 '종합평점 N점' 문구가 추출되지 않아 미인쇄." | 제5조 ① 이 레코드 92 에 인쇄되어 있고 추출된다(T 95, 조문 85/90/95). | 문서 정정 |
@@ -88,6 +89,7 @@
 | `docs/analysis/kac_regulation_followup_20261015.md:82` | 이 원문 (파일명 `gen_general_260814.hwp`, 217KB) | 캐시 파일 표에 파일명과 크기만 적는다. | 222,208 바이트이며 같은 파일이다. 값 주장이 없다. | 조치 없음 |
 | `docs/analysis/regime_mismatch_predecessor_incheon_inst_20261019.md:87` | 이 원문 | "전문(HWP, sha256 `1157b860…`, 222,208 bytes)도 수령했으나 전문은 현행판이다." | 맞다. 연혁에 지침 제792호가 인쇄된 현행판이다. | 조치 없음 |
 | `docs/analysis/regime_mismatch_predecessor_incheon_inst_20261019.md:178` | 이 원문 | 출처 표에 파일 경로만 적는다. | 값 주장이 없다. | 조치 없음 |
+| `src/app/services/evaluation_rules_institution.py:3038` | 같은 공고의 다른 첨부 `kac_3553810_file2.bin` | `SERVC_INST_KAC_20260302_*` 주석이 `kac_3553810_file2.bin` 의 "현 행" 열 값을 인용한다. | 대상 원문이 아니다. 담당 원문은 `kac_3553810_file1.bin`(지침 제792호 전문)이며 file2 는 제777호 신구대비표로 서로 다른 파일이다. 규칙 출처 문자열도 4.2 신구대비표를 지목한다. | 조치 없음 |
 | `docs/handoff/handoff_20261020_close.md:74` | 이 원문 | "예: `inst_predecessor_attach_20261019.md` 는 한국공항공사 통과점수를 '첨부에 문구 없음, 공고문 인용' 으로 적었으나 `kac_3553810_file1.bin` 에서 85점이 읽힌다." | 이 파일은 지침 제792호 현행판 전문이다. 해당 문서가 문제 삼은 대상은 제777호 이전판 공고 11건의 첨부(sha256 `86cdd7…`·`327b89…`·`63f9e8…`)이므로, 이 파일로 그 판정을 반증할 수 없다. 85점이 읽힌다는 사실 자체는 맞다. | 문서 정정 |
 | `docs/handoff/handoff_20261020_close.md:95` | 이 원문 | 경로·sha256 앞 16자·222,208 바이트·T 85. | 일치한다. | 조치 없음 |
 
@@ -160,7 +162,7 @@
 | 라벨 변경 | 3 |
 | 규칙 출처 문자열 정정 | 0 |
 | 값이 다른 규칙 | 0 |
-| 조치 없음 인용 행 | 32 |
+| 조치 없음 인용 행 | 34 |
 
 ### 5.2 행별 목록
 
