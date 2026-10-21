@@ -37,7 +37,7 @@ EXPECTED_FINGERPRINTS: dict[str, str] = {
     "PRE_20260526_RULES": "a09f80a6e80bf80d",
     "LOCAL_RULES": "ed46a9742ea23402",
     "MOIS_ACADEMIC_BAND_RULES": "e7e2960460553ba0",
-    "INSTITUTION_RULES": "468594f4297c5c30",
+    "INSTITUTION_RULES": "d7cabe0e33a1e8cf",
 }
 
 # main 의 vars(evaluation_rules) 이름 목록. 비공개 이름(_ 로 시작)도 포함합니다.

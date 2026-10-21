@@ -31,7 +31,11 @@ from src.app.services.evaluation_flat_zones import (
     flat_zone_for,
     pps_flat_zone_for,
 )
-from src.app.services.evaluation_rules import LOCAL_RULES, resolve_score_params
+from src.app.services.evaluation_rules import (
+    INSTITUTION_RULES,
+    LOCAL_RULES,
+    resolve_score_params,
+)
 from src.app.services.evaluation_scoring import (
     calculate_price_score,
     resolve_price_compensation,
@@ -482,15 +486,20 @@ SIDO_FLAT_CASES = [
 
 
 class TestFlatZoneLinkedRuleIds:
-    """평탄 데이터가 참조하는 rule_id 가 main LOCAL_RULES 와 그 구간에 실제로 존재하는지 고정."""
+    """평탄 데이터가 참조하는 rule_id 가 LOCAL_RULES·INSTITUTION_RULES 와 그 구간에 실제로 존재하는지 고정."""
 
     def test_every_flat_rule_id_exists_in_local_rules(self) -> None:
-        by_id = {rule.rule_id: rule for rule in LOCAL_RULES}
+        local_by_id = {rule.rule_id: rule for rule in LOCAL_RULES}
+        institution_by_id = {rule.rule_id: rule for rule in INSTITUTION_RULES}
         assert flat_zone_entries()
         for rule_id, upper_bound, _zone in flat_zone_entries():
-            rule = by_id.get(rule_id)
-            assert rule is not None, f"LOCAL_RULES 에 없는 평탄 rule_id: {rule_id}"
-            assert rule.contract_regime == "LOCAL", rule_id
+            if rule_id.startswith("SERVC_LOCAL_"):
+                rule = local_by_id.get(rule_id)
+                assert rule is not None, f"LOCAL_RULES 에 없는 평탄 rule_id: {rule_id}"
+                assert rule.contract_regime == "LOCAL", rule_id
+            else:
+                rule = institution_by_id.get(rule_id)
+                assert rule is not None, f"INSTITUTION_RULES 에 없는 평탄 rule_id: {rule_id}"
             bounds = {band.upper_bound for band in (rule.price_bands or ())}
             assert upper_bound in bounds, f"{rule_id} 의 가격 구간에 없는 평탄 키: {upper_bound}"
 

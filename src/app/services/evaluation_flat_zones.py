@@ -21,8 +21,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
+from src.ml.notice_amount import notice_amount_for_year
+
 _COLLECTION = "docs/analysis/servc_formula_collection_local_20261004.md"
 _RECOVER = "docs/analysis/servc_formula_recover_c_20261005.md"
+# 기관 구판 규칙(한국농어촌공사 20251001판, 한국공항공사 10차판)의 별표 평탄 근거입니다.
+_INST_REGIME = "docs/analysis/inst_regime_remaining_20261020.md"
+_INSTITUTION_NOTICE_AMOUNT = Decimal(str(notice_amount_for_year(2026)))
 
 
 @dataclass(frozen=True)
@@ -329,6 +334,62 @@ _FLAT_ZONES: dict[str, dict[Decimal | None, FlatZone]] = {
     # 전북특별자치도 (부칙 제2024-10호) — 10억원 이상을 30억원 경계로 나눠 두 구간 모두 같은 평탄
     "SERVC_LOCAL_JEONBUK_20240118_ATTACH_01": _five_band_general(_SRC_JEONBUK),
     "SERVC_LOCAL_JEONBUK_20240118_SIMPLE_LABOR": _four_band_simple_labor(_SRC_JEONBUK),
+    # 한국농어촌공사 20251001판(구판). 별표가 고정 구간 상한 투찰률만 인쇄하고 그 구간의
+    # 가격평점은 인쇄하지 않아, 점수는 B - k x |기준비율 - 상한| x 100 산식 대입값입니다.
+    # 보험용역 두 규칙은 고정 구간 상한이 인쇄되지 않아 등록하지 않습니다.
+    "SERVC_INST_KRC_20251001_LEASE": {
+        _INSTITUTION_NOTICE_AMOUNT: _zone(
+            "0.9175",
+            "55",
+            f"{_INST_REGIME}:3.4 (별표 8 임대차 91.75% 평탄 문장); 점수는 원문 미인쇄 산식 대입값",
+        ),
+        None: _zone(
+            "0.955",
+            "55",
+            f"{_INST_REGIME}:3.4 (별표 8 임대차 95.5% 평탄 문장); 점수는 원문 미인쇄 산식 대입값",
+        ),
+    },
+    "SERVC_INST_KRC_20251001_PASSENGER": {
+        Decimal("500000000"): _zone(
+            "0.94",
+            "58",
+            f"{_INST_REGIME}:3.4 (별표 5 여객 육상운송 94% 평탄 문장); "
+            "점수는 원문 미인쇄 산식 대입값",
+        ),
+        None: _zone(
+            "0.94",
+            "48",
+            f"{_INST_REGIME}:3.4 (별표 5 여객 육상운송 94% 평탄 문장); "
+            "점수는 원문 미인쇄 산식 대입값",
+        ),
+    },
+    # 한국공항공사 10차판(구판). 학술연구용역은 고시금액 미만/이상 두 구간뿐입니다.
+    "SERVC_INST_KAC_20230731_ACADEMIC": {
+        _INSTITUTION_NOTICE_AMOUNT: _zone(
+            "0.9175",
+            "55",
+            f"{_INST_REGIME}:4.4 (별표 1 학술연구 91.75% 예외사항); 점수는 원문 미인쇄 산식 대입값",
+        ),
+        None: _zone(
+            "0.955",
+            "25",
+            f"{_INST_REGIME}:4.4 (별표 1 학술연구 95.5% 예외사항); 점수는 원문 미인쇄 산식 대입값",
+        ),
+    },
+    "SERVC_INST_KAC_20230731_SOFTWARE_SME": {
+        Decimal("500000000"): _zone(
+            "0.94",
+            "58",
+            f"{_INST_REGIME}:4.4 (별표 3의 2 소프트웨어 94% 예외사항); "
+            "점수는 원문 미인쇄 산식 대입값",
+        ),
+        None: _zone(
+            "0.94",
+            "48",
+            f"{_INST_REGIME}:4.4 (별표 3의 2 소프트웨어 94% 예외사항); "
+            "점수는 원문 미인쇄 산식 대입값",
+        ),
+    },
 }
 
 

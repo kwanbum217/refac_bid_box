@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal
+from typing import cast
 
 from src.app.services.evaluation_rules_core import (
     QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
@@ -44,6 +45,8 @@ _SRC_INST_RECOVER_A = "docs/analysis/servc_formula_recover_a_20261005.md"
 _SRC_INST_KOGAS = "docs/analysis/servc_formula_kogas_qualification_20261004.md"
 _SRC_INST_KOEM = "docs/analysis/forest_koem_registry_survey_20261015.md"
 _SRC_INST_KAC = "docs/analysis/kac_regulation_followup_20261015.md"
+# 한국농어촌공사 20251001판과 한국공항공사 10차판 구판 규칙의 인쇄값 근거입니다.
+_SRC_INST_REGIME_PREDECESSOR = "docs/analysis/inst_regime_remaining_20261020.md"
 # 2026-10-17 등록분(별표 3의 2 소프트웨어용역 중소기업자간 경쟁제품 대상)의 구간 근거입니다.
 _SRC_INST_KAC_ANNEX32 = "docs/analysis/kac_annex_3_2_register_20261017.md"
 # 한국지역난방공사 일반용역 적격심사세부기준 직전판(2023.07.19 시행) 별표 4 폐기물처리용역의
@@ -90,7 +93,7 @@ _INSTITUTION_NOTICE_AMOUNT = Decimal(str(notice_amount_for_year(2026)))
 # (상한, 배점한도 B, 평점계수 k, 기준비율, 통과점수, 하한율, 구간 라벨, 구간 근거)
 # 상한 "고시금액" 은 2026년 고시금액, None 은 상한 없음을 뜻합니다. B None 은 원문이 B 를
 # 용역 유형(계량화 정도)별 여러 값으로 인쇄해 하나로 확정하지 않은 구간입니다.
-_InstitutionBand = tuple[str | None, str | None, str, str, str, str, str, str]
+_InstitutionBand = tuple[str | None, str | None, str, str, str, str | None, str, str]
 
 
 def _inst_band(
@@ -99,7 +102,7 @@ def _inst_band(
     k: str,
     base_ratio: str,
     pass_score: str,
-    lwlt_rate: str,
+    lwlt_rate: str | None,
     label: str,
     source: str,
 ) -> _InstitutionBand:
@@ -159,7 +162,7 @@ def _institution_rule(
                 base_rate=Decimal(base_ratio) / Decimal("100"),
                 label=label,
                 source=band_source,
-                lwlt_rate=Decimal(lwlt_rate),
+                lwlt_rate=Decimal(lwlt_rate) if lwlt_rate is not None else None,
             )
         )
         threshold_bands.append(
@@ -178,7 +181,8 @@ def _institution_rule(
         effective_date=effective_date,
         source=source,
         patterns=patterns,
-        lwlt_rate=Decimal(ordered[0][5]),
+        # 별표가 낙찰하한율을 인쇄하지 않은 구판은 대표값도 None 으로 두어 하한율을 비웁니다.
+        lwlt_rate=cast(Decimal, Decimal(ordered[0][5]) if ordered[0][5] is not None else None),
         base_rate=Decimal(ordered[0][3]) / Decimal("100"),
         price_bands=tuple(price_bands),
         threshold_bands=tuple(threshold_bands),
@@ -755,6 +759,117 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 f"{_SRC_INST_AGENCY}:4.2",
             ),
         ),
+    ),
+    # 한국농어촌공사 구판 (일반용역 적격심사 세부기준 20251001판, 시행 2025-10-01,
+    # 2026-06-24판 시행과 동시에 폐지). 별표 인쇄값만 넣고, 원문에 인쇄되지 않은
+    # 낙찰하한율은 0 이나 역산값을 넣지 않고 None 으로 둡니다.
+    _institution_rule(
+        "SERVC_INST_KRC_20251001_INSURANCE",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="INSURANCE",
+        table_name="한국농어촌공사 일반용역 적격심사 (보험용역, 20251001판)",
+        description="한국농어촌공사 별표 6 보험용역 2구간 (20251001판)",
+        effective_date="2025-10-01",
+        superseded_date="2026-06-24",
+        source=f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                None,
+                "별표 6 보험용역 · 5억원 이상 (20251001판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                None,
+                "별표 6 보험용역 · 5억원 미만 (20251001판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20251001_LEASE",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="LEASE",
+        table_name="한국농어촌공사 일반용역 적격심사 (임대차, 20251001판)",
+        description="한국농어촌공사 별표 8 임대차 2구간 (20251001판)",
+        effective_date="2025-10-01",
+        superseded_date="2026-06-24",
+        source=f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+        patterns=("임대차용역", "임대차"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                None,
+                "별표 8 임대차 · 고시금액 미만 (20251001판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+            ),
+            _inst_band(
+                None,
+                "70",
+                "2",
+                "88",
+                "85",
+                None,
+                "별표 8 임대차 · 고시금액 이상 (20251001판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KRC_20251001_PASSENGER",
+        institution_name="한국농어촌공사",
+        institution_code="B552149",
+        institution_aliases=("KRC",),
+        service_type="PASSENGER_TRANSPORT",
+        table_name="한국농어촌공사 일반용역 적격심사 (여객 육상운송용역, 20251001판)",
+        description="한국농어촌공사 별표 5 여객 육상운송용역 2구간 (20251001판)",
+        effective_date="2025-10-01",
+        superseded_date="2026-06-24",
+        source=f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+        patterns=("여객육상운송용역", "여객육상운송"),
+        bands=(
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                None,
+                "별표 5 여객 육상운송용역 · 5억원 이상 (20251001판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                None,
+                "별표 5 여객 육상운송용역 · 5억원 미만 (20251001판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:3.4",
+            ),
+        ),
+        quant_table=False,
     ),
     # 한국가스공사 (개정 2026-07-08, 시행 2026-07-09). B 는 용역수행능력 계량화 정도
     # (제16조①)에 따라 30/50/70 으로 갈려 한 값으로 확정하지 않고 None 과 사유를 남깁니다.
@@ -3153,6 +3268,121 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "87.995",
                 "별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) · 5억원 이상 (제777호)",
                 f"{_SRC_INST_KAC_ANNEX32}:3",
+            ),
+        ),
+        quant_table=False,
+    ),
+    # 한국공항공사 구판 (10차판, 시행 2023-07-31 입찰공고분부터, 제777호 시행 2026-03-02
+    # 에 폐지). 별표 인쇄값만 넣고, 원문에 인쇄되지 않은 낙찰하한율은 None 으로 둡니다.
+    # 학술연구용역 별표 1 은 구간이 고시금액 미만/이상 둘뿐이라 5억원 중간 구간을 만들지
+    # 않습니다.
+    _institution_rule(
+        "SERVC_INST_KAC_20230731_ACADEMIC",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="ACADEMIC",
+        table_name="한국공항공사 일반용역 적격심사 (학술연구용역, 10차판)",
+        description="한국공항공사 별표 1 학술연구용역 2구간 (10차판)",
+        effective_date="2023-07-31",
+        superseded_date="2026-03-02",
+        source=f"{_SRC_INST_REGIME_PREDECESSOR}:4.4 (10차판, BBS_SEQ 3553759, "
+        "sha256 509524619cf73698ad9280f6e8600b6d84e5c4319acbb6c9ccd32a5cc5a2e240)",
+        patterns=("학술연구용역",),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "88",
+                "85",
+                None,
+                "별표 1 학술연구용역 · 고시금액 미만 (10차판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:4.4",
+            ),
+            _inst_band(
+                None,
+                "40",
+                "2",
+                "88",
+                "85",
+                None,
+                "별표 1 학술연구용역 · 고시금액 이상 (10차판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:4.4",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KAC_20230731_INSURANCE",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="INSURANCE",
+        table_name="한국공항공사 일반용역 적격심사 (보험용역, 10차판)",
+        description="한국공항공사 별표 6 보험용역 2구간 (10차판)",
+        effective_date="2023-07-31",
+        superseded_date="2026-03-02",
+        source=f"{_SRC_INST_REGIME_PREDECESSOR}:4.4 (10차판, BBS_SEQ 3553759, "
+        "sha256 509524619cf73698ad9280f6e8600b6d84e5c4319acbb6c9ccd32a5cc5a2e240)",
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                None,
+                "별표 6 보험용역 · 5억원 미만 (10차판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:4.4",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                None,
+                "별표 6 보험용역 · 5억원 이상 (10차판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:4.4",
+            ),
+        ),
+        quant_table=False,
+    ),
+    _institution_rule(
+        "SERVC_INST_KAC_20230731_SOFTWARE_SME",
+        institution_name="한국공항공사",
+        institution_code="B551178",
+        institution_aliases=_KAC_INSTITUTION_ALIASES,
+        service_type="SOFTWARE",
+        table_name="한국공항공사 일반용역 적격심사 (소프트웨어용역 중소기업자간 경쟁제품 대상, 10차판)",
+        description="한국공항공사 별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) 2구간 (10차판)",
+        effective_date="2023-07-31",
+        superseded_date="2026-03-02",
+        source=f"{_SRC_INST_REGIME_PREDECESSOR}:4.4 (10차판, BBS_SEQ 3553759, "
+        "sha256 509524619cf73698ad9280f6e8600b6d84e5c4319acbb6c9ccd32a5cc5a2e240)",
+        patterns=("소프트웨어용역중소기업자간경쟁제품대상",),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                None,
+                "별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) · 5억원 미만 (10차판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:4.4",
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                None,
+                "별표 3의 2 소프트웨어용역(중소기업자간 경쟁제품 대상) · 5억원 이상 (10차판)",
+                f"{_SRC_INST_REGIME_PREDECESSOR}:4.4",
             ),
         ),
         quant_table=False,
