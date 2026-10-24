@@ -145,10 +145,24 @@ def test_few_count_marker_is_not_announcement_list(query):
         "이번 주 신규 용역 공고 알려줘",
         "공고 목록 두 건 보여줘",
         "최근 용역 공고 5개만 리스트해줘",
+        "서울 지역 공고 최근 5개 보여줘",
     ],
 )
 def test_freshness_route_keeps_list_cases(query):
     assert is_announcement_list_query(query) is True
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "최신 한국전력공사 공고 보여줘",
+        "오늘 올라온 한국농어촌공사 공고 알려줘",
+    ],
+)
+def test_institution_specific_freshness_request_is_not_announcement_list(query):
+    assert is_announcement_list_query(query) is False
+    assert is_result_list_query(query) is False
+    assert "announcement_limit" not in build_retrieval_plan(query).filters
 
 
 def test_freshness_request_reaches_planner_bid_query_tool():

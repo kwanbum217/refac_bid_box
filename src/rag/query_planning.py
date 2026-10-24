@@ -712,7 +712,13 @@ def is_announcement_list_query(query: str) -> bool:
         return True
     if any(marker in lowered for marker in RESULT_LIST_MARKERS):
         return True
-    return _has_announcement_list_scope(lowered)
+    if not _has_announcement_list_scope(lowered):
+        return False
+    # 신선도 표지만 있는 경로는 범위가 없는 전체 최신 목록입니다. 기관명을
+    # 지목한 질의까지 참이 되면 기관 조건 없이 전체 목록을 내게 되므로,
+    # 낙찰 결과 목록과 같은 개체 지정 판정으로 걸러 기존 개체 조회 경로에
+    # 맡깁니다.
+    return not is_entity_specific_query(query)
 
 
 def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
