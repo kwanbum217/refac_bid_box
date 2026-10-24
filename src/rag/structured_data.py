@@ -341,7 +341,7 @@ def _result_conditions(
         conditions.append(BidResult.rl_openg_dt >= date_from)
     if date_to:
         conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
-    if institution_name:
+    if institution_name or institution_names is not None:
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
         )
@@ -384,7 +384,7 @@ def _announcement_conditions(
         conditions.append(BidAnnouncement.bid_ntce_dt >= date_from)
     if date_to:
         conditions.append(BidAnnouncement.bid_ntce_dt <= date_to + timedelta(days=1))
-    if institution_name:
+    if institution_name or institution_names is not None:
         conditions.append(
             _institution_condition(BidAnnouncement.dminstt_nm, institution_name, institution_names)
         )
@@ -419,7 +419,11 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     date_from, date_to = _resolve_window(filters)
     if date_from or date_to:
         return None
-    if filters.get("region_names") or filters.get("institution_names"):
+    if (
+        filters.get("region_names")
+        or filters.get("institution_names")
+        or filters.get("institution_aliases")
+    ):
         return None
     if filters.get("bid_ntce_no"):
         return None
@@ -596,7 +600,7 @@ def _result_availability_conditions(
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
     conditions = []
-    if institution_name:
+    if institution_name or institution_names is not None:
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
         )
@@ -728,6 +732,48 @@ def _resolve_institution_names(db: Session, column, institution_name: str) -> li
     if len(names) > INSTITUTION_NAME_RESOLVE_LIMIT:
         return None
     return names
+
+
+def _institution_aliases(filters: dict[str, Any]) -> list[str]:
+    """필터의 기관 별칭을 정규화해 중복 없이 돌려줍니다."""
+    raw = filters.get("institution_aliases")
+    if not isinstance(raw, (list, tuple)):
+        return []
+    aliases: list[str] = []
+    for value in raw:
+        normalized = _normalize_text(str(value or ""))
+        if normalized and normalized not in aliases:
+            aliases.append(normalized)
+    return aliases
+
+
+def _resolve_institution_scope_names(
+    db: Session, column, institution_name: str, institution_aliases: list[str]
+) -> list[str] | None:
+    """기관명과 별칭을 각각 해석해 이름 합집합을 만듭니다.
+
+    광역 단축명("충남")과 정식 명칭("충청남도")을 함께 넣어야 두 표기를 모두
+    잡습니다. 한 검색어라도 해석 상한을 넘으면 부분 일치로 되돌리도록 None 을
+    돌려줍니다.
+    """
+    terms: list[str] = []
+    if institution_name:
+        terms.append(institution_name)
+    for alias in institution_aliases:
+        if alias not in terms:
+            terms.append(alias)
+    if not terms:
+        return None
+
+    merged: list[str] = []
+    for term in terms:
+        names = _resolve_institution_names(db, column, term)
+        if names is None:
+            return None
+        for name in names:
+            if name not in merged:
+                merged.append(name)
+    return merged
 
 
 # U+FFFD 는 SQL 에서 먼저 쳐내므로 배수는 작아도 됩니다.
@@ -2210,11 +2256,14 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         return _bid_detail_result(db, plan, bid_ntce_no)
 
     institution_name = _normalize_text(str((plan.filters or {}).get("institution_name") or ""))
+    institution_aliases = _institution_aliases(plan.filters or {})
     result_names = announcement_names = None
-    if institution_name:
-        result_names = _resolve_institution_names(db, BidResult.dminstt_nm, institution_name)
-        announcement_names = _resolve_institution_names(
-            db, BidAnnouncement.dminstt_nm, institution_name
+    if institution_name or institution_aliases:
+        result_names = _resolve_institution_scope_names(
+            db, BidResult.dminstt_nm, institution_name, institution_aliases
+        )
+        announcement_names = _resolve_institution_scope_names(
+            db, BidAnnouncement.dminstt_nm, institution_name, institution_aliases
         )
     result_conditions = _result_conditions(plan, institution_names=result_names)
     announcement_conditions = _announcement_conditions(plan, institution_names=announcement_names)

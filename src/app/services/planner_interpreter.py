@@ -44,6 +44,7 @@ from src.rag.engine import (
     is_bid_number_query,
     is_result_list_query,
 )
+from src.rag.query_planning import extract_institution_scope
 
 
 def _load_last_plan(context_state: dict[str, Any] | None) -> ChatPlan | None:
@@ -128,10 +129,19 @@ def interpret_request(
             if mentions_result_reference:
                 execution_plan.parameters["references_last_result"] = True
 
-    # 2. 지역/분야 필터 추출 및 누적
+    # 2. 지역/기관/분야 필터 추출 및 누적
     region = _extract_followup_region(normalized)
+    institution_scope = extract_institution_scope(normalized)
     _, category_code = _extract_followup_category(normalized)
-    if region:
+    if institution_scope.get("institution_name"):
+        execution_plan.filters["institution_name"] = institution_scope["institution_name"]
+        if institution_scope.get("institution_aliases"):
+            execution_plan.filters["institution_aliases"] = list(
+                institution_scope["institution_aliases"]
+            )
+        else:
+            execution_plan.filters.pop("institution_aliases", None)
+    elif region:
         execution_plan.filters["institution_name"] = region
     if category_code:
         execution_plan.filters["category"] = category_code
