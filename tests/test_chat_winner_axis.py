@@ -377,6 +377,26 @@ def test_existing_axes_keep_their_routing(query, axis, metric):
     assert filters["group_limit"] == DEFAULT_GROUP_LIMIT
 
 
+@pytest.mark.parametrize(
+    ("query", "axis", "metric", "group_limit"),
+    [
+        ("기관순위 10개 보여줘", "institution", "announcement_count", 10),
+        ("분류별 낙찰 건수 상위 3개 보여줘", "category", "bid_count", 3),
+        ("지역별 공고 건수 1위 알려줘", "region", "announcement_count", 1),
+        ("기관별 낙찰 많이 한 곳 알려줘", "institution", "bid_count", DEFAULT_GROUP_LIMIT),
+        ("기관별 공고 건수 알려줘", "institution", "announcement_count", DEFAULT_GROUP_LIMIT),
+        ("지역별 평균 낙찰률 알려줘", "region", "avg_rate", DEFAULT_GROUP_LIMIT),
+    ],
+)
+def test_existing_axes_keep_rank_markers_and_metrics(query, axis, metric, group_limit):
+    """기존 축도 상위 N·1위 표지를 행 수로 읽고 낙찰·공고·낙찰률 지표를 유지합니다."""
+    filters = build_retrieval_plan(query).filters
+
+    assert filters["group_by"] == axis
+    assert filters["metric"] == metric
+    assert filters["group_limit"] == group_limit
+
+
 def test_winner_answer_renders_period_and_category_caption():
     """업체 표는 기간·분야를 표 위 문장에 명시하고 한 지표만 냅니다."""
     plan = RetrievalPlan(
