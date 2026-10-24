@@ -108,6 +108,21 @@ def test_freshness_route_does_not_override_statistics(query):
 @pytest.mark.parametrize(
     "query",
     [
+        "최신 공고 몇건 알려줘",
+        "최신 공고 몇개 알려줘",
+        "최신 공고 몇 건 알려줘",
+        "최신 공고 몇 개 알려줘",
+    ],
+)
+def test_few_count_marker_is_not_announcement_list(query):
+    assert is_announcement_list_query(query) is False
+    assert is_result_list_query(query) is False
+    assert "announcement_limit" not in build_retrieval_plan(query).filters
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
         "오늘 올라온 용역 공고 알려줘",
         "용역 공고 목록 좀",
         "최신 공사 공고 보여줘",

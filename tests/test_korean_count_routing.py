@@ -143,6 +143,28 @@ def test_numeral_before_other_hangul_is_not_result_list(query):
     assert is_announcement_list_query(query) is False
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "최근 낙찰 결과 몇건이야",
+        "최근 낙찰 결과 몇개야",
+        "최근 낙찰 결과 몇 건이야",
+        "최근 낙찰 결과 몇 개야",
+    ],
+)
+def test_few_quantity_is_not_result_list(query):
+    assert is_result_list_query(query) is False
+
+
+def test_few_count_exclusion_keeps_existing_list_routes():
+    result_query = "최근 낙찰 결과 5건만 보여줘"
+    assert is_result_list_query(result_query) is True
+    assert extract_result_limit(result_query) == 5
+
+    assert is_announcement_list_query("공고 목록 두 건 보여줘") is True
+    assert is_announcement_list_query("오늘 올라온 용역 공고 알려줘") is True
+
+
 def test_korean_numeral_limit_reaches_planner_bid_query_tool():
     execution_plan = interpret_request("최근 낙찰 결과 다섯 건 보여줘")
 

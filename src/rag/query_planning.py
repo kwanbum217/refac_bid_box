@@ -290,7 +290,6 @@ RESULT_LIST_EXCLUDED_MARKERS = (
     "평균",
     "낙찰률",
     "건수",
-    "몇 건",
     "순위",
     "top",
     "많이 받은",
@@ -301,6 +300,10 @@ RESULT_LIST_EXCLUDED_MARKERS = (
     "높은 편",
     "비교",
 )
+# "몇 건"·"몇 개" 는 모호한 수량 질의이지 목록 개수가 아닙니다. 띄어 쓴 형태와
+# 붙여 쓴 형태를 모두 같은 규칙으로 잡아야 "최신 공고 몇건 알려줘" 가 목록으로
+# 새지 않습니다. 낙찰 결과 목록과 공고 목록 판정이 이 표지를 함께 씁니다.
+RESULT_LIST_EXCLUDED_PATTERN = re.compile(r"몇\s*(?:건|개)")
 RESULT_LIST_EXPLANATION_MARKERS = ("방법", "규정", "설명", "어떻게", "의미", "절차", "뭐야")
 RESULT_LIST_BID_NUMBER_PATTERN = re.compile(r"[A-Z]\d{2}[A-Z]{2}\d{8}|\d{11,}", re.IGNORECASE)
 
@@ -576,6 +579,18 @@ def _has_only_result_list_vocabulary(lowered: str) -> bool:
     return bool(tokens) and all(_result_list_token_allowed(token) for token in tokens)
 
 
+def _has_excluded_list_marker(lowered: str) -> bool:
+    """목록 판정에서 제외할 통계·모호 수량 표지가 있는지 확인합니다.
+
+    낙찰 결과 목록과 공고 목록이 같은 표지 집합과 같은 정규식 규칙을 쓰도록
+    한 곳에 모읍니다. "몇 건"·"몇 개" 는 띄어 쓴 형태와 붙여 쓴 형태를 모두
+    표지로 봅니다.
+    """
+    return any(marker in lowered for marker in RESULT_LIST_EXCLUDED_MARKERS) or bool(
+        RESULT_LIST_EXCLUDED_PATTERN.search(lowered)
+    )
+
+
 def is_result_list_query(query: str) -> bool:
     """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다.
 
@@ -606,7 +621,7 @@ def is_result_list_query(query: str) -> bool:
     )
     if not matched:
         return False
-    if any(marker in lowered for marker in RESULT_LIST_EXCLUDED_MARKERS):
+    if _has_excluded_list_marker(lowered):
         return False
     if RESULT_LIST_BID_NUMBER_PATTERN.search(lowered):
         return False
@@ -678,7 +693,7 @@ def is_announcement_list_query(query: str) -> bool:
     # 신선도 표지나 요청 동사만으로 통계 질의가 공고 목록으로 새지 않도록,
     # 낙찰 결과 목록과 같은 통계 제외 표지를 먼저 검사합니다. "두 건" 의 "건" 은
     # 개수 단위이지 "건수" 통계 표지가 아닙니다.
-    if any(marker in lowered for marker in RESULT_LIST_EXCLUDED_MARKERS):
+    if _has_excluded_list_marker(lowered):
         return False
     if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
         return False
