@@ -59,8 +59,10 @@
   `rate_limited` 로 기록한다. 429 를 라우팅 실패로 세지 않는다.
 - DB 정답은 `scripts/db_readonly_query.run_query(statement, limit)` 만 사용한다.
   이 함수는 SELECT 단일 문장만 받고 READ ONLY 트랜잭션으로 실행한다.
-- `run_query` 호출은 이 모듈의 `assert_read_only(sql)` 를 먼저 통과해야만 한다
-  (같은 모듈 `_run_read_only` 가 유일한 통로다).
+- `run_query` 호출은 `scripts/db_readonly_query.assert_read_only(sql)` 를 먼저
+  통과해야만 한다. 검사기는 이 모듈에 사본을 두지 않고 공용 도구에서 import 해
+  쓴다(같은 모듈 `_run_read_only` 가 유일한 통로다). 공용 도구의 검사 규칙이
+  바뀌면 측정기도 같은 규칙을 따른다.
 
 사용 예:
 
@@ -94,9 +96,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
-    from scripts.db_readonly_query import run_query
+    from scripts.db_readonly_query import UnsafeQueryError as UnsafeQueryError
+    from scripts.db_readonly_query import assert_read_only, run_query
 except ModuleNotFoundError:  # pragma: no cover - scripts 디렉터리에서 직접 실행하는 경로
-    from db_readonly_query import run_query  # type: ignore[no-redef]
+    from db_readonly_query import UnsafeQueryError as UnsafeQueryError  # type: ignore[no-redef]
+    from db_readonly_query import assert_read_only, run_query  # type: ignore[no-redef]
 
 QueryFn = Callable[[str, int], tuple[list[str], list[tuple[Any, ...]]]]
 
@@ -180,45 +184,6 @@ class FixtureError(ValueError):
     """fixture 스키마가 계약과 다를 때 냅니다."""
 
 
-class UnsafeQueryError(ValueError):
-    """읽기 전용이 아닌 질의를 거부할 때 냅니다."""
-
-
-READ_ONLY_STARTS = ("select", "with")
-FORBIDDEN_SQL_TOKENS = (
-    "insert",
-    "update",
-    "delete",
-    "replace",
-    "merge",
-    "truncate",
-    "drop",
-    "create",
-    "alter",
-    "rename",
-    "grant",
-    "revoke",
-    "commit",
-    "rollback",
-    "savepoint",
-    "lock",
-    "unlock",
-    "call",
-    "into",
-    "outfile",
-    "load",
-    "set",
-    "reset",
-    "flush",
-    "kill",
-    "shutdown",
-    "attach",
-    "detach",
-    "pragma",
-    "vacuum",
-)
-FORBIDDEN_SQL_RE = re.compile(r"\b(" + "|".join(FORBIDDEN_SQL_TOKENS) + r")\b", re.IGNORECASE)
-
 # 데이터 부재 문구. 원칙 1 에 따라 이 문구는 DB 정답이 답변에 없을 때만 실패
 # 근거다. 정답 수치나 공고번호가 답변에 있으면 문구가 함께 있어도 통과한다.
 # 그래서 판정 결과에는 참고 정보(absence_phrases)로만 남긴다.
@@ -271,50 +236,14 @@ NUMBER_MASK_PATTERNS = (
 )
 
 
-def strip_sql_noise(sql: str) -> str:
-    """주석과 문자열 리터럴을 지운 검사용 사본을 만든다."""
-    without_block = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
-    without_line = re.sub(r"(--|#)[^\n]*", " ", without_block)
-    without_strings = re.sub(r"'(?:[^'\\]|\\.)*'", " ", without_line)
-    return re.sub(r'"(?:[^"\\]|\\.)*"', " ", without_strings)
-
-
-def assert_read_only(sql: str) -> str:
-    """SELECT 단일 문장인지 검사하고 정규화한 질의를 돌려준다.
-
-    `run_query` 를 부르는 모든 경로는 이 함수를 먼저 통과한다. 쓰기 질의를
-    만들 수 없게 하는 것이 목적이므로 시작 토큰, 다중 문장, 금지 키워드를
-    모두 본다.
-    """
-    statement = sql.strip().rstrip(";").strip()
-    if not statement:
-        raise UnsafeQueryError("질의가 비어 있습니다.")
-
-    probe = strip_sql_noise(statement)
-    if ";" in probe:
-        raise UnsafeQueryError("한 번에 한 문장만 실행합니다. 세미콜론으로 잇지 마십시오.")
-
-    lowered = probe.lstrip().lower()
-    if not lowered.startswith(READ_ONLY_STARTS):
-        head = lowered.split()[0] if lowered.split() else "?"
-        raise UnsafeQueryError(
-            f"읽기 전용 질의가 아닙니다 (시작 토큰: {head}). 허용: {', '.join(READ_ONLY_STARTS)}"
-        )
-
-    found = FORBIDDEN_SQL_RE.search(probe)
-    if found:
-        raise UnsafeQueryError(f"금지 키워드가 포함돼 있습니다: {found.group(1)}")
-
-    return statement
-
-
 def _run_read_only(
     statement: str, limit: int, query: QueryFn
 ) -> tuple[list[str], list[tuple[Any, ...]]]:
     """읽기 전용 검사를 통과한 질의만 실행한다.
 
-    이 함수가 `run_query` 를 부르는 유일한 통로다. 검사를 우회하는 새 호출을
-    추가하지 말 것.
+    이 함수가 `run_query` 를 부르는 유일한 통로다. 검사는 공용 도구
+    `db_readonly_query.assert_read_only` 한 벌만 쓰며, 이 모듈에 사본을 두지
+    않는다. 검사를 우회하는 새 호출을 추가하지 말 것.
     """
     return query(assert_read_only(statement), limit)
 

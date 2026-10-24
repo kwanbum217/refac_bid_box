@@ -17,6 +17,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from scripts import db_readonly_query
 from scripts import measure_chat_user_questions as measure
 
 PUBLIC_FIXTURE = PROJECT_ROOT / "data/benchmarks/chat_user_questions_v1.json"
@@ -833,6 +834,12 @@ def test_principle4_known_limit_stock_forecast_slips_through() -> None:
         _payload(answer, tools=()),
     )
     assert result["passed"] is False
+
+
+def test_assert_read_only_is_the_shared_db_tool_object() -> None:
+    # 측정기는 읽기 전용 검사기를 복사하지 않고 공용 도구에서 import 해 쓴다.
+    # 사본을 두면 공용 도구의 결함 수정이 측정기에 반영되지 않는다.
+    assert measure.assert_read_only is db_readonly_query.assert_read_only
 
 
 def test_assert_read_only_accepts_select_and_rejects_writes() -> None:
