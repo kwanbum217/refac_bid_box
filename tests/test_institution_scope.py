@@ -54,10 +54,44 @@ from src.rag.structured_data import (
         ("공주시장 공고 5개 보여줘", {}),
         ("공고 최근 5개 보여줘", {}),
         ("없는시 공고 5개 보여줘", {"institution_name": "없는시"}),
+        (
+            "경북 인입철도 공사 공고",
+            {"institution_name": "경북", "institution_aliases": ["경북", "경상북도"]},
+        ),
+        ("도시철도 공사 공고 5개", {}),
+        ("경기도 공고 5개", {"institution_name": "경기도"}),
+        ("충청남도 공고 5개", {"institution_name": "충청남도"}),
+        ("수도 공사 공고", {}),
+        ("제주특별자치도 공고", {"institution_name": "제주특별자치도"}),
     ],
 )
 def test_extract_institution_scope_cases(query: str, expected: dict):
     assert extract_institution_scope(query) == expected
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        "인입철도",
+        "도시철도",
+        "지하철도",
+        "고속도",
+        "궤도",
+        "보도",
+        "수도",
+        "시도",
+        "제도",
+        "지도",
+        "정도",
+        "속도",
+        "강도",
+        "온도",
+        "습도",
+        "한도",
+    ],
+)
+def test_extract_institution_scope_rejects_non_administrative_do_words(word: str):
+    assert extract_institution_scope(f"{word} 공고 5개") == {}
 
 
 @pytest.mark.parametrize(
@@ -163,6 +197,44 @@ def test_both_planners_use_specific_scope_over_region_dictionary(
     else:
         assert "institution_aliases" not in plan.filters
         assert "institution_aliases" not in execution_plan.parameters
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_name", "expected_aliases"),
+    [
+        ("경북 인입철도 공사 공고", "경북", ["경북", "경상북도"]),
+        ("경기도 공고 5개", "경기도", None),
+        ("충청남도 공고 5개", "충청남도", None),
+        ("제주특별자치도 공고 5개", "제주특별자치도", None),
+    ],
+)
+def test_both_planners_use_official_province_names(
+    query: str, expected_name: str, expected_aliases: list[str] | None
+):
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.filters.get("institution_name") == expected_name
+    assert execution_plan.filters.get("institution_name") == expected_name
+    if expected_aliases:
+        assert plan.filters.get("institution_aliases") == expected_aliases
+        assert execution_plan.filters.get("institution_aliases") == expected_aliases
+    else:
+        assert "institution_aliases" not in plan.filters
+        assert "institution_aliases" not in execution_plan.filters
+
+
+@pytest.mark.parametrize(
+    "query", ["도시철도 공사 공고 5개", "수도 공사 공고", "수도 공사 공고 5개"]
+)
+def test_both_planners_skip_institution_for_non_administrative_do_words(query: str):
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert "institution_name" not in plan.filters
+    assert "institution_names" not in plan.filters
+    assert "institution_name" not in execution_plan.filters
+    assert "institution_names" not in execution_plan.filters
 
 
 @pytest.mark.parametrize(

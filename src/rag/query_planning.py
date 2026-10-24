@@ -135,6 +135,24 @@ REGION_ALIASES: dict[str, tuple[str, ...]] = {
     "경남": ("경남", "경상남도"),
     "제주": ("제주",),
 }
+# "도" 접미사는 공식 광역 도 명칭일 때만 행정 구역입니다. "인입철도", "도시철도",
+# "고속도" 처럼 사업명·일반 명사가 도 접미사로 끝나는 경우를 걷어냅니다.
+OFFICIAL_PROVINCE_NAMES = frozenset(
+    {
+        "경기도",
+        "강원도",
+        "강원특별자치도",
+        "충청북도",
+        "충청남도",
+        "전라북도",
+        "전북특별자치도",
+        "전라남도",
+        "경상북도",
+        "경상남도",
+        "제주도",
+        "제주특별자치도",
+    }
+)
 TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별")
 
 AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
@@ -419,6 +437,17 @@ INSTITUTION_SCOPE_EXCLUDED_TERMS = frozenset(
         "해군",
         "공군",
         "육군",
+        "인입철도",
+        "도시철도",
+        "지하철도",
+        "고속도",
+        "궤도",
+        "보도",
+        "수도",
+        "지도",
+        "시도",
+        "강도",
+        "습도",
     }
 )
 INSTITUTION_SCOPE_EXCLUDED_SUFFIXES = (
@@ -516,6 +545,11 @@ def extract_institution_scope(
         for candidate in _institution_token_candidates(
             token, include_entity_org_tokens=include_entity_org_tokens
         ):
+            # "도" 접미사는 공식 광역 도 명칭만 행정 구역으로 인정합니다. 이 검사가
+            # 없으면 "경북 인입철도 공사" 의 "인입철도" 나 "도시철도 공사" 의
+            # "도시철도" 가 기관 범위로 승격됩니다.
+            if candidate.endswith("도") and candidate not in OFFICIAL_PROVINCE_NAMES:
+                continue
             name = candidate
             if candidate in _extract_public_corporation_tokens(candidate) and index + 1 < len(
                 tokens
@@ -560,13 +594,19 @@ def _is_broad_region_name(name: str) -> bool:
 
 
 def _is_specific_institution_scope(name: str) -> bool:
-    """광역 단축명보다 좁은 기관 범위인지 판정합니다.
+    """광역 사전 대체 값보다 구체적인 기관 범위인지 판정합니다.
 
     시·군·구 행정 구역과 공공기관, 기관 접미사 토큰은 광역 사전이 먼저 넣은
-    값보다 구체적이므로 대체 대상입니다. 광역 범위 자체는 대체하지 않습니다.
+    값보다 구체적이므로 대체 대상입니다. 광역 범위 자체는 대체하지 않되,
+    "경기도"·"제주특별자치도" 처럼 광역 단축명의 공식 도 명칭은 표기가 더
+    정확하므로 대체합니다.
     """
     normalized = _normalize_text(name)
-    if not normalized or _is_broad_region_name(normalized):
+    if not normalized:
+        return False
+    if normalized in OFFICIAL_PROVINCE_NAMES:
+        return True
+    if _is_broad_region_name(normalized):
         return False
     if _extract_public_corporation_tokens(normalized):
         return True
@@ -1432,6 +1472,14 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
             existing_name = scope_name
         if scope.get("institution_aliases") and (not existing_name or existing_name == scope_name):
             filters["institution_aliases"] = list(scope["institution_aliases"])
+
+    # 광역 단축명이 최종 기관 조건으로 남으면 정식 명칭 별칭을 함께 넘깁니다.
+    # 목록·집계 표지가 없는 질의도 광역 사전 대체 경로에서 단축명을 얻으므로,
+    # "경북 인입철도 공사 공고" 에서 별칭 없이 "경북" 만 남지 않게 합니다.
+    if region_fallback_name and filters.get("institution_name") == region_fallback_name:
+        fallback_aliases = REGION_ALIASES.get(region_fallback_name, ())
+        if len(fallback_aliases) > 1 and not filters.get("institution_aliases"):
+            filters["institution_aliases"] = list(fallback_aliases)
 
     # 비교 대상이 확정되면 목록 제한은 의미가 없습니다. "부산이랑 대구 공고 5건
     # 비교" 처럼 개수가 붙은 비교 질의가 공고 목록 응답으로 새는 것을 막습니다.
