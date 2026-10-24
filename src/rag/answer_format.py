@@ -42,6 +42,9 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "relative_years": "최근 연수",
         "analysis_mode": "분석 모드",
         "result_limit": "요청 목록 수",
+        "group_by": "집계 축",
+        "metric": "집계 지표",
+        "group_limit": "집계 행 상한",
     }
     lines = []
     for key, value in filters.items():
@@ -162,6 +165,110 @@ def _build_announcement_list_answer(
             f"{_markdown_result_cell(item.get('bid_ntce_dt'))} | "
             f"{_markdown_result_cell(item.get('bid_clse_dt'))} |"
         )
+    return "\n".join(lines)
+
+
+AXIS_LABELS = {
+    "category": "분류",
+    "institution": "기관",
+    "region": "지역",
+}
+METRIC_LABELS = {
+    "announcement_count": "공고 건수",
+    "bid_count": "낙찰 건수",
+    "avg_rate": "평균 낙찰률",
+}
+
+
+def _format_axis_value(metric: str, value: Any) -> str:
+    if value is None:
+        return "-"
+    try:
+        if metric == "avg_rate":
+            return f"{float(value):.4f}%"
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _build_axis_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """축별 집계는 LLM 없이 선택한 지표 하나만 표로 냅니다.
+
+    두 지표를 한 표에 나란히 놓으면 "공고 건수" 질문에 "낙찰 건수" 를 답하는
+    혼동이 재발합니다. 나머지 지표는 axis_breakdown 에 남겨 두고 화면에는
+    내지 않습니다.
+    """
+    if not structured_data:
+        return ""
+    summary = structured_data.get("summary") or {}
+    rows = summary.get("axis_breakdown") or []
+    meta = summary.get("aggregate_meta") or {}
+    group_by = str(meta.get("group_by") or "")
+    metric = str(meta.get("metric") or "")
+    if not rows or group_by not in AXIS_LABELS or metric not in METRIC_LABELS:
+        return ""
+
+    axis_label = AXIS_LABELS[group_by]
+    metric_label = METRIC_LABELS[metric]
+    lines = [
+        f"{axis_label}별 {metric_label}입니다.",
+        "",
+        f"| {axis_label} | {metric_label} |",
+        "| --- | ---: |",
+    ]
+    for item in rows:
+        lines.append(
+            f"| {_markdown_result_cell(item.get('label'))} | "
+            f"{_format_axis_value(metric, item.get(metric))} |"
+        )
+    if meta.get("truncated"):
+        lines.extend(["", f"상위 {len(rows)}건만 표시했습니다."])
+    return "\n".join(lines)
+
+
+def _build_series_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """공고 건수 시계열은 공고 건수 열만 냅니다.
+
+    시계열 딕셔너리에는 bid_count 와 announcement_count 가 함께 있습니다. 키를
+    지우지 않고 렌더링에서만 골라, 기존 추세 응답 계약을 바꾸지 않습니다.
+    """
+    if not structured_data:
+        return ""
+    summary = structured_data.get("summary") or {}
+    meta = summary.get("aggregate_meta") or {}
+    if meta.get("metric") != "announcement_count":
+        return ""
+    series = summary.get("time_series") or []
+    if not series:
+        return ""
+
+    period = str(series[0].get("period") or "quarter")
+    if period == "quarter":
+        period_label, unit_label = "분기별", "분기"
+    elif period == "day":
+        period_label, unit_label = "일별", "일자"
+    else:
+        period_label, unit_label = "월별", "월"
+
+    lines = [
+        f"{period_label} 공고 건수입니다.",
+        "",
+        f"| {unit_label} | 공고 건수 |",
+        "| --- | ---: |",
+    ]
+    for item in series:
+        value = item.get("announcement_count")
+        try:
+            rendered = f"{int(value or 0):,}"
+        except (TypeError, ValueError):
+            rendered = "-"
+        lines.append(f"| {_markdown_result_cell(item.get('label'))} | {rendered} |")
     return "\n".join(lines)
 
 

@@ -43,6 +43,11 @@ from src.app.services.ranking_snapshots import (
     get_skipped_marker,
     get_top_rankings,
 )
+from src.rag.query_planning import (
+    DEFAULT_GROUP_LIMIT,
+    MAX_GROUP_LIMIT,
+    REGION_ALIASES,
+)
 from src.rag.schemas import RetrievalPlan
 
 logger = logging.getLogger(__name__)
@@ -431,6 +436,12 @@ def _announcement_limit(plan: RetrievalPlan) -> int:
 # 이미 좁히므로 그때는 힌트를 주지 않습니다.
 RESULT_DATE_INDEX_HINT = "FORCE INDEX (ix_bid_results_dt_cat)"
 ANNOUNCEMENT_DATE_INDEX_HINT = "FORCE INDEX (ix_bid_ann_dt_cat)"
+# 축별 집계 전용 힌트입니다. 한 문장에 테이블당 힌트 하나만 붙입니다.
+# 분류별 낙찰 지표는 (category, dt, rate, amt) 커버링 인덱스로 3.37초(웜),
+# 지역별 공고 건수는 (inst, category, dt) 커버링 인덱스로 9.2초(웜)였습니다.
+# 지역 축에 날짜 인덱스(ix_bid_ann_dt_cat)를 강제하면 38.6초로 4.2배 느려집니다.
+RESULT_CATEGORY_AXIS_HINT = "FORCE INDEX (ix_bid_results_cat_dt_stats)"
+ANNOUNCEMENT_REGION_AXIS_HINT = "FORCE INDEX (ix_bid_ann_inst_cat_dt)"
 
 
 def _needs_result_date_index_hint(plan: RetrievalPlan) -> bool:
@@ -896,9 +907,263 @@ def _cached_rows(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list[tupl
         if cached is not None:
             return [tuple(row) for row in cached]
 
-        rows = [tuple(_numeric_or_none(value) for value in row) for row in db.execute(stmt).all()]
+        rows = [tuple(_cacheable(value) for value in row) for row in db.execute(stmt).all()]
         cache.set(key, [[_cacheable(value) for value in row] for row in rows], ttl)
         return rows
+
+
+def _group_limit(plan: RetrievalPlan) -> int:
+    """축 표 행 상한을 안전한 범위로 정규화합니다."""
+    raw_limit = (plan.filters or {}).get("group_limit")
+    if raw_limit in (None, ""):
+        return DEFAULT_GROUP_LIMIT
+    try:
+        value = int(str(raw_limit))
+    except (TypeError, ValueError):
+        return DEFAULT_GROUP_LIMIT
+    return min(max(value, 1), MAX_GROUP_LIMIT)
+
+
+def _axis_entry(
+    label: str,
+    key: str,
+    *,
+    announcement_count: int | None = None,
+    bid_count: int | None = None,
+    avg_rate: float | None = None,
+    sample_count: int | None = None,
+) -> dict[str, Any]:
+    """축 하나의 집계 결과를 기존 키와 겹치지 않는 모양으로 만듭니다."""
+    return {
+        "label": label,
+        "key": key,
+        "announcement_count": announcement_count,
+        "bid_count": bid_count,
+        "avg_rate": avg_rate,
+        "sample_count": sample_count,
+    }
+
+
+def _axis_rate(rate_value: Any, sample_count: int) -> float | None:
+    """표본이 없으면 0.0 이 아니라 None 입니다. 없는 값이 값처럼 보이면 안 됩니다."""
+    if not sample_count or rate_value is None:
+        return None
+    return float(round(float(rate_value), 4))
+
+
+def _category_axis_breakdown(
+    db: Session,
+    metric: str,
+    result_conditions: list,
+    announcement_conditions: list,
+    limit: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """분류 축을 집계합니다. 공고 건수는 공고 테이블, 낙찰 지표는 낙찰 테이블입니다."""
+    if metric == "announcement_count":
+        stmt = (
+            select(BidAnnouncement.category, func.count())
+            .where(*announcement_conditions)
+            .group_by(BidAnnouncement.category)
+        )
+        rows = _cached_rows(db, stmt)
+        entries = [
+            _axis_entry(
+                _category_label(row[0]),
+                _normalize_text(str(row[0])),
+                announcement_count=int(row[1] or 0),
+            )
+            for row in rows
+            if row[0]
+        ]
+    else:
+        stmt = (
+            select(
+                BidResult.category,
+                func.count(),
+                func.avg(BidResult.sucsf_bid_rate),
+                func.count(BidResult.sucsf_bid_rate),
+            )
+            .where(*result_conditions)
+            .group_by(BidResult.category)
+            .with_hint(BidResult, RESULT_CATEGORY_AXIS_HINT, dialect_name="mysql")
+        )
+        rows = _cached_rows(db, stmt)
+        entries = []
+        for row in rows:
+            if not row[0]:
+                continue
+            sample_count = int(row[3] or 0)
+            entries.append(
+                _axis_entry(
+                    _category_label(row[0]),
+                    _normalize_text(str(row[0])),
+                    bid_count=int(row[1] or 0),
+                    avg_rate=_axis_rate(row[2], sample_count),
+                    sample_count=sample_count,
+                )
+            )
+
+    entries.sort(key=lambda item: float(item.get(metric) or 0), reverse=True)
+    return entries[:limit], len(entries) > limit
+
+
+def _institution_result_axis_breakdown(
+    db: Session,
+    result_conditions: list,
+    limit: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """기관별 낙찰 지표를 2단계로 집계합니다.
+
+    한 문장으로 기관별 낙찰률을 집계하면 콜드 12.9~16.8초가 걸립니다. 기관명
+    목록을 먼저 좁힌 뒤 그 목록으로 집계하면 같은 조건의 기관만 읽습니다.
+    """
+    count_expr = func.count()
+    top_stmt = (
+        select(BidResult.dminstt_nm, count_expr)
+        .where(*result_conditions, BidResult.dminstt_nm.is_not(None))
+        .group_by(BidResult.dminstt_nm)
+        .order_by(count_expr.desc(), BidResult.dminstt_nm.asc())
+        .limit(limit)
+    )
+    names = [
+        _normalize_text(str(row[0]))
+        for row in _cached_rows(db, top_stmt)
+        if row[0] and _normalize_text(str(row[0]))
+    ]
+    if not names:
+        return [], False
+
+    stats_stmt = (
+        select(
+            BidResult.dminstt_nm,
+            func.count(),
+            func.avg(BidResult.sucsf_bid_rate),
+            func.count(BidResult.sucsf_bid_rate),
+        )
+        .where(*result_conditions, BidResult.dminstt_nm.in_(names))
+        .group_by(BidResult.dminstt_nm)
+    )
+    stats: dict[str, tuple[int, Any, int]] = {}
+    for row in _cached_rows(db, stats_stmt):
+        if row[0] is None:
+            continue
+        stats[_normalize_text(str(row[0]))] = (
+            int(row[1] or 0),
+            row[2],
+            int(row[3] or 0),
+        )
+
+    entries: list[dict[str, Any]] = []
+    for name in names:
+        bid_count, rate_value, sample_count = stats.get(name, (0, None, 0))
+        entries.append(
+            _axis_entry(
+                name,
+                name,
+                bid_count=bid_count,
+                avg_rate=_axis_rate(rate_value, sample_count),
+                sample_count=sample_count,
+            )
+        )
+    return entries, len(names) >= limit
+
+
+def _region_axis_breakdown(
+    db: Session,
+    metric: str,
+    result_conditions: list,
+    announcement_conditions: list,
+    limit: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """지역 축을 집계합니다. 단축형과 정식 명칭을 함께 라벨로 묶습니다."""
+    hint_target: Any = None
+    hint_sql = ""
+    if metric == "announcement_count":
+        column = BidAnnouncement.dminstt_nm
+        conditions = announcement_conditions
+        value_columns: list[Any] = [func.count()]
+    else:
+        column = BidResult.dminstt_nm
+        conditions = result_conditions
+        value_columns = [
+            func.count(),
+            func.avg(BidResult.sucsf_bid_rate),
+            func.count(BidResult.sucsf_bid_rate),
+        ]
+    if metric == "announcement_count":
+        hint_target = BidAnnouncement
+        hint_sql = ANNOUNCEMENT_REGION_AXIS_HINT
+
+    region_expr = case(
+        *[
+            (column.contains(alias), label)
+            for label, aliases in REGION_ALIASES.items()
+            for alias in aliases
+        ],
+        else_=None,
+    )
+    stmt = (
+        select(region_expr.label("region"), *value_columns)
+        .where(column.is_not(None), *conditions)
+        .group_by(region_expr)
+    )
+    if hint_target is not None and hint_sql:
+        stmt = stmt.with_hint(hint_target, hint_sql, dialect_name="mysql")
+    rows = _cached_rows(db, stmt)
+
+    entries: list[dict[str, Any]] = []
+    for row in rows:
+        if not row[0]:
+            continue
+        if metric == "announcement_count":
+            entries.append(
+                _axis_entry(
+                    str(row[0]),
+                    str(row[0]),
+                    announcement_count=int(row[1] or 0),
+                )
+            )
+            continue
+        sample_count = int(row[3] or 0)
+        entries.append(
+            _axis_entry(
+                str(row[0]),
+                str(row[0]),
+                bid_count=int(row[1] or 0),
+                avg_rate=_axis_rate(row[2], sample_count),
+                sample_count=sample_count,
+            )
+        )
+
+    entries.sort(key=lambda item: float(item.get(metric) or 0), reverse=True)
+    return entries[:limit], len(entries) > limit
+
+
+def _build_axis_breakdown(
+    db: Session,
+    *,
+    group_by: str,
+    metric: str,
+    result_conditions: list,
+    announcement_conditions: list,
+    limit: int,
+) -> tuple[list[dict[str, Any]], bool] | None:
+    """축 집계를 실행합니다.
+
+    기관별 공고 건수는 기존 institution_ranking 결과를 그대로 쓰므로 여기서
+    None 을 돌려 호출부가 추가 SQL 없이 축 표를 만들게 합니다.
+    """
+    if group_by == "category":
+        return _category_axis_breakdown(
+            db, metric, result_conditions, announcement_conditions, limit
+        )
+    if group_by == "institution":
+        if metric == "announcement_count":
+            return None
+        return _institution_result_axis_breakdown(db, result_conditions, limit)
+    if group_by == "region":
+        return _region_axis_breakdown(db, metric, result_conditions, announcement_conditions, limit)
+    return None
 
 
 # 서로 기다리지 않는 집계 다섯 개를 순차로 돌면 q08 콜드에서 SQL 합계 약 4.9초였고 가장 긴 문장은 1.9초였습니다
@@ -1406,21 +1671,37 @@ def _build_insufficiency_hints(
 
 def _empty_result(plan: RetrievalPlan, hint: str) -> dict[str, Any]:
     """조회를 수행하지 않았음을 드러내는 빈 결과를 만듭니다."""
+    filters = dict(plan.filters or {})
+    summary: dict[str, Any] = {
+        "total_bids": None,
+        "announcement_count": None,
+        "average_winning_rate": None,
+        "total_winning_amount": None,
+        "top_winners": [],
+        "top_institutions": [],
+        "top_announcements": [],
+        "sample_announcements": [],
+        "recent_results": [],
+        "latest_available_result_at": None,
+        "time_series": [],
+    }
+    group_by = _normalize_text(str(filters.get("group_by") or ""))
+    if group_by:
+        summary["axis_breakdown"] = []
+        summary["aggregate_meta"] = {
+            "group_by": group_by,
+            "metric": _normalize_text(str(filters.get("metric") or "")) or "announcement_count",
+            "limit": _group_limit(plan),
+            "truncated": False,
+            "dropped": 0,
+            "window": {
+                "date_from": filters.get("date_from"),
+                "date_to": filters.get("date_to"),
+            },
+        }
     return {
-        "filters": dict(plan.filters or {}),
-        "summary": {
-            "total_bids": None,
-            "announcement_count": None,
-            "average_winning_rate": None,
-            "total_winning_amount": None,
-            "top_winners": [],
-            "top_institutions": [],
-            "top_announcements": [],
-            "sample_announcements": [],
-            "recent_results": [],
-            "latest_available_result_at": None,
-            "time_series": [],
-        },
+        "filters": filters,
+        "summary": summary,
         "insufficiency_hints": [hint],
         "query_skipped": True,
     }
@@ -1579,6 +1860,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         )
 
     category_filter = _normalize_text(str((plan.filters or {}).get("category") or ""))
+    group_by = _normalize_text(str((plan.filters or {}).get("group_by") or ""))
+    metric = _normalize_text(str((plan.filters or {}).get("metric") or "")) or "announcement_count"
+    group_limit = _group_limit(plan)
     winner_conditions = _result_conditions(
         plan, enable_ngram_prefilter=True, institution_names=result_names
     )
@@ -1657,6 +1941,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             corrupted_probe=select(BidAnnouncement.id).where(
                 BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
             ),
+            limit=(
+                group_limit if group_by == "institution" and metric == "announcement_count" else 5
+            ),
         )
 
     def announcement_ranking(session: Session) -> tuple[list, int]:
@@ -1682,12 +1969,23 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             ),
         )
 
+    def axis_aggregate(session: Session):
+        return _build_axis_breakdown(
+            session,
+            group_by=group_by,
+            metric=metric,
+            result_conditions=result_conditions,
+            announcement_conditions=announcement_conditions,
+            limit=group_limit,
+        )
+
     # 가장 긴 공고명 집계를 마지막에 두어 요청 세션이 직접 맡게 합니다.
     (
         (total_count, avg_rate, total_amt),
         (announcement_count,),
         (winner_rows, dropped_winners),
         (institution_rows, dropped_institutions),
+        axis_result,
         (announcement_rows, dropped_announcements),
     ) = _run_aggregates(
         db,
@@ -1696,6 +1994,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             ("cached_aggregate", announcement_total),
             ("top_rows", winner_ranking),
             ("top_rows", institution_ranking),
+            ("axis_breakdown", axis_aggregate),
             ("top_rows", announcement_ranking),
         ],
     )
@@ -1713,6 +2012,24 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         {"bid_ntce_nm": _normalize_text(row[0]) if row[0] else row[0], "ntce_count": row[1]}
         for row in announcement_rows
     ]
+
+    axis_breakdown: list[dict[str, Any]] = []
+    axis_truncated = False
+    axis_dropped = 0
+    if axis_result is not None:
+        axis_breakdown, axis_truncated = axis_result
+    elif group_by == "institution" and metric == "announcement_count":
+        # 기관별 공고 건수는 위 institution_ranking 이 이미 집계했습니다.
+        axis_breakdown = [
+            _axis_entry(
+                _normalize_text(row[0]) if row[0] else "-",
+                _normalize_text(row[0]) if row[0] else "",
+                announcement_count=int(row[1] or 0),
+            )
+            for row in institution_rows
+        ]
+        axis_truncated = len(institution_rows) >= group_limit
+        axis_dropped = dropped_institutions
 
     sample_announcements = _fetch_sample_announcements(
         db,
@@ -1738,31 +2055,48 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         announcement_count=announcement_count,
         dropped_total=dropped_total,
     )
+    if group_by == "region":
+        insufficiency.append(
+            "지역 구분은 기관명 부분 일치 기준이라 지역 합계가 전체 건수와 일치하지 않을 수 있습니다."
+        )
 
     assembly_started = time.perf_counter()
     response_filters = dict(plan.filters or {})
     if response_filters.get("category"):
         response_filters["category_label"] = _category_label(str(response_filters["category"]))
 
+    summary: dict[str, Any] = {
+        "total_bids": int(total_count or 0),
+        "announcement_count": int(announcement_count or 0),
+        "average_winning_rate": float(round(avg_rate or 0, 4)),
+        "total_winning_amount": float(total_amt or 0),
+        "top_winners": top_winners,
+        "top_institutions": top_institutions,
+        "top_announcements": top_announcements,
+        "sample_announcements": sample_announcements,
+        "recent_results": recent_results,
+        "latest_available_result_at": (
+            latest_available_result_at.isoformat(sep=" ") if latest_available_result_at else None
+        ),
+        "time_series": time_series,
+    }
+    if group_by:
+        summary["axis_breakdown"] = axis_breakdown
+        summary["aggregate_meta"] = {
+            "group_by": group_by,
+            "metric": metric,
+            "limit": group_limit,
+            "truncated": axis_truncated,
+            "dropped": axis_dropped,
+            "window": {
+                "date_from": (plan.filters or {}).get("date_from"),
+                "date_to": (plan.filters or {}).get("date_to"),
+            },
+        }
+
     result = {
         "filters": response_filters,
-        "summary": {
-            "total_bids": int(total_count or 0),
-            "announcement_count": int(announcement_count or 0),
-            "average_winning_rate": float(round(avg_rate or 0, 4)),
-            "total_winning_amount": float(total_amt or 0),
-            "top_winners": top_winners,
-            "top_institutions": top_institutions,
-            "top_announcements": top_announcements,
-            "sample_announcements": sample_announcements,
-            "recent_results": recent_results,
-            "latest_available_result_at": (
-                latest_available_result_at.isoformat(sep=" ")
-                if latest_available_result_at
-                else None
-            ),
-            "time_series": time_series,
-        },
+        "summary": summary,
         "insufficiency_hints": insufficiency,
     }
     _record_segment("result_assembly_ms", (time.perf_counter() - assembly_started) * 1000.0)

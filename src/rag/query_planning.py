@@ -114,7 +114,43 @@ REGION_KEYWORDS = (
     "경남",
     "제주",
 )
+# 지역 축 집계는 단축형과 정식 명칭을 함께 잡아야 합니다. 기관명 부분 일치에
+# "충북" 만 쓰면 "충청북도교육청" 이 빠집니다.
+REGION_ALIASES: dict[str, tuple[str, ...]] = {
+    "서울": ("서울",),
+    "부산": ("부산",),
+    "대구": ("대구",),
+    "인천": ("인천",),
+    "광주": ("광주",),
+    "대전": ("대전",),
+    "울산": ("울산",),
+    "세종": ("세종",),
+    "경기": ("경기",),
+    "강원": ("강원",),
+    "충북": ("충북", "충청북도"),
+    "충남": ("충남", "충청남도"),
+    "전북": ("전북", "전라북도", "전북특별자치도"),
+    "전남": ("전남", "전라남도"),
+    "경북": ("경북", "경상북도"),
+    "경남": ("경남", "경상남도"),
+    "제주": ("제주",),
+}
 TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별")
+
+AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
+    "category": ("분류별", "분야별", "업무구분별", "종류별", "카테고리별"),
+    "institution": ("기관별", "수요기관별", "발주기관별", "기관순위"),
+    "region": ("지역별", "시도별", "시·도별", "권역별"),
+}
+# 순서가 곧 우선순위입니다. "공고 건수" 를 "낙찰 건수" 보다 먼저 판정하지 않으면
+# 공고 건수 질문에 낙찰 건수를 답하는 결함이 재발합니다.
+AGGREGATE_METRIC_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("avg_rate", ("평균 낙찰률", "평균낙찰률", "낙찰률 평균")),
+    ("announcement_count", ("공고 건수", "공고건수", "공고 수", "공고수")),
+    ("bid_count", ("낙찰 건수", "낙찰건수", "낙찰 수")),
+)
+DEFAULT_GROUP_LIMIT = 20
+MAX_GROUP_LIMIT = 50
 
 RESULT_QUERY_MARKERS = (
     "낙찰된",
@@ -772,6 +808,43 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
     return "", "", "", False
 
 
+def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None) -> dict[str, Any]:
+    """질의에서 축별 집계의 축(group_by)과 지표(metric)를 읽습니다.
+
+    목록 질의(result_limit)에는 축을 붙이지 않습니다. 목록과 축 표가 한 응답에서
+    충돌하기 때문입니다. 축 마커가 없어도 분기 버킷이 있는 건수 질의는 축을
+    "time" 으로 기록해 응답 단계가 낙찰 건수 대신 공고 건수를 고르게 합니다.
+    """
+    lowered = _query_lower(query)
+    metric = ""
+    for name, markers in AGGREGATE_METRIC_MARKERS:
+        if any(marker in lowered for marker in markers):
+            metric = name
+            break
+
+    group_by = ""
+    for axis, markers in AGGREGATE_AXIS_MARKERS.items():
+        if any(marker in lowered for marker in markers):
+            group_by = axis
+            break
+
+    current = filters or {}
+    if group_by and current.get("result_limit"):
+        group_by = ""
+    if not group_by and metric and current.get("time_bucket") == "quarter":
+        group_by = "time"
+    if not group_by:
+        return {}
+
+    aggregate: dict[str, Any] = {
+        "group_by": group_by,
+        "metric": metric or "announcement_count",
+    }
+    if group_by != "time":
+        aggregate["group_limit"] = DEFAULT_GROUP_LIMIT
+    return aggregate
+
+
 def build_retrieval_plan(query: str) -> RetrievalPlan:
     normalized_query = _normalize_text(query)
     lowered = normalized_query.lower()
@@ -876,6 +949,8 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     if any(keyword in lowered for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
+
+    filters.update(extract_aggregate_filters(normalized_query, filters))
 
     route_reason_parts = []
     if is_entity:
