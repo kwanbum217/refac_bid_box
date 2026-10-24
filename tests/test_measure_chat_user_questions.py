@@ -704,6 +704,103 @@ def test_numeric_fact_ignores_dates_times_and_bid_numbers() -> None:
     assert result["detail"]["answer_numbers_sample"] == [3405.0]
 
 
+def test_numeric_fact_rejects_year_month_numbers_as_value() -> None:
+    # 반려 사유 그대로: DB 값 10, 답변 "2026년 10월 기준 집계가 없습니다" 는
+    # 실패다. "2026년" 과 "10월" 의 수는 기간 표기이므로 대조 후보가 아니다.
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 몇 건이야?"),
+        _numeric_truth(10.0),
+        _payload("2026년 10월 기준 집계가 없습니다"),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["answer_numbers_sample"] == []
+    assert result["detail"]["candidate_numbers"] == []
+
+
+def test_numeric_fact_counts_value_written_next_to_year_month_label() -> None:
+    # 같은 기간 표기가 있어도 바로 뒤에 "건" 이 붙은 10 은 집계 값이므로 통과다.
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 몇 건이야?"),
+        _numeric_truth(10.0),
+        _payload("2026년 10월 낙찰은 10건입니다"),
+    )
+    assert result["passed"] is True
+    assert result["failure_reasons"] == []
+    assert result["detail"]["candidate_numbers"] == [10.0]
+
+
+def test_numeric_fact_rejects_quarter_numbers_as_value() -> None:
+    # DB 값 3, 답변 "3분기 기준 확인되지 않습니다" 는 실패다.
+    result = measure.grade_attempt(
+        _numeric_item("이번 분기 용역 낙찰 몇 건이야?"),
+        _numeric_truth(3.0),
+        _payload("3분기 기준 확인되지 않습니다"),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["candidate_numbers"] == []
+
+
+def test_numeric_fact_counts_rate_beside_date_in_parentheses() -> None:
+    # DB 값 88.12, 답변 "평균 낙찰률은 88.12% 입니다(2026-10-24 기준)" 는 통과다.
+    result = measure.grade_attempt(
+        _numeric_item("용역 평균 낙찰률 얼마야?"),
+        _numeric_truth(88.12),
+        _payload("평균 낙찰률은 88.12% 입니다(2026-10-24 기준)"),
+    )
+    assert result["passed"] is True
+    assert result["failure_reasons"] == []
+    assert result["detail"]["candidate_numbers"] == [88.12]
+
+
+@pytest.mark.parametrize(
+    "unit",
+    ["년", "월", "일", "시", "분", "초", "분기", "주", "개월", "차"],
+)
+def test_numeric_fact_excludes_number_followed_by_period_unit(unit: str) -> None:
+    # 바로 뒤에 년/월/일/시/분/초/분기/주/개월/차 가 붙은 수는 기간 표기다.
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 몇 건이야?"),
+        _numeric_truth(3.0),
+        _payload(f"3{unit} 기준 집계가 없습니다"),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["candidate_numbers"] == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "2026-10-24 기준 집계가 없습니다",
+        "2026.10.24 기준 집계가 없습니다",
+        "09:30 기준 집계가 없습니다",
+    ],
+)
+def test_numeric_fact_excludes_date_and_time_format_numbers(answer: str) -> None:
+    # YYYY-MM-DD, YYYY.MM.DD, HH:MM 안의 수는 대조 후보에서 뺀다.
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 몇 건이야?"),
+        _numeric_truth(10.0),
+        _payload(answer),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["candidate_numbers"] == []
+
+
+def test_numeric_fact_question_numbers_are_still_subtracted() -> None:
+    # 원칙 1 의 질문 숫자 제거는 그대로다. 답변이 질문의 "30일" 을 되풀이해도
+    # 기간 표기 마스크와 무관하게 후보에 남지 않는다.
+    result = measure.grade_attempt(
+        _numeric_item("최근 30일 용역 낙찰 몇 건이야?"),
+        _numeric_truth(3405.0),
+        _payload("최근 30일 기준 낙찰은 3,405건입니다"),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["question_numbers"] == [30.0]
+    assert result["detail"]["candidate_numbers"] == [3405.0]
+
+
 def test_refuse_or_redirect_fails_on_reviewer_weather_counterexample() -> None:
     result = measure.grade_attempt(
         _refusal_item("오늘 서울 날씨 어때?", WEATHER_CLAIMS),

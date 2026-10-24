@@ -37,7 +37,13 @@
   질문의 "30일" 을 답변이 그대로 되풀이한 것을 정답으로 오인하지 않기 위해서다.
 - 질문 숫자를 뺀 뒤 DB 값과 허용 오차 안의 수가 있으면 통과다. 데이터 부재
   문구가 함께 있어도 정답 수치가 있으면 통과한다(원칙 1).
-- 날짜, 시각, 공고번호, 서수("1위")는 숫자 추출 전에 가린다.
+- 답변 숫자에서 날짜·기간 표기를 먼저 가린다. 바로 뒤에 "년", "월", "일", "시",
+  "분", "초", "분기", "주", "개월", "차" 가 붙은 수와 YYYY-MM-DD, YYYY.MM.DD,
+  HH:MM 형식 안의 수는 대조 후보에서 뺀다. DB 값이 10 일 때 "2026년 10월 기준
+  집계가 없습니다" 가 통과하지 않게 하기 위해서다. 같은 답의 "2026년 10월 낙찰은
+  10건입니다" 에서는 뒤에 "건" 이 붙은 10 이 후보로 남아 통과한다.
+- 공고번호와 서수("1위")도 숫자 추출 전에 가린다. 질문 쪽 숫자 제거(원칙 1)는
+  날짜·기간 표기 가리기와 무관하게 그대로다.
 
 범위 밖 판정(refuse_or_redirect)은 낱말 기반 근사다:
 
@@ -237,6 +243,12 @@ NUMBER_MASK_PATTERNS = (
     re.compile(r"\d+\s*위"),
 )
 
+# 답변에서만 쓰는 추가 마스크. 기간 표기 수("2026년 10월" 의 2026 과 10,
+# "3분기" 의 3)는 집계 값이 아니다. 이 수를 대조 후보에 남기면 DB 값이 10 일 때
+# "2026년 10월 기준 집계가 없습니다" 가 통과한다. 질문 쪽 숫자 제거는 원칙 1 대로
+# 이 마스크 없이 한다. "개월" 은 "월" 보다, "분기" 는 "분" 보다 먼저 둔다.
+ANSWER_UNIT_MASK_PATTERN = re.compile(r"\d+(?:\.\d+)?\s*(?:개월|분기|년|월|일|시|분|초|주|차)")
+
 
 def _run_read_only(
     statement: str, limit: int, query: QueryFn
@@ -332,6 +344,17 @@ def extract_numbers(text: str) -> list[float]:
         except ValueError:
             continue
     return numbers
+
+
+def extract_answer_numbers(text: str) -> list[float]:
+    """답변 수치를 뽑는다. 기간 표기 수는 대조 후보에서 뺀다.
+
+    "2026년 10월" 의 2026 과 10, "3분기" 의 3, "12개월" 의 12 처럼 바로 뒤에
+    년/월/일/시/분/초/분기/주/개월/차 가 붙은 수는 기간 표기이지 집계 값이 아니다.
+    날짜(YYYY-MM-DD, YYYY.MM.DD)와 시각(HH:MM) 안의 수는 extract_numbers 가
+    이미 가린다. 질문 쪽 수치는 원칙 1 대로 extract_numbers 로 뽑는다.
+    """
+    return extract_numbers(ANSWER_UNIT_MASK_PATTERN.sub(" ", text or ""))
 
 
 def subtract_question_numbers(
@@ -642,7 +665,7 @@ def _evaluate_numeric(
     """원칙 1: 질문 숫자를 뺀 답변 수치가 DB 값과 허용 오차 안이면 통과다."""
     value = truth.get("value")
     question_numbers = extract_numbers(question)
-    answer_numbers = extract_numbers(answer)
+    answer_numbers = extract_answer_numbers(answer)
     candidates = subtract_question_numbers(answer_numbers, question_numbers)
     detail: dict[str, Any] = {
         "db_value": value,
