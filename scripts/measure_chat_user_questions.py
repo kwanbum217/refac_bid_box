@@ -12,6 +12,21 @@
   실패다.
 - 반복: LLM 을 거치는 문항은 3회 중 2회 이상 통과해야 통과로 본다.
 
+수치 판정(numeric_fact):
+
+- 답변 숫자에서 질문 문장에 나온 숫자(기간 일수, 개수 등)를 먼저 뺀 뒤 비교한다.
+  질문의 "30일" 을 답변이 그대로 되풀이한 것을 정답으로 오인하지 않기 위해서다.
+- 답변에 데이터 없음 문구("확인되지 않", "없습니다", "찾을 수 없",
+  "제공할 수 없", "알 수 없")가 있으면 숫자가 맞아도 실패다.
+- 날짜, 시각, 공고번호, 서수("1위")는 숫자 추출 전에 가린다.
+
+범위 밖 판정(refuse_or_redirect):
+
+- 답변이 (입찰|공고|낙찰|조달) 중 하나와 (도와드릴 수 있|답변드리기 어렵|범위|
+  제공하지 않|지원하지 않) 중 하나를 함께 담아야 통과한다.
+- 날씨, 기온, 주가 같은 사실을 단정하는 답은 실패다.
+- 공고번호를 지어내면 실패다.
+
 호출 한도와 정답 계산:
 
 - 익명 한도는 60초당 30회이므로 호출 사이 최소 간격을 둔다(기본 2.5초).
@@ -19,6 +34,8 @@
   `rate_limited` 로 기록한다. 429 를 라우팅 실패로 세지 않는다.
 - DB 정답은 `scripts/db_readonly_query.run_query(statement, limit)` 만 사용한다.
   이 함수는 SELECT 단일 문장만 받고 READ ONLY 트랜잭션으로 실행한다.
+- `run_query` 호출은 이 모듈의 `assert_read_only(sql)` 를 먼저 통과해야만 한다
+  (같은 모듈 `_run_read_only` 가 유일한 통로다).
 
 사용 예:
 
@@ -35,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import subprocess  # nosec B404 - git SHA 조회용으로만 쓴다
 import sys
@@ -137,6 +155,130 @@ class FixtureError(ValueError):
     """fixture 스키마가 계약과 다를 때 냅니다."""
 
 
+class UnsafeQueryError(ValueError):
+    """읽기 전용이 아닌 질의를 거부할 때 냅니다."""
+
+
+READ_ONLY_STARTS = ("select", "with")
+FORBIDDEN_SQL_TOKENS = (
+    "insert",
+    "update",
+    "delete",
+    "replace",
+    "merge",
+    "truncate",
+    "drop",
+    "create",
+    "alter",
+    "rename",
+    "grant",
+    "revoke",
+    "commit",
+    "rollback",
+    "savepoint",
+    "lock",
+    "unlock",
+    "call",
+    "into",
+    "outfile",
+    "load",
+    "set",
+    "reset",
+    "flush",
+    "kill",
+    "shutdown",
+    "attach",
+    "detach",
+    "pragma",
+    "vacuum",
+)
+FORBIDDEN_SQL_RE = re.compile(r"\b(" + "|".join(FORBIDDEN_SQL_TOKENS) + r")\b", re.IGNORECASE)
+
+# 답변에 이 문구가 있으면 데이터를 확인하지 못한 답으로 본다. 숫자가 우연히
+# 맞아도 통과시키지 않는다.
+DATA_ABSENCE_PHRASES = (
+    "확인되지 않",
+    "없습니다",
+    "찾을 수 없",
+    "제공할 수 없",
+    "알 수 없",
+)
+
+# 범위 밖 질문의 통과 조건: 업무 영역 표지와 거절/안내 표지가 함께 있어야 한다.
+REDIRECT_DOMAIN_TERMS = ("입찰", "공고", "낙찰", "조달")
+REDIRECT_MARKERS = (
+    "도와드릴 수 있",
+    "답변드리기 어렵",
+    "범위",
+    "제공하지 않",
+    "지원하지 않",
+)
+
+# 범위 밖 주제의 사실을 단정하는 답. 주제를 언급만 하는 것은 통과 대상이지만
+# 수치나 상태를 단정하면 실패다.
+OUT_OF_DOMAIN_ASSERTION_PATTERNS = (
+    re.compile(r"(날씨|기온|습도)[^.\n]{0,40}(맑|흐리|비가|눈이|℃|\d+\s*도)"),
+    re.compile(r"(주가|코스피|코스닥|환율|금리|비트코인)[^.\n]{0,40}\d"),
+)
+
+# 숫자 추출 전에 가릴 토큰. 날짜/시각/공고번호/서수를 수치 정답으로 오인하지
+# 않기 위해서다.
+NUMBER_MASK_PATTERNS = (
+    BID_NO_PATTERN,
+    re.compile(r"\d{4}\s*[-./년]\s*\d{1,2}\s*[-./월]\s*\d{1,2}\s*일?"),
+    re.compile(r"\d{1,2}:\d{2}(?::\d{2})?"),
+    re.compile(r"\d+\s*위"),
+)
+
+
+def strip_sql_noise(sql: str) -> str:
+    """주석과 문자열 리터럴을 지운 검사용 사본을 만든다."""
+    without_block = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+    without_line = re.sub(r"(--|#)[^\n]*", " ", without_block)
+    without_strings = re.sub(r"'(?:[^'\\]|\\.)*'", " ", without_line)
+    return re.sub(r'"(?:[^"\\]|\\.)*"', " ", without_strings)
+
+
+def assert_read_only(sql: str) -> str:
+    """SELECT 단일 문장인지 검사하고 정규화한 질의를 돌려준다.
+
+    `run_query` 를 부르는 모든 경로는 이 함수를 먼저 통과한다. 쓰기 질의를
+    만들 수 없게 하는 것이 목적이므로 시작 토큰, 다중 문장, 금지 키워드를
+    모두 본다.
+    """
+    statement = sql.strip().rstrip(";").strip()
+    if not statement:
+        raise UnsafeQueryError("질의가 비어 있습니다.")
+
+    probe = strip_sql_noise(statement)
+    if ";" in probe:
+        raise UnsafeQueryError("한 번에 한 문장만 실행합니다. 세미콜론으로 잇지 마십시오.")
+
+    lowered = probe.lstrip().lower()
+    if not lowered.startswith(READ_ONLY_STARTS):
+        head = lowered.split()[0] if lowered.split() else "?"
+        raise UnsafeQueryError(
+            f"읽기 전용 질의가 아닙니다 (시작 토큰: {head}). 허용: {', '.join(READ_ONLY_STARTS)}"
+        )
+
+    found = FORBIDDEN_SQL_RE.search(probe)
+    if found:
+        raise UnsafeQueryError(f"금지 키워드가 포함돼 있습니다: {found.group(1)}")
+
+    return statement
+
+
+def _run_read_only(
+    statement: str, limit: int, query: QueryFn
+) -> tuple[list[str], list[tuple[Any, ...]]]:
+    """읽기 전용 검사를 통과한 질의만 실행한다.
+
+    이 함수가 `run_query` 를 부르는 유일한 통로다. 검사를 우회하는 새 호출을
+    추가하지 말 것.
+    """
+    return query(assert_read_only(statement), limit)
+
+
 @dataclass(frozen=True)
 class RunConfig:
     base_url: str = DEFAULT_BASE_URL
@@ -176,7 +318,7 @@ def resolve_placeholders(
             errors[name] = "등록되지 않은 placeholder"
             continue
         try:
-            _, rows = query(statement, 1)
+            _, rows = _run_read_only(statement, 1, query)
         except Exception as exc:
             errors[name] = str(exc)
             continue
@@ -207,7 +349,11 @@ def extract_bid_numbers(text: str) -> set[str]:
 
 
 def extract_numbers(text: str) -> list[float]:
-    normalized = re.sub(r"(?<=\d),(?=\d)", "", text or "")
+    """답변/질문 문장의 수치를 뽑는다. 날짜, 시각, 공고번호, 서수는 가린다."""
+    normalized = text or ""
+    for pattern in NUMBER_MASK_PATTERNS:
+        normalized = pattern.sub(" ", normalized)
+    normalized = re.sub(r"(?<=\d),(?=\d)", "", normalized)
     numbers: list[float] = []
     for token in NUMBER_PATTERN.findall(normalized):
         try:
@@ -215,6 +361,23 @@ def extract_numbers(text: str) -> list[float]:
         except ValueError:
             continue
     return numbers
+
+
+def subtract_question_numbers(
+    answer_numbers: list[float], question_numbers: list[float]
+) -> list[float]:
+    """답변 수치에서 질문에 이미 나온 수치를 뺀다.
+
+    질문의 기간(30일)이나 개수(5건)를 답변이 되풀이한 것을 DB 정답으로 오인하지
+    않기 위해서다. 같은 값이 여러 번 나오면 등장 횟수만큼만 뺀다.
+    """
+    remaining = list(answer_numbers)
+    for question_number in question_numbers:
+        for index, candidate in enumerate(remaining):
+            if math.isclose(candidate, question_number, rel_tol=1e-9, abs_tol=1e-9):
+                remaining.pop(index)
+                break
+    return remaining
 
 
 def _latest_rows(
@@ -242,7 +405,7 @@ def _latest_rows(
         f"WHERE {where} AND {date_column} >= CURDATE() - INTERVAL {days} DAY "
         f"ORDER BY {date_column} DESC, id DESC LIMIT {limit}"
     )
-    _, rows = query(statement, limit)
+    _, rows = _run_read_only(statement, limit, query)
     if rows:
         return rows, False
     # 수집 공백으로 최근 창에 행이 없으면 날짜 조건만 풀고 같은 조건으로 다시 본다.
@@ -250,7 +413,7 @@ def _latest_rows(
         f"SELECT bid_ntce_no, {date_column} FROM {dataset} "  # noqa: S608  # nosec B608 - 보간값은 상수다
         f"WHERE {where} ORDER BY {date_column} DESC, id DESC LIMIT {limit}"
     )
-    _, fallback_rows = query(fallback, limit)
+    _, fallback_rows = _run_read_only(fallback, limit, query)
     return fallback_rows, True
 
 
@@ -296,7 +459,7 @@ def build_latest_truth(
             f"WHERE {' AND '.join(cutoff_conditions)} LIMIT {max(limit * 20, 100)}"
         )
         try:
-            _, tie_rows = query(tie_statement, max(limit * 20, 100))
+            _, tie_rows = _run_read_only(tie_statement, max(limit * 20, 100), query)
             allowed.update(str(row[0]) for row in tie_rows if row and row[0])
         except Exception as exc:
             tie_error = str(exc)
@@ -321,7 +484,7 @@ def _lookup_title(bid_no: str, query: QueryFn) -> str:
     for dataset in ("bid_announcements", "bid_results"):
         statement = f"SELECT bid_ntce_nm FROM {dataset} WHERE bid_ntce_no = '{bid_no}' LIMIT 1"  # noqa: S608  # nosec B608 - 보간값은 DB 값이다
         try:
-            _, rows = query(statement, 1)
+            _, rows = _run_read_only(statement, 1, query)
         except Exception:
             titles.append("")
             continue
@@ -345,7 +508,7 @@ def build_truth(
     if kind == "numeric_fact":
         statement = fill_placeholders(str(check["sql"]), placeholders)
         try:
-            _, rows = query(statement, 1)
+            _, rows = _run_read_only(statement, 1, query)
             raw_value = rows[0][0] if rows else None
             value = None if raw_value is None else float(raw_value)
             return {
@@ -402,26 +565,43 @@ def _evaluate_latest(truth: dict[str, Any], answer: str) -> tuple[bool, dict[str
 
 
 def _evaluate_numeric(
-    check: dict[str, Any], truth: dict[str, Any], answer: str
+    check: dict[str, Any], truth: dict[str, Any], answer: str, question: str = ""
 ) -> tuple[bool, dict[str, Any]]:
     value = truth.get("value")
     detail: dict[str, Any] = {"db_value": value}
+    question_numbers = extract_numbers(question)
+    answer_numbers = extract_numbers(answer)
+    candidates = subtract_question_numbers(answer_numbers, question_numbers)
+    detail.update(
+        {
+            "question_numbers": question_numbers[:15],
+            "answer_numbers_sample": answer_numbers[:15],
+            "candidate_numbers": candidates[:15],
+        }
+    )
+
+    absence = [phrase for phrase in DATA_ABSENCE_PHRASES if phrase in (answer or "")]
+    if absence:
+        # 숫자가 우연히 맞아도 데이터를 확인하지 못한 답은 실패다.
+        detail["absence_phrases"] = absence
+        detail["data_absent_claimed"] = True
     if truth.get("error"):
         detail["db_error"] = truth["error"]
+        return False, detail
+    if absence:
         return False, detail
     if value is None:
         detail["db_empty"] = True
         return False, detail
+
     ratio = float(check.get("tolerance_ratio", 0.0))
     tolerance = abs(value) * ratio
-    numbers = extract_numbers(answer)
-    matched = next((n for n in numbers if abs(n - value) <= tolerance + 1e-9), None)
+    matched = next((n for n in candidates if abs(n - value) <= tolerance + 1e-9), None)
     detail.update(
         {
             "tolerance_ratio": ratio,
             "tolerance_abs": round(tolerance, 6),
             "matched_number": matched,
-            "answer_numbers_sample": numbers[:15],
         }
     )
     return matched is not None, detail
@@ -442,27 +622,47 @@ def _evaluate_bid_lookup(truth: dict[str, Any], answer: str) -> tuple[bool, dict
     return bid_hit or title_hit, detail
 
 
+def _asserts_out_of_domain_fact(answer: str) -> str:
+    """날씨/기온/주가 같은 범위 밖 사실을 단정하는 표현을 찾는다."""
+    for pattern in OUT_OF_DOMAIN_ASSERTION_PATTERNS:
+        match = pattern.search(answer or "")
+        if match:
+            return match.group(0)
+    return ""
+
+
 def _evaluate_refusal(answer: str) -> tuple[bool, dict[str, Any]]:
-    fabricated = sorted(set(FABRICATED_NUMBER_PATTERN.findall(answer or "")))
-    bid_like = sorted(extract_bid_numbers(answer))
+    text = answer or ""
+    fabricated = sorted(set(FABRICATED_NUMBER_PATTERN.findall(text)))
+    bid_like = sorted(extract_bid_numbers(text))
     invented = sorted(set(fabricated) | set(bid_like))
+    domain_hits = [term for term in REDIRECT_DOMAIN_TERMS if term in text]
+    marker_hits = [marker for marker in REDIRECT_MARKERS if marker in text]
+    asserted = _asserts_out_of_domain_fact(text)
     detail: dict[str, Any] = {
         "fabricated_numbers": invented[:10],
-        "answer_chars": len(answer or ""),
+        "answer_chars": len(text),
+        "domain_terms": domain_hits,
+        "redirect_markers": marker_hits,
+        "out_of_domain_assertion": asserted,
     }
-    return bool(answer and answer.strip()) and not invented, detail
+    # 업무 영역 표지와 거절/안내 표지가 함께 있어야 통과한다. 범위 밖 주제의
+    # 사실을 단정하거나 공고번호를 지어내면 실패다.
+    passed = bool(text.strip()) and bool(domain_hits) and bool(marker_hits)
+    return passed and not invented and not asserted, detail
 
 
 def evaluate_check(
     check: dict[str, Any],
     truth: dict[str, Any],
     answer: str,
+    question: str = "",
 ) -> tuple[bool, dict[str, Any]]:
     kind = check["type"]
     if kind in LATEST_CHECKS:
         return _evaluate_latest(truth, answer)
     if kind == "numeric_fact":
-        return _evaluate_numeric(check, truth, answer)
+        return _evaluate_numeric(check, truth, answer, question)
     if kind == "bid_lookup":
         return _evaluate_bid_lookup(truth, answer)
     if kind == "refuse_or_redirect":
@@ -488,8 +688,14 @@ def grade_attempt(
     truth: dict[str, Any],
     outcome: dict[str, Any],
     retried: bool = False,
+    question: str | None = None,
 ) -> dict[str, Any]:
-    """호출 한 번의 응답을 채점한다. 실패 사유는 겹쳐도 모두 남긴다."""
+    """호출 한 번의 응답을 채점한다. 실패 사유는 겹쳐도 모두 남긴다.
+
+    `question` 은 placeholder 를 채운 실제 전송 문장이다. 숫자 판정에서 질문에
+    나온 수치를 빼려면 원문이 아니라 전송 문장이 필요하다.
+    """
+    prompt = str(item.get("question") or "") if question is None else question
     status = int(outcome.get("status") or 0)
     elapsed_ms = float(outcome.get("elapsed_ms") or 0.0)
 
@@ -550,7 +756,7 @@ def grade_attempt(
             reasons.append("forbidden_phrase")
             detail["forbidden_phrases"] = forbidden_phrases
 
-    check_passed, check_detail = evaluate_check(item["check"], truth, answer)
+    check_passed, check_detail = evaluate_check(item["check"], truth, answer, prompt)
     detail.update(check_detail)
     if not check_passed:
         reasons.append("data_mismatch")
@@ -687,7 +893,7 @@ def run_item(
         outcome, retried = call_with_rate_limit(
             question, config, pacer, call_fn=call_fn, sleep_fn=sleep_fn
         )
-        attempts.append(grade_attempt(item, truth, outcome, retried=retried))
+        attempts.append(grade_attempt(item, truth, outcome, retried=retried, question=question))
     return summarize_item(item, attempts)
 
 

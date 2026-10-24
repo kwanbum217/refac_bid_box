@@ -367,6 +367,202 @@ def test_out_of_scope_fails_when_bid_number_is_invented() -> None:
     assert redirected["passed"] is True
 
 
+def _numeric_item(question: str, tolerance_ratio: float = 0.02) -> dict[str, Any]:
+    return {
+        "id": "t_num",
+        "category": "stats",
+        "split": "public",
+        "question": question,
+        "expected_tools": ["bid_query_tool"],
+        "forbidden_tools": [],
+        "check": {
+            "type": "numeric_fact",
+            "sql": "SELECT COUNT(*) FROM bid_results",
+            "tolerance_ratio": tolerance_ratio,
+        },
+        "must_not_contain": [],
+        "repeats": 1,
+        "note": "",
+    }
+
+
+def _refusal_item(question: str) -> dict[str, Any]:
+    return {
+        "id": "t_oos",
+        "category": "out_of_scope",
+        "split": "public",
+        "question": question,
+        "expected_tools": [],
+        "forbidden_tools": ["bid_query_tool"],
+        "check": {"type": "refuse_or_redirect"},
+        "must_not_contain": [],
+        "repeats": 3,
+        "note": "",
+    }
+
+
+def _numeric_truth(value: float) -> dict[str, Any]:
+    return {"kind": "numeric_fact", "value": value, "data_available": True, "error": None}
+
+
+def test_numeric_fact_subtracts_numbers_that_came_from_question() -> None:
+    question = "최근 30일 용역 낙찰 몇 건이야?"
+    result = measure.grade_attempt(
+        _numeric_item(question),
+        _numeric_truth(3405.0),
+        _payload("최근 30일 기준 낙찰 건수는 3,405건입니다."),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["question_numbers"] == [30.0]
+    assert result["detail"]["candidate_numbers"] == [3405.0]
+
+
+def test_numeric_fact_fails_on_reviewer_repeated_period_counterexample() -> None:
+    question = "최근 30일 용역 낙찰 몇 건이야?"
+    result = measure.grade_attempt(
+        _numeric_item(question),
+        _numeric_truth(30.0),
+        _payload("최근 30일 기준 낙찰 건수는 확인되지 않습니다."),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["data_absent_claimed"] is True
+    assert result["detail"]["candidate_numbers"] == []
+
+
+def test_numeric_fact_fails_when_absence_phrase_even_with_matching_number() -> None:
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 총 몇 건이야?"),
+        _numeric_truth(3405.0),
+        _payload("3,405건은 제공할 수 없습니다."),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["candidate_numbers"] == [3405.0]
+    assert result["detail"]["absence_phrases"] == ["없습니다", "제공할 수 없"]
+
+
+def test_numeric_fact_ignores_dates_times_and_bid_numbers() -> None:
+    answer = "2026-10-24 09:30 기준 R26BK01789522 관련 낙찰은 3,405건입니다."
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 몇 건이야?"),
+        _numeric_truth(3405.0),
+        _payload(answer),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["answer_numbers_sample"] == [3405.0]
+
+
+def test_refuse_or_redirect_fails_on_reviewer_weather_counterexample() -> None:
+    result = measure.grade_attempt(
+        _refusal_item("오늘 서울 날씨 어때?"),
+        {"kind": "refuse_or_redirect", "data_available": True, "error": None},
+        _payload("오늘 서울은 맑고 기온은 21도입니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["domain_terms"] == []
+    assert result["detail"]["out_of_domain_assertion"]
+
+
+def test_refuse_or_redirect_passes_with_domain_term_and_marker() -> None:
+    answer = "저는 입찰 공고와 낙찰 정보를 안내합니다. 날씨 질문은 답변드리기 어렵습니다."
+    result = measure.grade_attempt(
+        _refusal_item("오늘 서울 날씨 어때?"),
+        {"kind": "refuse_or_redirect", "data_available": True, "error": None},
+        _payload(answer, tools=()),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["domain_terms"] == ["입찰", "공고", "낙찰"]
+    assert result["detail"]["out_of_domain_assertion"] == ""
+
+
+def test_refuse_or_redirect_fails_without_domain_term() -> None:
+    result = measure.grade_attempt(
+        _refusal_item("내일 점심 뭐 먹을까?"),
+        {"kind": "refuse_or_redirect", "data_available": True, "error": None},
+        _payload("죄송합니다. 그 질문은 답변드리기 어렵습니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["redirect_markers"] == ["답변드리기 어렵"]
+    assert result["detail"]["domain_terms"] == []
+
+
+def test_refuse_or_redirect_fails_when_fact_is_asserted_alongside_redirect() -> None:
+    answer = "입찰 공고 범위는 안내하지만 오늘 서울은 맑고 기온은 21도입니다."
+    result = measure.grade_attempt(
+        _refusal_item("오늘 서울 날씨 어때?"),
+        {"kind": "refuse_or_redirect", "data_available": True, "error": None},
+        _payload(answer, tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["domain_terms"]
+    assert result["detail"]["out_of_domain_assertion"]
+
+
+def test_assert_read_only_accepts_select_and_rejects_writes() -> None:
+    assert measure.assert_read_only("SELECT 1") == "SELECT 1"
+    assert measure.assert_read_only("WITH t AS (SELECT 1) SELECT * FROM t").startswith("WITH")
+    unsafe = (
+        "DELETE FROM bid_results",
+        "UPDATE bid_results SET bidwinnr_nm = 'x'",
+        "SELECT 1; DROP TABLE bid_results",
+        "SELECT * FROM bid_results INTO OUTFILE '/tmp/x'",
+        "",
+    )
+    for statement in unsafe:
+        with pytest.raises(measure.UnsafeQueryError):
+            measure.assert_read_only(statement)
+
+
+def test_db_write_never_reaches_run_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str] = []
+
+    def fake_run_query(statement: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        seen.append(statement)
+        return [], []
+
+    monkeypatch.setattr(measure, "run_query", fake_run_query)
+    item = _numeric_item("이번 달 용역 낙찰 몇 건이야?")
+    item["check"]["sql"] = "DELETE FROM bid_results"
+    truth = measure.build_truth(item, {})
+    assert seen == []
+    assert truth["data_available"] is False
+    assert "읽기 전용" in str(truth["error"])
+
+
+def test_db_read_reaches_run_query_only_after_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[str] = []
+
+    def fake_run_query(statement: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        seen.append(statement)
+        return ["count"], [(3405,)]
+
+    monkeypatch.setattr(measure, "run_query", fake_run_query)
+    truth = measure.build_truth(_numeric_item("이번 달 용역 낙찰 몇 건이야?"), {})
+    assert truth["value"] == 3405.0
+    assert seen == ["SELECT COUNT(*) FROM bid_results"]
+
+
+def test_placeholder_resolution_passes_read_only_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    guarded: list[str] = []
+    original = measure.assert_read_only
+
+    def spy(statement: str) -> str:
+        guarded.append(statement)
+        return original(statement)
+
+    def fake_run_query(statement: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        return ["bid_ntce_no"], [("R26BK01778156",)]
+
+    monkeypatch.setattr(measure, "assert_read_only", spy)
+    monkeypatch.setattr(measure, "run_query", fake_run_query)
+    values, errors = measure.resolve_placeholders({"latest_servc_result_bid_no"})
+    assert errors == {}
+    assert values["latest_servc_result_bid_no"] == "R26BK01778156"
+    assert guarded
+    assert guarded[0].startswith("SELECT")
+
+
 def test_dry_run_does_not_call_http_or_db(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
