@@ -72,11 +72,22 @@ def _payload(answer: str, tools: tuple[str, ...] = ("bid_query_tool",)) -> dict[
 
 
 def _latest_truth(
-    allowed: list[str], expected_count: int, *, data_available: bool = True
+    allowed: list[str],
+    expected_count: int,
+    *,
+    data_available: bool = True,
+    definite: list[str] | None = None,
+    ties: list[str] | None = None,
+    limit: int | None = None,
 ) -> dict[str, Any]:
+    definite_set = set(allowed if definite is None else definite)
+    tie_set = set(ties or [])
     return {
         "kind": "announcement_latest",
-        "allowed": set(allowed),
+        "allowed": definite_set | tie_set,
+        "definite": definite_set,
+        "ties": tie_set,
+        "limit": expected_count if limit is None else limit,
         "expected_count": expected_count,
         "data_available": data_available,
         "window_fallback": False,
@@ -270,17 +281,91 @@ def test_latest_truth_includes_same_timestamp_ties() -> None:
         return ["bid_ntce_no", "bid_ntce_dt"], rows
 
     truth = measure.build_truth(_announcement_item(), {}, query_fn=fake_query)
+    # 경계값(09:00)보다 큰 4건이 확정 집합 D, 경계값과 같은 3건이 동점 집합 T 다.
     assert truth["expected_count"] == 5
-    assert {"R26BK01789505", "R26BK01789506"} <= truth["allowed"]
+    assert truth["definite"] == set(ALLOWED[:4])
+    assert truth["ties"] == {"R26BK01789504", "R26BK01789505", "R26BK01789506"}
+    assert truth["allowed"] == set(ALLOWED[:4]) | {
+        "R26BK01789504",
+        "R26BK01789505",
+        "R26BK01789506",
+    }
 
 
 def test_latest_truth_tie_numbers_pass_judgment() -> None:
-    allowed = [*ALLOWED[:4], "R26BK01789505", "R26BK01789506"]
-    answer = ", ".join([*ALLOWED[:4], "R26BK01789505"])
+    ties = ["R26BK01789505", "R26BK01789506"]
+    answer = ", ".join([*ALLOWED[:4], ties[0]])
     result = measure.grade_attempt(
-        _announcement_item(), _latest_truth(allowed, 5), _payload(answer)
+        _announcement_item(),
+        _latest_truth(ALLOWED[:4], 5, definite=ALLOWED[:4], ties=ties, limit=5),
+        _payload(answer),
     )
     assert result["passed"] is True
+    assert result["detail"]["missing_definite"] == []
+    assert result["detail"]["definite_count"] == 4
+    assert result["detail"]["tie_count"] == 2
+
+
+def test_tie_filling_limit_passes_when_all_definite_present() -> None:
+    # 확정 4건을 모두 담고 동점 2건 중 1건으로 limit 5를 채운 답은 통과다.
+    ties = ["R26BK01789505", "R26BK01789506"]
+    answer = ", ".join([*ALLOWED[:4], ties[0]])
+    result = measure.grade_attempt(
+        _announcement_item(),
+        _latest_truth(ALLOWED[:4], 5, definite=ALLOWED[:4], ties=ties, limit=5),
+        _payload(answer),
+    )
+    assert result["passed"] is True
+    assert result["failure_reasons"] == []
+    assert result["detail"]["detected_count"] == 5
+
+
+def test_tie_filling_limit_fails_when_definite_dropped() -> None:
+    # 동점 2건으로 개수를 채우면서 확정 1건을 뺀 답은 실패다.
+    ties = ["R26BK01789505", "R26BK01789506"]
+    answer = ", ".join([*ALLOWED[1:4], *ties])
+    result = measure.grade_attempt(
+        _announcement_item(),
+        _latest_truth(ALLOWED[:4], 5, definite=ALLOWED[:4], ties=ties, limit=5),
+        _payload(answer),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["detected_count"] == 5
+    assert result["detail"]["missing_definite"] == [ALLOWED[0]]
+
+
+def test_latest_without_ties_keeps_existing_behavior() -> None:
+    # 동점이 없으면 확정 집합 D 가 곧 정답 전체다. 5건 전부가 있으면 통과,
+    # 4건이면 실패하는 기존 동작을 유지한다.
+    truth = _latest_truth(ALLOWED, 5, definite=ALLOWED, ties=[], limit=5)
+    passed = measure.grade_attempt(_announcement_item(), truth, _payload(", ".join(ALLOWED)))
+    assert passed["passed"] is True
+    assert passed["detail"]["tie_count"] == 0
+
+    failed = measure.grade_attempt(_announcement_item(), truth, _payload(", ".join(ALLOWED[:4])))
+    assert failed["passed"] is False
+    assert failed["detail"]["missing_definite"] == [ALLOWED[4]]
+
+
+def test_build_latest_truth_tie_rule_end_to_end() -> None:
+    rows = [(f"R26BK01789{index:03d}", "2026-10-23 10:00:00") for index in range(500, 504)]
+    rows.append(("R26BK01789504", "2026-10-23 09:00:00"))
+    tie_rows = [("R26BK01789505",), ("R26BK01789506",)]
+
+    def fake_query(sql: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        if "= '2026-10-23 09:00:00'" in sql:
+            return ["bid_ntce_no"], tie_rows
+        return ["bid_ntce_no", "bid_ntce_dt"], rows
+
+    truth = measure.build_truth(_announcement_item(), {}, query_fn=fake_query)
+    filling = ", ".join([*ALLOWED[:4], "R26BK01789505"])
+    assert measure.grade_attempt(_announcement_item(), truth, _payload(filling))["passed"] is True
+
+    dropping = ", ".join([*ALLOWED[1:4], "R26BK01789505", "R26BK01789506"])
+    dropped = measure.grade_attempt(_announcement_item(), truth, _payload(dropping))
+    assert dropped["passed"] is False
+    assert dropped["detail"]["missing_definite"] == [ALLOWED[0]]
 
 
 def test_repeats_three_passes_with_two_successes() -> None:

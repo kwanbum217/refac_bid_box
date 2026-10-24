@@ -19,6 +19,11 @@
   통과한다. 예를 들어 DB 값이 123 일 때 "123건입니다. 취소된 건은 없습니다." 는
   통과이고, 정답 5건을 나열한 뒤 "다만 데이터가 확인되지 않습니다." 를 붙인
   답도 통과다. 정답이 빠졌을 때만 실패다.
+- 최신 목록(`announcement_latest`, `result_latest`)의 정답은 정렬값 기준으로
+  확정 집합 D(경계값보다 큼)와 동점 집합 T(경계값과 같음)로 나눈다. 답변 번호
+  집합 A 는 (a) D 를 모두 포함하고 (b) D 와 T 의 합집합을 벗어나지 않으며
+  (c) |A| 가 limit 이상일 때만 통과다. 동점 행으로만 개수를 채우고 확정 행을
+  빼면 실패다.
 - 원칙 2 (0건): DB 정답이 0건이면 답변에 0건/없습니다/없음/확인되지 않 중
   하나가 있고, 공고번호 형식이 하나도 없고, 목록 행(표 본문 행과 "- ", "1. "
   로 시작하는 줄)이 없어야 통과다. 목록 행이 없어도 쉼표로 공사명을 늘어놓은
@@ -430,12 +435,35 @@ def _latest_rows(
     return fallback_rows, True
 
 
+def _split_latest_sets(rows: list[tuple[Any, ...]], limit: int) -> tuple[set[str], set[str]]:
+    """정렬값 기준으로 확정 상위 집합 D 와 경계 동점 집합 T 를 나눈다.
+
+    limit 행을 다 채웠으면 마지막 행의 정렬값이 경계값이다. 경계값보다 큰
+    행은 확정 집합 D 로 답에 모두 있어야 하고, 경계값과 같은 행은 동점 집합
+    T 로 그중 일부만 있어도 된다. limit 행을 채우지 못하면 모든 행이 D 다.
+    """
+    numbered = [
+        (str(row[0]), row[1])
+        for row in rows
+        if row and row[0] and len(row) > 1 and row[1] is not None
+    ]
+    if len(rows) < limit or not numbered:
+        return {number for number, _ in numbered}, set()
+    cutoff = numbered[-1][1]
+    definite = {number for number, value in numbered if value > cutoff}
+    ties = {number for number, value in numbered if value == cutoff}
+    return definite, ties
+
+
 def build_latest_truth(
     kind: str, check: dict[str, Any], query_fn: QueryFn | None = None
 ) -> dict[str, Any]:
     """공고/낙찰 최신 목록의 정답 집합을 만든다.
 
-    상위 limit 행에 더해, 절단 지점과 같은 일시의 행(동점)을 허용 집합에 넣는다.
+    상위 limit 행을 정렬값 기준으로 확정 집합 D(경계값보다 큼)와 동점 집합
+    T(경계값과 같음)로 나눈다. 절단 지점과 같은 일시의 행은 limit 밖에 더
+    있어도 T 에 넣는다. 판정은 D 를 모두 포함하고 D 와 T 의 합집합을 벗어나지
+    않으며 답변 번호가 limit 개 이상일 때만 통과다.
     """
     query = query_fn or run_query
     dataset, date_column = LATEST_CHECKS[kind]
@@ -446,14 +474,17 @@ def build_latest_truth(
         return {
             "kind": kind,
             "allowed": set(),
+            "definite": set(),
+            "ties": set(),
+            "limit": limit,
             "expected_count": 0,
             "data_available": False,
             "window_fallback": False,
             "error": str(exc),
         }
 
-    allowed = {str(row[0]) for row in rows if row and row[0]}
-    expected_count = len(allowed)
+    definite, ties = _split_latest_sets(rows, limit)
+    expected_count = len({str(row[0]) for row in rows if row and row[0]})
     window_fallback = used_fallback and bool(rows)
     tie_error: str | None = None
 
@@ -474,7 +505,7 @@ def build_latest_truth(
         )
         try:
             _, tie_rows = _run_read_only(tie_statement, max(limit * 20, 100), query)
-            allowed.update(str(row[0]) for row in tie_rows if row and row[0])
+            ties.update(str(row[0]) for row in tie_rows if row and row[0])
         except Exception as exc:
             tie_error = str(exc)
         else:
@@ -484,7 +515,10 @@ def build_latest_truth(
 
     return {
         "kind": kind,
-        "allowed": allowed,
+        "allowed": definite | ties,
+        "definite": definite,
+        "ties": ties,
+        "limit": limit,
         "expected_count": expected_count,
         "data_available": expected_count > 0,
         "window_fallback": window_fallback,
@@ -644,8 +678,11 @@ def _evaluate_empty_latest(answer: str) -> tuple[bool, dict[str, Any]]:
 def _evaluate_latest(truth: dict[str, Any], answer: str) -> tuple[bool, dict[str, Any]]:
     """원칙 1/2: 최신 목록 판정.
 
-    DB 정답이 1건 이상이면 정답 공고번호가 limit 개(동점 포함) 모두 있어야
-    통과다. 부재 문구는 판정에 쓰지 않는다. 0건이면 원칙 2 로 넘긴다.
+    DB 정답이 1건 이상이면 답변 번호 집합 A 가 세 조건을 모두 만족해야 통과다.
+    (a) 확정 집합 D(경계값보다 큰 행)를 모두 포함한다. (b) D 와 동점 집합
+    T 의 합집합을 벗어나지 않는다. (c) |A| 가 limit 이상이다. 동점 행으로만
+    limit 을 채우고 확정 행을 빼면 실패한다. 부재 문구는 판정에 쓰지 않는다.
+    0건이면 원칙 2 로 넘긴다.
     """
     absence = _absence_hits(answer)
     if truth.get("error"):
@@ -662,19 +699,30 @@ def _evaluate_latest(truth: dict[str, Any], answer: str) -> tuple[bool, dict[str
         return empty_passed, empty_detail
 
     detected = extract_bid_numbers(answer)
-    allowed: set[str] = set(truth.get("allowed") or set())
+    stored_allowed = set(truth.get("allowed") or set())
+    definite = set(truth.get("definite") if "definite" in truth else stored_allowed)
+    ties = set(truth.get("ties") or ())
+    allowed = definite | ties
+    limit = int(truth.get("limit") or expected or len(definite))
+    required = min(limit, len(allowed))
+    missing_definite = sorted(definite - detected)
     outside = sorted(detected - allowed)
     detail: dict[str, Any] = {
         "detected_bid_numbers": sorted(detected),
         "detected_count": len(detected),
         "expected_count": expected,
+        "limit": limit,
+        "required_count": required,
+        "definite_count": len(definite),
+        "tie_count": len(ties),
+        "missing_definite": missing_definite,
         "window_fallback": bool(truth.get("window_fallback")),
         "absence_phrases": absence,
         "absence_ignored": True,
         "outside_allowed": outside,
         "allowed_sample": sorted(allowed)[: expected + 5],
     }
-    passed = not outside and len(detected) == expected
+    passed = not missing_definite and not outside and len(detected) >= required
     return passed, detail
 
 
