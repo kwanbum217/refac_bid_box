@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Integer, case, event, func, select
+from sqlalchemy import Integer, case, event, func, or_, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -399,6 +399,8 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     if date_from or date_to:
+        return None
+    if filters.get("region_names") or filters.get("institution_names"):
         return None
     if _normalize_text(str(filters.get("institution_name") or "")):
         return None
@@ -1166,6 +1168,169 @@ def _build_axis_breakdown(
     return None
 
 
+def _comparison_region_names(filters: dict[str, Any]) -> list[str]:
+    """지역 비교 대상 목록을 정규화해 질의 순서를 유지합니다."""
+    raw_names = filters.get("region_names")
+    if not isinstance(raw_names, list):
+        return []
+    names: list[str] = []
+    for item in raw_names:
+        name = _normalize_text(str(item))
+        if name in REGION_ALIASES and name not in names:
+            names.append(name)
+    return names
+
+
+def _comparison_condition(column, spec: dict[str, Any]) -> Any:
+    """대상 하나의 기관명 조건을 만듭니다.
+
+    지역은 단축형·정식 명칭을 모두 부분 일치로 묶습니다. 정확 기관명은 해석된
+    이름이 있으면 등호 목록으로, 해석 상한을 넘어 이름 목록이 없으면(None)
+    후보를 버리지 않고 부분 일치로 폴백합니다.
+    """
+    if spec["kind"] == "region":
+        return or_(*[column.contains(alias) for alias in spec["aliases"]])
+    matched_names = spec.get("names")
+    if matched_names:
+        return column.in_(matched_names)
+    return column.contains(str(spec["name"]))
+
+
+def _comparison_scope_plan(plan: RetrievalPlan) -> RetrievalPlan:
+    """비교 범위는 대상 specs 가 정하므로 단일 institution_name 을 제외합니다.
+
+    bid_query_tool 은 플래너 파라미터(institution_name='부산')를 필터에 더합니다.
+    그 값을 그대로 쓰면 두 번째 지역(대구)이 사라지므로 비교 경로에서만 뺍니다.
+    """
+    filters = dict(plan.filters or {})
+    filters.pop("institution_name", None)
+    return plan.model_copy(update={"filters": filters})
+
+
+def _comparison_breakdown(
+    db: Session,
+    plan: RetrievalPlan,
+    specs: list[dict[str, Any]],
+    *,
+    dimension: str,
+) -> list[dict[str, Any]]:
+    """대상별 공고 건수와 낙찰 지표를 테이블 두 개로 집계합니다.
+
+    한 문장에 대상별 라벨을 CASE 로 붙여 GROUP BY 하므로 대상 수가 늘어도
+    문장 수는 늘지 않습니다. 지역 공고 집계에는 기관명 커버링 인덱스 힌트를
+    하나만 붙이고, 날짜 인덱스 힌트는 쓰지 않습니다.
+    """
+    scope_plan = _comparison_scope_plan(plan)
+    announcement_expr = case(
+        *[
+            (_comparison_condition(BidAnnouncement.dminstt_nm, spec), spec["label"])
+            for spec in specs
+        ],
+        else_=None,
+    )
+    announcement_stmt = (
+        select(announcement_expr, func.count())
+        .where(BidAnnouncement.dminstt_nm.is_not(None), *_announcement_conditions(scope_plan))
+        .group_by(announcement_expr)
+    )
+    if dimension == "region":
+        announcement_stmt = announcement_stmt.with_hint(
+            BidAnnouncement, ANNOUNCEMENT_REGION_AXIS_HINT, dialect_name="mysql"
+        )
+    announcement_counts: dict[str, int] = {}
+    for label, count in _cached_rows(db, announcement_stmt):
+        if label:
+            announcement_counts[str(label)] = int(count or 0)
+
+    result_expr = case(
+        *[(_comparison_condition(BidResult.dminstt_nm, spec), spec["label"]) for spec in specs],
+        else_=None,
+    )
+    result_stmt = (
+        select(
+            result_expr,
+            func.count(),
+            func.avg(BidResult.sucsf_bid_rate),
+            func.count(BidResult.sucsf_bid_rate),
+        )
+        .where(BidResult.dminstt_nm.is_not(None), *_result_conditions(scope_plan))
+        .group_by(result_expr)
+    )
+    result_stats: dict[str, tuple[int, Any, int]] = {}
+    for label, count, rate_value, sample_count in _cached_rows(db, result_stmt):
+        if label:
+            result_stats[str(label)] = (int(count or 0), rate_value, int(sample_count or 0))
+
+    entries: list[dict[str, Any]] = []
+    for spec in specs:
+        label = str(spec["label"])
+        bid_count, rate_value, sample_count = result_stats.get(label, (0, None, 0))
+        entries.append(
+            _axis_entry(
+                label,
+                label,
+                announcement_count=announcement_counts.get(label, 0),
+                bid_count=bid_count,
+                avg_rate=_axis_rate(rate_value, sample_count),
+                sample_count=sample_count,
+            )
+        )
+    return entries
+
+
+def _comparison_result(
+    plan: RetrievalPlan,
+    entries: list[dict[str, Any]],
+    *,
+    dimension: str,
+) -> dict[str, Any]:
+    """비교 응답을 기존 summary 키를 유지한 채 가법적으로 만듭니다."""
+    filters = plan.filters or {}
+    metric = _normalize_text(str(filters.get("metric") or "")) or "announcement_count"
+    response_filters = dict(filters)
+    if response_filters.get("region_names"):
+        response_filters.pop("institution_name", None)
+    if response_filters.get("category"):
+        response_filters["category_label"] = _category_label(str(response_filters["category"]))
+
+    sample_total = sum(int(item.get("sample_count") or 0) for item in entries)
+    weighted_rate = sum(
+        float(item.get("avg_rate") or 0.0) * int(item.get("sample_count") or 0) for item in entries
+    )
+    hints: list[str] = []
+    if dimension == "region":
+        hints.append(
+            "지역 구분은 기관명 부분 일치 기준이라 지역 합계가 전체 건수와 일치하지 않을 수 있습니다."
+        )
+
+    summary: dict[str, Any] = {
+        "total_bids": sum(int(item.get("bid_count") or 0) for item in entries),
+        "announcement_count": sum(int(item.get("announcement_count") or 0) for item in entries),
+        "average_winning_rate": (
+            float(round(weighted_rate / sample_total, 4)) if sample_total else 0.0
+        ),
+        "total_winning_amount": 0.0,
+        "top_winners": [],
+        "top_institutions": [],
+        "top_announcements": [],
+        "sample_announcements": [],
+        "recent_results": [],
+        "latest_available_result_at": None,
+        "time_series": [],
+        "comparison": entries,
+        "comparison_meta": {
+            "dimension": dimension,
+            "metric": metric,
+            "targets": [str(item.get("label") or "") for item in entries],
+        },
+    }
+    return {
+        "filters": response_filters,
+        "summary": summary,
+        "insufficiency_hints": hints,
+    }
+
+
 # 서로 기다리지 않는 집계 다섯 개를 순차로 돌면 q08 콜드에서 SQL 합계 약 4.9초였고 가장 긴 문장은 1.9초였습니다
 # (2026-09-13). 프로세스 전체에서 스레드를 넷으로 묶어 추가 연결이 요청 수에 비례해 늘지 않게 합니다
 # (연결 풀 10+20). 붐비면 대기열에서 기다리므로 순차 실행보다 느려지지는 않습니다.
@@ -1718,38 +1883,65 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             f"{exc} 날짜를 YYYY-MM-DD 형식으로 다시 알려주시면 해당 기간으로 조회하겠습니다.",
         )
     filters = plan.filters or {}
+    region_names = _comparison_region_names(filters)
+    if region_names:
+        region_specs = [
+            {"kind": "region", "label": name, "aliases": REGION_ALIASES[name]}
+            for name in region_names
+        ]
+        return _comparison_result(
+            plan,
+            _comparison_breakdown(db, plan, region_specs, dimension="region"),
+            dimension="region",
+        )
+
+    comparison_metric = _normalize_text(str(filters.get("metric") or ""))
     raw_institution_names = filters.get("institution_names")
     if raw_institution_names and isinstance(raw_institution_names, list):
         target_names = raw_institution_names[:5]
-        resolved_institutions: list[tuple[str, list[str]]] = []
+        requested_targets: list[tuple[str, list[str] | None]] = []
+        targets: list[tuple[str, list[str] | None]] = []
         for name in target_names:
             norm_name = _normalize_text(name)
             if not norm_name:
                 continue
             matched = _resolve_institution_names(db, BidResult.dminstt_nm, norm_name)
-            if matched:
-                resolved_institutions.append((norm_name, matched))
+            requested_targets.append((norm_name, matched))
+            # 해석 상한 초과(None)는 버리지 않고 contains 폴백으로 범위를 정합니다.
+            # 이 후보를 버리면 기관 조건이 사라져 전체 통계로 조용히 넓어집니다.
+            if matched is None or matched:
+                targets.append((norm_name, matched))
+        unresolved_names = [name for name, matched in requested_targets if matched == []]
 
-        if resolved_institutions:
-            date_from, date_to = _resolve_window(filters)
-            category = _normalize_text(str(filters.get("category") or ""))
-
-            # 기관마다 집계와 최신 결과 질의를 따로 내면 질의 수가 기관 수에
-            # 비례합니다. 공통 조건은 그대로 두고 기관명만 IN 으로 합쳐 GROUP BY
-            # 한 번과, 윈도 함수로 기관명별 최신 결과를 뽑는 한 번으로 줄입니다.
-            common_conditions = []
-            if date_from:
-                common_conditions.append(BidResult.rl_openg_dt >= date_from)
-            if date_to:
-                common_conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
-            if category:
-                common_conditions.append(BidResult.category == category)
-
-            all_matched_names = sorted(
-                {name for _, matched_names in resolved_institutions for name in matched_names}
+        if not targets:
+            return _empty_result(
+                plan,
+                "요청한 기관명을 데이터에서 확인하지 못해 비교 대상을 확정하지 못했습니다. "
+                "기관명을 다시 확인해 주세요.",
             )
 
-            stats_by_name: dict[str, tuple[int, float, int]] = {}
+        date_from, date_to = _resolve_window(filters)
+        category = _normalize_text(str(filters.get("category") or ""))
+
+        # 기관마다 집계와 최신 결과 질의를 따로 내면 질의 수가 기관 수에
+        # 비례합니다. 공통 조건은 그대로 두고 기관명만 IN 으로 합쳐 GROUP BY
+        # 한 번과, 윈도 함수로 기관명별 최신 결과를 뽑는 한 번으로 줄입니다.
+        common_conditions = []
+        if date_from:
+            common_conditions.append(BidResult.rl_openg_dt >= date_from)
+        if date_to:
+            common_conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+        if category:
+            common_conditions.append(BidResult.category == category)
+
+        resolved_targets = [(name, matched) for name, matched in targets if matched]
+        fallback_targets = [(name, matched) for name, matched in targets if matched is None]
+        all_matched_names = sorted(
+            {name for _, matched_names in resolved_targets for name in matched_names or []}
+        )
+
+        stats_by_name: dict[str, tuple[int, float, int]] = {}
+        if all_matched_names:
             for db_name, id_count, rate_value, rate_rows in db.execute(
                 select(
                     BidResult.dminstt_nm,
@@ -1768,21 +1960,48 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     int(rate_rows or 0),
                 )
 
-            recent_by_name = _fetch_recent_results_batch(
-                db, common_conditions, all_matched_names, limit=3
+        if fallback_targets:
+            fallback_expr = case(
+                *[(BidResult.dminstt_nm.contains(name), name) for name, _ in fallback_targets],
+                else_=None,
             )
+            fallback_scope = or_(
+                *[BidResult.dminstt_nm.contains(name) for name, _ in fallback_targets]
+            )
+            for db_name, id_count, rate_value, rate_rows in db.execute(
+                select(
+                    fallback_expr,
+                    func.count(BidResult.id),
+                    func.sum(BidResult.sucsf_bid_rate),
+                    func.count(BidResult.sucsf_bid_rate),
+                )
+                .where(*common_conditions, fallback_scope)
+                .group_by(fallback_expr)
+            ).all():
+                if db_name is None:
+                    continue
+                stats_by_name[str(db_name)] = (
+                    int(id_count or 0),
+                    float(rate_value) if rate_value is not None else 0.0,
+                    int(rate_rows or 0),
+                )
 
-            by_institution: list[dict[str, Any]] = []
-            all_recent_results: list[dict[str, Any]] = []
-            total_bids = 0
-            rate_sum = 0.0
-            rate_count = 0
+        recent_by_name = _fetch_recent_results_batch(
+            db, common_conditions, all_matched_names, limit=3
+        )
 
-            for inst_name, matched_names in resolved_institutions:
-                bid_count = 0
-                inst_rate_sum = 0.0
-                inst_rate_rows = 0
-                candidates: list[BidResult] = []
+        by_institution: list[dict[str, Any]] = []
+        all_recent_results: list[dict[str, Any]] = []
+        total_bids = 0
+        rate_sum = 0.0
+        rate_count = 0
+
+        for inst_name, matched_names in targets:
+            bid_count = 0
+            inst_rate_sum = 0.0
+            inst_rate_rows = 0
+            candidates: list[BidResult] = []
+            if matched_names:
                 for matched_name in matched_names:
                     count_value, rate_value, rate_rows = stats_by_name.get(
                         matched_name, (0, 0.0, 0)
@@ -1791,53 +2010,85 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     inst_rate_sum += rate_value
                     inst_rate_rows += rate_rows
                     candidates.extend(recent_by_name.get(matched_name, []))
-
-                raw_avg_rate = inst_rate_sum / inst_rate_rows if inst_rate_rows > 0 else None
-                avg_rate = float(round(raw_avg_rate, 4)) if raw_avg_rate is not None else 0.0
-
-                total_bids += bid_count
-                if bid_count > 0 and raw_avg_rate is not None:
-                    rate_sum += raw_avg_rate * bid_count
-                    rate_count += bid_count
-
                 recent_list = _select_recent_results(candidates, limit=3)
-                all_recent_results.extend(recent_list)
-
-                by_institution.append(
-                    {
-                        "institution_name": inst_name,
-                        "resolved_names": matched_names,
-                        "bid_count": bid_count,
-                        "avg_rate": avg_rate,
-                        "recent_results": recent_list,
-                    }
+            else:
+                bid_count, inst_rate_sum, inst_rate_rows = stats_by_name.get(inst_name, (0, 0.0, 0))
+                recent_list = _fetch_recent_results(
+                    db,
+                    [*common_conditions, BidResult.dminstt_nm.contains(inst_name)],
+                    3,
                 )
 
-            overall_avg_rate = float(round(rate_sum / rate_count, 4)) if rate_count > 0 else 0.0
-            response_filters = dict(filters)
-            if response_filters.get("category"):
-                response_filters["category_label"] = _category_label(
-                    str(response_filters["category"])
-                )
+            raw_avg_rate = inst_rate_sum / inst_rate_rows if inst_rate_rows > 0 else None
+            avg_rate = float(round(raw_avg_rate, 4)) if raw_avg_rate is not None else 0.0
 
-            return {
-                "filters": response_filters,
-                "summary": {
-                    "total_bids": total_bids,
-                    "announcement_count": 0,
-                    "average_winning_rate": overall_avg_rate,
-                    "total_winning_amount": 0.0,
-                    "top_winners": [],
-                    "top_institutions": [],
-                    "top_announcements": [],
-                    "sample_announcements": [],
-                    "recent_results": all_recent_results,
-                    "latest_available_result_at": None,
-                    "time_series": [],
-                    "by_institution": by_institution,
-                },
-                "insufficiency_hints": [],
+            total_bids += bid_count
+            if bid_count > 0 and raw_avg_rate is not None:
+                rate_sum += raw_avg_rate * bid_count
+                rate_count += bid_count
+
+            all_recent_results.extend(recent_list)
+
+            by_institution.append(
+                {
+                    "institution_name": inst_name,
+                    "resolved_names": matched_names or [],
+                    "bid_count": bid_count,
+                    "avg_rate": avg_rate,
+                    "recent_results": recent_list,
+                }
+            )
+
+        overall_avg_rate = float(round(rate_sum / rate_count, 4)) if rate_count > 0 else 0.0
+        response_filters = dict(filters)
+        if response_filters.get("category"):
+            response_filters["category_label"] = _category_label(str(response_filters["category"]))
+
+        summary_payload: dict[str, Any] = {
+            "total_bids": total_bids,
+            "announcement_count": 0,
+            "average_winning_rate": overall_avg_rate,
+            "total_winning_amount": 0.0,
+            "top_winners": [],
+            "top_institutions": [],
+            "top_announcements": [],
+            "sample_announcements": [],
+            "recent_results": all_recent_results,
+            "latest_available_result_at": None,
+            "time_series": [],
+            "by_institution": by_institution,
+        }
+        leftovers: list[str] = []
+        if comparison_metric:
+            institution_specs = [
+                {
+                    "kind": "institution",
+                    "label": inst_name,
+                    "name": inst_name,
+                    "names": matched,
+                }
+                for inst_name, matched in requested_targets
+            ]
+            summary_payload["comparison"] = _comparison_breakdown(
+                db, plan, institution_specs, dimension="institution"
+            )
+            summary_payload["comparison_meta"] = {
+                "dimension": "institution",
+                "metric": comparison_metric,
+                "targets": [inst_name for inst_name, _ in requested_targets],
             }
+        if unresolved_names:
+            leftovers.append(
+                "요청한 기관명 중 "
+                + ", ".join(unresolved_names)
+                + " 은(는) 데이터에서 확인하지 못해 집계에서 제외했습니다."
+            )
+
+        return {
+            "filters": response_filters,
+            "summary": summary_payload,
+            "insufficiency_hints": leftovers,
+        }
 
     institution_name = _normalize_text(str((plan.filters or {}).get("institution_name") or ""))
     result_names = announcement_names = None
