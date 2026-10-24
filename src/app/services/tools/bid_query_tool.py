@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from src.rag.engine import build_retrieval_plan
+from src.rag.query_planning import apply_default_statistics_window
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
 
@@ -21,7 +22,7 @@ def execute(
     query: str = "",
     institution_name: str = "",
     category: str = "",
-    years: int = 5,
+    years: int | None = None,
     date_from: str = "",
     date_to: str = "",
     limit: int = 0,
@@ -39,6 +40,7 @@ def execute(
         filters["date_to"] = date_to
     if years and "date_from" not in filters and "date_to" not in filters:
         filters["relative_years"] = years
+    filters = apply_default_statistics_window(filters)
     if limit:
         filters["result_limit"] = min(max(int(limit), 1), 20)
 

@@ -16,6 +16,7 @@ from typing import Any
 
 from src.app.models.bids import CATEGORY_LABELS
 from src.rag.schemas import (
+    DEFAULT_STATISTICS_WINDOW_YEARS,
     DEFAULT_VECTOR_TOP_K,
     RetrievalPlan,
 )
@@ -843,6 +844,20 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     if group_by != "time":
         aggregate["group_limit"] = DEFAULT_GROUP_LIMIT
     return aggregate
+
+
+def apply_default_statistics_window(filters: dict[str, Any] | None) -> dict[str, Any]:
+    """기간을 말하지 않은 통계 질의에 기본 창을 채웁니다.
+
+    명시한 date_from/date_to/relative_years 가 있으면 그대로 둡니다. 이 헬퍼는
+    진입점에서만 적용하고 build_retrieval_plan 에서는 쓰지 않습니다. 플랜 단계에
+    날짜를 주입하면 스냅샷 범위 판정(_snapshot_scope)이 스냅샷을 포기합니다.
+    """
+    normalized = dict(filters or {})
+    if normalized.get("date_from") or normalized.get("date_to") or normalized.get("relative_years"):
+        return normalized
+    normalized["relative_years"] = DEFAULT_STATISTICS_WINDOW_YEARS
+    return normalized
 
 
 def build_retrieval_plan(query: str) -> RetrievalPlan:

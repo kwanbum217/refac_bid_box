@@ -15,7 +15,7 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -61,6 +61,7 @@ from src.rag.query_planning import (
     _parse_time_window,
     _parse_year_month_window,
     _query_lower,
+    apply_default_statistics_window,
     build_retrieval_plan,
     extract_result_limit,
     is_announcement_list_query,
@@ -161,7 +162,7 @@ def get_bidding_statistics(
     db: Session,
     institution_name: str = "",
     category: str = "",
-    years: int = 5,
+    years: int | None = None,
     date_from: str = "",
     date_to: str = "",
     query: str = "",
@@ -177,10 +178,9 @@ def get_bidding_statistics(
         filters["date_to"] = date_to
     if query and any(keyword in _query_lower(query) for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
-    if not filters.get("date_from") and not filters.get("date_to") and years:
-        today = date.today()
-        filters["date_from"] = (today - timedelta(days=(365 * years) - 1)).isoformat()
-        filters["date_to"] = today.isoformat()
+    if years and not filters.get("date_from") and not filters.get("date_to"):
+        filters["relative_years"] = years
+    filters = apply_default_statistics_window(filters)
 
     plan = RetrievalPlan(
         use_sql=True,
@@ -763,6 +763,7 @@ class HybridRAGEngine:
         sql_elapsed_ms = 0.0
         structured_sql_segments: dict[str, Any] | None = None
         if plan.use_sql and structured_data is None and db is not None:
+            plan.filters = apply_default_statistics_window(plan.filters)
             t_sql_start = _safe_perf_counter()
             structured_data = retrieve_structured_data(db, plan)
             sql_elapsed_ms = (_safe_perf_counter() - t_sql_start) * 1000.0
