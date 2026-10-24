@@ -1,0 +1,322 @@
+{
+  "schema": "CHAT_USER_QUESTIONS_V1",
+  "version": "1.0.0",
+  "split": "blind",
+  "created_at": "2026-10-24T00:00:00Z",
+  "description": "회귀 확인용 블라인드 점검 세트. 수정 빌더에게 사전에 보여 주지 않는다.",
+  "categories": [
+    "announcement_list",
+    "result_analysis",
+    "bid_lookup",
+    "stats",
+    "prediction",
+    "out_of_scope"
+  ],
+  "category_counts": {
+    "announcement_list": 4,
+    "result_analysis": 4,
+    "bid_lookup": 1,
+    "stats": 2,
+    "prediction": 1,
+    "out_of_scope": 2
+  },
+  "total_items": 14,
+  "items": [
+    {
+      "id": "blnd_ann_01",
+      "category": "announcement_list",
+      "split": "blind",
+      "question": "최근 등록된 용역 공고를 다섯 개만 리스트로 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Servc"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_ann_02",
+      "category": "announcement_list",
+      "split": "blind",
+      "question": "이번 주 물품 공고 5건 뽑아줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Thng"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_ann_03",
+      "category": "announcement_list",
+      "split": "blind",
+      "question": "공사 공고 최근 10건 목록 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 10,
+        "days": 7,
+        "category": "Cnstwk"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_ann_04",
+      "category": "announcement_list",
+      "split": "blind",
+      "question": "부산 쪽 최근 공고 5개만 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 14,
+        "institution_like": "부산"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_res_01",
+      "category": "result_analysis",
+      "split": "blind",
+      "question": "최근에 낙찰된 용역 결과 다섯 건만 목록으로 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Servc"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_res_02",
+      "category": "result_analysis",
+      "split": "blind",
+      "question": "물품 낙찰 결과 최근 5건 뽑아줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Thng"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_res_03",
+      "category": "result_analysis",
+      "split": "blind",
+      "question": "최근 30일 외자 낙찰 건수 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Frgcpt' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_res_04",
+      "category": "result_analysis",
+      "split": "blind",
+      "question": "최근 한 달 용역 낙찰 건수 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_lkp_01",
+      "category": "bid_lookup",
+      "split": "blind",
+      "question": "{latest_servc_result_bid_no} 공고 정보 좀 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "bid_lookup",
+        "bid_no_placeholder": "latest_servc_result_bid_no"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_sta_01",
+      "category": "stats",
+      "split": "blind",
+      "question": "최근 한 달 물품 낙찰 건수 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Thng' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_sta_02",
+      "category": "stats",
+      "split": "blind",
+      "question": "이번 달 외자 공고 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE category = 'Frgcpt' AND bid_ntce_dt >= DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_prd_01",
+      "category": "prediction",
+      "split": "blind",
+      "question": "이 공고 {latest_servc_announcement_bid_no} 낙찰가 예측해줘",
+      "expected_tools": [
+        "bid_prediction_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "tool_only"
+      },
+      "must_not_contain": [],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "blnd_oos_01",
+      "category": "out_of_scope",
+      "split": "blind",
+      "question": "고양이 키우는 법 알려줘",
+      "expected_tools": [],
+      "forbidden_tools": [
+        "bid_query_tool"
+      ],
+      "check": {
+        "type": "refuse_or_redirect"
+      },
+      "must_not_contain": [],
+      "repeats": 3,
+      "note": "일상 잡담"
+    },
+    {
+      "id": "blnd_oos_02",
+      "category": "out_of_scope",
+      "split": "blind",
+      "question": "2026년 월드컵 우승국 예측해줘",
+      "expected_tools": [],
+      "forbidden_tools": [
+        "bid_query_tool"
+      ],
+      "check": {
+        "type": "refuse_or_redirect"
+      },
+      "must_not_contain": [],
+      "repeats": 3,
+      "note": "입찰과 무관한 예측 요청"
+    }
+  ]
+}
