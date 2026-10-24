@@ -77,6 +77,10 @@ from src.rag.schemas import (
     Provenance,
     RetrievalPlan,
 )
+from src.rag.scope_guard import (
+    OUT_OF_SCOPE_REFUSAL_MESSAGE,
+    is_out_of_scope_request,
+)
 from src.rag.snapshots import (
     _extract_kb_snapshot,
     _extract_semantic_snapshot,
@@ -954,6 +958,48 @@ class HybridRAGEngine:
 
         return final_answer
 
+    def _out_of_scope_bundle(
+        self,
+        trace_id: str,
+        injection_stripped: bool,
+        started_at: float,
+    ) -> AnswerBundle:
+        """범위 밖 질문의 고정 거절 번들을 만듭니다. 검색과 LLM 을 호출하지 않습니다."""
+        message = OUT_OF_SCOPE_REFUSAL_MESSAGE
+        if injection_stripped:
+            message = f"{INJECTION_NOTICE} {message}"
+        total_elapsed_ms = (_safe_perf_counter() - started_at) * 1000.0
+        expose_flag = getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
+        metrics_to_include = (
+            {
+                "plan_ms": 0.0,
+                "sql_ms": 0.0,
+                "vector_ms": 0.0,
+                "lexical_ms": 0.0,
+                "kb_status_ms": 0.0,
+                "assembly_ms": 0.0,
+                "prepare_total_ms": 0.0,
+                "llm_ms": 0.0,
+                "guard_ms": 0.0,
+                "total_ms": round(total_elapsed_ms, 2),
+            }
+            if expose_flag
+            else None
+        )
+        return AnswerBundle(
+            answer=message,
+            provenance=Provenance(
+                trace_id=trace_id,
+                retrieval_mode="out_of_scope_refusal",
+                items=[],
+                insufficiency_hints=[],
+            ),
+            citations=[],
+            retrieved_docs=[],
+            latency_ms=total_elapsed_ms,
+            segment_metrics=metrics_to_include,
+        )
+
     def get_answer_sync(
         self,
         user_query: str,
@@ -998,6 +1044,12 @@ class HybridRAGEngine:
             )
 
         effective_query = cleaned_query if injection_stripped else user_query
+        if is_out_of_scope_request(effective_query):
+            return self._out_of_scope_bundle(
+                trace_id=f"rag-{int(time.time() * 1000)}-{os.urandom(4).hex()}",
+                injection_stripped=injection_stripped,
+                started_at=t_start,
+            )
         prepared = self._prepare_context(
             effective_query, db=db, history=history, tool_context=tool_context
         )
@@ -1332,6 +1384,33 @@ class HybridRAGEngine:
             return
 
         effective_query = cleaned_query if injection_stripped else user_query
+        if is_out_of_scope_request(effective_query):
+            message = OUT_OF_SCOPE_REFUSAL_MESSAGE
+            if injection_stripped:
+                message = f"{INJECTION_NOTICE} {message}"
+            yield {"type": "docs", "docs": []}
+            yield {"type": "token", "text": message}
+            done_event = {
+                "type": "done",
+                "citations": [],
+                "trace_id": f"rag-{int(time.time() * 1000)}-{os.urandom(4).hex()}",
+                "final_answer": message,
+            }
+            if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
+                done_event["segment_metrics"] = {
+                    "plan_ms": 0.0,
+                    "sql_ms": 0.0,
+                    "vector_ms": 0.0,
+                    "lexical_ms": 0.0,
+                    "kb_status_ms": 0.0,
+                    "assembly_ms": 0.0,
+                    "prepare_total_ms": 0.0,
+                    "llm_ms": 0.0,
+                    "guard_ms": 0.0,
+                    "total_ms": round((_safe_perf_counter() - t_stream_start) * 1000.0, 2),
+                }
+            yield done_event
+            return
         prepared = await asyncio.to_thread(
             self._prepare_context,
             effective_query,
