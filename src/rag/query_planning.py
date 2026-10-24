@@ -123,6 +123,9 @@ RESULT_QUERY_MARKERS = (
     "낙찰 정보",
     "낙찰 사업",
     "낙찰 업체",
+    "낙찰 공고",
+    "낙찰공고",
+    "낙찰받은",
 )
 RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
 
@@ -339,6 +342,54 @@ def is_result_list_query(query: str) -> bool:
         re.search(r"\d+\s*(?:개|건)", lowered)
     )
     return has_result_marker and has_list_marker
+
+
+ANNOUNCEMENT_LIST_PATTERN = re.compile(
+    r"공고(?!된|되는|하는|할|될|하였|했)[^.!?\n]{0,20}?"
+    r"(?:\d+\s*(?:개|건)|" + "|".join(RESULT_LIST_MARKERS) + r")"
+)
+ANNOUNCEMENT_QUERY_COUNT_PATTERN = re.compile(r"\d+\s*(?:개|건)")
+ANNOUNCEMENT_EXPLANATION_MARKERS = (
+    "방법",
+    "규정",
+    "설명",
+    "어디서",
+    "어떻게",
+    "기능",
+    "가능",
+    "보는 법",
+    "뭐야",
+    "의미",
+    "절차",
+    "이란",
+    "란",
+)
+ANNOUNCEMENT_LIST_REQUEST_VERBS = ("보여", "알려", "뽑아", "줘", "해줘", "나열")
+ANNOUNCEMENT_RESULT_STATUS_MARKERS = ("낙찰", "유찰", "개찰")
+
+
+def is_announcement_list_query(query: str) -> bool:
+    """낙찰 표지 없이 공고 자체를 개별 목록으로 요청하는 질의인지 판정합니다.
+
+    목록 신호가 '공고' 바로 뒤에 붙어야 합니다. '공고번호'처럼 공고가 다른 낱말의
+    일부이거나, 목록 신호가 문장 멀리 떨어진 일반 질의는 여기에 해당하지 않습니다.
+    낙찰·유찰·개찰처럼 결과 상태를 가리키는 질의는 기존 낙찰 결과 목록 경로가
+    그대로 맡도록 거짓을 반환합니다.
+    설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
+    개수 없이 '목록'·'리스트' 같은 낱말만 있으면 요청 동사가 함께 있을 때만 참입니다.
+    """
+    lowered = _query_lower(query)
+    if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
+        return False
+    if any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS):
+        return False
+    if not ANNOUNCEMENT_LIST_PATTERN.search(lowered):
+        return False
+    if is_result_list_query(query):
+        return False
+    if ANNOUNCEMENT_QUERY_COUNT_PATTERN.search(lowered):
+        return True
+    return any(verb in lowered for verb in ANNOUNCEMENT_LIST_REQUEST_VERBS)
 
 
 def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
@@ -576,6 +627,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     is_entity = is_entity_specific_query(normalized_query)
     result_list_query = is_result_list_query(normalized_query)
+    announcement_list_query = is_announcement_list_query(normalized_query)
     has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
     has_semantic_keywords = any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
@@ -583,7 +635,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if is_entity:
         use_sql = True
         use_vector = True
-    elif result_list_query or has_stat_keywords:
+    elif announcement_list_query or result_list_query or has_stat_keywords:
         use_sql = True
         use_vector = has_semantic_keywords
     elif has_semantic_keywords:
@@ -668,6 +720,9 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if result_list_query:
         filters["result_limit"] = extract_result_limit(normalized_query)
 
+    if announcement_list_query:
+        filters["announcement_limit"] = extract_result_limit(normalized_query)
+
     if any(keyword in lowered for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
 
@@ -676,6 +731,8 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         route_reason_parts.append("개체 지정 질의")
     if result_list_query:
         route_reason_parts.append("낙찰 결과 목록 질의")
+    if announcement_list_query:
+        route_reason_parts.append("공고 목록 질의")
     if has_stat_keywords:
         route_reason_parts.append("정형 통계 질의")
     if has_semantic_keywords:
