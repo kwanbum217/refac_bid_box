@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field, replace
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -518,7 +518,7 @@ def _local_user_input_rule(qualification: QualificationInput) -> EvaluationRule 
         effective_date="2000-01-01",
         source=LOCAL_USER_INPUT_SOURCE,
         patterns=(),
-        lwlt_rate=Decimal("0"),
+        lwlt_rate=None,
         base_rate=base_rate,
         price_bands=(
             PriceBand(
@@ -568,7 +568,7 @@ def _manual_user_input_rule(qualification: QualificationInput) -> EvaluationRule
         effective_date="2000-01-01",
         source=MANUAL_USER_INPUT_SOURCE,
         patterns=(),
-        lwlt_rate=Decimal("0"),
+        lwlt_rate=None,
         base_rate=base_rate,
         price_bands=(
             PriceBand(
@@ -2591,7 +2591,7 @@ def _recommend_price_bounds(
         multiplier=inputs.table.multiplier,
         # 하한율 미상은 '하한 제약 없음' 으로 계산합니다. 역산 함수가 None 을 받으면
         # 하한율을 적용하지 않은 통과 구간을 돌려줍니다.
-        announcement_lwlt_rate=cast(Decimal, None if lwlt_unknown else inputs.effective_lwlt),
+        announcement_lwlt_rate=None if lwlt_unknown else inputs.effective_lwlt,
         flat_ratio=inputs.table.flat_ratio,
         flat_score=inputs.table.flat_score,
     )
@@ -2820,7 +2820,7 @@ def _serialize_rule_meta(rule: EvaluationRule) -> dict[str, str | None]:
         "effective_date": rule.effective_date,
         "source": rule.source,
         "base_rate": format_decimal_plain(rule.base_rate),
-        "lwlt_rate": format_decimal_plain(rule.lwlt_rate),
+        "lwlt_rate": (format_decimal_plain(rule.lwlt_rate) if rule.lwlt_rate is not None else None),
         "max_price_score": (
             format_decimal_plain(rule.max_price_score) if rule.max_price_score is not None else None
         ),

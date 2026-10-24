@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal
-from typing import cast
 
 from src.app.services.evaluation_rules_core import (
     QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
@@ -182,7 +181,7 @@ def _institution_rule(
         source=source,
         patterns=patterns,
         # 별표가 낙찰하한율을 인쇄하지 않은 구판은 대표값도 None 으로 두어 하한율을 비웁니다.
-        lwlt_rate=cast(Decimal, Decimal(ordered[0][5]) if ordered[0][5] is not None else None),
+        lwlt_rate=Decimal(ordered[0][5]) if ordered[0][5] is not None else None,
         base_rate=Decimal(ordered[0][3]) / Decimal("100"),
         price_bands=tuple(price_bands),
         threshold_bands=tuple(threshold_bands),
