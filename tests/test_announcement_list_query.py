@@ -6,6 +6,8 @@ tests/test_announcement_list_query.py
 
 from datetime import datetime
 
+import pytest
+
 from src.app.models.bids import BidAnnouncement
 from src.app.services.planner_interpreter import interpret_request
 from src.rag.answer_format import _build_announcement_list_answer
@@ -14,16 +16,46 @@ from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
 
 
-def test_announcement_list_query_matches_request_with_count():
-    assert is_announcement_list_query("최근 용역 공고 5개만 리스트해줘") is True
-    assert is_announcement_list_query("공고 목록 보여줘") is True
-    assert is_announcement_list_query("물품 공고 10건") is True
+@pytest.mark.parametrize(
+    "query",
+    [
+        "최근 용역 공고 5개만 리스트해줘",
+        "공고 목록 보여줘",
+        "물품 공고 10건",
+        "서울시 공사 공고 목록 보여줘",
+        "조달청 용역 공고 3건 뽑아줘",
+    ],
+)
+def test_announcement_list_query_matches_request(query):
+    assert is_announcement_list_query(query) is True
 
 
-def test_announcement_list_query_excludes_result_and_statistics_queries():
-    assert is_announcement_list_query("최근 낙찰 결과 5개 리스트") is False
-    assert is_announcement_list_query("용역 공고 낙찰률 평균") is False
-    assert is_announcement_list_query("최근 입찰 동향 알려줘") is False
+@pytest.mark.parametrize(
+    "query",
+    [
+        "공고 목록 작성 방법 알려줘",
+        "공고 목록 관련 규정 설명해줘",
+        "공고 목록은 어디서 봐?",
+        "공고 리스트 기능 있어?",
+        "입찰공고 목록 보는 법",
+        "공고 5개 이상 동시에 투찰 가능해?",
+    ],
+)
+def test_announcement_list_query_excludes_explanatory_questions(query):
+    assert is_announcement_list_query(query) is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "최근 낙찰 결과 5개 리스트",
+        "용역 공고 낙찰률 평균",
+        "공고번호 R26BK01775039 알려줘",
+        "최근 입찰 동향 알려줘",
+    ],
+)
+def test_announcement_list_query_excludes_result_and_statistics_queries(query):
+    assert is_announcement_list_query(query) is False
 
 
 def test_announcement_list_query_excludes_field_lookup_and_distant_marker():

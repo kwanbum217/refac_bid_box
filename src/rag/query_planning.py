@@ -345,6 +345,23 @@ ANNOUNCEMENT_LIST_PATTERN = re.compile(
     r"공고(?!된|되는|하는|할|될|하였|했)[^.!?\n]{0,20}?"
     r"(?:\d+\s*(?:개|건)|" + "|".join(RESULT_LIST_MARKERS) + r")"
 )
+ANNOUNCEMENT_QUERY_COUNT_PATTERN = re.compile(r"\d+\s*(?:개|건)")
+ANNOUNCEMENT_EXPLANATION_MARKERS = (
+    "방법",
+    "규정",
+    "설명",
+    "어디서",
+    "어떻게",
+    "기능",
+    "가능",
+    "보는 법",
+    "뭐야",
+    "의미",
+    "절차",
+    "이란",
+    "란",
+)
+ANNOUNCEMENT_LIST_REQUEST_VERBS = ("보여", "알려", "뽑아", "줘", "해줘", "나열")
 
 
 def is_announcement_list_query(query: str) -> bool:
@@ -353,11 +370,19 @@ def is_announcement_list_query(query: str) -> bool:
     목록 신호가 '공고' 바로 뒤에 붙어야 합니다. '공고번호'처럼 공고가 다른 낱말의
     일부이거나, 목록 신호가 문장 멀리 떨어진 일반 질의는 여기에 해당하지 않습니다.
     낙찰 표지가 있는 질의는 기존 낙찰 결과 목록 경로가 그대로 맡도록 거짓을 반환합니다.
+    설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
+    개수 없이 '목록'·'리스트' 같은 낱말만 있으면 요청 동사가 함께 있을 때만 참입니다.
     """
     lowered = _query_lower(query)
+    if any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS):
+        return False
     if not ANNOUNCEMENT_LIST_PATTERN.search(lowered):
         return False
-    return not is_result_list_query(query)
+    if is_result_list_query(query):
+        return False
+    if ANNOUNCEMENT_QUERY_COUNT_PATTERN.search(lowered):
+        return True
+    return any(verb in lowered for verb in ANNOUNCEMENT_LIST_REQUEST_VERBS)
 
 
 def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
