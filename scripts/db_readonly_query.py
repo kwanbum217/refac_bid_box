@@ -23,7 +23,8 @@
 읽기 전용 보장:
 
 - `SELECT`, `SHOW`, `EXPLAIN`, `DESC(RIBE)`, `WITH` 로 시작하는 문장만 허용합니다.
-- 쓰기·DDL 키워드가 어디에든 나타나면 거부합니다(주석과 문자열 리터럴 제거 후 검사).
+- 쓰기·DDL 키워드가 어디에든 나타나면 거부합니다(주석은 지우고 문자열 리터럴과
+  백틱 식별자는 내용만 공백으로 바꾼 사본에서 검사).
 - MySQL 실행 주석(`/*! ... */`, `/*!50000 ... */`)과 옵티마이저 힌트 주석
   (`/*+ ... */`)이 있으면 거부합니다. 서버가 본문을 실제로 실행하기 때문입니다.
 - 여러 문장을 한 번에 보내지 못하게 합니다. 세미콜론으로 이어 붙인 우회를 막습니다.
@@ -113,66 +114,78 @@ class UnsafeQueryError(ValueError):
 # 상태 기반 스캐너가 쓰는 인용 문맥과 그 닫는 문자입니다. 백틱은 식별자라
 # 백슬래시 이스케이프가 없고, 겹친 백틱(``)이 이스케이프입니다.
 QUOTED_STATES = {"single": "'", "double": '"', "backtick": "`"}
+STATE_BY_QUOTE = {"'": "single", '"': "double", "`": "backtick"}
+UNCLOSED_STATES = {
+    "single": "unclosed_single",
+    "double": "unclosed_double",
+    "backtick": "unclosed_backtick",
+}
 
 
-def reject_executable_comments(sql: str) -> None:
-    """원문을 왼쪽에서 오른쪽으로 한 번 훑어 실행 주석과 힌트 주석을 찾습니다.
+def _tokenize_sql(sql: str) -> list[tuple[str, str]]:
+    """원문을 왼쪽에서 오른쪽으로 한 번 훑어 코드·주석·인용 구간을 나눕니다.
 
-    문자열 리터럴 제거와 주석 제거를 정규식으로 따로 돌리면 서로의 경계를
-    오인합니다. `SELECT 1 /* ' */ /*! DELETE FROM t */ 'x'` 처럼 블록 주석 안의
-    따옴표를 리터럴 시작으로 보면 뒤따르는 실행 주석을 놓치고, 반대로 리터럴
-    안의 `/*!` 를 주석 시작으로 보면 정상 질의를 막습니다. 문맥을 유지한 한 번의
-    순회는 두 문제를 함께 없앱니다.
+    정규식으로 주석과 리터럴을 차례로 치환하면 서로의 경계를 오인합니다.
+    `SELECT 1 /* ' */ /*! DELETE FROM t */ 'x'` 처럼 블록 주석 안의 따옴표를
+    리터럴 시작으로 보면 뒤따르는 실행 주석을 놓칩니다. 반대로 백틱 식별자 안의
+    `"` 를 리터럴 시작으로 보면 그 뒤의 세미콜론과 금지 키워드가 한 문자열에
+    삼켜집니다. 문맥을 유지한 한 번의 순회는 두 문제를 함께 없앱니다.
 
-    MySQL 은 `/*! ... */` 와 `/*+ ... */` 의 본문을 주석이 아니라 실행할 SQL 로
-    취급합니다. `/* !` 처럼 구분자 사이에 공백이 있으면 일반 주석입니다.
-    닫히지 않은 리터럴이나 블록 주석도 경계를 신뢰할 수 없으므로 거부합니다.
+    토큰은 `(종류, 원문)` 이고 종류는 `code`, `comment`, `single`, `double`,
+    `backtick`, 닫히지 않은 구간의 `unclosed_*` 입니다. 텍스트는 자르지 않고
+    원문 그대로 돌려줍니다.
     """
-    state = "normal"
+    tokens: list[tuple[str, str]] = []
     index = 0
     length = len(sql)
+    code_start = 0
+
+    def flush_code(end: int) -> None:
+        nonlocal code_start
+        if end > code_start:
+            tokens.append(("code", sql[code_start:end]))
+
     while index < length:
         char = sql[index]
 
-        if state in QUOTED_STATES:
+        if char in STATE_BY_QUOTE:
+            flush_code(index)
+            state = STATE_BY_QUOTE[char]
             quote = QUOTED_STATES[state]
-            if char == "\\" and state != "backtick":
-                index += 2
-            elif char == quote:
-                if sql.startswith(quote * 2, index):
+            start = index
+            index += 1
+            closed = False
+            while index < length:
+                current = sql[index]
+                if state != "backtick" and current == "\\":
                     index += 2
+                elif current == quote:
+                    if sql.startswith(quote * 2, index):
+                        index += 2
+                    else:
+                        index += 1
+                        closed = True
+                        break
                 else:
-                    state = "normal"
                     index += 1
+            index = min(index, length)
+            tokens.append((state if closed else UNCLOSED_STATES[state], sql[start:index]))
+            code_start = index
+            continue
+
+        if char == "/" and sql.startswith("/*", index):
+            flush_code(index)
+            end = sql.find("*/", index + 2)
+            if end < 0:
+                tokens.append(("unclosed_comment", sql[index:]))
+                index = length
             else:
-                index += 1
+                tokens.append(("comment", sql[index : end + 2]))
+                index = end + 2
+            code_start = index
             continue
 
-        if state == "block":
-            if char == "*" and sql.startswith("*/", index):
-                state = "normal"
-                index += 2
-            else:
-                index += 1
-            continue
-
-        if state == "line":
-            if char == "\n":
-                state = "normal"
-            index += 1
-            continue
-
-        if char in "'\"`":
-            state = {"'": "single", '"': "double", "`": "backtick"}[char]
-            index += 1
-        elif char == "/" and sql.startswith("/*", index):
-            if sql.startswith(EXECUTABLE_COMMENT_MARKERS, index):
-                raise UnsafeQueryError(
-                    "MySQL 실행 주석(/*! */)이나 힌트 주석(/*+ */)은 허용하지 않습니다."
-                )
-            state = "block"
-            index += 2
-        elif char == "-" and sql.startswith("--", index):
+        if char == "-" and sql.startswith("--", index):
             # MySQL 은 -- 바로 뒤에 단일 바이트 공백이나 제어문자가 오거나 입력이
             # 끝날 때만 줄 주석으로 봅니다. 그렇지 않으면 두 하이픈은 일반 문자이므로
             # `--3` 이나 `--/*!` 를 주석으로 넘기면 뒤의 실행 주석을 놓칩니다.
@@ -181,29 +194,66 @@ def reject_executable_comments(sql: str) -> None:
             # 시작으로 보지 않으므로 그 뒤의 `/*!` 가 실제로 실행됩니다.
             follower = sql[index + 2 : index + 3]
             if not follower or ord(follower) <= 0x20 or ord(follower) == 0x7F:
-                state = "line"
-            index += 2
-        elif char == "#":
-            state = "line"
-            index += 1
-        else:
-            index += 1
+                flush_code(index)
+                newline = sql.find("\n", index)
+                end = length if newline < 0 else newline + 1
+                tokens.append(("comment", sql[index:end]))
+                index = end
+                code_start = index
+            else:
+                index += 2
+            continue
 
-    if state in QUOTED_STATES or state == "block":
-        raise UnsafeQueryError("닫히지 않은 문자열 리터럴이나 주석이 있습니다.")
+        if char == "#":
+            flush_code(index)
+            newline = sql.find("\n", index)
+            end = length if newline < 0 else newline + 1
+            tokens.append(("comment", sql[index:end]))
+            index = end
+            code_start = index
+            continue
+
+        index += 1
+
+    flush_code(length)
+    return tokens
+
+
+def reject_executable_comments(sql: str) -> None:
+    """한 번의 훑기 결과에서 실행 주석과 힌트 주석을 찾습니다.
+
+    MySQL 은 `/*! ... */` 와 `/*+ ... */` 의 본문을 주석이 아니라 실행할 SQL 로
+    취급합니다. `/* !` 처럼 구분자 사이에 공백이 있으면 일반 주석입니다.
+    닫히지 않은 리터럴이나 블록 주석도 경계를 신뢰할 수 없으므로 거부합니다.
+    """
+    for kind, token in _tokenize_sql(sql):
+        if kind in ("comment", "unclosed_comment") and token.startswith(EXECUTABLE_COMMENT_MARKERS):
+            raise UnsafeQueryError(
+                "MySQL 실행 주석(/*! */)이나 힌트 주석(/*+ */)은 허용하지 않습니다."
+            )
+        if kind in ("unclosed_comment", *UNCLOSED_STATES.values()):
+            raise UnsafeQueryError("닫히지 않은 문자열 리터럴이나 주석이 있습니다.")
 
 
 def strip_sql_noise(sql: str) -> str:
-    """주석과 문자열 리터럴을 지운 검사용 사본을 만듭니다.
+    """주석을 지우고 인용 구간의 내용을 공백으로 바꾼 검사용 사본을 만듭니다.
 
     금지 토큰 검사를 원문에 그대로 하면 `WHERE name = 'update'` 같은 정상 질의가
-    막히고, 반대로 주석 안에 숨긴 구문을 놓칠 수 있습니다.
+    막힙니다. 반대로 리터럴이나 백틱 식별자 안의 따옴표를 리터럴 경계로 오인하면
+    그 사이의 세미콜론과 금지 키워드가 사라집니다. 바깥 따옴표와 백틱은 남기고
+    내용만 같은 길이의 공백으로 바꿔 구문 경계를 유지합니다.
     """
-    without_block = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
-    without_line = re.sub(r"(--|#)[^\n]*", " ", without_block)
-    without_strings = re.sub(r"'(?:[^'\\]|\\.)*'", " ", without_line)
-    without_strings = re.sub(r'"(?:[^"\\]|\\.)*"', " ", without_strings)
-    return without_strings
+    pieces: list[str] = []
+    for kind, token in _tokenize_sql(sql):
+        if kind == "code":
+            pieces.append(token)
+        elif kind in ("comment", "unclosed_comment"):
+            pieces.append(" ")
+        else:
+            closed = not kind.startswith("unclosed")
+            body = len(token) - 1 - (1 if closed else 0)
+            pieces.append(token[0] + " " * max(body, 0) + (token[-1] if closed else ""))
+    return "".join(pieces)
 
 
 def assert_read_only(sql: str) -> str:
