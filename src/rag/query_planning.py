@@ -192,12 +192,16 @@ KOREAN_NUMERALS: dict[str, int] = {
 KOREAN_NUMERAL_FRAGMENT = "|".join(sorted(KOREAN_NUMERALS, key=len, reverse=True))
 # 개수는 반드시 단위(개/건)가 붙은 형태만 인정합니다. "한 달", "세부", "열린",
 # "한국전력공사" 처럼 수사 글자가 다른 낱말의 일부인 경우를 개수로 읽지 않습니다.
+# 수사 앞도 제한합니다. "정한", "구두", "실세" 처럼 다른 낱말 끝 글자와 겹치면
+# 개수로 읽지 않도록 한글 수사는 입력 시작·공백·비한글 뒤에서만 인정하고,
+# 숫자는 숫자·영문자 뒤가 아닐 때만 인정합니다("최근5건" 은 인정).
 # 단위 뒤에 다른 한글 음절이 이어지면 그 단위도 개수가 아닙니다. "세 건설사",
 # "다섯 건설", "한 건강", "세 개발자" 를 개수로 읽지 않도록 단위 바로 뒤를
 # 입력 끝·공백·비한글·개수 뒤 조사로 제한합니다.
 COUNT_UNIT_BOUNDARY_PATTERN = r"(?=$|\s|[^가-힣]|만|씩|을|를|이|가|은|는|도|의|으로|정도|짜리)"
 COUNT_PATTERN_FRAGMENT = (
-    rf"(?:[0-9]+|{KOREAN_NUMERAL_FRAGMENT})\s*(?:개|건){COUNT_UNIT_BOUNDARY_PATTERN}"
+    rf"(?:(?<![0-9A-Za-z])[0-9]+|(?<![가-힣])(?:{KOREAN_NUMERAL_FRAGMENT}))"
+    rf"\s*(?:개|건){COUNT_UNIT_BOUNDARY_PATTERN}"
 )
 COUNT_PATTERN = re.compile(COUNT_PATTERN_FRAGMENT)
 # 요청 동사는 어미 변형을 정규식 대안으로 받습니다.

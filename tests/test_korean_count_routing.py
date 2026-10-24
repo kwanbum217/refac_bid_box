@@ -95,10 +95,26 @@ def test_numeral_letters_outside_count_unit_do_not_set_limit(query):
         ("최근 낙찰 결과 세 개씩 보여줘", 3),
         ("공고 목록 두 건 보여줘", 2),
         ("최근 낙찰 결과 다섯 건 보여줘", 5),
+        ("최근 낙찰 결과5건 보여줘", 5),
     ],
 )
 def test_count_unit_with_trailing_particle_keeps_numeral(query, expected):
     assert extract_result_limit(query) == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "낙찰 결과 정한 건 보여줘",
+        "낙찰 결과 구두 건 보여줘",
+        "낙찰 결과 실세 개 보여줘",
+    ],
+)
+def test_numeral_glued_to_previous_hangul_syllable_is_not_count(query):
+    assert extract_result_limit(query) == 5
+    assert extract_result_limit(query, default=7) == 7
+    assert is_result_list_query(query) is False
+    assert "result_limit" not in build_retrieval_plan(query).filters
 
 
 @pytest.mark.parametrize(
