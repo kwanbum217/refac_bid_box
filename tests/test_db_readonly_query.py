@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from scripts.db_readonly_query import UnsafeQueryError, assert_read_only, strip_sql_noise
@@ -92,6 +94,20 @@ class TestReadOnlyAccepts:
     )
     def test_double_dash_ascii_boundaries_start_real_line_comment(self, sql):
         """단일 바이트 공백·제어문자 뒤는 진짜 줄 주석이라 뒤의 표기가 실행되지 않습니다."""
+        assert assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            'SELECT `a"b` FROM t',
+            "SELECT 'a;b' AS c",
+            'SELECT "x;y" AS c',
+            "SELECT `semi;colon` FROM t",
+            "SELECT COUNT(*) FROM bid_results WHERE bid_ntce_nm LIKE '%delete%'",
+        ],
+    )
+    def test_quote_boundaries_do_not_false_positive(self, sql):
+        """리터럴·백틱 안의 세미콜론과 금지어는 데이터이므로 통과해야 합니다."""
         assert assert_read_only(sql)
 
 
@@ -189,6 +205,24 @@ class TestReadOnlyRejects:
         with pytest.raises(UnsafeQueryError):
             assert_read_only("SELECT 1 /* ok */ UNION SELECT 1 INTO OUTFILE '/tmp/x'")
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            'SELECT `a"` ; DELETE FROM bid_results WHERE "x"="x"',
+            "SELECT 'a\"' ; DELETE FROM t",
+            'SELECT "a\'" ; UPDATE t SET a=1',
+            "SELECT `x` FROM t; DROP TABLE t",
+            'SELECT 1 /* " */ ; DELETE FROM t',
+            "SELECT '#' ; DELETE FROM bid_results",
+            "SELECT '--' ; DELETE FROM t",
+            "SELECT '/*' ; DELETE FROM t -- */",
+        ],
+    )
+    def test_write_hidden_behind_quote_boundaries_is_rejected(self, sql):
+        """리터럴 안의 따옴표·주석 표시가 경계로 오인되어 뒤의 쓰기를 가리면 안 됩니다."""
+        with pytest.raises(UnsafeQueryError):
+            assert_read_only(sql)
+
     def test_empty_statement_is_rejected(self):
         with pytest.raises(UnsafeQueryError):
             assert_read_only("   ;  ")
@@ -214,6 +248,26 @@ class TestStripSqlNoise:
 
     def test_double_quoted_literal_removed(self):
         assert "alter" not in strip_sql_noise('SELECT "alter"').lower()
+
+    def test_outer_quotes_are_preserved_and_content_blanked(self):
+        """바깥 따옴표는 남기고 내용만 같은 길이의 공백으로 바꿉니다."""
+        assert strip_sql_noise('SELECT "alter"') == 'SELECT "     "'
+
+    def test_backtick_identifier_content_is_blanked(self):
+        assert strip_sql_noise("SELECT `a;b` FROM t") == "SELECT `   ` FROM t"
+
+    def test_quoted_content_does_not_change_length(self):
+        sql = "SELECT 'update', \"drop\", `delete` FROM t"
+        assert len(strip_sql_noise(sql)) == len(sql)
+
+    def test_large_literal_is_scanned_quickly(self):
+        """20만 자 리터럴도 한 번의 순회로 0.5초 안에 끝나야 합니다."""
+        sql = "SELECT '" + "a" * 200_000 + "'"
+        started = time.perf_counter()
+        stripped = strip_sql_noise(sql)
+        elapsed = time.perf_counter() - started
+        assert len(stripped) == len(sql)
+        assert elapsed < 0.5
 
 
 class TestReadOnlyFunctionTokens:
