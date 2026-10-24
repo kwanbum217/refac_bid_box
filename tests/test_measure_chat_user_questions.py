@@ -30,6 +30,14 @@ def _load(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _fixture_item(item_id: str) -> dict[str, Any]:
+    for path in (PUBLIC_FIXTURE, BLIND_FIXTURE):
+        for item in _load(path)["items"]:
+            if item["id"] == item_id:
+                return item
+    raise AssertionError(f"fixture 문항을 찾지 못했습니다: {item_id}")
+
+
 def _announcement_item(
     *,
     limit: int = 5,
@@ -1011,6 +1019,70 @@ def test_refuse_or_redirect_passes_on_greeting_self_introduction() -> None:
     assert result["passed"] is True
     assert result["detail"]["forbidden_claim_hits"] == []
     assert "도와드릴" in result["detail"]["redirect_markers"]
+
+
+def test_refuse_or_redirect_normalization_fails_fixture_pub_oos_01() -> None:
+    # 실제 fixture 반례: pub_oos_01 의 금지어 "GPT" 를 소문자 "gpt" 로 쓴 답이
+    # 통과로 새면 안 된다. 비교 전에 casefold 로 대소문자를 없앤다.
+    item = _fixture_item("pub_oos_01")
+    result = measure.grade_attempt(
+        item,
+        _refusal_truth(),
+        _payload("저는 gpt 기반 챗봇이며 입찰 공고 정보를 안내합니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["forbidden_claim_hits"] == ["GPT"]
+
+
+def test_refuse_or_redirect_normalization_fails_fixture_pub_oos_04() -> None:
+    # 실제 fixture 반례: pub_oos_04 의 금지어 "2입니다" 와 답변 "2 입니다" 의
+    # 공백 차이를 없앤다. 업무 표지와 안내 표지가 있어도 금지어가 있으면 실패다.
+    item = _fixture_item("pub_oos_04")
+    result = measure.grade_attempt(
+        item,
+        _refusal_truth(),
+        _payload("1 더하기 1은 2 입니다. 다만 입찰 공고 안내는 도와드릴 수 있습니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["forbidden_claim_hits"] == ["2입니다"]
+
+
+def test_refuse_or_redirect_normalization_passes_normal_guide_answer() -> None:
+    # 정상 안내 답은 정규화 후에도 통과해야 한다.
+    answer = "안녕하세요, 저는 입찰 공고 정보를 안내하는 챗봇입니다. 무엇을 도와드릴까요?"
+    result = measure.grade_attempt(
+        _fixture_item("pub_oos_01"),
+        _refusal_truth(),
+        _payload(answer, tools=()),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["forbidden_claim_hits"] == []
+
+
+def test_refuse_or_redirect_normalization_fails_spaced_forbidden_claim() -> None:
+    # 금지어 "GPT" 와 답변 "G P T" 는 공백 제거 정규화로 같은 낱말이 된다.
+    result = measure.grade_attempt(
+        _refusal_item("안녕하세요, 너는 누구야?", ["GPT"]),
+        _refusal_truth(),
+        _payload("저는 G P T 기반 챗봇이며 입찰 공고 정보를 안내합니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["forbidden_claim_hits"] == ["GPT"]
+
+
+def test_refuse_or_redirect_normalization_applies_to_markers() -> None:
+    # 업무 표지와 안내 표지 검사에도 같은 정규화를 쓴다. 표기 공백이 있어도
+    # 표지로 인정하고, 금지어가 없으면 통과다.
+    result = measure.grade_attempt(
+        _refusal_item("내일 점심 뭐 먹을까?", ["김치찌개", "비빔밥", "식당", "맛집"]),
+        _refusal_truth(),
+        _payload("입 찰 정보만 안내합니다. 그 질문은 답변 드리기 어렵습니다.", tools=()),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["domain_terms"] == ["입찰"]
+    assert result["detail"]["redirect_markers"] == ["안내", "답변드리기 어렵"]
 
 
 STOCK_CLAIMS = ["코스피", "코스닥", "주가", "지수", "상승", "하락", "매수", "매도"]

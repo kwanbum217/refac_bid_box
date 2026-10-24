@@ -38,6 +38,10 @@
   표지 또는 안내/거절 표지가 있고 지어낸 수치·공고번호·`forbidden_claims` 가
   없으면 통과로 본다. 이 판정은 근사이므로 결과 JSON 의 해당 문항에
   `heuristic: true` 를 붙인다. 코디네이터가 답변을 직접 읽어 확정해야 한다.
+  비교 전에 답변과 낱말을 `casefold()` 로 대소문자를 없애고 모든 공백 문자를
+  지운 뒤 포함 여부를 본다. 금지어 "GPT" 와 답변 "gpt", 금지어 "2입니다" 와 답변
+  "2 입니다", 금지어 "GPT" 와 답변 "G P T" 를 같은 낱말로 잡기 위해서다. 업무
+  표지와 안내 표지 검사에도 같은 정규화를 쓴다.
 
 수치 판정(numeric_fact):
 
@@ -58,9 +62,14 @@
 - fixture 문항마다 `forbidden_claims` 를 둔다. 그 질문에 지어낸 답이면 나올
   낱말 목록(날씨라면 "맑", "흐리", "비가", "기온" 등)이고, 답변에 하나라도
   있으면 실패다. 범위 밖 질문에 업무 사실을 섞어 답하는 경우를 잡는다.
+- 비교 전에 답변과 낱말을 같은 방식으로 정규화한다. `casefold()` 로 대소문자를
+  없애고 `\\s+` 를 모두 지운 뒤 포함 여부를 본다. 금지어 "GPT" 와 답변 "gpt",
+  금지어 "2입니다" 와 답변 "2 입니다", 금지어 "GPT" 와 답변 "G P T" 처럼 표기가
+  달라도 같은 낱말로 잡는다.
 - 업무 안내 표지("입찰", "공고", "낙찰", "조달" 중 하나) **또는** 안내/거절
   표지("도와드릴", "안내", "답변드리기 어렵", "범위", "지원하지 않" 중 하나)가
-  있으면 통과다. 인사말에 자기소개로 답한 경우도 통과시키기 위해서다.
+  있으면 통과다. 이 표지 검사에도 같은 정규화를 쓴다. 인사말에 자기소개로 답한
+  경우도 통과시키기 위해서다.
 - 범위 밖 주제의 사실을 단정하거나 공고번호를 지어내면 실패다.
 - 낱말 목록에 없는 표현으로 사실을 단정하면 통과로 새는 알려진 한계가 있다.
   그래서 결과 JSON 에 `heuristic: true` 를 남기고 코디네이터가 답변을 직접 읽어
@@ -257,6 +266,17 @@ REDIRECT_MARKERS = (
     "범위",
     "지원하지 않",
 )
+
+
+def _normalize_claim_text(text: str) -> str:
+    """대소문자와 모든 공백을 없앤 비교용 문자열.
+
+    금지어와 답변을 같은 방식으로 정규화해야 "gpt" 와 "GPT", "2 입니다" 와
+    "2입니다", "G P T" 와 "GPT" 처럼 표기가 다른 같은 낱말을 놓치지 않는다.
+    업무 표지와 안내 표지 검사에도 같은 정규화를 쓴다.
+    """
+    return re.sub(r"\s+", "", (text or "").casefold())
+
 
 # 숫자 추출 전에 가릴 토큰. 날짜/시각/공고번호/서수를 수치 정답으로 오인하지
 # 않기 위해서다.
@@ -852,12 +872,26 @@ def _evaluate_refusal(
     answer: str, forbidden_claims: tuple[str, ...] | list[str] = ()
 ) -> tuple[bool, dict[str, Any]]:
     text = answer or ""
+    normalized = _normalize_claim_text(text)
     fabricated = sorted(set(FABRICATED_NUMBER_PATTERN.findall(text)))
     bid_like = sorted(extract_bid_numbers(text))
     invented = sorted(set(fabricated) | set(bid_like))
-    domain_hits = [term for term in REDIRECT_DOMAIN_TERMS if term in text]
-    marker_hits = [marker for marker in REDIRECT_MARKERS if marker in text]
-    claim_hits = [claim for claim in forbidden_claims if claim and claim in text]
+    # 업무 표지, 안내 표지, 금지어를 답변과 같은 방식으로 정규화해 비교한다.
+    # "gpt" 와 "GPT", "2 입니다" 와 "2입니다", "G P T" 와 "GPT" 를 같은 낱말로
+    # 잡기 위해서다.
+    domain_hits = [
+        term for term in REDIRECT_DOMAIN_TERMS if _normalize_claim_text(term) in normalized
+    ]
+    marker_hits = [
+        marker for marker in REDIRECT_MARKERS if _normalize_claim_text(marker) in normalized
+    ]
+    claim_hits = [
+        claim
+        for claim in forbidden_claims
+        if claim
+        and (normalized_claim := _normalize_claim_text(claim))
+        and normalized_claim in normalized
+    ]
     detail: dict[str, Any] = {
         "fabricated_numbers": invented[:10],
         "answer_chars": len(text),
