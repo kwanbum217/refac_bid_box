@@ -129,6 +129,26 @@ RESULT_QUERY_MARKERS = (
 )
 RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
 RESULT_LIST_REQUEST_VERBS = ("보여", "알려", "보여줄래", "줘", "뽑아", "나열")
+RESULT_LIST_SCOPE_WORDS = (
+    "최근",
+    "요즘",
+    "이번주",
+    "이번 주",
+    "지난주",
+    "지난달",
+    "이번달",
+    "오늘",
+    "어제",
+    "올해",
+    "작년",
+    "분기",
+    "용역",
+    "공사",
+    "물품",
+    "외자",
+    "전체",
+)
+RESULT_LIST_SCOPE_PERIOD_PATTERN = re.compile(r"\d+\s*(?:월|년|일)")
 RESULT_LIST_EXCLUDED_MARKERS = (
     "평균",
     "낙찰률",
@@ -352,12 +372,21 @@ def is_result_query(query: str) -> bool:
     return bool(RESULT_ATTRIBUTE_PATTERN.search(lowered))
 
 
+def _has_result_list_scope(lowered: str) -> bool:
+    """질의가 기간이나 분류로 범위를 한정하는지 판정합니다."""
+    if any(word in lowered for word in RESULT_LIST_SCOPE_WORDS):
+        return True
+    return bool(RESULT_LIST_SCOPE_PERIOD_PATTERN.search(lowered))
+
+
 def is_result_list_query(query: str) -> bool:
     """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다.
 
     결과 마커에 목록 신호가 붙은 기존 형태 외에, 목록 신호 없이 요청 동사
     (보여·알려·줘 등)만 붙은 요청과 낙찰 단독 표현에 개수가 붙은 요청도
-    목록 질의로 봅니다. 통계 표지, 공고번호 단건, 설명형 질의는 각자의
+    목록 질의로 봅니다. 요청 동사만으로 판정하는 경로는 기간이나 분류 범위를
+    한정한 질의에만 적용해, 업체명만 지목한 질의가 전체 최신 목록으로
+    새지 않게 합니다. 통계 표지, 공고번호 단건, 설명형 질의는 각자의
     경로가 맡도록 거짓을 반환하고, 개체를 지목한 질의도 기존 개체 조회
     경로를 그대로 쓰도록 거짓을 반환합니다.
     """
@@ -367,8 +396,10 @@ def is_result_list_query(query: str) -> bool:
         re.search(r"\d+\s*(?:개|건)", lowered)
     )
     has_request_verb = any(verb in lowered for verb in RESULT_LIST_REQUEST_VERBS)
-    matched = (has_result_marker and (has_list_marker or has_request_verb)) or (
-        "낙찰" in lowered and bool(re.search(r"\d+\s*(?:개|건)", lowered))
+    matched = (
+        (has_result_marker and has_list_marker)
+        or (has_result_marker and has_request_verb and _has_result_list_scope(lowered))
+        or ("낙찰" in lowered and bool(re.search(r"\d+\s*(?:개|건)", lowered)))
     )
     if not matched:
         return False
