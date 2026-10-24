@@ -1091,6 +1091,39 @@ def _institution_result_axis_breakdown(
     return entries, len(names) >= limit
 
 
+def _winner_axis_breakdown(
+    db: Session,
+    result_conditions: list,
+    limit: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """업체별 낙찰 건수를 실시간으로 집계합니다.
+
+    스냅샷은 업체 순위를 상위 5개까지만 보관하므로 "상위 10개" 요청을 조용히
+    자를 수 있고, 기간 조건이 붙으면 애초에 쓸 수 없습니다. 업체 축은 항상
+    실시간 SQL 로 집계하고, 손상값과 빈 업체명을 먼저 제외한 뒤 건수 내림차순,
+    업체명 오름차순으로 정렬해 동점 순서를 고정합니다.
+    """
+    count_expr = func.count()
+    stmt = (
+        select(BidResult.bidwinnr_nm, count_expr)
+        .where(
+            exclude_corrupted(BidResult.bidwinnr_nm),
+            BidResult.bidwinnr_nm != "",
+            *result_conditions,
+        )
+        .group_by(BidResult.bidwinnr_nm)
+        .order_by(count_expr.desc(), BidResult.bidwinnr_nm.asc())
+        .limit(limit)
+    )
+    entries: list[dict[str, Any]] = []
+    for row in _cached_rows(db, stmt):
+        name = _normalize_text(str(row[0] or ""))
+        if not name:
+            continue
+        entries.append(_axis_entry(name, name, bid_count=int(row[1] or 0)))
+    return entries, len(entries) >= limit
+
+
 def _region_axis_breakdown(
     db: Session,
     metric: str,
@@ -1186,6 +1219,8 @@ def _build_axis_breakdown(
         return _institution_result_axis_breakdown(db, result_conditions, limit)
     if group_by == "region":
         return _region_axis_breakdown(db, metric, result_conditions, announcement_conditions, limit)
+    if group_by == "winner":
+        return _winner_axis_breakdown(db, result_conditions, limit)
     return None
 
 
@@ -2232,6 +2267,10 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     category_filter = _normalize_text(str((plan.filters or {}).get("category") or ""))
     group_by = _normalize_text(str((plan.filters or {}).get("group_by") or ""))
     metric = _normalize_text(str((plan.filters or {}).get("metric") or "")) or "announcement_count"
+    # 업체 축은 낙찰 결과 테이블에만 있으므로 지표를 낙찰 건수로 고정합니다.
+    # 호출부가 hand-built plan 으로 다른 지표를 넘겨도 표 라벨과 값이 어긋나지 않습니다.
+    if group_by == "winner":
+        metric = "bid_count"
     group_limit = _group_limit(plan)
     winner_conditions = _result_conditions(
         plan, enable_ngram_prefilter=True, institution_names=result_names

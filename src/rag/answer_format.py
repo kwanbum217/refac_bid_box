@@ -255,6 +255,7 @@ AXIS_LABELS = {
     "category": "분류",
     "institution": "기관",
     "region": "지역",
+    "winner": "업체",
 }
 METRIC_LABELS = {
     "announcement_count": "공고 건수",
@@ -272,6 +273,38 @@ def _format_axis_value(metric: str, value: Any) -> str:
         return f"{int(value):,}"
     except (TypeError, ValueError):
         return "-"
+
+
+def _winner_axis_caption(
+    plan: RetrievalPlan,
+    structured_data: dict,
+    metric_label: str,
+    meta: dict,
+) -> str:
+    """업체 순위 표 위에 집계 기간과 분야를 명시합니다.
+
+    같은 1위라도 기간이 있으면 그 기간의 실시간 집계이고, 없으면 전체 기간
+    집계입니다. 어느 쪽인지 밝히지 않으면 사용자는 질문에 없는 창을 답으로
+    읽습니다.
+    """
+    window = meta.get("window") or {}
+    date_from = str(window.get("date_from") or "")
+    date_to = str(window.get("date_to") or "")
+    filters = structured_data.get("filters") or {}
+    category = str(filters.get("category_label") or "").strip()
+    if not category:
+        category_code = str((plan.filters or {}).get("category") or "")
+        category = _category_label(category_code) if category_code else ""
+    category = category or "전체 분야"
+    if date_from and date_to:
+        period = f"{date_from} ~ {date_to}"
+    elif date_from:
+        period = f"{date_from} 이후"
+    elif date_to:
+        period = f"{date_to} 이전"
+    else:
+        period = "전체 기간 기준"
+    return f"{period} {category} 업체별 {metric_label}입니다."
 
 
 def _build_axis_answer(
@@ -296,8 +329,12 @@ def _build_axis_answer(
 
     axis_label = AXIS_LABELS[group_by]
     metric_label = METRIC_LABELS[metric]
+    if group_by == "winner":
+        headline = _winner_axis_caption(plan, structured_data, metric_label, meta)
+    else:
+        headline = f"{axis_label}별 {metric_label}입니다."
     lines = [
-        f"{axis_label}별 {metric_label}입니다.",
+        headline,
         "",
         f"| {axis_label} | {metric_label} |",
         "| --- | ---: |",
