@@ -143,8 +143,10 @@ INSTITUTION_COLUMNS = {
 }
 
 # 실제 공고번호 형식은 R26BK01789522 이다. 금액(순수 숫자)과 구분하려고
-# 문자 접두를 요구한다.
-BID_NO_PATTERN = re.compile(r"\b[A-Za-z]\d{2}[A-Za-z]{2}\d{6,10}\b")
+# 문자 접두를 요구한다. 경계는 \b 대신 ASCII 둘러보기를 쓴다. 파이썬 유니코드
+# 정규식의 \b 는 한글도 단어 문자로 보므로 "R26BK01775039입니다" 처럼 조사가
+# 붙은 번호를 놓친다. 앞에는 영숫자가, 뒤에는 숫자가 붙지 않은 경우만 잡는다.
+BID_NO_PATTERN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]\d{2}[A-Za-z]{2}\d{6,10}(?![0-9])")
 FABRICATED_NUMBER_PATTERN = re.compile(r"\d{8,}")
 NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
 PLACEHOLDER_PATTERN = re.compile(r"\{([a-z][a-z0-9_]*)\}")

@@ -906,6 +906,76 @@ def test_placeholder_resolution_passes_read_only_guard(monkeypatch: pytest.Monke
     assert guarded[0].startswith("SELECT")
 
 
+ATTACHED_BID_NO = "R26BK01775039"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "R26BK01775039입니다",
+        "R26BK01775039은 낙찰",
+        "R26BK01775039번",
+        "| R26BK01775039 |",
+        "(R26BK01775039-000)",
+        "공고번호:R26BK01775039",
+    ],
+)
+def test_bid_number_pattern_accepts_attached_particles_and_delimiters(text: str) -> None:
+    # \b 는 한글을 단어 문자로 보므로 조사가 붙은 번호를 놓친다. ASCII 둘러보기는
+    # 뒤에 조사, 차수(-000), 공백, |, 괄호가 와도 번호를 잡는다.
+    assert measure.extract_bid_numbers(text) == {ATTACHED_BID_NO}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "XR26BK01775039",
+        "R26BK017750391234567",
+    ],
+)
+def test_bid_number_pattern_rejects_letters_or_longer_digits(text: str) -> None:
+    # 앞에 영숫자가 붙거나 숫자가 10자리를 넘으면 공고번호가 아니다.
+    assert measure.extract_bid_numbers(text) == set()
+
+
+def test_attached_bid_number_no_longer_passes_zero_count_announcement_latest() -> None:
+    # 리뷰어 재현 1: 답변이 붙여 쓴 공고번호를 담았는데 이전 \b 패턴이 이를 놓쳐
+    # 0건 판정과 announcement_latest 판정이 모두 통과했다. 지금은 번호를 인식해
+    # data_mismatch 로 실패해야 한다.
+    answer = "최근 7일 용역 공고는 0건입니다. 참고로 R26BK01789522은 다른 유형입니다."
+    result = measure.grade_attempt(_announcement_item(), _empty_latest_truth(), _payload(answer))
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["db_empty"] is True
+    assert result["detail"]["zero_count_phrases"] == ["0건"]
+    assert result["detail"]["detected_bid_numbers"] == ["R26BK01789522"]
+
+
+def test_attached_fabricated_bid_number_no_longer_passes_announcement_latest() -> None:
+    # 같은 원인의 다른 증상: 정답 5건을 담은 답에 붙여 쓴 다른 번호가 섞여도
+    # 이전 패턴은 이를 놓쳐 통과시켰다. 지금은 허용 집합 밖 번호로 실패한다.
+    answer = ", ".join([*ALLOWED, "R26BK01999999입니다"])
+    result = measure.grade_attempt(
+        _announcement_item(), _latest_truth(ALLOWED, 5), _payload(answer)
+    )
+    assert result["passed"] is False
+    assert result["detail"]["detected_count"] == 6
+    assert result["detail"]["outside_allowed"] == ["R26BK01999999"]
+
+
+def test_attached_bid_numbers_no_longer_drop_a_correct_answer() -> None:
+    # 리뷰어 재현 2: 정답 5건을 조사와 붙여 쓴 정상 답이 이전 \b 패턴에서는 0건으로
+    # 보여 실패했다. 지금은 5건 모두 인식해 통과해야 한다.
+    answer = ", ".join(f"{bid_no}입니다" for bid_no in ALLOWED)
+    result = measure.grade_attempt(
+        _announcement_item(), _latest_truth(ALLOWED, 5), _payload(answer)
+    )
+    assert result["passed"] is True
+    assert result["failure_reasons"] == []
+    assert result["detail"]["detected_count"] == 5
+    assert result["detail"]["outside_allowed"] == []
+
+
 def test_dry_run_does_not_call_http_or_db(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
