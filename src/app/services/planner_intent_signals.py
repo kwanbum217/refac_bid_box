@@ -135,6 +135,7 @@ AUTOMATION_STATUS_KEYWORDS = (
 )
 PREDICTION_CONTEXT_KEYWORDS = (
     "예측",
+    "예상",
     "투찰가",
     "투찰 금액",
     "입찰가",
@@ -150,8 +151,15 @@ PREDICTION_ACTION_KEYWORDS = (
     "예측 해",
     "예측 실행",
     "예측 돌려",
+    "예측 모델 돌려",
     "예측 다시",
     "예측 재실행",
+    "예측 부탁",
+    "예측해 줘",
+    "얼마 써",
+    "얼마에 넣",
+    "얼마로 넣",
+    "얼마로 써",
     "투찰가",
     "투찰 금액",
     "입찰가",
@@ -174,6 +182,12 @@ BID_PRICE_PREDICTION_KEYWORDS = (
     "투찰금액",
     "입찰가",
     "낙찰가",
+    "예상 낙찰금액",
+    "낙찰 예상금액",
+    "예상 낙찰가",
+    "예상금액",
+    "낙찰 하한가",
+    "투찰 하한가",
 )
 COLLECTION_COMMAND_KEYWORDS = (
     "수집해",
@@ -256,10 +270,16 @@ def _is_model_validation_request(message: str) -> bool:
     return any(keyword in message for keyword in MODEL_VALIDATION_KEYWORDS)
 
 
-def _is_bid_price_prediction_request(message: str) -> bool:
+def _is_bid_price_prediction_request(message: str, bid_ntce_no: str = "") -> bool:
+    if _is_model_validation_request(message):
+        return False
     has_price_target = any(keyword in message for keyword in BID_PRICE_PREDICTION_KEYWORDS)
     has_prediction_signal = any(keyword in message for keyword in PREDICTION_CONTEXT_KEYWORDS)
-    return has_price_target and has_prediction_signal and not _is_model_validation_request(message)
+    if has_price_target and has_prediction_signal:
+        return True
+    if bid_ntce_no:
+        return any(keyword in message for keyword in PREDICTION_ACTION_KEYWORDS)
+    return False
 
 
 def _extract_prediction_model_id(message: str) -> str:
