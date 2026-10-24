@@ -81,6 +81,19 @@ class TestReadOnlyAccepts:
         """MySQL 은 -- 뒤에 공백·제어문자나 입력 끝이 올 때만 줄 주석으로 봅니다."""
         assert assert_read_only(sql)
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1-- /*! x */",
+            "SELECT 1--\t/*! x */",
+            "SELECT 1--\r/*! x */",
+            "SELECT 1--",
+        ],
+    )
+    def test_double_dash_ascii_boundaries_start_real_line_comment(self, sql):
+        """단일 바이트 공백·제어문자 뒤는 진짜 줄 주석이라 뒤의 표기가 실행되지 않습니다."""
+        assert assert_read_only(sql)
+
 
 class TestReadOnlyRejects:
     @pytest.mark.parametrize(
@@ -140,6 +153,21 @@ class TestReadOnlyRejects:
     )
     def test_executable_comments_after_bare_double_dash_are_rejected(self, sql):
         """-- 뒤가 공백도 제어문자도 입력 끝도 아니면 줄 주석이 아닙니다."""
+        with pytest.raises(UnsafeQueryError) as exc:
+            assert_read_only(sql)
+        assert "실행 주석" in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1--\u00a0/*! x */",
+            "SELECT 1--\u3000/*! x */",
+            "SELECT 1--\u2028/*! x */",
+            "SELECT 1--\n/*! x */",
+        ],
+    )
+    def test_unicode_space_after_double_dash_does_not_start_line_comment(self, sql):
+        """MySQL 은 유니코드 공백을 줄 주석 시작으로 보지 않으므로 뒤의 실행 주석이 실행됩니다."""
         with pytest.raises(UnsafeQueryError) as exc:
             assert_read_only(sql)
         assert "실행 주석" in str(exc.value)
