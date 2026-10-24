@@ -192,7 +192,13 @@ KOREAN_NUMERALS: dict[str, int] = {
 KOREAN_NUMERAL_FRAGMENT = "|".join(sorted(KOREAN_NUMERALS, key=len, reverse=True))
 # 개수는 반드시 단위(개/건)가 붙은 형태만 인정합니다. "한 달", "세부", "열린",
 # "한국전력공사" 처럼 수사 글자가 다른 낱말의 일부인 경우를 개수로 읽지 않습니다.
-COUNT_PATTERN_FRAGMENT = rf"(?:[0-9]+|{KOREAN_NUMERAL_FRAGMENT})\s*(?:개|건)"
+# 단위 뒤에 다른 한글 음절이 이어지면 그 단위도 개수가 아닙니다. "세 건설사",
+# "다섯 건설", "한 건강", "세 개발자" 를 개수로 읽지 않도록 단위 바로 뒤를
+# 입력 끝·공백·비한글·개수 뒤 조사로 제한합니다.
+COUNT_UNIT_BOUNDARY_PATTERN = r"(?=$|\s|[^가-힣]|만|씩|을|를|이|가|은|는|도|의|으로|정도|짜리)"
+COUNT_PATTERN_FRAGMENT = (
+    rf"(?:[0-9]+|{KOREAN_NUMERAL_FRAGMENT})\s*(?:개|건){COUNT_UNIT_BOUNDARY_PATTERN}"
+)
 COUNT_PATTERN = re.compile(COUNT_PATTERN_FRAGMENT)
 # 요청 동사는 어미 변형을 정규식 대안으로 받습니다.
 RESULT_LIST_REQUEST_VERB_PATTERN = re.compile(
@@ -664,6 +670,11 @@ def is_announcement_list_query(query: str) -> bool:
     전체 최신 목록으로 새지 않게 합니다.
     """
     lowered = _query_lower(query)
+    # 신선도 표지나 요청 동사만으로 통계 질의가 공고 목록으로 새지 않도록,
+    # 낙찰 결과 목록과 같은 통계 제외 표지를 먼저 검사합니다. "두 건" 의 "건" 은
+    # 개수 단위이지 "건수" 통계 표지가 아닙니다.
+    if any(marker in lowered for marker in RESULT_LIST_EXCLUDED_MARKERS):
+        return False
     if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
         return False
     if any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS):

@@ -88,6 +88,45 @@ def test_numeral_letters_outside_count_unit_do_not_set_limit(query):
     assert extract_result_limit(query, default=7) == 7
 
 
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("최근 낙찰 결과 5건만 보여줘", 5),
+        ("최근 낙찰 결과 세 개씩 보여줘", 3),
+        ("공고 목록 두 건 보여줘", 2),
+        ("최근 낙찰 결과 다섯 건 보여줘", 5),
+    ],
+)
+def test_count_unit_with_trailing_particle_keeps_numeral(query, expected):
+    assert extract_result_limit(query) == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "세 건설사 낙찰 결과 보여줘",
+        "최근 낙찰 결과 다섯 건설 보여줘",
+        "한 건강 낙찰 결과 보여줘",
+        "세 개발자 공고 보여줘",
+    ],
+)
+def test_count_unit_followed_by_hangul_syllable_is_not_count(query):
+    assert extract_result_limit(query, default=7) == 7
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "세 건설사 낙찰 결과 보여줘",
+        "최근 낙찰 결과 다섯 건설 보여줘",
+        "한 건강 낙찰 결과 보여줘",
+    ],
+)
+def test_numeral_before_other_hangul_is_not_result_list(query):
+    assert is_result_list_query(query) is False
+    assert is_announcement_list_query(query) is False
+
+
 def test_korean_numeral_limit_reaches_planner_bid_query_tool():
     execution_plan = interpret_request("최근 낙찰 결과 다섯 건 보여줘")
 

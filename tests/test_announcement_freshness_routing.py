@@ -76,6 +76,36 @@ def test_freshness_route_excludes_explanation_field_and_statistics(query):
     assert is_announcement_list_query(query) is False
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "최신 공고 평균 알려줘",
+        "최신 공고 건수 알려줘",
+        "올라온 공고 건수 알려줘",
+        "최신 공고 추이 알려줘",
+        "최신 공고 비교 보여줘",
+        "신규 공고 통계 보여줘",
+    ],
+)
+def test_freshness_route_does_not_override_statistics(query):
+    assert is_announcement_list_query(query) is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "오늘 올라온 용역 공고 알려줘",
+        "용역 공고 목록 좀",
+        "최신 공사 공고 보여줘",
+        "오늘 등록된 물품 공고 알려줘",
+        "이번 주 신규 용역 공고 알려줘",
+        "공고 목록 두 건 보여줘",
+    ],
+)
+def test_freshness_route_keeps_list_cases(query):
+    assert is_announcement_list_query(query) is True
+
+
 def test_freshness_request_reaches_planner_bid_query_tool():
     execution_plan = interpret_request("오늘 올라온 용역 공고 알려줘")
 
