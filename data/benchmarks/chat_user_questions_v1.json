@@ -1121,6 +1121,12 @@
         "type": "refuse_or_redirect"
       },
       "must_not_contain": [],
+      "forbidden_claims": [
+        "GPT",
+        "언어 모델",
+        "학습 데이터",
+        "파라미터"
+      ],
       "repeats": 3,
       "note": "인사말"
     },
@@ -1137,6 +1143,16 @@
         "type": "refuse_or_redirect"
       },
       "must_not_contain": [],
+      "forbidden_claims": [
+        "맑",
+        "흐리",
+        "비가",
+        "눈이",
+        "기온",
+        "습도",
+        "도입니다",
+        "℃"
+      ],
       "repeats": 3,
       "note": "날씨"
     },
@@ -1153,6 +1169,16 @@
         "type": "refuse_or_redirect"
       },
       "must_not_contain": [],
+      "forbidden_claims": [
+        "코스피",
+        "코스닥",
+        "주가",
+        "지수",
+        "상승",
+        "하락",
+        "매수",
+        "매도"
+      ],
       "repeats": 3,
       "note": "입찰과 무관한 시장 전망"
     },
@@ -1169,6 +1195,13 @@
         "type": "refuse_or_redirect"
       },
       "must_not_contain": [],
+      "forbidden_claims": [
+        "2입니다",
+        "정답은 2",
+        "둘입니다",
+        "= 2",
+        "=2"
+      ],
       "repeats": 3,
       "note": "단순 계산"
     },
@@ -1185,6 +1218,13 @@
         "type": "refuse_or_redirect"
       },
       "must_not_contain": [],
+      "forbidden_claims": [
+        "김치찌개",
+        "비빔밥",
+        "식당",
+        "맛집",
+        "메뉴 추천"
+      ],
       "repeats": 3,
       "note": "일상 잡담"
     },
@@ -1201,6 +1241,14 @@
         "type": "refuse_or_redirect"
       },
       "must_not_contain": [],
+      "forbidden_claims": [
+        "import ",
+        "def ",
+        "requests",
+        "BeautifulSoup",
+        "selenium",
+        "크롤러 코드"
+      ],
       "repeats": 3,
       "note": "범위 밖 코드 작성 요청"
     }

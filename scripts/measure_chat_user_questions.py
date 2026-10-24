@@ -10,6 +10,9 @@
 - 데이터 정합: 응답의 공고번호/수치를 측정 시점 DB 조회 결과와 비교한다.
 - 금지 문구: 데이터가 있는데도 "리스트해 드릴 수 없습니다" 같은 문구가 나오면
   실패다.
+- 데이터 부재 문구: 정답이 있는데도 "확인되지 않습니다", "조회되지 않습니다"
+  같은 문구가 나오면 공고번호/수치가 맞아도 실패다. `numeric_fact` 뿐 아니라
+  `announcement_latest`, `result_latest`, `bid_lookup` 에도 똑같이 적용한다.
 - 반복: LLM 을 거치는 문항은 3회 중 2회 이상 통과해야 통과로 본다.
 
 수치 판정(numeric_fact):
@@ -22,10 +25,13 @@
 
 범위 밖 판정(refuse_or_redirect):
 
-- 답변이 (입찰|공고|낙찰|조달) 중 하나와 (도와드릴 수 있|답변드리기 어렵|범위|
-  제공하지 않|지원하지 않) 중 하나를 함께 담아야 통과한다.
-- 날씨, 기온, 주가 같은 사실을 단정하는 답은 실패다.
-- 공고번호를 지어내면 실패다.
+- fixture 문항마다 `forbidden_claims` 를 둔다. 그 질문에 지어낸 답이면 나올
+  낱말 목록(날씨라면 "맑", "흐리", "비가", "기온" 등)이고, 답변에 하나라도
+  있으면 실패다. 범위 밖 질문에 업무 사실을 섞어 답하는 경우를 잡는다.
+- 업무 안내 표지("입찰", "공고", "낙찰", "조달" 중 하나) **또는** 안내/거절
+  표지("도와드릴", "안내", "답변드리기 어렵", "범위", "지원하지 않" 중 하나)가
+  있으면 통과다. 인사말에 자기소개로 답한 경우도 통과시키기 위해서다.
+- 범위 밖 주제의 사실을 단정하거나 공고번호를 지어내면 실패다.
 
 호출 한도와 정답 계산:
 
@@ -194,31 +200,26 @@ FORBIDDEN_SQL_TOKENS = (
 )
 FORBIDDEN_SQL_RE = re.compile(r"\b(" + "|".join(FORBIDDEN_SQL_TOKENS) + r")\b", re.IGNORECASE)
 
-# 답변에 이 문구가 있으면 데이터를 확인하지 못한 답으로 본다. 숫자가 우연히
-# 맞아도 통과시키지 않는다.
+# 답변에 이 문구가 있으면 데이터를 확인하지 못한 답으로 본다. 숫자나 공고번호가
+# 우연히 맞아도 통과시키지 않는다. numeric_fact, announcement_latest,
+# result_latest, bid_lookup 네 판정 모두에 적용한다.
 DATA_ABSENCE_PHRASES = (
     "확인되지 않",
+    "조회되지 않",
     "없습니다",
     "찾을 수 없",
     "제공할 수 없",
     "알 수 없",
 )
 
-# 범위 밖 질문의 통과 조건: 업무 영역 표지와 거절/안내 표지가 함께 있어야 한다.
+# 범위 밖 질문의 통과 조건: 업무 영역 표지 또는 안내/거절 표지 중 하나.
 REDIRECT_DOMAIN_TERMS = ("입찰", "공고", "낙찰", "조달")
 REDIRECT_MARKERS = (
-    "도와드릴 수 있",
+    "도와드릴",
+    "안내",
     "답변드리기 어렵",
     "범위",
-    "제공하지 않",
     "지원하지 않",
-)
-
-# 범위 밖 주제의 사실을 단정하는 답. 주제를 언급만 하는 것은 통과 대상이지만
-# 수치나 상태를 단정하면 실패다.
-OUT_OF_DOMAIN_ASSERTION_PATTERNS = (
-    re.compile(r"(날씨|기온|습도)[^.\n]{0,40}(맑|흐리|비가|눈이|℃|\d+\s*도)"),
-    re.compile(r"(주가|코스피|코스닥|환율|금리|비트코인)[^.\n]{0,40}\d"),
 )
 
 # 숫자 추출 전에 가릴 토큰. 날짜/시각/공고번호/서수를 수치 정답으로 오인하지
@@ -542,20 +543,37 @@ def build_truth(
     return {"kind": kind, "data_available": True, "error": None}
 
 
+def _absence_hits(answer: str) -> list[str]:
+    """답변에 든 데이터 부재 문구를 돌려준다.
+
+    정답이 있는데도 이 문구를 쓰면 번호나 수치가 맞아도 실패로 둔다.
+    """
+    return [phrase for phrase in DATA_ABSENCE_PHRASES if phrase in (answer or "")]
+
+
 def _evaluate_latest(truth: dict[str, Any], answer: str) -> tuple[bool, dict[str, Any]]:
     detected = extract_bid_numbers(answer)
+    absence = _absence_hits(answer)
     detail: dict[str, Any] = {
         "detected_bid_numbers": sorted(detected),
         "detected_count": len(detected),
         "expected_count": truth.get("expected_count", 0),
         "window_fallback": bool(truth.get("window_fallback")),
+        "absence_phrases": absence,
+        "data_absent_claimed": bool(absence),
     }
     if truth.get("error"):
         detail["db_error"] = truth["error"]
         return False, detail
     if truth.get("expected_count", 0) == 0:
+        # DB 자체가 비어 있으면 "없습니다" 는 정답이다. 수집 공백을 실패로
+        # 오인하지 않기 위해 부재 문구 검사보다 먼저 본다.
         detail["db_empty"] = True
         return len(detected) == 0, detail
+    if absence:
+        # 공고번호를 모두 맞게 나열해도 "데이터가 확인되지 않습니다" 를 붙이면
+        # 데이터를 확인하지 못한 답이다.
+        return False, detail
     allowed: set[str] = set(truth.get("allowed") or set())
     outside = sorted(detected - allowed)
     detail["outside_allowed"] = outside
@@ -580,7 +598,7 @@ def _evaluate_numeric(
         }
     )
 
-    absence = [phrase for phrase in DATA_ABSENCE_PHRASES if phrase in (answer or "")]
+    absence = _absence_hits(answer)
     if absence:
         # 숫자가 우연히 맞아도 데이터를 확인하지 못한 답은 실패다.
         detail["absence_phrases"] = absence
@@ -610,7 +628,12 @@ def _evaluate_numeric(
 def _evaluate_bid_lookup(truth: dict[str, Any], answer: str) -> tuple[bool, dict[str, Any]]:
     bid_no = str(truth.get("bid_no") or "")
     title = str(truth.get("title") or "")
-    detail: dict[str, Any] = {"bid_no": bid_no}
+    absence = _absence_hits(answer)
+    detail: dict[str, Any] = {
+        "bid_no": bid_no,
+        "absence_phrases": absence,
+        "data_absent_claimed": bool(absence),
+    }
     if not bid_no:
         detail["reason"] = truth.get("error") or "placeholder 미해결"
         return False, detail
@@ -619,37 +642,36 @@ def _evaluate_bid_lookup(truth: dict[str, Any], answer: str) -> tuple[bool, dict
     fragment = re.sub(r"\s+", " ", title).strip()[:15]
     title_hit = len(fragment) >= 6 and fragment in answer
     detail.update({"bid_no_found": bid_hit, "title_fragment": fragment, "title_found": title_hit})
+    if absence:
+        # 공고번호를 되풀이해도 "낙찰 결과는 조회되지 않습니다" 라면 데이터를
+        # 확인하지 못한 답이다.
+        return False, detail
     return bid_hit or title_hit, detail
 
 
-def _asserts_out_of_domain_fact(answer: str) -> str:
-    """날씨/기온/주가 같은 범위 밖 사실을 단정하는 표현을 찾는다."""
-    for pattern in OUT_OF_DOMAIN_ASSERTION_PATTERNS:
-        match = pattern.search(answer or "")
-        if match:
-            return match.group(0)
-    return ""
-
-
-def _evaluate_refusal(answer: str) -> tuple[bool, dict[str, Any]]:
+def _evaluate_refusal(
+    answer: str, forbidden_claims: tuple[str, ...] | list[str] = ()
+) -> tuple[bool, dict[str, Any]]:
     text = answer or ""
     fabricated = sorted(set(FABRICATED_NUMBER_PATTERN.findall(text)))
     bid_like = sorted(extract_bid_numbers(text))
     invented = sorted(set(fabricated) | set(bid_like))
     domain_hits = [term for term in REDIRECT_DOMAIN_TERMS if term in text]
     marker_hits = [marker for marker in REDIRECT_MARKERS if marker in text]
-    asserted = _asserts_out_of_domain_fact(text)
+    claim_hits = [claim for claim in forbidden_claims if claim and claim in text]
     detail: dict[str, Any] = {
         "fabricated_numbers": invented[:10],
         "answer_chars": len(text),
         "domain_terms": domain_hits,
         "redirect_markers": marker_hits,
-        "out_of_domain_assertion": asserted,
+        "forbidden_claim_hits": claim_hits,
     }
-    # 업무 영역 표지와 거절/안내 표지가 함께 있어야 통과한다. 범위 밖 주제의
-    # 사실을 단정하거나 공고번호를 지어내면 실패다.
-    passed = bool(text.strip()) and bool(domain_hits) and bool(marker_hits)
-    return passed and not invented and not asserted, detail
+    # 업무 영역 표지나 안내/거절 표지 중 하나만 있어도 안내로 본다. 대신 그
+    # 질문에 지어낸 답이면 나올 낱말(forbidden_claims)을 문항별로 걸러, 범위 밖
+    # 주제의 사실을 섞어 답하는 경우를 잡는다.
+    redirected = bool(domain_hits) or bool(marker_hits)
+    passed = bool(text.strip()) and redirected and not invented and not claim_hits
+    return passed, detail
 
 
 def evaluate_check(
@@ -657,6 +679,7 @@ def evaluate_check(
     truth: dict[str, Any],
     answer: str,
     question: str = "",
+    forbidden_claims: tuple[str, ...] | list[str] = (),
 ) -> tuple[bool, dict[str, Any]]:
     kind = check["type"]
     if kind in LATEST_CHECKS:
@@ -666,7 +689,7 @@ def evaluate_check(
     if kind == "bid_lookup":
         return _evaluate_bid_lookup(truth, answer)
     if kind == "refuse_or_redirect":
-        return _evaluate_refusal(answer)
+        return _evaluate_refusal(answer, forbidden_claims)
     return True, {"note": "도구 선택만 판정"}
 
 
@@ -756,7 +779,10 @@ def grade_attempt(
             reasons.append("forbidden_phrase")
             detail["forbidden_phrases"] = forbidden_phrases
 
-    check_passed, check_detail = evaluate_check(item["check"], truth, answer, prompt)
+    forbidden_claims = [str(claim) for claim in item.get("forbidden_claims") or []]
+    check_passed, check_detail = evaluate_check(
+        item["check"], truth, answer, prompt, forbidden_claims
+    )
     detail.update(check_detail)
     if not check_passed:
         reasons.append("data_mismatch")
@@ -972,6 +998,21 @@ def validate_fixture(payload: dict[str, Any], expected_split: str, path: Path | 
             value = item.get(key, [])
             if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
                 errors.append(f"{where}: {key} 는 문자열 배열이어야 합니다")
+
+        claims = item.get("forbidden_claims")
+        if category == "out_of_scope":
+            # 범위 밖 문항은 지어낸 답을 걸러낼 낱말 목록을 반드시 가져야 한다.
+            # 비어 있으면 사실을 단정하는 답도 통과해 판정이 느슨해진다.
+            if (
+                not isinstance(claims, list)
+                or not claims
+                or not all(isinstance(claim, str) and claim for claim in claims)
+            ):
+                errors.append(
+                    f"{where}: out_of_scope 문항에는 forbidden_claims 문자열 배열이 필요합니다"
+                )
+        elif claims is not None:
+            errors.append(f"{where}: forbidden_claims 는 out_of_scope 문항에만 쓸 수 있습니다")
 
         repeats = item.get("repeats")
         if not isinstance(repeats, int) or not 1 <= repeats <= 5:

@@ -299,6 +299,14 @@
         "type": "refuse_or_redirect"
       },
       "must_not_contain": [],
+      "forbidden_claims": [
+        "사료",
+        "예방접종",
+        "중성화",
+        "입양",
+        "배변",
+        "화장실"
+      ],
       "repeats": 3,
       "note": "일상 잡담"
     },
@@ -315,6 +323,14 @@
         "type": "refuse_or_redirect"
       },
       "must_not_contain": [],
+      "forbidden_claims": [
+        "브라질",
+        "프랑스",
+        "아르헨티나",
+        "스페인",
+        "독일",
+        "잉글랜드"
+      ],
       "repeats": 3,
       "note": "입찰과 무관한 예측 요청"
     }

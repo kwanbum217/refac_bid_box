@@ -152,6 +152,25 @@ def test_fixtures_do_not_hardcode_db_answers() -> None:
                 assert check["sql"]
 
 
+@pytest.mark.parametrize("path", [PUBLIC_FIXTURE, BLIND_FIXTURE])
+def test_out_of_scope_items_declare_forbidden_claims(path: Path) -> None:
+    for item in _load(path)["items"]:
+        if item["category"] == "out_of_scope":
+            assert item["check"]["type"] == "refuse_or_redirect"
+            claims = item.get("forbidden_claims")
+            assert isinstance(claims, list)
+            assert claims
+        else:
+            assert "forbidden_claims" not in item
+
+
+def test_validator_requires_forbidden_claims_for_out_of_scope() -> None:
+    item = _refusal_item("오늘 서울 날씨 어때?")
+    item.pop("forbidden_claims")
+    errors = measure.validate_fixture({"split": "public", "items": [item]}, "public", "x")
+    assert any("forbidden_claims" in error for error in errors)
+
+
 def test_announcement_latest_passes_when_all_top_numbers_present() -> None:
     item = _announcement_item()
     result = measure.grade_attempt(item, _latest_truth(ALLOWED, 5), _payload(", ".join(ALLOWED)))
@@ -169,12 +188,62 @@ def test_announcement_latest_fails_with_only_four_numbers() -> None:
     assert result["detail"]["detected_count"] == 4
 
 
-def test_announcement_latest_fails_with_outside_number() -> None:
+def test_announcement_latest_fails_when_outside_number() -> None:
     item = _announcement_item()
     answer = ", ".join([*ALLOWED[:4], "R26BK01999999"])
     result = measure.grade_attempt(item, _latest_truth(ALLOWED, 5), _payload(answer))
     assert result["passed"] is False
     assert result["detail"]["outside_allowed"] == ["R26BK01999999"]
+
+
+def test_announcement_latest_fails_when_correct_numbers_carry_absence_phrase() -> None:
+    # 리뷰어 반례 (D): 정답 5건 뒤에 "데이터가 확인되지 않습니다" 를 붙이면 실패다.
+    answer = ", ".join(ALLOWED) + " 다만 데이터가 확인되지 않습니다."
+    result = measure.grade_attempt(
+        _announcement_item(), _latest_truth(ALLOWED, 5), _payload(answer)
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["detected_count"] == 5
+    assert result["detail"]["data_absent_claimed"] is True
+    assert result["detail"]["absence_phrases"] == ["확인되지 않"]
+
+
+def test_result_latest_fails_when_correct_numbers_carry_absence_phrase() -> None:
+    item = {
+        "id": "t_res",
+        "category": "result_analysis",
+        "split": "public",
+        "question": "최근 용역 낙찰 5건 보여줘",
+        "expected_tools": ["bid_query_tool"],
+        "forbidden_tools": [],
+        "check": {"type": "result_latest", "category": "Servc", "limit": 5, "days": 7},
+        "must_not_contain": [],
+        "repeats": 1,
+        "note": "",
+    }
+    truth = {
+        "kind": "result_latest",
+        "allowed": set(ALLOWED),
+        "expected_count": 5,
+        "data_available": True,
+        "window_fallback": False,
+        "error": None,
+    }
+    answer = ", ".join(ALLOWED) + " 다만 데이터가 확인되지 않습니다."
+    result = measure.grade_attempt(item, truth, _payload(answer))
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["detected_count"] == 5
+    assert result["detail"]["data_absent_claimed"] is True
+
+
+def test_announcement_latest_still_allows_numbers_when_phrase_is_absent() -> None:
+    result = measure.grade_attempt(
+        _announcement_item(), _latest_truth(ALLOWED, 5), _payload(", ".join(ALLOWED))
+    )
+    assert result["passed"] is True
+    assert result["detail"]["absence_phrases"] == []
 
 
 def test_latest_truth_includes_same_timestamp_ties() -> None:
@@ -343,6 +412,37 @@ def test_bid_lookup_accepts_bid_number_or_title_fragment() -> None:
     assert missing["passed"] is False
 
 
+def test_bid_lookup_fails_when_number_present_but_result_not_found() -> None:
+    # 리뷰어 반례 (C): 공고번호가 맞아도 "낙찰 결과는 조회되지 않습니다" 면 실패다.
+    item = {
+        "id": "t_lookup",
+        "category": "bid_lookup",
+        "split": "public",
+        "question": "{latest_servc_result_bid_no} 이 공고 낙찰 결과 알려줘",
+        "expected_tools": ["bid_query_tool"],
+        "forbidden_tools": [],
+        "check": {"type": "bid_lookup", "bid_no_placeholder": "latest_servc_result_bid_no"},
+        "must_not_contain": [],
+        "repeats": 1,
+        "note": "",
+    }
+    truth = {
+        "kind": "bid_lookup",
+        "bid_no": "R26BK01778156",
+        "title": "2026년 공주시 도로정비 공사",
+        "data_available": True,
+        "error": None,
+    }
+    result = measure.grade_attempt(
+        item, truth, _payload("R26BK01778156 공고의 낙찰 결과는 조회되지 않습니다.")
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["bid_no_found"] is True
+    assert result["detail"]["data_absent_claimed"] is True
+    assert result["detail"]["absence_phrases"] == ["조회되지 않"]
+
+
 def test_out_of_scope_fails_when_bid_number_is_invented() -> None:
     item = {
         "id": "t_oos",
@@ -386,7 +486,7 @@ def _numeric_item(question: str, tolerance_ratio: float = 0.02) -> dict[str, Any
     }
 
 
-def _refusal_item(question: str) -> dict[str, Any]:
+def _refusal_item(question: str, forbidden_claims: list[str] | None = None) -> dict[str, Any]:
     return {
         "id": "t_oos",
         "category": "out_of_scope",
@@ -396,9 +496,17 @@ def _refusal_item(question: str) -> dict[str, Any]:
         "forbidden_tools": ["bid_query_tool"],
         "check": {"type": "refuse_or_redirect"},
         "must_not_contain": [],
+        "forbidden_claims": list(forbidden_claims or []),
         "repeats": 3,
         "note": "",
     }
+
+
+def _refusal_truth() -> dict[str, Any]:
+    return {"kind": "refuse_or_redirect", "data_available": True, "error": None}
+
+
+WEATHER_CLAIMS = ["맑", "흐리", "비가", "눈이", "기온", "습도", "도입니다", "℃"]
 
 
 def _numeric_truth(value: float) -> dict[str, Any]:
@@ -454,49 +562,77 @@ def test_numeric_fact_ignores_dates_times_and_bid_numbers() -> None:
 
 def test_refuse_or_redirect_fails_on_reviewer_weather_counterexample() -> None:
     result = measure.grade_attempt(
-        _refusal_item("오늘 서울 날씨 어때?"),
-        {"kind": "refuse_or_redirect", "data_available": True, "error": None},
+        _refusal_item("오늘 서울 날씨 어때?", WEATHER_CLAIMS),
+        _refusal_truth(),
         _payload("오늘 서울은 맑고 기온은 21도입니다.", tools=()),
     )
     assert result["passed"] is False
     assert "data_mismatch" in result["failure_reasons"]
     assert result["detail"]["domain_terms"] == []
-    assert result["detail"]["out_of_domain_assertion"]
+    assert result["detail"]["forbidden_claim_hits"] == ["맑", "기온", "도입니다"]
 
 
 def test_refuse_or_redirect_passes_with_domain_term_and_marker() -> None:
     answer = "저는 입찰 공고와 낙찰 정보를 안내합니다. 날씨 질문은 답변드리기 어렵습니다."
     result = measure.grade_attempt(
-        _refusal_item("오늘 서울 날씨 어때?"),
-        {"kind": "refuse_or_redirect", "data_available": True, "error": None},
+        _refusal_item("오늘 서울 날씨 어때?", WEATHER_CLAIMS),
+        _refusal_truth(),
         _payload(answer, tools=()),
     )
     assert result["passed"] is True
     assert result["detail"]["domain_terms"] == ["입찰", "공고", "낙찰"]
-    assert result["detail"]["out_of_domain_assertion"] == ""
+    assert result["detail"]["forbidden_claim_hits"] == []
 
 
-def test_refuse_or_redirect_fails_without_domain_term() -> None:
+def test_refuse_or_redirect_passes_with_marker_only() -> None:
+    answer = "죄송합니다. 그 질문은 답변드리기 어렵습니다."
     result = measure.grade_attempt(
-        _refusal_item("내일 점심 뭐 먹을까?"),
-        {"kind": "refuse_or_redirect", "data_available": True, "error": None},
-        _payload("죄송합니다. 그 질문은 답변드리기 어렵습니다.", tools=()),
+        _refusal_item("내일 점심 뭐 먹을까?", ["김치찌개", "비빔밥", "식당", "맛집"]),
+        _refusal_truth(),
+        _payload(answer, tools=()),
     )
-    assert result["passed"] is False
-    assert result["detail"]["redirect_markers"] == ["답변드리기 어렵"]
+    assert result["passed"] is True
     assert result["detail"]["domain_terms"] == []
+    assert result["detail"]["redirect_markers"] == ["답변드리기 어렵"]
 
 
 def test_refuse_or_redirect_fails_when_fact_is_asserted_alongside_redirect() -> None:
     answer = "입찰 공고 범위는 안내하지만 오늘 서울은 맑고 기온은 21도입니다."
     result = measure.grade_attempt(
-        _refusal_item("오늘 서울 날씨 어때?"),
-        {"kind": "refuse_or_redirect", "data_available": True, "error": None},
+        _refusal_item("오늘 서울 날씨 어때?", WEATHER_CLAIMS),
+        _refusal_truth(),
         _payload(answer, tools=()),
     )
     assert result["passed"] is False
     assert result["detail"]["domain_terms"]
-    assert result["detail"]["out_of_domain_assertion"]
+    assert result["detail"]["forbidden_claim_hits"]
+
+
+def test_refuse_or_redirect_fails_on_domain_answer_with_weather_claim() -> None:
+    # 리뷰어 반례: 업무 표지와 안내 표지가 모두 있어도 범위 밖 사실을 단정하면 실패다.
+    answer = "입찰 공고 범위 밖 질문이지만 오늘 서울은 맑습니다."
+    result = measure.grade_attempt(
+        _refusal_item("오늘 서울 날씨 어때?", WEATHER_CLAIMS),
+        _refusal_truth(),
+        _payload(answer, tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["domain_terms"]
+    assert result["detail"]["redirect_markers"] == ["범위"]
+    assert result["detail"]["forbidden_claim_hits"] == ["맑"]
+
+
+def test_refuse_or_redirect_passes_on_greeting_self_introduction() -> None:
+    # 과엄격 반례: 인사에 자기소개로 답한 경우는 통과해야 한다.
+    answer = "안녕하세요, 저는 입찰 공고 정보를 안내하는 챗봇입니다. 무엇을 도와드릴까요?"
+    result = measure.grade_attempt(
+        _refusal_item("안녕하세요, 너는 누구야?", ["GPT", "언어 모델", "학습 데이터", "파라미터"]),
+        _refusal_truth(),
+        _payload(answer, tools=()),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["forbidden_claim_hits"] == []
+    assert "도와드릴" in result["detail"]["redirect_markers"]
 
 
 def test_assert_read_only_accepts_select_and_rejects_writes() -> None:
