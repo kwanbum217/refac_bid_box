@@ -172,7 +172,49 @@ RESULT_QUERY_MARKERS = (
     "낙찰받은",
 )
 RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
-RESULT_LIST_REQUEST_VERBS = ("보여", "알려", "보여줄래", "줘", "뽑아", "나열")
+# 한글 수사 개수는 숫자와 같은 자리에서 읽습니다. 긴 수사를 먼저 두지 않으면
+# "열한" 이 "열" 로 잘려 단위 검사에서 빠집니다.
+KOREAN_NUMERALS: dict[str, int] = {
+    "한": 1,
+    "두": 2,
+    "세": 3,
+    "네": 4,
+    "다섯": 5,
+    "여섯": 6,
+    "일곱": 7,
+    "여덟": 8,
+    "아홉": 9,
+    "열": 10,
+    "열한": 11,
+    "열두": 12,
+    "열세": 13,
+    "열네": 14,
+    "열다섯": 15,
+    "열여섯": 16,
+    "열일곱": 17,
+    "열여덟": 18,
+    "열아홉": 19,
+    "스무": 20,
+}
+KOREAN_NUMERAL_FRAGMENT = "|".join(sorted(KOREAN_NUMERALS, key=len, reverse=True))
+# 개수는 반드시 단위(개/건)가 붙은 형태만 인정합니다. "한 달", "세부", "열린",
+# "한국전력공사" 처럼 수사 글자가 다른 낱말의 일부인 경우를 개수로 읽지 않습니다.
+# 수사 앞도 제한합니다. "정한", "구두", "실세" 처럼 다른 낱말 끝 글자와 겹치면
+# 개수로 읽지 않도록 한글 수사는 입력 시작·공백·비한글 뒤에서만 인정하고,
+# 숫자는 숫자·영문자 뒤가 아닐 때만 인정합니다("최근5건" 은 인정).
+# 단위 뒤에 다른 한글 음절이 이어지면 그 단위도 개수가 아닙니다. "세 건설사",
+# "다섯 건설", "한 건강", "세 개발자" 를 개수로 읽지 않도록 단위 바로 뒤를
+# 입력 끝·공백·비한글·개수 뒤 조사로 제한합니다.
+COUNT_UNIT_BOUNDARY_PATTERN = r"(?=$|\s|[^가-힣]|만|씩|을|를|이|가|은|는|도|의|으로|정도|짜리)"
+COUNT_PATTERN_FRAGMENT = (
+    rf"(?:(?<![0-9A-Za-z])[0-9]+|(?<![가-힣])(?:{KOREAN_NUMERAL_FRAGMENT}))"
+    rf"\s*(?:개|건){COUNT_UNIT_BOUNDARY_PATTERN}"
+)
+COUNT_PATTERN = re.compile(COUNT_PATTERN_FRAGMENT)
+# 요청 동사는 어미 변형을 정규식 대안으로 받습니다.
+RESULT_LIST_REQUEST_VERB_PATTERN = re.compile(
+    r"(?:보여|알려|뽑아|나열|줄\s*수\s*있|볼\s*수\s*있|줄래|볼래|부탁|가르쳐|보내|줘)"
+)
 # 요청 동사만 있는 질의는 업체명·기관명·지역명이 섞이면 다른 경로가 맡습니다.
 # 어절에서 조사·어미를 떼고 남은 어간이 모두 허용 어휘일 때만 목록 요청으로 봅니다.
 RESULT_LIST_VOCABULARY_WORDS = frozenset(
@@ -209,11 +251,19 @@ RESULT_LIST_VOCABULARY_WORDS = frozenset(
         "나열",
         "보이",
         "알리",
+        "줄래",
+        "볼래",
+        "부탁",
+        "가르쳐",
+        "보내",
+        "개",
+        "건",
+        *KOREAN_NUMERALS,
     }
 )
 RESULT_LIST_VOCABULARY_PATTERNS = (
     re.compile(r"\d+\s*(?:일|월|년|분기|개월|주)"),
-    re.compile(r"\d+\s*(?:개|건)"),
+    COUNT_PATTERN,
 )
 RESULT_LIST_TOKEN_SUFFIXES = (
     "해줘",
@@ -247,7 +297,6 @@ RESULT_LIST_EXCLUDED_MARKERS = (
     "평균",
     "낙찰률",
     "건수",
-    "몇 건",
     "순위",
     "top",
     "많이 받은",
@@ -258,6 +307,10 @@ RESULT_LIST_EXCLUDED_MARKERS = (
     "높은 편",
     "비교",
 )
+# "몇 건"·"몇 개" 는 모호한 수량 질의이지 목록 개수가 아닙니다. 띄어 쓴 형태와
+# 붙여 쓴 형태를 모두 같은 규칙으로 잡아야 "최신 공고 몇건 알려줘" 가 목록으로
+# 새지 않습니다. 낙찰 결과 목록과 공고 목록 판정이 이 표지를 함께 씁니다.
+RESULT_LIST_EXCLUDED_PATTERN = re.compile(r"몇\s*(?:건|개)")
 RESULT_LIST_EXPLANATION_MARKERS = ("방법", "규정", "설명", "어떻게", "의미", "절차", "뭐야")
 RESULT_LIST_BID_NUMBER_PATTERN = re.compile(r"[A-Z]\d{2}[A-Z]{2}\d{8}|\d{11,}", re.IGNORECASE)
 # 공고번호는 "R26BK01778156" 처럼 영문 1자, 숫자 2자, 영문 2자, 숫자 8자로 고정됩니다.
@@ -579,6 +632,41 @@ def is_result_query(query: str) -> bool:
     return bool(RESULT_ATTRIBUTE_PATTERN.search(lowered))
 
 
+# 요청 어미는 어절마다 나열하지 않고 한 번에 뗍니다. 띄어 쓴 "줄 수 있어" 처럼
+# 여러 어절로 갈라지는 꼬리는 어절 분리 전에 문자열 단위로 지웁니다.
+RESULT_LIST_REQUEST_TAIL_PATTERN = re.compile(
+    r"(?:보여\s*줄\s*수\s*있\S*|줄\s*수\s*있\S*|볼\s*수\s*있\S*|"
+    r"보여\s*줄래\S*|보여\s*줘|알려\s*줄래\S*|알려\s*줘|"
+    r"줄래\S*|볼래\S*|부탁\S*|가르쳐\S*|보내\S*|해\s*줘)"
+)
+RESULT_LIST_REQUEST_TAILS = (
+    "해줘",
+    "줄래요",
+    "주세요",
+    "볼래요",
+    "줄래",
+    "볼래",
+    "부탁해요",
+    "부탁해",
+    "부탁드려요",
+    "부탁",
+    "가르쳐줘",
+    "가르쳐",
+    "보내줘",
+    "보내",
+)
+
+
+def _strip_request_tail(token: str) -> str:
+    """어절 꼬리에 붙은 요청 어미를 한 번에 떼어 냅니다."""
+    for tail in RESULT_LIST_REQUEST_TAILS:
+        if token == tail:
+            return ""
+        if token.endswith(tail) and len(token) > len(tail):
+            return token[: -len(tail)]
+    return token
+
+
 def extract_bid_ntce_no(query: str) -> str:
     """질의에 등장한 공고번호를 대문자로 정규화해 돌려줍니다.
 
@@ -608,20 +696,18 @@ def _result_list_token_allowed(token: str) -> bool:
     if any(pattern.fullmatch(token) for pattern in RESULT_LIST_VOCABULARY_PATTERNS):
         return True
 
-    current = token
+    current = _strip_request_tail(token)
     while current:
+        if current in RESULT_LIST_VOCABULARY_WORDS:
+            return True
+        if any(pattern.fullmatch(current) for pattern in RESULT_LIST_VOCABULARY_PATTERNS):
+            return True
         for suffix in RESULT_LIST_TOKEN_SUFFIXES:
             if current.endswith(suffix):
                 current = current[: -len(suffix)]
                 break
         else:
             return False
-        if not current:
-            return True
-        if current in RESULT_LIST_VOCABULARY_WORDS:
-            return True
-        if any(pattern.fullmatch(current) for pattern in RESULT_LIST_VOCABULARY_PATTERNS):
-            return True
     return True
 
 
@@ -630,8 +716,21 @@ def _has_only_result_list_vocabulary(lowered: str) -> bool:
     normalized = lowered
     for spaced, compact in RESULT_LIST_SPACED_PERIOD_REPLACEMENTS:
         normalized = normalized.replace(spaced, compact)
+    normalized = RESULT_LIST_REQUEST_TAIL_PATTERN.sub(" ", normalized)
     tokens = [token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized) if token]
     return bool(tokens) and all(_result_list_token_allowed(token) for token in tokens)
+
+
+def _has_excluded_list_marker(lowered: str) -> bool:
+    """목록 판정에서 제외할 통계·모호 수량 표지가 있는지 확인합니다.
+
+    낙찰 결과 목록과 공고 목록이 같은 표지 집합과 같은 정규식 규칙을 쓰도록
+    한 곳에 모읍니다. "몇 건"·"몇 개" 는 띄어 쓴 형태와 붙여 쓴 형태를 모두
+    표지로 봅니다.
+    """
+    return any(marker in lowered for marker in RESULT_LIST_EXCLUDED_MARKERS) or bool(
+        RESULT_LIST_EXCLUDED_PATTERN.search(lowered)
+    )
 
 
 def is_result_list_query(query: str) -> bool:
@@ -648,10 +747,9 @@ def is_result_list_query(query: str) -> bool:
     """
     lowered = _query_lower(query)
     has_result_marker = any(marker in lowered for marker in RESULT_QUERY_MARKERS)
-    has_list_marker = any(marker in lowered for marker in RESULT_LIST_MARKERS) or bool(
-        re.search(r"\d+\s*(?:개|건)", lowered)
-    )
-    has_request_verb = any(verb in lowered for verb in RESULT_LIST_REQUEST_VERBS)
+    has_count = bool(COUNT_PATTERN.search(lowered))
+    has_list_marker = any(marker in lowered for marker in RESULT_LIST_MARKERS) or has_count
+    has_request_verb = bool(RESULT_LIST_REQUEST_VERB_PATTERN.search(lowered))
     has_vocabulary_only = (
         has_result_marker
         and has_request_verb
@@ -661,11 +759,11 @@ def is_result_list_query(query: str) -> bool:
     matched = (
         (has_result_marker and has_list_marker)
         or has_vocabulary_only
-        or ("낙찰" in lowered and bool(re.search(r"\d+\s*(?:개|건)", lowered)))
+        or ("낙찰" in lowered and has_count)
     )
     if not matched:
         return False
-    if any(marker in lowered for marker in RESULT_LIST_EXCLUDED_MARKERS):
+    if _has_excluded_list_marker(lowered):
         return False
     if RESULT_LIST_BID_NUMBER_PATTERN.search(lowered):
         return False
@@ -674,11 +772,26 @@ def is_result_list_query(query: str) -> bool:
     return not is_entity_specific_query(query)
 
 
-ANNOUNCEMENT_LIST_PATTERN = re.compile(
-    r"공고(?!된|되는|하는|할|될|하였|했)[^.!?\n]{0,20}?"
-    r"(?:\d+\s*(?:개|건)|" + "|".join(RESULT_LIST_MARKERS) + r")"
+ANNOUNCEMENT_FRESHNESS_MARKERS = ("올라온", "등록된", "게시된", "신규", "최신")
+# 공고번호·공고명은 필드 이름입니다. 필드 이름이 질의 앞에 오면 '공고' 뒤를 보는
+# 부정 전방 탐색이 거르지 못하므로 목록 판정 전체에서 먼저 배제합니다.
+ANNOUNCEMENT_FIELD_MARKER_PATTERN = re.compile(r"공고\s*(?:번호|명)")
+ANNOUNCEMENT_LIST_REQUEST_VERB_FRAGMENT = (
+    r"(?:보여|알려|뽑아|나열|줄\s*수\s*있|볼\s*수\s*있|줄래|볼래|부탁|가르쳐|보내|줘)"
 )
-ANNOUNCEMENT_QUERY_COUNT_PATTERN = re.compile(r"\d+\s*(?:개|건)")
+ANNOUNCEMENT_LIST_PATTERN = re.compile(
+    r"공고(?!\s*(?:번호|명)|된|되는|하는|할|될|하였|했)[^.!?\n]{0,20}?"
+    r"(?:"
+    + COUNT_PATTERN_FRAGMENT
+    + r"|"
+    + "|".join(RESULT_LIST_MARKERS)
+    + r"|"
+    + ANNOUNCEMENT_LIST_REQUEST_VERB_FRAGMENT
+    + r"|"
+    + "|".join(ANNOUNCEMENT_FRESHNESS_MARKERS)
+    + r")"
+)
+ANNOUNCEMENT_QUERY_COUNT_PATTERN = COUNT_PATTERN
 ANNOUNCEMENT_EXPLANATION_MARKERS = (
     "방법",
     "규정",
@@ -694,21 +807,41 @@ ANNOUNCEMENT_EXPLANATION_MARKERS = (
     "이란",
     "란",
 )
-ANNOUNCEMENT_LIST_REQUEST_VERBS = ("보여", "알려", "뽑아", "줘", "해줘", "나열")
 ANNOUNCEMENT_RESULT_STATUS_MARKERS = ("낙찰", "유찰", "개찰")
+
+
+def _has_announcement_list_scope(lowered: str) -> bool:
+    """요청 동사만 있는 공고 목록 질의에 신선도 표지가 함께 있는지 봅니다.
+
+    분류나 연도만 있는 "서울의 2026년 ... 용역 공고를 알려줘" 는 지목형 조회이지
+    최신 목록 요청이 아니고, "최근"·"요즘" 같은 막연한 표현도 범위를 정하지
+    못합니다. 그래서 동사 단독 경로는 올라온·등록된·게시된·신규·최신 표지를
+    요구하고, 나머지는 기존 최신성 힌트 경로에 남깁니다.
+    """
+    return any(marker in lowered for marker in ANNOUNCEMENT_FRESHNESS_MARKERS)
 
 
 def is_announcement_list_query(query: str) -> bool:
     """낙찰 표지 없이 공고 자체를 개별 목록으로 요청하는 질의인지 판정합니다.
 
-    목록 신호가 '공고' 바로 뒤에 붙어야 합니다. '공고번호'처럼 공고가 다른 낱말의
-    일부이거나, 목록 신호가 문장 멀리 떨어진 일반 질의는 여기에 해당하지 않습니다.
+    목록 신호가 '공고' 바로 뒤에 붙어야 합니다. '공고번호'나 띄어 쓴 '공고 번호',
+    '공고 명'처럼 공고가 필드 이름의 일부이거나, 목록 신호가 문장 멀리 떨어진
+    일반 질의는 여기에 해당하지 않습니다.
     낙찰·유찰·개찰처럼 결과 상태를 가리키는 질의는 기존 낙찰 결과 목록 경로가
     그대로 맡도록 거짓을 반환합니다.
     설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
-    개수 없이 '목록'·'리스트' 같은 낱말만 있으면 요청 동사가 함께 있을 때만 참입니다.
+    개수나 '목록'·'리스트' 표지가 있으면 참이고, 요청 동사만 있으면 신선도
+    표지(올라온·등록된·게시된·신규·최신)를 함께 요구해 범위 없는 "공고 알려줘" 가
+    전체 최신 목록으로 새지 않게 합니다.
     """
     lowered = _query_lower(query)
+    if ANNOUNCEMENT_FIELD_MARKER_PATTERN.search(lowered):
+        return False
+    # 신선도 표지나 요청 동사만으로 통계 질의가 공고 목록으로 새지 않도록,
+    # 낙찰 결과 목록과 같은 통계 제외 표지를 먼저 검사합니다. "두 건" 의 "건" 은
+    # 개수 단위이지 "건수" 통계 표지가 아닙니다.
+    if _has_excluded_list_marker(lowered):
+        return False
     if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
         return False
     if any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS):
@@ -719,15 +852,31 @@ def is_announcement_list_query(query: str) -> bool:
         return False
     if ANNOUNCEMENT_QUERY_COUNT_PATTERN.search(lowered):
         return True
-    return any(verb in lowered for verb in ANNOUNCEMENT_LIST_REQUEST_VERBS)
+    if any(marker in lowered for marker in RESULT_LIST_MARKERS):
+        return True
+    if not _has_announcement_list_scope(lowered):
+        return False
+    # 신선도 표지만 있는 경로는 범위가 없는 전체 최신 목록입니다. 기관명을
+    # 지목한 질의까지 참이 되면 기관 조건 없이 전체 목록을 내게 되므로,
+    # 낙찰 결과 목록과 같은 개체 지정 판정으로 걸러 기존 개체 조회 경로에
+    # 맡깁니다.
+    return not is_entity_specific_query(query)
 
 
 def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
-    """목록 질의의 요청 건수를 안전한 범위로 정규화합니다."""
-    match = re.search(r"(\d+)\s*(?:개|건)", _query_lower(query))
+    """목록 질의의 요청 건수를 안전한 범위로 정규화합니다.
+
+    숫자와 한글 수사(한~스무)를 같은 자리에서 읽고, 단위(개/건)가 붙은 형태만
+    개수로 인정합니다. 범위는 1 이상 maximum 이하로 자릅니다.
+    """
+    match = COUNT_PATTERN.search(_query_lower(query))
     if not match:
         return default
-    return min(max(int(match.group(1)), 1), maximum)
+    numeral = re.sub(r"\s*(?:개|건)$", "", match.group(0)).strip()
+    value = int(numeral) if numeral.isdigit() else KOREAN_NUMERALS.get(numeral)
+    if value is None:
+        return default
+    return min(max(value, 1), maximum)
 
 
 def _month_end(year: int, month: int) -> date:
