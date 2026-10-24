@@ -319,6 +319,12 @@ def _result_conditions(
     institution_names: list[str] | None = None,
     bid_ntce_no: str | None = None,
 ) -> list:
+    # 공고번호 단건 조회는 유일 키 하나만 조건으로 씁니다. "최근" 같은 상대 기간
+    # 표지나 분류·기관·지역·목록 필터를 함께 걸면 개찰일이 그 창 밖인 행을
+    # 놓칩니다. 이 조기 반환이 단건 경로와 집계 경로의 경계입니다.
+    if bid_ntce_no:
+        return [BidResult.bid_ntce_no == bid_ntce_no]
+
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
@@ -355,6 +361,11 @@ def _announcement_conditions(
     institution_names: list[str] | None = None,
     bid_ntce_no: str | None = None,
 ) -> list:
+    # 공고번호 단건 조회는 유일 키 하나만 조건으로 씁니다. 공고일 기준 기간
+    # 필터를 함께 걸면 "최근" 표지가 붙은 질의가 그 공고를 놓칩니다.
+    if bid_ntce_no:
+        return [BidAnnouncement.bid_ntce_no == bid_ntce_no]
+
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))

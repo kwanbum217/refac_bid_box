@@ -13,7 +13,7 @@ tests/test_bid_number_lookup.py
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -185,6 +185,124 @@ def test_single_result_detail_uses_unique_index_condition(isolated_db):
     assert detail["result"]["bid_ntce_no"] == _TARGET_NO
     assert len(result["summary"]["recent_results"]) == 1
     assert result["summary"]["total_bids"] == 1
+
+
+def test_single_lookup_condition_excludes_other_filters():
+    """단건 조회 WHERE 는 기간·분류·기관 조건 없이 공고번호만 씁니다."""
+    plan = build_retrieval_plan(f"{_TARGET_NO} 용역 부산 낙찰 결과 최근 5개 보여줘")
+    assert plan.filters.get("category") == "Servc"
+    assert plan.filters.get("date_from")
+
+    result_sql = str(
+        select(BidResult.id)
+        .where(*structured_data._result_conditions(plan, bid_ntce_no=_TARGET_NO))
+        .compile(compile_kwargs={"literal_binds": True})
+    )
+    announcement_sql = str(
+        select(BidAnnouncement.id)
+        .where(*structured_data._announcement_conditions(plan, bid_ntce_no=_TARGET_NO))
+        .compile(compile_kwargs={"literal_binds": True})
+    )
+
+    assert "bid_ntce_no = 'R26BK01778156'" in result_sql
+    assert "rl_openg_dt" not in result_sql
+    assert "category" not in result_sql
+    assert "dminstt_nm" not in result_sql
+    assert "bid_ntce_no = 'R26BK01778156'" in announcement_sql
+    assert "bid_ntce_dt" not in announcement_sql
+    assert "category" not in announcement_sql
+    assert "dminstt_nm" not in announcement_sql
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        f"{_TARGET_NO} 낙찰 결과 최근",
+        f"{_TARGET_NO} 낙찰 결과 알려줘 최근 5개 보여줘 부산",
+        f"최근 {_TARGET_NO} 낙찰률 알려줘",
+    ],
+)
+def test_relative_period_marker_does_not_hide_bid_number(isolated_db, query):
+    """상대 기간 표지가 붙어도 개찰일이 창 밖인 그 공고를 찾아 답합니다."""
+    opened_at = datetime.now() - timedelta(days=60)
+    _seed_result(isolated_db, row_id=1, bid_ntce_no=_TARGET_NO, opened_at=opened_at)
+    _seed_announcement(isolated_db, row_id=1, bid_ntce_no=_TARGET_NO, ntce_dt=opened_at)
+    _seed_result(
+        isolated_db,
+        row_id=2,
+        bid_ntce_no="R26BK01770002",
+        rate=90.0,
+        opened_at=datetime.now(),
+    )
+    isolated_db.commit()
+
+    plan = build_retrieval_plan(query)
+    assert plan.filters.get("bid_ntce_no") == _TARGET_NO
+    assert plan.filters.get("date_from") or plan.filters.get("date_to")
+    assert "result_limit" not in plan.filters
+
+    result = retrieve_structured_data(isolated_db, plan)
+    detail = result["summary"]["bid_detail"]
+
+    assert detail["result"]["bid_ntce_no"] == _TARGET_NO
+    assert detail["announcement"]["bid_ntce_no"] == _TARGET_NO
+
+    answer = _build_bid_detail_answer(plan, result)
+    assert "낙찰 결과입니다" in answer
+    assert "지나지반기술(주)" in answer
+    assert "용역 평균 낙찰률 90.0000%" in answer
+
+
+def test_single_lookup_ignores_category_filter(isolated_db):
+    """질의 분류와 행 분류가 달라도 공고번호가 유일 키이므로 그 행을 찾습니다."""
+    _seed_result(
+        isolated_db,
+        row_id=1,
+        bid_ntce_no=_TARGET_NO,
+        category="Thng",
+        opened_at=datetime.now() - timedelta(days=60),
+    )
+    isolated_db.commit()
+
+    plan = build_retrieval_plan(f"{_TARGET_NO} 용역 낙찰 결과 최근")
+    assert plan.filters.get("category") == "Servc"
+
+    result = retrieve_structured_data(isolated_db, plan)
+
+    assert result["summary"]["bid_detail"]["result"]["bid_ntce_no"] == _TARGET_NO
+
+
+def test_relative_period_query_answers_without_llm(isolated_db):
+    """엔진 사슬도 상대 기간 표지가 붙은 단건 질의를 LLM 없이 답합니다."""
+    _seed_result(
+        isolated_db,
+        row_id=1,
+        bid_ntce_no=_TARGET_NO,
+        opened_at=datetime.now() - timedelta(days=60),
+    )
+    isolated_db.commit()
+
+    class _RecordingBackend:
+        name = "recording"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generate(self, *args, **kwargs) -> str:
+            self.calls += 1
+            return "LLM 응답"
+
+    engine = HybridRAGEngine()
+    backend = _RecordingBackend()
+    engine._backend_resolved = True
+    engine._backend = backend
+
+    bundle = engine.get_answer_sync(f"{_TARGET_NO} 낙찰 결과 최근", db=isolated_db)
+
+    assert backend.calls == 0
+    assert _TARGET_NO in bundle.answer
+    assert "낙찰 결과입니다" in bundle.answer
+    assert "지나지반기술(주)" in bundle.answer
 
 
 def test_missing_bid_number_does_not_fall_back_to_global_stats(isolated_db):
