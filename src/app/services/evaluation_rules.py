@@ -1124,7 +1124,7 @@ SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT = EvaluationRule(
     effective_date="2026-05-26",
     source="공고별 sucsfbidLwltRate",
     patterns=(),
-    lwlt_rate=Decimal("0"),
+    lwlt_rate=None,
     base_rate=Decimal("0.90"),
 )
 
@@ -3434,7 +3434,7 @@ def _resolve_by_method_name(
                     "기술용역 공고의 낙찰하한율이 없어 공고별 하한율을 적용할 수 없습니다."
                 ),
                 rule=tech_rule,
-                effective_lwlt_rate=Decimal("0"),
+                effective_lwlt_rate=None,
                 warnings=warnings,
             )
 

@@ -71,7 +71,7 @@ def test_tech_announcement_before_20260526_uses_pre_rule():
     assert result.rule.service_type == "TECH"
     assert result.rule.effective_date == "2022-11-01"
     assert result.rule.base_rate == Decimal("0.88")
-    assert result.rule.lwlt_rate == Decimal("0")
+    assert result.rule.lwlt_rate is None
     assert result.effective_lwlt_rate == Decimal("79.9950")
     assert result.rate_source == "ANNOUNCEMENT"
 

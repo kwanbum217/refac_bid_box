@@ -93,7 +93,7 @@ class EvaluationRule:
     effective_date: str
     source: str
     patterns: tuple[str, ...]
-    lwlt_rate: Decimal
+    lwlt_rate: Decimal | None
     base_rate: Decimal = Decimal("0.90")
     sample_count: int = 0
     # 가격배점한도(B)·평점계수(k)·통과점수(T). 규칙 레지스트리가 원문으로 확정한 규칙만 값을 갖고,
