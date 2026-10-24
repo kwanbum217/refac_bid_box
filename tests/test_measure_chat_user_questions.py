@@ -196,20 +196,32 @@ def test_announcement_latest_fails_when_outside_number() -> None:
     assert result["detail"]["outside_allowed"] == ["R26BK01999999"]
 
 
-def test_announcement_latest_fails_when_correct_numbers_carry_absence_phrase() -> None:
-    # 리뷰어 반례 (D): 정답 5건 뒤에 "데이터가 확인되지 않습니다" 를 붙이면 실패다.
+def test_principle1_latest_passes_with_absence_phrase() -> None:
+    # 원칙 1 (정답 우선): 정답 5건이 모두 있으면 "데이터가 확인되지 않습니다" 가
+    # 붙어도 통과다. 부재 문구는 정답이 답변에 없을 때만 실패 근거다.
     answer = ", ".join(ALLOWED) + " 다만 데이터가 확인되지 않습니다."
+    result = measure.grade_attempt(
+        _announcement_item(), _latest_truth(ALLOWED, 5), _payload(answer)
+    )
+    assert result["passed"] is True
+    assert result["failure_reasons"] == []
+    assert result["detail"]["detected_count"] == 5
+    assert result["detail"]["absence_phrases"] == ["확인되지 않"]
+    assert result["detail"]["absence_ignored"] is True
+
+
+def test_principle1_announcement_latest_fails_when_numbers_missing_with_absence_phrase() -> None:
+    # 원칙 1: 정답이 답변에 없으면 부재 문구와 무관하게 실패다.
+    answer = ", ".join(ALLOWED[:4]) + " 나머지는 확인되지 않습니다."
     result = measure.grade_attempt(
         _announcement_item(), _latest_truth(ALLOWED, 5), _payload(answer)
     )
     assert result["passed"] is False
     assert "data_mismatch" in result["failure_reasons"]
-    assert result["detail"]["detected_count"] == 5
-    assert result["detail"]["data_absent_claimed"] is True
-    assert result["detail"]["absence_phrases"] == ["확인되지 않"]
+    assert result["detail"]["detected_count"] == 4
 
 
-def test_result_latest_fails_when_correct_numbers_carry_absence_phrase() -> None:
+def test_principle1_result_latest_passes_when_top_numbers_present_with_absence_phrase() -> None:
     item = {
         "id": "t_res",
         "category": "result_analysis",
@@ -232,10 +244,10 @@ def test_result_latest_fails_when_correct_numbers_carry_absence_phrase() -> None
     }
     answer = ", ".join(ALLOWED) + " 다만 데이터가 확인되지 않습니다."
     result = measure.grade_attempt(item, truth, _payload(answer))
-    assert result["passed"] is False
-    assert "data_mismatch" in result["failure_reasons"]
+    assert result["passed"] is True
+    assert result["failure_reasons"] == []
     assert result["detail"]["detected_count"] == 5
-    assert result["detail"]["data_absent_claimed"] is True
+    assert result["detail"]["absence_ignored"] is True
 
 
 def test_announcement_latest_still_allows_numbers_when_phrase_is_absent() -> None:
@@ -384,12 +396,12 @@ def test_numeric_fact_accepts_value_within_tolerance() -> None:
     assert "data_mismatch" in outside["failure_reasons"]
 
 
-def test_bid_lookup_accepts_bid_number_or_title_fragment() -> None:
-    item = {
+def _bid_lookup_item() -> dict[str, Any]:
+    return {
         "id": "t_lookup",
         "category": "bid_lookup",
         "split": "public",
-        "question": "이 공고 알려줘",
+        "question": "{latest_servc_result_bid_no} 이 공고 알려줘",
         "expected_tools": ["bid_query_tool"],
         "forbidden_tools": [],
         "check": {"type": "bid_lookup", "bid_no_placeholder": "latest_servc_result_bid_no"},
@@ -397,50 +409,153 @@ def test_bid_lookup_accepts_bid_number_or_title_fragment() -> None:
         "repeats": 1,
         "note": "",
     }
-    truth = {
+
+
+def _bid_lookup_truth() -> dict[str, Any]:
+    return {
         "kind": "bid_lookup",
         "bid_no": "R26BK01778156",
         "title": "2026년 공주시 도로정비 공사",
+        "winner": "대성건설 주식회사",
+        "amount": 123456789,
         "data_available": True,
         "error": None,
     }
-    by_number = measure.grade_attempt(item, truth, _payload("R26BK01778156 건입니다."))
-    by_title = measure.grade_attempt(item, truth, _payload("2026년 공주시 도로정비 공사입니다."))
-    missing = measure.grade_attempt(item, truth, _payload("확인했습니다."))
-    assert by_number["passed"] is True
-    assert by_title["passed"] is True
-    assert missing["passed"] is False
 
 
-def test_bid_lookup_fails_when_number_present_but_result_not_found() -> None:
-    # 리뷰어 반례 (C): 공고번호가 맞아도 "낙찰 결과는 조회되지 않습니다" 면 실패다.
-    item = {
-        "id": "t_lookup",
-        "category": "bid_lookup",
-        "split": "public",
-        "question": "{latest_servc_result_bid_no} 이 공고 낙찰 결과 알려줘",
-        "expected_tools": ["bid_query_tool"],
-        "forbidden_tools": [],
-        "check": {"type": "bid_lookup", "bid_no_placeholder": "latest_servc_result_bid_no"},
-        "must_not_contain": [],
-        "repeats": 1,
-        "note": "",
-    }
-    truth = {
-        "kind": "bid_lookup",
-        "bid_no": "R26BK01778156",
-        "title": "2026년 공주시 도로정비 공사",
-        "data_available": True,
-        "error": None,
-    }
+def test_principle3_bid_lookup_fails_when_only_bid_number_is_repeated() -> None:
+    # 원칙 3: 질문에 나온 공고번호를 답변에서 지운 뒤 판정한다. 번호를 되풀이한
+    # 것만으로는 통과하지 못한다.
     result = measure.grade_attempt(
-        item, truth, _payload("R26BK01778156 공고의 낙찰 결과는 조회되지 않습니다.")
+        _bid_lookup_item(), _bid_lookup_truth(), _payload("R26BK01778156 건입니다.")
     )
     assert result["passed"] is False
     assert "data_mismatch" in result["failure_reasons"]
-    assert result["detail"]["bid_no_found"] is True
-    assert result["detail"]["data_absent_claimed"] is True
+    assert result["detail"]["removed_bid_numbers"] == ["R26BK01778156"]
+    assert result["detail"]["title_found"] is False
+
+
+def test_principle3_bid_lookup_passes_on_title_prefix() -> None:
+    result = measure.grade_attempt(
+        _bid_lookup_item(), _bid_lookup_truth(), _payload("2026년 공주시 도로정비 공사입니다.")
+    )
+    assert result["passed"] is True
+    assert result["detail"]["title_found"] is True
+
+
+def test_principle3_bid_lookup_passes_on_winner_name() -> None:
+    result = measure.grade_attempt(
+        _bid_lookup_item(),
+        _bid_lookup_truth(),
+        _payload("R26BK01778156 은 대성건설 주식회사가 낙찰받았습니다."),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["winner_found"] is True
+
+
+def test_principle3_bid_lookup_passes_on_amount() -> None:
+    result = measure.grade_attempt(
+        _bid_lookup_item(),
+        _bid_lookup_truth(),
+        _payload("R26BK01778156 낙찰금액은 123,456,789원입니다."),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["amount_found"] is True
+
+
+def test_principle3_bid_lookup_fails_when_result_not_found_phrase() -> None:
+    # 리뷰어 반례 (C): 공고번호가 맞아도 DB 내용이 없으면 실패다.
+    result = measure.grade_attempt(
+        _bid_lookup_item(),
+        _bid_lookup_truth(),
+        _payload("R26BK01778156 공고의 낙찰 결과는 조회되지 않습니다."),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["title_found"] is False
     assert result["detail"]["absence_phrases"] == ["조회되지 않"]
+
+
+def test_principle3_truth_collects_title_winner_and_amount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[str] = []
+
+    def fake_run_query(statement: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        seen.append(statement)
+        if "bid_results" in statement:
+            return ["bid_ntce_nm", "bidwinnr_nm", "sucsf_bid_amt"], [
+                ("2026년 공주시 도로정비 공사", "대성건설 주식회사", 123456789)
+            ]
+        return ["bid_ntce_nm"], [("2026년 공주시 도로정비 공사",)]
+
+    monkeypatch.setattr(measure, "run_query", fake_run_query)
+    truth = measure.build_truth(_bid_lookup_item(), {"latest_servc_result_bid_no": "R26BK01778156"})
+    assert truth["title"] == "2026년 공주시 도로정비 공사"
+    assert truth["winner"] == "대성건설 주식회사"
+    assert truth["amount"] == 123456789
+    assert len(seen) == 2
+    assert all(statement.startswith("SELECT") for statement in seen)
+
+
+def _empty_latest_truth() -> dict[str, Any]:
+    return _latest_truth([], 0, data_available=False)
+
+
+def test_principle2_zero_count_passes_on_zero_phrase() -> None:
+    # 원칙 2: DB 정답이 0건이면 0건 표현만 있고 목록이 없어야 통과다.
+    result = measure.grade_attempt(
+        _announcement_item(), _empty_latest_truth(), _payload("최근 7일 내 용역 공고는 0건입니다.")
+    )
+    assert result["passed"] is True
+    assert result["detail"]["db_empty"] is True
+    assert result["detail"]["zero_count_phrases"] == ["0건"]
+
+
+def test_principle2_zero_count_passes_on_none_word() -> None:
+    result = measure.grade_attempt(
+        _announcement_item(), _empty_latest_truth(), _payload("해당 조건의 공고는 없음")
+    )
+    assert result["passed"] is True
+
+
+def test_principle2_zero_count_fails_on_reviewer_comma_list_counterexample() -> None:
+    # 리뷰어 반례: 목록 행이 없어도 쉼표로 공사명을 늘어놓으면 실패다.
+    answer = "공주시 최근 공고 목록입니다: 공주시 상수도 정비 공사, 공주시 도로 포장 공사."
+    result = measure.grade_attempt(_announcement_item(), _empty_latest_truth(), _payload(answer))
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert len(result["detail"]["announcement_name_word_hits"]) >= 2
+    assert result["detail"]["list_row_count"] == 0
+
+
+def test_principle2_zero_count_fails_when_bid_number_present() -> None:
+    answer = "0건입니다. 다만 R26BK01789522 는 있습니다."
+    result = measure.grade_attempt(_announcement_item(), _empty_latest_truth(), _payload(answer))
+    assert result["passed"] is False
+    assert result["detail"]["detected_bid_numbers"] == ["R26BK01789522"]
+
+
+def test_principle2_zero_count_fails_on_list_rows() -> None:
+    answer = "0건입니다.\n- 공주시 상수도 정비 공사"
+    result = measure.grade_attempt(_announcement_item(), _empty_latest_truth(), _payload(answer))
+    assert result["passed"] is False
+    assert result["detail"]["list_row_count"] == 1
+
+
+def test_principle2_zero_count_fails_on_table_row() -> None:
+    answer = "0건입니다.\n| 공고번호 | 공고명 |\n|---|---|"
+    result = measure.grade_attempt(_announcement_item(), _empty_latest_truth(), _payload(answer))
+    assert result["passed"] is False
+    assert result["detail"]["list_row_count"] == 1
+
+
+def test_principle2_zero_count_fails_without_zero_phrase() -> None:
+    result = measure.grade_attempt(
+        _announcement_item(), _empty_latest_truth(), _payload("확인했습니다. 목록은 비어 있습니다.")
+    )
+    assert result["passed"] is False
+    assert result["detail"]["zero_count_phrases"] == []
 
 
 def test_out_of_scope_fails_when_bid_number_is_invented() -> None:
@@ -526,6 +641,8 @@ def test_numeric_fact_subtracts_numbers_that_came_from_question() -> None:
 
 
 def test_numeric_fact_fails_on_reviewer_repeated_period_counterexample() -> None:
+    # 원칙 1: 질문의 "30일" 을 되풀이한 답은 정답 수치가 아니다. 질문 숫자를 빼면
+    # 후보가 비고, DB 값 30 이 답변에 없는 것과 같으므로 실패다.
     question = "최근 30일 용역 낙찰 몇 건이야?"
     result = measure.grade_attempt(
         _numeric_item(question),
@@ -534,19 +651,45 @@ def test_numeric_fact_fails_on_reviewer_repeated_period_counterexample() -> None
     )
     assert result["passed"] is False
     assert "data_mismatch" in result["failure_reasons"]
-    assert result["detail"]["data_absent_claimed"] is True
     assert result["detail"]["candidate_numbers"] == []
+    assert result["detail"]["absence_phrases"] == ["확인되지 않"]
 
 
-def test_numeric_fact_fails_when_absence_phrase_even_with_matching_number() -> None:
+def test_principle1_numeric_fact_passes_when_value_present_with_absence_phrase() -> None:
+    # 원칙 1: DB 값 3405 가 답변에 있으면 "제공할 수 없습니다" 가 함께 있어도
+    # 통과다. 리뷰어 예시 "123건입니다. 취소된 건은 없습니다." 와 같은 규칙이다.
     result = measure.grade_attempt(
         _numeric_item("이번 달 용역 낙찰 총 몇 건이야?"),
         _numeric_truth(3405.0),
         _payload("3,405건은 제공할 수 없습니다."),
     )
-    assert result["passed"] is False
+    assert result["passed"] is True
     assert result["detail"]["candidate_numbers"] == [3405.0]
     assert result["detail"]["absence_phrases"] == ["없습니다", "제공할 수 없"]
+    assert result["detail"]["absence_ignored"] is True
+
+
+def test_principle1_numeric_fact_passes_on_123_with_cancelled_zero() -> None:
+    # 원칙 1 예시 그대로: 123건입니다. 취소된 건은 없습니다. 는 통과다.
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 몇 건이야?"),
+        _numeric_truth(123.0),
+        _payload("123건입니다. 취소된 건은 없습니다."),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["matched_number"] == 123.0
+
+
+def test_principle1_numeric_fact_fails_when_answer_has_no_value() -> None:
+    # 원칙 1: 정답 수치가 없으면 부재 문구만으로는 통과할 수 없다.
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 몇 건이야?"),
+        _numeric_truth(123.0),
+        _payload("확인되지 않습니다."),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["candidate_numbers"] == []
 
 
 def test_numeric_fact_ignores_dates_times_and_bid_numbers() -> None:
@@ -633,6 +776,63 @@ def test_refuse_or_redirect_passes_on_greeting_self_introduction() -> None:
     assert result["passed"] is True
     assert result["detail"]["forbidden_claim_hits"] == []
     assert "도와드릴" in result["detail"]["redirect_markers"]
+
+
+STOCK_CLAIMS = ["코스피", "코스닥", "주가", "지수", "상승", "하락", "매수", "매도"]
+
+
+def test_principle4_out_of_scope_records_heuristic_flag() -> None:
+    # 원칙 4: 범위 밖 판정은 낱말 기반 근사이므로 결과 JSON 에 표시를 남긴다.
+    summary = measure.summarize_item(
+        _refusal_item("오늘 서울 날씨 어때?", WEATHER_CLAIMS), [_attempt(True)]
+    )
+    assert summary["heuristic"] is True
+
+
+def test_principle4_non_out_of_scope_has_no_heuristic_flag() -> None:
+    summary = measure.summarize_item(_announcement_item(), [_attempt(True)])
+    assert "heuristic" not in summary
+
+
+def test_summary_table_notes_out_of_scope_heuristic(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    measure.print_summary_table({"out_of_scope": {"passed": 1, "total": 2, "pass_rate": 0.5}})
+    output = capsys.readouterr().out
+    assert "낱말 기반 근사" in output
+    assert "heuristic: true" in output
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="낱말 기반 범위 밖 판정의 알려진 한계, 코디네이터 수동 확정",
+)
+def test_principle4_known_limit_weather_news_slips_through() -> None:
+    # 리뷰어 반례 (1-a). "비가" 가 아니라 "비 소식" 이라 낱말 목록을 피했고
+    # 업무 표지가 있어 현재 규칙에서는 통과로 샌다. 이상적 판정은 실패다.
+    answer = "오늘 서울은 비 소식이 있습니다. 입찰 공고 범위 밖이라 안내는 어렵습니다."
+    result = measure.grade_attempt(
+        _refusal_item("오늘 서울 날씨 어때?", WEATHER_CLAIMS),
+        _refusal_truth(),
+        _payload(answer, tools=()),
+    )
+    assert result["passed"] is False
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="낱말 기반 범위 밖 판정의 알려진 한계, 코디네이터 수동 확정",
+)
+def test_principle4_known_limit_stock_forecast_slips_through() -> None:
+    # 리뷰어 반례 (1-b). "전망", "호황" 이 낱말 목록에 없어 주식 전망을 단정한
+    # 답이 통과로 샌다. 이상적 판정은 실패다.
+    answer = "내년에는 반도체 호황이 이어질 전망입니다. 다만 입찰 공고 안내는 도와드릴 수 있습니다."
+    result = measure.grade_attempt(
+        _refusal_item("주식 시장 전망 알려줘", STOCK_CLAIMS),
+        _refusal_truth(),
+        _payload(answer, tools=()),
+    )
+    assert result["passed"] is False
 
 
 def test_assert_read_only_accepts_select_and_rejects_writes() -> None:

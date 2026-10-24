@@ -10,20 +10,36 @@
 - 데이터 정합: 응답의 공고번호/수치를 측정 시점 DB 조회 결과와 비교한다.
 - 금지 문구: 데이터가 있는데도 "리스트해 드릴 수 없습니다" 같은 문구가 나오면
   실패다.
-- 데이터 부재 문구: 정답이 있는데도 "확인되지 않습니다", "조회되지 않습니다"
-  같은 문구가 나오면 공고번호/수치가 맞아도 실패다. `numeric_fact` 뿐 아니라
-  `announcement_latest`, `result_latest`, `bid_lookup` 에도 똑같이 적용한다.
 - 반복: LLM 을 거치는 문항은 3회 중 2회 이상 통과해야 통과로 본다.
+
+판정 원칙:
+
+- 원칙 1 (정답 우선): 데이터 부재 문구("확인되지 않", "없습니다" 등)는 DB 정답이
+  답변에 없을 때만 실패 근거다. 정답이 답변에 있으면 그 문구가 함께 있어도
+  통과한다. 예를 들어 DB 값이 123 일 때 "123건입니다. 취소된 건은 없습니다." 는
+  통과이고, 정답 5건을 나열한 뒤 "다만 데이터가 확인되지 않습니다." 를 붙인
+  답도 통과다. 정답이 빠졌을 때만 실패다.
+- 원칙 2 (0건): DB 정답이 0건이면 답변에 0건/없습니다/없음/확인되지 않 중
+  하나가 있고, 공고번호 형식이 하나도 없고, 목록 행(표 본문 행과 "- ", "1. "
+  로 시작하는 줄)이 없어야 통과다. 목록 행이 없어도 쉼표로 공사명을 늘어놓은
+  답(공고명 낱말 "공사|용역|구매|입찰" 이 두 번 이상)은 실패다.
+- 원칙 3 (단건): `bid_lookup` 은 질문에 나온 공고번호를 답변에서 지운 뒤, DB 의
+  공고명 앞 6자 이상 일부나 낙찰업체명이나 낙찰금액 숫자 중 하나가 있어야
+  통과다. 공고번호를 되풀이한 것만으로는 통과하지 못한다.
+- 원칙 4 (범위 밖): `refuse_or_redirect` 는 낱말 기반 근사 판정이다. 업무 안내
+  표지 또는 안내/거절 표지가 있고 지어낸 수치·공고번호·`forbidden_claims` 가
+  없으면 통과로 본다. 이 판정은 근사이므로 결과 JSON 의 해당 문항에
+  `heuristic: true` 를 붙인다. 코디네이터가 답변을 직접 읽어 확정해야 한다.
 
 수치 판정(numeric_fact):
 
 - 답변 숫자에서 질문 문장에 나온 숫자(기간 일수, 개수 등)를 먼저 뺀 뒤 비교한다.
   질문의 "30일" 을 답변이 그대로 되풀이한 것을 정답으로 오인하지 않기 위해서다.
-- 답변에 데이터 없음 문구("확인되지 않", "없습니다", "찾을 수 없",
-  "제공할 수 없", "알 수 없")가 있으면 숫자가 맞아도 실패다.
+- 질문 숫자를 뺀 뒤 DB 값과 허용 오차 안의 수가 있으면 통과다. 데이터 부재
+  문구가 함께 있어도 정답 수치가 있으면 통과한다(원칙 1).
 - 날짜, 시각, 공고번호, 서수("1위")는 숫자 추출 전에 가린다.
 
-범위 밖 판정(refuse_or_redirect):
+범위 밖 판정(refuse_or_redirect)은 낱말 기반 근사다:
 
 - fixture 문항마다 `forbidden_claims` 를 둔다. 그 질문에 지어낸 답이면 나올
   낱말 목록(날씨라면 "맑", "흐리", "비가", "기온" 등)이고, 답변에 하나라도
@@ -32,6 +48,9 @@
   표지("도와드릴", "안내", "답변드리기 어렵", "범위", "지원하지 않" 중 하나)가
   있으면 통과다. 인사말에 자기소개로 답한 경우도 통과시키기 위해서다.
 - 범위 밖 주제의 사실을 단정하거나 공고번호를 지어내면 실패다.
+- 낱말 목록에 없는 표현으로 사실을 단정하면 통과로 새는 알려진 한계가 있다.
+  그래서 결과 JSON 에 `heuristic: true` 를 남기고 코디네이터가 답변을 직접 읽어
+  확정한다.
 
 호출 한도와 정답 계산:
 
@@ -200,9 +219,9 @@ FORBIDDEN_SQL_TOKENS = (
 )
 FORBIDDEN_SQL_RE = re.compile(r"\b(" + "|".join(FORBIDDEN_SQL_TOKENS) + r")\b", re.IGNORECASE)
 
-# 답변에 이 문구가 있으면 데이터를 확인하지 못한 답으로 본다. 숫자나 공고번호가
-# 우연히 맞아도 통과시키지 않는다. numeric_fact, announcement_latest,
-# result_latest, bid_lookup 네 판정 모두에 적용한다.
+# 데이터 부재 문구. 원칙 1 에 따라 이 문구는 DB 정답이 답변에 없을 때만 실패
+# 근거다. 정답 수치나 공고번호가 답변에 있으면 문구가 함께 있어도 통과한다.
+# 그래서 판정 결과에는 참고 정보(absence_phrases)로만 남긴다.
 DATA_ABSENCE_PHRASES = (
     "확인되지 않",
     "조회되지 않",
@@ -211,6 +230,26 @@ DATA_ABSENCE_PHRASES = (
     "제공할 수 없",
     "알 수 없",
 )
+
+# 원칙 2: DB 정답이 0건일 때 통과에 필요한 0건 표현. "0건" 은 "10건" 의 부분
+# 문자열이므로 앞에 숫자가 붙지 않은 경우만 인정한다.
+ZERO_COUNT_PATTERNS = (
+    re.compile(r"(?<!\d)0\s*건"),
+    re.compile(r"없습니다"),
+    re.compile(r"없음"),
+    re.compile(r"확인되지 않"),
+)
+
+# 원칙 2: 0건 답변에 있으면 목록을 나열한 것으로 보는 행.
+LIST_ROW_PATTERNS = (
+    re.compile(r"^\|"),
+    re.compile(r"^-\s"),
+    re.compile(r"^\d+\.\s"),
+)
+TABLE_SEPARATOR_PATTERN = re.compile(r"^[|\-: ]+$")
+
+# 원칙 2: 목록 행이 없어도 쉼표로 공고명을 늘어놓은 답을 잡는다.
+ANNOUNCEMENT_NAME_WORD_PATTERN = re.compile(r"공사|용역|구매|입찰")
 
 # 범위 밖 질문의 통과 조건: 업무 영역 표지 또는 안내/거절 표지 중 하나.
 REDIRECT_DOMAIN_TERMS = ("입찰", "공고", "낙찰", "조달")
@@ -443,6 +482,7 @@ def build_latest_truth(
     allowed = {str(row[0]) for row in rows if row and row[0]}
     expected_count = len(allowed)
     window_fallback = used_fallback and bool(rows)
+    tie_error: str | None = None
 
     if len(rows) == limit and rows:
         cutoff = rows[-1][1]
@@ -480,17 +520,42 @@ def build_latest_truth(
     }
 
 
-def _lookup_title(bid_no: str, query: QueryFn) -> str:
-    titles: list[str] = []
-    for dataset in ("bid_announcements", "bid_results"):
-        statement = f"SELECT bid_ntce_nm FROM {dataset} WHERE bid_ntce_no = '{bid_no}' LIMIT 1"  # noqa: S608  # nosec B608 - 보간값은 DB 값이다
+def _lookup_bid_record(bid_no: str, query: QueryFn) -> dict[str, Any]:
+    """원칙 3 의 정답 근거를 DB 에서 모은다.
+
+    공고명 일부, 낙찰업체명, 낙찰금액 셋 중 하나가 답변에 있어야 통과다.
+    공고번호를 되풀이한 것만으로는 통과시키지 않기 위해서다.
+    """
+    record: dict[str, Any] = {"title": "", "winner": "", "amount": None}
+    statements = (
+        # 보간값은 placeholder 해석으로 얻은 DB 값이다.
+        f"SELECT bid_ntce_nm, bidwinnr_nm, sucsf_bid_amt FROM bid_results "  # noqa: S608  # nosec B608
+        f"WHERE bid_ntce_no = '{bid_no}' LIMIT 1",
+        f"SELECT bid_ntce_nm FROM bid_announcements WHERE bid_ntce_no = '{bid_no}' LIMIT 1",  # noqa: S608  # nosec B608 - 보간값은 DB 값이다
+    )
+    for statement in statements:
+        columns: list[str] = []
+        rows: list[tuple[Any, ...]] = []
         try:
-            _, rows = _run_read_only(statement, 1, query)
+            columns, rows = _run_read_only(statement, 1, query)
         except Exception:
-            titles.append("")
+            rows = []
+        if not rows:
             continue
-        titles.append(str(rows[0][0]) if rows and rows[0][0] else "")
-    return next((title for title in titles if title), "")
+        values = dict(zip(columns, rows[0], strict=False))
+        title = values.get("bid_ntce_nm")
+        winner = values.get("bidwinnr_nm")
+        amount = values.get("sucsf_bid_amt")
+        if not record["title"] and title:
+            record["title"] = str(title)
+        if not record["winner"] and winner:
+            record["winner"] = str(winner)
+        if record["amount"] is None and amount not in (None, ""):
+            try:
+                record["amount"] = int(amount)
+            except (TypeError, ValueError):
+                record["amount"] = None
+    return record
 
 
 def build_truth(
@@ -531,11 +596,21 @@ def build_truth(
     if kind == "bid_lookup":
         name = str(check.get("bid_no_placeholder") or "")
         bid_no = placeholders.get(name, "")
-        title = _lookup_title(bid_no, query) if bid_no else ""
+        record = (
+            _lookup_bid_record(bid_no, query)
+            if bid_no
+            else {
+                "title": "",
+                "winner": "",
+                "amount": None,
+            }
+        )
         return {
             "kind": kind,
             "bid_no": bid_no,
-            "title": title,
+            "title": record["title"],
+            "winner": record["winner"],
+            "amount": record["amount"],
             "data_available": bool(bid_no),
             "error": None if bid_no else f"placeholder 미해결: {name}",
         }
@@ -546,67 +621,109 @@ def build_truth(
 def _absence_hits(answer: str) -> list[str]:
     """답변에 든 데이터 부재 문구를 돌려준다.
 
-    정답이 있는데도 이 문구를 쓰면 번호나 수치가 맞아도 실패로 둔다.
+    원칙 1 에 따라 이 문구는 판정 근거가 아니라 참고 정보다. DB 정답이 답변에
+    있는지는 각 판정 함수가 따로 본다.
     """
     return [phrase for phrase in DATA_ABSENCE_PHRASES if phrase in (answer or "")]
 
 
+def _list_row_lines(answer: str) -> list[str]:
+    """원칙 2: 답변이 목록을 나열한 것으로 보이는 행을 모은다."""
+    rows: list[str] = []
+    for line in (answer or "").splitlines():
+        stripped = line.strip()
+        if not stripped or TABLE_SEPARATOR_PATTERN.match(stripped):
+            continue
+        if any(pattern.match(stripped) for pattern in LIST_ROW_PATTERNS):
+            rows.append(stripped)
+    return rows
+
+
+def _evaluate_empty_latest(answer: str) -> tuple[bool, dict[str, Any]]:
+    """원칙 2: DB 정답이 0건일 때의 판정.
+
+    0건 표현이 있고 공고번호도 목록 행도 없어야 통과다. 목록 행이 없어도
+    쉼표로 공고명을 늘어놓은 답은 실패로 본다.
+    """
+    text = answer or ""
+    detected = extract_bid_numbers(text)
+    zero_hits = [
+        match.group(0) for pattern in ZERO_COUNT_PATTERNS if (match := pattern.search(text))
+    ]
+    rows = _list_row_lines(text)
+    name_words = ANNOUNCEMENT_NAME_WORD_PATTERN.findall(text)
+    detail: dict[str, Any] = {
+        "db_empty": True,
+        "zero_count_phrases": zero_hits,
+        "detected_bid_numbers": sorted(detected),
+        "detected_count": len(detected),
+        "list_row_count": len(rows),
+        "list_rows_sample": rows[:5],
+        "announcement_name_word_hits": name_words[:10],
+        "absence_phrases": _absence_hits(text),
+    }
+    passed = (
+        bool(text.strip()) and bool(zero_hits) and not detected and not rows and len(name_words) < 2
+    )
+    return passed, detail
+
+
 def _evaluate_latest(truth: dict[str, Any], answer: str) -> tuple[bool, dict[str, Any]]:
-    detected = extract_bid_numbers(answer)
+    """원칙 1/2: 최신 목록 판정.
+
+    DB 정답이 1건 이상이면 정답 공고번호가 limit 개(동점 포함) 모두 있어야
+    통과다. 부재 문구는 판정에 쓰지 않는다. 0건이면 원칙 2 로 넘긴다.
+    """
     absence = _absence_hits(answer)
+    if truth.get("error"):
+        return False, {
+            "db_error": truth["error"],
+            "absence_phrases": absence,
+            "absence_ignored": True,
+        }
+
+    expected = int(truth.get("expected_count") or 0)
+    if expected == 0:
+        empty_passed, empty_detail = _evaluate_empty_latest(answer)
+        empty_detail["absence_ignored"] = True
+        return empty_passed, empty_detail
+
+    detected = extract_bid_numbers(answer)
+    allowed: set[str] = set(truth.get("allowed") or set())
+    outside = sorted(detected - allowed)
     detail: dict[str, Any] = {
         "detected_bid_numbers": sorted(detected),
         "detected_count": len(detected),
-        "expected_count": truth.get("expected_count", 0),
+        "expected_count": expected,
         "window_fallback": bool(truth.get("window_fallback")),
         "absence_phrases": absence,
-        "data_absent_claimed": bool(absence),
+        "absence_ignored": True,
+        "outside_allowed": outside,
+        "allowed_sample": sorted(allowed)[: expected + 5],
     }
-    if truth.get("error"):
-        detail["db_error"] = truth["error"]
-        return False, detail
-    if truth.get("expected_count", 0) == 0:
-        # DB 자체가 비어 있으면 "없습니다" 는 정답이다. 수집 공백을 실패로
-        # 오인하지 않기 위해 부재 문구 검사보다 먼저 본다.
-        detail["db_empty"] = True
-        return len(detected) == 0, detail
-    if absence:
-        # 공고번호를 모두 맞게 나열해도 "데이터가 확인되지 않습니다" 를 붙이면
-        # 데이터를 확인하지 못한 답이다.
-        return False, detail
-    allowed: set[str] = set(truth.get("allowed") or set())
-    outside = sorted(detected - allowed)
-    detail["outside_allowed"] = outside
-    detail["allowed_sample"] = sorted(allowed)[: int(truth.get("expected_count", 0)) + 5]
-    passed = not outside and len(detected) == int(truth["expected_count"])
+    passed = not outside and len(detected) == expected
     return passed, detail
 
 
 def _evaluate_numeric(
     check: dict[str, Any], truth: dict[str, Any], answer: str, question: str = ""
 ) -> tuple[bool, dict[str, Any]]:
+    """원칙 1: 질문 숫자를 뺀 답변 수치가 DB 값과 허용 오차 안이면 통과다."""
     value = truth.get("value")
-    detail: dict[str, Any] = {"db_value": value}
     question_numbers = extract_numbers(question)
     answer_numbers = extract_numbers(answer)
     candidates = subtract_question_numbers(answer_numbers, question_numbers)
-    detail.update(
-        {
-            "question_numbers": question_numbers[:15],
-            "answer_numbers_sample": answer_numbers[:15],
-            "candidate_numbers": candidates[:15],
-        }
-    )
+    detail: dict[str, Any] = {
+        "db_value": value,
+        "question_numbers": question_numbers[:15],
+        "answer_numbers_sample": answer_numbers[:15],
+        "candidate_numbers": candidates[:15],
+        "absence_phrases": _absence_hits(answer),
+        "absence_ignored": True,
+    }
 
-    absence = _absence_hits(answer)
-    if absence:
-        # 숫자가 우연히 맞아도 데이터를 확인하지 못한 답은 실패다.
-        detail["absence_phrases"] = absence
-        detail["data_absent_claimed"] = True
     if truth.get("error"):
         detail["db_error"] = truth["error"]
-        return False, detail
-    if absence:
         return False, detail
     if value is None:
         detail["db_empty"] = True
@@ -625,28 +742,63 @@ def _evaluate_numeric(
     return matched is not None, detail
 
 
-def _evaluate_bid_lookup(truth: dict[str, Any], answer: str) -> tuple[bool, dict[str, Any]]:
+def _title_prefix_hit(title: str, text: str) -> str:
+    """원칙 3: 공고명 앞 6자 이상 일부가 답변에 있으면 그 조각을 돌려준다."""
+    normalized = re.sub(r"\s+", " ", title or "").strip()
+    if len(normalized) < 6:
+        return ""
+    collapsed = re.sub(r"\s+", " ", text or "")
+    for length in (40, 30, 20, 12, 8, 6):
+        prefix = normalized[: min(len(normalized), length)]
+        if len(prefix) >= 6 and prefix in collapsed:
+            return prefix
+    return ""
+
+
+def _evaluate_bid_lookup(
+    truth: dict[str, Any], answer: str, question: str = ""
+) -> tuple[bool, dict[str, Any]]:
+    """원칙 3: 질문의 공고번호를 지운 뒤 DB 내용이 답변에 있어야 통과다."""
     bid_no = str(truth.get("bid_no") or "")
-    title = str(truth.get("title") or "")
-    absence = _absence_hits(answer)
+    text = answer or ""
     detail: dict[str, Any] = {
         "bid_no": bid_no,
-        "absence_phrases": absence,
-        "data_absent_claimed": bool(absence),
+        "absence_phrases": _absence_hits(text),
+        "absence_ignored": True,
     }
     if not bid_no:
         detail["reason"] = truth.get("error") or "placeholder 미해결"
         return False, detail
-    compact_answer = re.sub(r"\s+", "", answer).upper()
-    bid_hit = bid_no.upper() in compact_answer
-    fragment = re.sub(r"\s+", " ", title).strip()[:15]
-    title_hit = len(fragment) >= 6 and fragment in answer
-    detail.update({"bid_no_found": bid_hit, "title_fragment": fragment, "title_found": title_hit})
-    if absence:
-        # 공고번호를 되풀이해도 "낙찰 결과는 조회되지 않습니다" 라면 데이터를
-        # 확인하지 못한 답이다.
-        return False, detail
-    return bid_hit or title_hit, detail
+
+    removed = set(extract_bid_numbers(question))
+    removed.add(bid_no.upper())
+    cleaned = text
+    for number in sorted(removed, key=len, reverse=True):
+        cleaned = re.sub(re.escape(number), " ", cleaned, flags=re.IGNORECASE)
+
+    title = str(truth.get("title") or "")
+    winner = str(truth.get("winner") or "")
+    amount = truth.get("amount")
+    title_prefix = _title_prefix_hit(title, cleaned)
+    winner_hit = bool(winner) and winner in cleaned
+    amount_hit = False
+    if amount is not None:
+        integer_amount = int(amount)
+        amount_hit = integer_amount in {
+            int(number) for number in extract_numbers(cleaned) if float(number).is_integer()
+        }
+    detail.update(
+        {
+            "removed_bid_numbers": sorted(removed),
+            "title_prefix": title_prefix,
+            "title_found": bool(title_prefix),
+            "winner": winner,
+            "winner_found": winner_hit,
+            "amount": amount,
+            "amount_found": amount_hit,
+        }
+    )
+    return bool(title_prefix) or winner_hit or amount_hit, detail
 
 
 def _evaluate_refusal(
@@ -687,7 +839,7 @@ def evaluate_check(
     if kind == "numeric_fact":
         return _evaluate_numeric(check, truth, answer, question)
     if kind == "bid_lookup":
-        return _evaluate_bid_lookup(truth, answer)
+        return _evaluate_bid_lookup(truth, answer, question)
     if kind == "refuse_or_redirect":
         return _evaluate_refusal(answer, forbidden_claims)
     return True, {"note": "도구 선택만 판정"}
@@ -808,7 +960,7 @@ def summarize_item(item: dict[str, Any], attempts: list[dict[str, Any]]) -> dict
     verdict = "pass" if passed_attempts >= threshold else "fail"
     reasons = [reason for attempt in attempts for reason in attempt["failure_reasons"]]
     tool_union = sorted({tool for attempt in attempts for tool in attempt["tools"]})
-    return {
+    record: dict[str, Any] = {
         "id": item["id"],
         "category": item["category"],
         "split": item["split"],
@@ -822,6 +974,11 @@ def summarize_item(item: dict[str, Any], attempts: list[dict[str, Any]]) -> dict
         "tools": tool_union,
         "attempts": attempts,
     }
+    # 원칙 4: 범위 밖 판정은 낱말 기반 근사다. 코디네이터가 답변을 직접 읽어
+    # 확정할 수 있도록 결과에 표시를 남긴다.
+    if item.get("category") == "out_of_scope" or item["check"]["type"] == "refuse_or_redirect":
+        record["heuristic"] = True
+    return record
 
 
 class CallPacer:
@@ -1079,6 +1236,11 @@ def print_summary_table(summary: dict[str, dict[str, Any]]) -> None:
     total = sum(stats["total"] for stats in summary.values())
     rate = f"{(passed / total * 100) if total else 0.0:.1f}%"
     print(f"{'TOTAL':<20}{passed:>8}{total:>8}{rate:>9}")
+    if "out_of_scope" in summary:
+        print(
+            "\n참고: out_of_scope 판정은 낱말 기반 근사입니다(결과 JSON 의 heuristic: true). "
+            "코디네이터가 답변을 직접 읽어 확정하십시오."
+        )
 
 
 def current_git_commit() -> str:
