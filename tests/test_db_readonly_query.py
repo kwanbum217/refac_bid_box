@@ -68,6 +68,19 @@ class TestReadOnlyAccepts:
         """겹친 따옴표나 백틱 식별자 안의 표기는 데이터이므로 막지 않습니다."""
         assert assert_read_only(sql)
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 -- 정상 주석\n",
+            "SELECT 1 --\t/*! x */",
+            "SELECT 1--",
+            "SELECT 5--3 AS a",
+        ],
+    )
+    def test_double_dash_line_comment_boundaries_pass(self, sql):
+        """MySQL 은 -- 뒤에 공백·제어문자나 입력 끝이 올 때만 줄 주석으로 봅니다."""
+        assert assert_read_only(sql)
+
 
 class TestReadOnlyRejects:
     @pytest.mark.parametrize(
@@ -116,6 +129,20 @@ class TestReadOnlyRejects:
         """앞선 주석이나 리터럴에 가려진 실행 주석도 놓치지 않아야 합니다."""
         with pytest.raises(UnsafeQueryError):
             assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1--/*! ; DELETE FROM t */",
+            "SELECT 1--/*+ X */",
+            "SELECT 1---/*! DROP */",
+        ],
+    )
+    def test_executable_comments_after_bare_double_dash_are_rejected(self, sql):
+        """-- 뒤가 공백도 제어문자도 입력 끝도 아니면 줄 주석이 아닙니다."""
+        with pytest.raises(UnsafeQueryError) as exc:
+            assert_read_only(sql)
+        assert "실행 주석" in str(exc.value)
 
     def test_multi_statement_is_rejected(self):
         """세미콜론으로 이어 붙인 우회를 막아야 합니다."""

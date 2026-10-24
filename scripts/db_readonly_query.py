@@ -173,7 +173,12 @@ def reject_executable_comments(sql: str) -> None:
             state = "block"
             index += 2
         elif char == "-" and sql.startswith("--", index):
-            state = "line"
+            # MySQL 은 -- 바로 뒤에 공백이나 제어문자가 오거나 입력이 끝날 때만
+            # 줄 주석으로 봅니다. 그렇지 않으면 두 하이픈은 일반 문자이므로
+            # `--3` 이나 `--/*!` 를 주석으로 넘기면 뒤의 실행 주석을 놓칩니다.
+            follower = sql[index + 2 : index + 3]
+            if not follower or follower.isspace() or ord(follower) < 0x20 or follower == "\x7f":
+                state = "line"
             index += 2
         elif char == "#":
             state = "line"
