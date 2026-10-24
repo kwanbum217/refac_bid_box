@@ -24,6 +24,7 @@ from src.app.core.config import settings
 from src.rag.answer_format import (
     _build_announcement_list_answer,
     _build_axis_answer,
+    _build_bid_detail_answer,
     _build_comparison_answer,
     _build_evidence_items,
     _build_result_list_answer,
@@ -63,8 +64,10 @@ from src.rag.query_planning import (
     _parse_year_month_window,
     _query_lower,
     build_retrieval_plan,
+    extract_bid_ntce_no,
     extract_result_limit,
     is_announcement_list_query,
+    is_bid_number_query,
     is_result_list_query,
 )
 from src.rag.schemas import (
@@ -1133,6 +1136,8 @@ class HybridRAGEngine:
         if not direct_result_list_answer:
             direct_result_list_answer = _build_announcement_list_answer(plan, structured_data)
         if not direct_result_list_answer:
+            direct_result_list_answer = _build_bid_detail_answer(plan, structured_data)
+        if not direct_result_list_answer:
             direct_result_list_answer = _build_axis_answer(plan, structured_data)
         if not direct_result_list_answer:
             direct_result_list_answer = _build_series_answer(plan, structured_data)
@@ -1384,6 +1389,8 @@ class HybridRAGEngine:
         if not direct_result_list_answer:
             direct_result_list_answer = _build_announcement_list_answer(plan, structured_data)
         if not direct_result_list_answer:
+            direct_result_list_answer = _build_bid_detail_answer(plan, structured_data)
+        if not direct_result_list_answer:
             direct_result_list_answer = _build_axis_answer(plan, structured_data)
         if not direct_result_list_answer:
             direct_result_list_answer = _build_series_answer(plan, structured_data)
@@ -1561,6 +1568,7 @@ __all__ = [
     "PreparedContext",
     "SemanticSearchResult",
     "_build_announcement_list_answer",
+    "_build_bid_detail_answer",
     "_build_comparison_answer",
     "_build_evidence_items",
     "_build_result_list_answer",
@@ -1585,11 +1593,13 @@ __all__ = [
     "_query_lower",
     "build_retrieval_plan",
     "check_numeric_omissions",
+    "extract_bid_ntce_no",
     "extract_numeric_context_values",
     "extract_result_limit",
     "get_bidding_statistics",
     "get_chatbot_response",
     "is_announcement_list_query",
+    "is_bid_number_query",
     "is_result_list_query",
     "rag_engine",
     "retrieve_semantic_context",

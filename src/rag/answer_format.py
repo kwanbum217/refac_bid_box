@@ -44,6 +44,7 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "relative_years": "최근 연수",
         "analysis_mode": "분석 모드",
         "result_limit": "요청 목록 수",
+        "bid_ntce_no": "공고번호",
         "group_by": "집계 축",
         "metric": "집계 지표",
         "group_limit": "집계 행 상한",
@@ -167,6 +168,86 @@ def _build_announcement_list_answer(
             f"{_markdown_result_cell(item.get('bid_ntce_dt'))} | "
             f"{_markdown_result_cell(item.get('bid_clse_dt'))} |"
         )
+    return "\n".join(lines)
+
+
+def _format_bid_rate_comparison(result: dict, comparison: Any) -> str:
+    """낙찰률을 같은 분류 평균과 비교한 문장을 만듭니다."""
+    if not isinstance(comparison, dict):
+        return ""
+    rate = result.get("sucsf_bid_rate")
+    baseline = comparison.get("average_winning_rate")
+    if rate is None or baseline is None:
+        return ""
+    try:
+        rate_value = float(rate)
+        baseline_value = float(baseline)
+    except (TypeError, ValueError):
+        return ""
+    category_label = str(comparison.get("category_label") or "같은 분류")
+    sample_count = comparison.get("sample_count")
+    try:
+        suffix = f" (표본 {int(sample_count):,}건)" if sample_count else ""
+    except (TypeError, ValueError):
+        suffix = ""
+    diff = rate_value - baseline_value
+    if abs(diff) < 0.005:
+        return f"{category_label} 평균 낙찰률 {baseline_value:.4f}% 와 같습니다.{suffix}"
+    direction = "높습니다" if diff > 0 else "낮습니다"
+    return (
+        f"{category_label} 평균 낙찰률 {baseline_value:.4f}% 보다 "
+        f"{abs(diff):.2f}%p {direction}.{suffix}"
+    )
+
+
+def _build_bid_detail_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """공고번호 단건은 공고·낙찰 필드와 같은 분류 평균 비교를 LLM 없이 냅니다."""
+    bid_ntce_no = _normalize_text(str((plan.filters or {}).get("bid_ntce_no") or ""))
+    if not bid_ntce_no or not structured_data:
+        return ""
+
+    summary = structured_data.get("summary") or {}
+    detail = summary.get("bid_detail")
+    if not isinstance(detail, dict):
+        return f"공고번호 {bid_ntce_no} 은(는) 수집 데이터에서 확인할 수 없습니다."
+
+    announcement = detail.get("announcement") or {}
+    result = detail.get("result") or {}
+
+    if result:
+        lines = [
+            f"공고번호 {bid_ntce_no} 낙찰 결과입니다.",
+            "",
+            "| 항목 | 값 |",
+            "| --- | --- |",
+            f"| 공고명 | {_markdown_result_cell(result.get('bid_ntce_nm'))} |",
+            f"| 수요기관 | {_markdown_result_cell(result.get('dminstt_nm'))} |",
+            f"| 분류 | {_markdown_result_cell(result.get('category_label'))} |",
+            f"| 낙찰업체 | {_markdown_result_cell(result.get('bidwinnr_nm'))} |",
+            f"| 낙찰금액 | {_format_result_amount(result.get('sucsf_bid_amt'))} |",
+            f"| 낙찰률 | {_format_result_rate(result.get('sucsf_bid_rate'))} |",
+            f"| 개찰일 | {_markdown_result_cell(result.get('rl_openg_dt'))} |",
+        ]
+        comparison_line = _format_bid_rate_comparison(result, detail.get("comparison"))
+        if comparison_line:
+            lines.extend(["", comparison_line])
+        return "\n".join(lines)
+
+    lines = [
+        f"공고번호 {bid_ntce_no} 공고 정보입니다. 아직 수집된 낙찰 결과가 없습니다.",
+        "",
+        "| 항목 | 값 |",
+        "| --- | --- |",
+        f"| 공고명 | {_markdown_result_cell(announcement.get('bid_ntce_nm'))} |",
+        f"| 수요기관 | {_markdown_result_cell(announcement.get('dminstt_nm'))} |",
+        f"| 분류 | {_markdown_result_cell(announcement.get('category_label'))} |",
+        f"| 추정가격 | {_format_result_amount(announcement.get('presmpt_prce'))} |",
+        f"| 공고일 | {_markdown_result_cell(announcement.get('bid_ntce_dt'))} |",
+        f"| 마감일 | {_markdown_result_cell(announcement.get('bid_clse_dt'))} |",
+    ]
     return "\n".join(lines)
 
 

@@ -197,7 +197,14 @@ def _extract_bid_query_params(
     lowered = message.lower()
 
     if filters:
-        for key in ("category", "institution_name", "years", "date_from", "date_to"):
+        for key in (
+            "category",
+            "institution_name",
+            "years",
+            "date_from",
+            "date_to",
+            "bid_ntce_no",
+        ):
             if key in filters:
                 params[key] = filters[key]
 
