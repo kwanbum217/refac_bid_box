@@ -114,7 +114,7 @@ REGION_KEYWORDS = (
     "경남",
     "제주",
 )
-TREND_KEYWORDS = ("추세", "흐름", "변화")
+TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별")
 
 RESULT_QUERY_MARKERS = (
     "낙찰된",
@@ -128,6 +128,24 @@ RESULT_QUERY_MARKERS = (
     "낙찰받은",
 )
 RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
+RESULT_LIST_REQUEST_VERBS = ("보여", "알려", "보여줄래", "줘", "뽑아", "나열")
+RESULT_LIST_EXCLUDED_MARKERS = (
+    "평균",
+    "낙찰률",
+    "건수",
+    "몇 건",
+    "순위",
+    "top",
+    "많이 받은",
+    "통계",
+    "비율",
+    "분포",
+    "추이",
+    "높은 편",
+    "비교",
+)
+RESULT_LIST_EXPLANATION_MARKERS = ("방법", "규정", "설명", "어떻게", "의미", "절차", "뭐야")
+RESULT_LIST_BID_NUMBER_PATTERN = re.compile(r"[A-Z]\d{2}[A-Z]{2}\d{8}|\d{11,}", re.IGNORECASE)
 
 ENTITY_ORG_SUFFIXES = (
     "주식회사",
@@ -335,13 +353,32 @@ def is_result_query(query: str) -> bool:
 
 
 def is_result_list_query(query: str) -> bool:
-    """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다."""
+    """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다.
+
+    결과 마커에 목록 신호가 붙은 기존 형태 외에, 목록 신호 없이 요청 동사
+    (보여·알려·줘 등)만 붙은 요청과 낙찰 단독 표현에 개수가 붙은 요청도
+    목록 질의로 봅니다. 통계 표지, 공고번호 단건, 설명형 질의는 각자의
+    경로가 맡도록 거짓을 반환하고, 개체를 지목한 질의도 기존 개체 조회
+    경로를 그대로 쓰도록 거짓을 반환합니다.
+    """
     lowered = _query_lower(query)
     has_result_marker = any(marker in lowered for marker in RESULT_QUERY_MARKERS)
     has_list_marker = any(marker in lowered for marker in RESULT_LIST_MARKERS) or bool(
         re.search(r"\d+\s*(?:개|건)", lowered)
     )
-    return has_result_marker and has_list_marker
+    has_request_verb = any(verb in lowered for verb in RESULT_LIST_REQUEST_VERBS)
+    matched = (has_result_marker and (has_list_marker or has_request_verb)) or (
+        "낙찰" in lowered and bool(re.search(r"\d+\s*(?:개|건)", lowered))
+    )
+    if not matched:
+        return False
+    if any(marker in lowered for marker in RESULT_LIST_EXCLUDED_MARKERS):
+        return False
+    if RESULT_LIST_BID_NUMBER_PATTERN.search(lowered):
+        return False
+    if any(marker in lowered for marker in RESULT_LIST_EXPLANATION_MARKERS):
+        return False
+    return not is_entity_specific_query(query)
 
 
 ANNOUNCEMENT_LIST_PATTERN = re.compile(
