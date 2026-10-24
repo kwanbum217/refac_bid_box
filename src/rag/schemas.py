@@ -12,9 +12,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 DEFAULT_VECTOR_TOP_K = 5
-# 기간을 말하지 않은 통계 질의의 기본 창입니다. 도구·엔진이 각자 다른 창을
-# 만들지 않도록 이 한 곳에서 정합니다.
-DEFAULT_STATISTICS_WINDOW_YEARS = 5
 
 
 class RetrievalPlan(BaseModel):

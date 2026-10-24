@@ -48,7 +48,7 @@ from src.rag.query_planning import (
     MAX_GROUP_LIMIT,
     REGION_ALIASES,
 )
-from src.rag.schemas import DEFAULT_STATISTICS_WINDOW_YEARS, RetrievalPlan
+from src.rag.schemas import RetrievalPlan
 
 logger = logging.getLogger(__name__)
 
@@ -1509,8 +1509,7 @@ def _build_time_series(
             quarters = _generate_quarters_between(date_from, date_from)
         else:
             today = date.today()
-            window_start = today - timedelta(days=(365 * DEFAULT_STATISTICS_WINDOW_YEARS) - 1)
-            quarters = _generate_quarters_between(window_start, today)
+            quarters = [(today.year, q) for q in range(1, 5)]
 
         institution_name = _normalize_text(str(filters.get("institution_name") or ""))
         category = _normalize_text(str(filters.get("category") or ""))
