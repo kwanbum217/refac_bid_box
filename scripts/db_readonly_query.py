@@ -24,6 +24,8 @@
 
 - `SELECT`, `SHOW`, `EXPLAIN`, `DESC(RIBE)`, `WITH` 로 시작하는 문장만 허용합니다.
 - 쓰기·DDL 키워드가 어디에든 나타나면 거부합니다(주석과 문자열 리터럴 제거 후 검사).
+- MySQL 실행 주석(`/*! ... */`, `/*!50000 ... */`)과 옵티마이저 힌트 주석
+  (`/*+ ... */`)이 있으면 거부합니다. 서버가 본문을 실제로 실행하기 때문입니다.
 - 여러 문장을 한 번에 보내지 못하게 합니다. 세미콜론으로 이어 붙인 우회를 막습니다.
 - 세션을 `READ ONLY` 트랜잭션으로 열어 드라이버 수준에서도 쓰기를 차단합니다.
 """
@@ -99,9 +101,96 @@ FUNCTION_CALL_RE = re.compile(
 
 DEFAULT_LIMIT = 200
 
+# MySQL 은 이 두 주석의 본문을 주석이 아니라 실행 가능한 SQL 로 취급합니다.
+# `/* !` 처럼 구분자 사이에 공백이 있으면 일반 주석이므로 대상이 아닙니다.
+EXECUTABLE_COMMENT_MARKERS = ("/*!", "/*+")
+
 
 class UnsafeQueryError(ValueError):
     """읽기 전용이 아닌 질의를 거부할 때 냅니다."""
+
+
+# 상태 기반 스캐너가 쓰는 인용 문맥과 그 닫는 문자입니다. 백틱은 식별자라
+# 백슬래시 이스케이프가 없고, 겹친 백틱(``)이 이스케이프입니다.
+QUOTED_STATES = {"single": "'", "double": '"', "backtick": "`"}
+
+
+def reject_executable_comments(sql: str) -> None:
+    """원문을 왼쪽에서 오른쪽으로 한 번 훑어 실행 주석과 힌트 주석을 찾습니다.
+
+    문자열 리터럴 제거와 주석 제거를 정규식으로 따로 돌리면 서로의 경계를
+    오인합니다. `SELECT 1 /* ' */ /*! DELETE FROM t */ 'x'` 처럼 블록 주석 안의
+    따옴표를 리터럴 시작으로 보면 뒤따르는 실행 주석을 놓치고, 반대로 리터럴
+    안의 `/*!` 를 주석 시작으로 보면 정상 질의를 막습니다. 문맥을 유지한 한 번의
+    순회는 두 문제를 함께 없앱니다.
+
+    MySQL 은 `/*! ... */` 와 `/*+ ... */` 의 본문을 주석이 아니라 실행할 SQL 로
+    취급합니다. `/* !` 처럼 구분자 사이에 공백이 있으면 일반 주석입니다.
+    닫히지 않은 리터럴이나 블록 주석도 경계를 신뢰할 수 없으므로 거부합니다.
+    """
+    state = "normal"
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+
+        if state in QUOTED_STATES:
+            quote = QUOTED_STATES[state]
+            if char == "\\" and state != "backtick":
+                index += 2
+            elif char == quote:
+                if sql.startswith(quote * 2, index):
+                    index += 2
+                else:
+                    state = "normal"
+                    index += 1
+            else:
+                index += 1
+            continue
+
+        if state == "block":
+            if char == "*" and sql.startswith("*/", index):
+                state = "normal"
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if state == "line":
+            if char == "\n":
+                state = "normal"
+            index += 1
+            continue
+
+        if char in "'\"`":
+            state = {"'": "single", '"': "double", "`": "backtick"}[char]
+            index += 1
+        elif char == "/" and sql.startswith("/*", index):
+            if sql.startswith(EXECUTABLE_COMMENT_MARKERS, index):
+                raise UnsafeQueryError(
+                    "MySQL 실행 주석(/*! */)이나 힌트 주석(/*+ */)은 허용하지 않습니다."
+                )
+            state = "block"
+            index += 2
+        elif char == "-" and sql.startswith("--", index):
+            # MySQL 은 -- 바로 뒤에 단일 바이트 공백이나 제어문자가 오거나 입력이
+            # 끝날 때만 줄 주석으로 봅니다. 그렇지 않으면 두 하이픈은 일반 문자이므로
+            # `--3` 이나 `--/*!` 를 주석으로 넘기면 뒤의 실행 주석을 놓칩니다.
+            # 판정을 ASCII 로 좁힙니다. `str.isspace()` 는 U+00A0, U+3000, U+2028
+            # 같은 유니코드 공백도 공백으로 보지만, MySQL 은 그런 문자를 줄 주석
+            # 시작으로 보지 않으므로 그 뒤의 `/*!` 가 실제로 실행됩니다.
+            follower = sql[index + 2 : index + 3]
+            if not follower or ord(follower) <= 0x20 or ord(follower) == 0x7F:
+                state = "line"
+            index += 2
+        elif char == "#":
+            state = "line"
+            index += 1
+        else:
+            index += 1
+
+    if state in QUOTED_STATES or state == "block":
+        raise UnsafeQueryError("닫히지 않은 문자열 리터럴이나 주석이 있습니다.")
 
 
 def strip_sql_noise(sql: str) -> str:
@@ -122,6 +211,11 @@ def assert_read_only(sql: str) -> str:
     statement = sql.strip().rstrip(";").strip()
     if not statement:
         raise UnsafeQueryError("질의가 비어 있습니다.")
+
+    # 일반 주석 제거(strip_sql_noise)보다 먼저 봐야 합니다. MySQL 실행 주석과
+    # 힌트 주석의 본문은 서버가 실행하므로, 주석으로 지우면 검사를 통째로
+    # 우회합니다.
+    reject_executable_comments(statement)
 
     probe = strip_sql_noise(statement)
 

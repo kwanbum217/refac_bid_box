@@ -41,6 +41,59 @@ class TestReadOnlyAccepts:
     def test_comment_containing_forbidden_word_is_allowed(self):
         assert assert_read_only("SELECT 1 -- drop table 주의")
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1",
+            "SELECT 1 /* 일반 주석 */",
+            "SELECT 1 /* ! 실행 주석이 아님 */",
+            "SELECT '/*! 문자열 */' AS a",
+            "SELECT COUNT(*) FROM bid_results WHERE bid_ntce_nm LIKE '%/*!%'",
+        ],
+    )
+    def test_executable_comment_lookalikes_in_literals_and_plain_comments_pass(self, sql):
+        """문자열 리터럴과 일반 주석 안의 표기는 데이터이므로 막지 않습니다."""
+        assert assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT \"it's\", '/*!' FROM t",
+            "SELECT `a/*!b` FROM t",
+            "SELECT 'it''s /*!' AS a",
+            "SELECT 1 /* 일반 */",
+        ],
+    )
+    def test_executable_comment_lookalikes_in_quoted_contexts_pass(self, sql):
+        """겹친 따옴표나 백틱 식별자 안의 표기는 데이터이므로 막지 않습니다."""
+        assert assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 -- 정상 주석\n",
+            "SELECT 1 --\t/*! x */",
+            "SELECT 1--",
+            "SELECT 5--3 AS a",
+        ],
+    )
+    def test_double_dash_line_comment_boundaries_pass(self, sql):
+        """MySQL 은 -- 뒤에 공백·제어문자나 입력 끝이 올 때만 줄 주석으로 봅니다."""
+        assert assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1-- /*! x */",
+            "SELECT 1--\t/*! x */",
+            "SELECT 1--\r/*! x */",
+            "SELECT 1--",
+        ],
+    )
+    def test_double_dash_ascii_boundaries_start_real_line_comment(self, sql):
+        """단일 바이트 공백·제어문자 뒤는 진짜 줄 주석이라 뒤의 표기가 실행되지 않습니다."""
+        assert assert_read_only(sql)
+
 
 class TestReadOnlyRejects:
     @pytest.mark.parametrize(
@@ -58,6 +111,66 @@ class TestReadOnlyRejects:
     def test_write_statements_are_rejected(self, sql):
         with pytest.raises(UnsafeQueryError):
             assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 /*! ; DELETE FROM bid_results */",
+            "SELECT /*!50000 1; DROP TABLE x */",
+            "SELECT /*+ MAX_EXECUTION_TIME(1000) */ 1",
+            "select 1 /*!*/",
+        ],
+    )
+    def test_executable_comments_are_rejected(self, sql):
+        """MySQL 이 본문을 실제로 실행하는 주석은 검사 단계에서 거부해야 합니다."""
+        with pytest.raises(UnsafeQueryError) as exc:
+            assert_read_only(sql)
+        assert "실행 주석" in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 /* ' */ /*! DELETE FROM t */ 'x'",
+            "SELECT 1 -- '\n/*! DROP TABLE x */",
+            "select 1 /*!*/",
+            "SELECT /*+ X */ 1",
+            "SELECT 'abc",
+            "SELECT 1 /* 닫히지 않은 주석",
+        ],
+    )
+    def test_executable_comments_hidden_by_other_constructs_are_rejected(self, sql):
+        """앞선 주석이나 리터럴에 가려진 실행 주석도 놓치지 않아야 합니다."""
+        with pytest.raises(UnsafeQueryError):
+            assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1--/*! ; DELETE FROM t */",
+            "SELECT 1--/*+ X */",
+            "SELECT 1---/*! DROP */",
+        ],
+    )
+    def test_executable_comments_after_bare_double_dash_are_rejected(self, sql):
+        """-- 뒤가 공백도 제어문자도 입력 끝도 아니면 줄 주석이 아닙니다."""
+        with pytest.raises(UnsafeQueryError) as exc:
+            assert_read_only(sql)
+        assert "실행 주석" in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1--\u00a0/*! x */",
+            "SELECT 1--\u3000/*! x */",
+            "SELECT 1--\u2028/*! x */",
+            "SELECT 1--\n/*! x */",
+        ],
+    )
+    def test_unicode_space_after_double_dash_does_not_start_line_comment(self, sql):
+        """MySQL 은 유니코드 공백을 줄 주석 시작으로 보지 않으므로 뒤의 실행 주석이 실행됩니다."""
+        with pytest.raises(UnsafeQueryError) as exc:
+            assert_read_only(sql)
+        assert "실행 주석" in str(exc.value)
 
     def test_multi_statement_is_rejected(self):
         """세미콜론으로 이어 붙인 우회를 막아야 합니다."""
