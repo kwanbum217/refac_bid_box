@@ -58,6 +58,10 @@ RAG_LLM_GENERATION_MS: str = "rag_llm_generation_ms"
 RAG_LLM_TOKENS: str = "rag_llm_tokens"
 RAG_LLM_REQUESTS: str = "rag_llm_requests"
 
+# OTLP 메트릭 exporter 기본 경로. opentelemetry-exporter-otlp-proto-http 1.45.1
+# 에서 _append_metrics_path 가 제거되어 1.44.0 구현과 동일하게 내장합니다.
+DEFAULT_METRICS_EXPORT_PATH: str = "v1/metrics"
+
 # DB 질의 연산 카디널리티 관리를 위한 표준 SQL 명령어 허용 목록
 KNOWN_DB_OPERATIONS: frozenset[str] = frozenset(
     {
@@ -95,6 +99,13 @@ def _is_sensitive_key(key: str) -> bool:
     """속성 키가 민감 정보를 가리키는지 확인합니다."""
     lowered = key.lower()
     return any(pattern in lowered for pattern in SENSITIVE_KEY_PATTERNS)
+
+
+def _append_metrics_path(endpoint: str) -> str:
+    """OTLP 엔드포인트에 메트릭 수집 경로를 붙입니다."""
+    if endpoint.endswith("/"):
+        return endpoint + DEFAULT_METRICS_EXPORT_PATH
+    return endpoint + f"/{DEFAULT_METRICS_EXPORT_PATH}"
 
 
 class SafeSpanExporter(SpanExporter):
@@ -492,7 +503,6 @@ def setup_observability(
             try:
                 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
                     OTLPMetricExporter,
-                    _append_metrics_path,
                 )
 
                 endpoint = settings.OTEL_EXPORTER_OTLP_ENDPOINT
