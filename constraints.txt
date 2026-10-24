@@ -92,7 +92,7 @@ fastapi==0.141.1
     # via
     #   chromadb
     #   refac-bid-box
-filelock==3.32.2
+filelock==4.2.4
     # via huggingface-hub
 flatbuffers==25.12.19
     # via onnxruntime
@@ -229,9 +229,10 @@ onnxruntime==1.28.0
     # via chromadb
 opencv-python-headless==5.0.0.93
     # via rapidocr
-opentelemetry-api==1.44.0
+opentelemetry-api==1.45.1
     # via
     #   chromadb
+    #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
@@ -241,46 +242,53 @@ opentelemetry-api==1.44.0
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   refac-bid-box
-opentelemetry-exporter-otlp-proto-common==1.44.0
+opentelemetry-exporter-http-transport==0.66b1
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-common==0.66b1
     # via
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-exporter-otlp-proto-common==1.45.1
+    # via
+    #   opentelemetry-exporter-otlp-proto-grpc
+    #   opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-grpc==1.45.1
     # via chromadb
-opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.45.1
     # via refac-bid-box
-opentelemetry-instrumentation==0.65b0
+opentelemetry-instrumentation==0.66b1
     # via
     #   opentelemetry-instrumentation-asgi
     #   opentelemetry-instrumentation-fastapi
     #   opentelemetry-instrumentation-sqlalchemy
-opentelemetry-instrumentation-asgi==0.65b0
+opentelemetry-instrumentation-asgi==0.66b1
     # via opentelemetry-instrumentation-fastapi
-opentelemetry-instrumentation-fastapi==0.65b0
+opentelemetry-instrumentation-fastapi==0.66b1
     # via
     #   chromadb
     #   refac-bid-box
-opentelemetry-instrumentation-sqlalchemy==0.65b0
+opentelemetry-instrumentation-sqlalchemy==0.66b1
     # via refac-bid-box
-opentelemetry-proto==1.44.0
+opentelemetry-proto==1.45.1
     # via
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.44.0
+opentelemetry-sdk==1.45.1
     # via
     #   chromadb
+    #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
     #   refac-bid-box
-opentelemetry-semantic-conventions==0.65b0
+opentelemetry-semantic-conventions==0.66b1
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-asgi
     #   opentelemetry-instrumentation-fastapi
     #   opentelemetry-instrumentation-sqlalchemy
     #   opentelemetry-sdk
-opentelemetry-util-http==0.65b0
+opentelemetry-util-http==0.66b1
     # via
     #   opentelemetry-instrumentation-asgi
     #   opentelemetry-instrumentation-fastapi
@@ -288,7 +296,7 @@ orjson==3.11.9
     # via chromadb
 overrides==7.7.0
     # via chromadb
-packaging==26.2
+packaging==26.3
     # via
     #   build
     #   huggingface-hub
@@ -393,6 +401,7 @@ requests==2.34.2
     #   google-auth
     #   google-genai
     #   kubernetes
+    #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
     #   posthog
     #   rapidocr
