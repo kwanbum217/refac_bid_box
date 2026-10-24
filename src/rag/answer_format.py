@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from src.rag.query_planning import (
+    LIST_REQUEST_MARKERS,
     _category_label,
     _normalize_text,
     _single_metric,
@@ -502,6 +503,8 @@ def _build_single_metric_answer(
         return ""
 
     query = _normalize_text(plan.semantic_query).lower()
+    if any(marker in query for marker in LIST_REQUEST_MARKERS):
+        return ""
     if any(marker in query for marker in SINGLE_METRIC_EXCLUDED_MARKERS):
         return ""
 

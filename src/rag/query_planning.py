@@ -40,6 +40,10 @@ STATISTICS_KEYWORDS = (
 # 공고·낙찰 도메인 표지가 함께 있을 때만 통계로 봅니다.
 COUNT_QUERY_PATTERN = re.compile(r"몇\s*건|몇\s*개|총\s*몇|얼마나\s*(?:올라|있)")
 COUNT_QUERY_DOMAIN_MARKERS = ("공고", "낙찰")
+# 목록·사례·리스트·보여줘 는 개별 항목을 늘어놓으라는 요청입니다. "몇 건" 같은
+# 수량 표현이 함께 있어도 집계가 아니라 목록 요청이므로, 통계 라우팅과 단일
+# 지표 직접 응답에서 제외합니다.
+LIST_REQUEST_MARKERS = ("목록", "리스트", "사례", "목록으로", "보여줘")
 SEMANTIC_KEYWORDS = (
     "사례",
     "상세",
@@ -533,6 +537,8 @@ def _is_count_statistics_query(query: str) -> bool:
     공고·낙찰 도메인 표지가 함께 있을 때만 정형 집계 대상으로 봅니다.
     """
     lowered = _query_lower(query)
+    if any(marker in lowered for marker in LIST_REQUEST_MARKERS):
+        return False
     if not COUNT_QUERY_PATTERN.search(lowered):
         return False
     return any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS)
@@ -938,7 +944,7 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
         start, end = _to_iso(week_start, today)
         return start, end, "recent", True
 
-    if "이번 달" in lowered or "이번 월" in lowered:
+    if "이번 달" in lowered or "이번 월" in lowered or "이번달" in lowered:
         start, end = _to_iso(today.replace(day=1), today)
         return start, end, "recent", True
 
@@ -947,6 +953,19 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
         last_prev_month = first_this_month - timedelta(days=1)
         first_prev_month = last_prev_month.replace(day=1)
         start, end = _to_iso(first_prev_month, last_prev_month)
+        return start, end, "recent", True
+
+    # "재작년" 은 "작년" 을 포함하므로 먼저 판정합니다.
+    if "재작년" in lowered:
+        start, end = _to_iso(date(today.year - 2, 1, 1), date(today.year - 2, 12, 31))
+        return start, end, "recent", True
+
+    if "올해" in lowered or "금년" in lowered or "이번 해" in lowered:
+        start, end = _to_iso(date(today.year, 1, 1), today)
+        return start, end, "recent", True
+
+    if "작년" in lowered or "지난해" in lowered or "지난 해" in lowered or "전년" in lowered:
+        start, end = _to_iso(date(today.year - 1, 1, 1), date(today.year - 1, 12, 31))
         return start, end, "recent", True
 
     day_match = re.search(r"최근\s*(\d+)\s*일", lowered)

@@ -5,8 +5,8 @@ tests/test_chat_window_stats.py
 직접 답하는지 검증합니다.
 
 기준일은 2026-10-24 로 고정하고, structured_data 는 손으로 만든 dict 를 씁니다.
-라우팅, 이번 달 기간 해석, 문맥 적용 조건 줄, 단일 지표 직접 응답 네 축을
-각각 고정합니다.
+연 단위 기간 표현은 2026-10-25 를 기준일로 따로 고정합니다. 라우팅, 기간 해석,
+문맥 적용 조건 줄, 단일 지표 직접 응답 네 축을 각각 고정합니다.
 """
 
 from __future__ import annotations
@@ -27,12 +27,19 @@ from src.rag.query_planning import (
 from src.rag.snapshots import _extract_statistical_snapshot
 
 _TODAY = date(2026, 10, 24)
+_TODAY_25 = date(2026, 10, 25)
 
 
 class _FrozenDate(date):
     @classmethod
     def today(cls) -> date:
         return _TODAY
+
+
+class _FrozenDate25(date):
+    @classmethod
+    def today(cls) -> date:
+        return _TODAY_25
 
 
 @pytest.fixture(autouse=True)
@@ -69,6 +76,25 @@ def test_non_statistics_queries_do_not_become_count_statistics(query):
     assert _is_count_statistics_query(query) is False
 
 
+LIST_MARKED_COUNT_CASES = [
+    ("이번 달 낙찰 몇 건 목록 보여줘", False),
+    ("몇 건의 낙찰 사례를 보여줘", False),
+    ("낙찰 몇 건 나왔는지 리스트로 보여줘", False),
+    ("공고 몇 개 올라왔는지 알려줘 목록", True),
+]
+
+
+@pytest.mark.parametrize(("query", "main_use_sql"), LIST_MARKED_COUNT_CASES)
+def test_list_marked_count_queries_keep_main_routing_and_no_metric_answer(query, main_use_sql):
+    """목록 표지가 붙은 건수 질의는 통계로 승격하지 않고 직접 응답도 내지 않습니다."""
+    assert _is_count_statistics_query(query) is False
+
+    plan = build_retrieval_plan(query)
+
+    assert plan.use_sql is main_use_sql
+    assert _build_single_metric_answer(plan, _structured_data()) == ""
+
+
 def test_plain_announcement_request_stays_vector():
     """'공고 알려줘' 는 목록 신호도 건수 표현도 없어 기본 벡터 질의로 남습니다."""
     plan = build_retrieval_plan("공고 알려줘")
@@ -92,6 +118,28 @@ def test_this_month_window_runs_from_first_day_to_today():
     assert plan.filters.get("date_from") == "2026-10-01"
     assert plan.filters.get("date_to") == "2026-10-24"
     assert plan.filters.get("category") == "Servc"
+
+
+YEAR_SCALE_WINDOW_CASES = [
+    ("이번달 용역 낙찰 몇 건이야?", "2026-10-01", "2026-10-25"),
+    ("올해 공사 낙찰 얼마나 있어?", "2026-01-01", "2026-10-25"),
+    ("작년 공사 낙찰 건수", "2025-01-01", "2025-12-31"),
+    ("지난해 평균 낙찰률", "2025-01-01", "2025-12-31"),
+    ("지난 해 공사 낙찰 건수", "2025-01-01", "2025-12-31"),
+    ("재작년 공고 건수", "2024-01-01", "2024-12-31"),
+    ("2025년 공사 낙찰 건수", "2025-01-01", "2025-12-31"),
+]
+
+
+@pytest.mark.parametrize(("query", "date_from", "date_to"), YEAR_SCALE_WINDOW_CASES)
+def test_year_scale_windows(monkeypatch, query, date_from, date_to):
+    """이번달·올해·작년·지난해·재작년을 달력 경계로 해석하고 기존 연도 표기는 유지합니다."""
+    monkeypatch.setattr(query_planning, "date", _FrozenDate25)
+
+    plan = build_retrieval_plan(query)
+
+    assert plan.filters.get("date_from") == date_from
+    assert plan.filters.get("date_to") == date_to
 
 
 def _summary() -> dict:
