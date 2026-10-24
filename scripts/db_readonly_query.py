@@ -24,6 +24,8 @@
 
 - `SELECT`, `SHOW`, `EXPLAIN`, `DESC(RIBE)`, `WITH` 로 시작하는 문장만 허용합니다.
 - 쓰기·DDL 키워드가 어디에든 나타나면 거부합니다(주석과 문자열 리터럴 제거 후 검사).
+- MySQL 실행 주석(`/*! ... */`, `/*!50000 ... */`)과 옵티마이저 힌트 주석
+  (`/*+ ... */`)이 있으면 거부합니다. 서버가 본문을 실제로 실행하기 때문입니다.
 - 여러 문장을 한 번에 보내지 못하게 합니다. 세미콜론으로 이어 붙인 우회를 막습니다.
 - 세션을 `READ ONLY` 트랜잭션으로 열어 드라이버 수준에서도 쓰기를 차단합니다.
 """
@@ -99,9 +101,19 @@ FUNCTION_CALL_RE = re.compile(
 
 DEFAULT_LIMIT = 200
 
+# MySQL 은 이 두 주석의 본문을 주석이 아니라 실행 가능한 SQL 로 취급합니다.
+# `/* !` 처럼 구분자 사이에 공백이 있으면 일반 주석이므로 대상이 아닙니다.
+EXECUTABLE_COMMENT_MARKERS = ("/*!", "/*+")
+
 
 class UnsafeQueryError(ValueError):
     """읽기 전용이 아닌 질의를 거부할 때 냅니다."""
+
+
+def strip_string_literals(sql: str) -> str:
+    """문자열 리터럴만 지운 사본을 만듭니다. 주석은 그대로 둡니다."""
+    without_single = re.sub(r"'(?:[^'\\]|\\.)*'", " ", sql)
+    return re.sub(r'"(?:[^"\\]|\\.)*"', " ", without_single)
 
 
 def strip_sql_noise(sql: str) -> str:
@@ -122,6 +134,12 @@ def assert_read_only(sql: str) -> str:
     statement = sql.strip().rstrip(";").strip()
     if not statement:
         raise UnsafeQueryError("질의가 비어 있습니다.")
+
+    # 일반 주석 제거(strip_sql_noise)보다 먼저 봐야 합니다. MySQL 실행 주석과
+    # 힌트 주석의 본문은 서버가 실행하므로, 주석으로 지우면 검사를 통째로
+    # 우회합니다. 문자열 리터럴 안의 표기는 데이터이므로 먼저 제거합니다.
+    if any(marker in strip_string_literals(statement) for marker in EXECUTABLE_COMMENT_MARKERS):
+        raise UnsafeQueryError("MySQL 실행 주석(/*! */)이나 힌트 주석(/*+ */)은 허용하지 않습니다.")
 
     probe = strip_sql_noise(statement)
 

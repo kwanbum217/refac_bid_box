@@ -41,6 +41,20 @@ class TestReadOnlyAccepts:
     def test_comment_containing_forbidden_word_is_allowed(self):
         assert assert_read_only("SELECT 1 -- drop table 주의")
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1",
+            "SELECT 1 /* 일반 주석 */",
+            "SELECT 1 /* ! 실행 주석이 아님 */",
+            "SELECT '/*! 문자열 */' AS a",
+            "SELECT COUNT(*) FROM bid_results WHERE bid_ntce_nm LIKE '%/*!%'",
+        ],
+    )
+    def test_executable_comment_lookalikes_in_literals_and_plain_comments_pass(self, sql):
+        """문자열 리터럴과 일반 주석 안의 표기는 데이터이므로 막지 않습니다."""
+        assert assert_read_only(sql)
+
 
 class TestReadOnlyRejects:
     @pytest.mark.parametrize(
@@ -58,6 +72,21 @@ class TestReadOnlyRejects:
     def test_write_statements_are_rejected(self, sql):
         with pytest.raises(UnsafeQueryError):
             assert_read_only(sql)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 /*! ; DELETE FROM bid_results */",
+            "SELECT /*!50000 1; DROP TABLE x */",
+            "SELECT /*+ MAX_EXECUTION_TIME(1000) */ 1",
+            "select 1 /*!*/",
+        ],
+    )
+    def test_executable_comments_are_rejected(self, sql):
+        """MySQL 이 본문을 실제로 실행하는 주석은 검사 단계에서 거부해야 합니다."""
+        with pytest.raises(UnsafeQueryError) as exc:
+            assert_read_only(sql)
+        assert "실행 주석" in str(exc.value)
 
     def test_multi_statement_is_rejected(self):
         """세미콜론으로 이어 붙인 우회를 막아야 합니다."""
