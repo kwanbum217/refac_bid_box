@@ -55,6 +55,7 @@ def _seed_result(
     opened_at: datetime,
     category: str = "Cnstwk",
     institution: str = "서울특별시",
+    rate: float | None = 90.0,
 ) -> None:
     session.add(
         BidResult(
@@ -65,7 +66,7 @@ def _seed_result(
             dminstt_nm=institution,
             bidwinnr_nm=winner,
             sucsf_bid_amt=1000,
-            sucsf_bid_rate=90.0,
+            sucsf_bid_rate=rate,
             rl_openg_dt=opened_at,
             category=category,
         )
@@ -239,6 +240,94 @@ def test_winner_axis_orders_ties_by_name(isolated_db):
     breakdown = retrieve_structured_data(isolated_db, plan)["summary"]["axis_breakdown"]
 
     assert [item["label"] for item in breakdown] == ["가나업체", "나중업체"]
+
+
+def test_winner_axis_with_rate_marker_aggregates_average_rate(isolated_db):
+    """업체별 평균 낙찰률 질의는 낙찰 건수가 아니라 평균 낙찰률을 집계합니다."""
+    _seed_result(
+        isolated_db,
+        row_id=1,
+        winner="가나건설",
+        opened_at=datetime(2026, 10, 1, 9, 0, 0),
+        rate=80.0,
+    )
+    _seed_result(
+        isolated_db,
+        row_id=2,
+        winner="가나건설",
+        opened_at=datetime(2026, 10, 2, 9, 0, 0),
+        rate=90.0,
+    )
+    _seed_result(
+        isolated_db,
+        row_id=3,
+        winner="다라건설",
+        opened_at=datetime(2026, 10, 3, 9, 0, 0),
+        rate=95.0,
+    )
+    _seed_result(
+        isolated_db,
+        row_id=4,
+        winner="다라건설",
+        opened_at=datetime(2026, 10, 4, 9, 0, 0),
+        rate=95.0,
+    )
+    # 낙찰률이 없는 행과 손상 업체명은 평균과 순위에서 빠집니다.
+    _seed_result(
+        isolated_db,
+        row_id=5,
+        winner="마바상사",
+        opened_at=datetime(2026, 10, 5, 9, 0, 0),
+        rate=None,
+    )
+    _seed_result(
+        isolated_db,
+        row_id=6,
+        winner="깨진\ufffd업체",
+        opened_at=datetime(2026, 10, 6, 9, 0, 0),
+        rate=99.0,
+    )
+    isolated_db.commit()
+
+    plan = build_retrieval_plan("업체별 평균 낙찰률 알려줘")
+    assert plan.filters["group_by"] == "winner"
+    assert plan.filters["metric"] == "avg_rate"
+    assert plan.filters["group_limit"] == DEFAULT_GROUP_LIMIT
+
+    result = retrieve_structured_data(isolated_db, plan)
+    summary = result["summary"]
+
+    assert summary["aggregate_meta"]["metric"] == "avg_rate"
+    assert [(item["label"], item["avg_rate"]) for item in summary["axis_breakdown"]] == [
+        ("다라건설", 95.0),
+        ("가나건설", 85.0),
+    ]
+
+    answer = _build_axis_answer(plan, result)
+    assert "업체별 평균 낙찰률입니다." in answer
+    assert "| 업체 | 평균 낙찰률 |" in answer
+    assert "낙찰 건수" not in answer
+
+
+@pytest.mark.parametrize(
+    ("query", "category", "expected_limit"),
+    [
+        ("지금 가장 많이 낙찰받은 업체는 몇 건이야?", None, 1),
+        ("최근 한 달 동안 가장 많이 낙찰받은 업체는 몇 건이야?", None, 1),
+        ("제일 많이 낙찰한 용역 업체", "Servc", 1),
+        ("업체별 최다 낙찰 업체", None, 1),
+        ("공사 쪽에서 낙찰 많이 한 업체 1등은 몇 건이야?", "Cnstwk", 1),
+        ("용역 낙찰 업체 순위 상위 10개 보여줘", "Servc", 10),
+    ],
+)
+def test_winner_group_limit_reads_rank_markers(query, category, expected_limit):
+    """가장 많이·제일 많이·최다·1등·1위는 1행, 상위 N 은 N행으로 읽습니다."""
+    filters = build_retrieval_plan(query).filters
+
+    assert filters["group_by"] == "winner"
+    assert filters["group_limit"] == expected_limit
+    if category:
+        assert filters["category"] == category
 
 
 def test_dated_winner_axis_does_not_use_ranking_snapshot(isolated_db, fixed_today, monkeypatch):

@@ -141,9 +141,9 @@ AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
     "category": ("분류별", "분야별", "업무구분별", "종류별", "카테고리별"),
     "institution": ("기관별", "수요기관별", "발주기관별", "기관순위"),
     "region": ("지역별", "시도별", "시·도별", "권역별"),
-    # 업체 축은 낙찰 결과 테이블에만 있으므로 지표도 낙찰 건수로 고정됩니다.
-    # "업체" 한 낱말만으로 잡으면 개체 조회가 순위로 새므로 순위를 드러내는
-    # 표현만 받습니다.
+    # 업체 축은 낙찰 결과 테이블에만 있으므로 지표는 낙찰 건수가 기본이고,
+    # "낙찰률" 표지가 있으면 평균 낙찰률을 씁니다. "업체" 한 낱말만으로 잡으면
+    # 개체 조회가 순위로 새므로 순위를 드러내는 표현만 받습니다.
     "winner": (
         "업체별",
         "낙찰업체별",
@@ -154,6 +154,14 @@ AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
         "많이 낙찰한 업체",
     ),
 }
+# "제일 많이 낙찰한 용역 업체" 처럼 최상급 표현과 "업체" 사이에 분야 낱말이
+# 끼면 위의 연속 표기가 맞지 않습니다. "업체"를 함께 요구해 기관·분류 순위
+# 질의를 업체 축으로 끌어오지 않습니다.
+WINNER_AXIS_PATTERN = re.compile(
+    r"(?:가장|제일|최다|최고|1등|1위)[^.!?]{0,10}?(?:낙찰|수주)[^.!?]{0,10}?"
+    r"(?:업체|기업|회사)"
+    r"|(?:낙찰|수주)[^.!?]{0,6}?(?:많이|많은)[^.!?]{0,6}?(?:업체|기업|회사)"
+)
 # 순서가 곧 우선순위입니다. "낙찰 공고" 를 "공고" 보다 먼저 판정하지 않으면
 # 낙찰을 묻는 질문에 공고 건수를 답하는 결함이 재발합니다. "낙찰률" 이 있으면
 # 건수 표현과 함께 있어도 평균 낙찰률 질의로 봅니다.
@@ -236,6 +244,9 @@ GROUP_TOP_PATTERN = re.compile(
 GROUP_RANK_COUNT_PATTERN = re.compile(
     rf"(?:순위|랭킹)\s*(?:상위\s*)?(?P<count>[0-9]+|{KOREAN_NUMERAL_FRAGMENT})\s*(?:개|곳|건|업체)"
 )
+# "가장 많이", "최다", "1등" 은 순위의 첫 행만 요청한 표현입니다. 상위 N 처럼
+# 행 수가 명시되면 그 표기를 먼저 읽습니다.
+GROUP_SINGLE_TOP_MARKERS = ("가장 많이", "제일 많이", "최다", "1등", "1위")
 # 요청 동사는 어미 변형을 정규식 대안으로 받습니다.
 RESULT_LIST_REQUEST_VERB_PATTERN = re.compile(
     r"(?:보여|알려|뽑아|나열|줄\s*수\s*있|볼\s*수\s*있|줄래|볼래|부탁|가르쳐|보내|줘)"
@@ -1140,7 +1151,11 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
 
 
 def _requested_group_limit(lowered: str) -> int:
-    """축 표에 요청된 행 수를 읽습니다. 없으면 기본 상한입니다."""
+    """축 표에 요청된 행 수를 읽습니다. 없으면 기본 상한입니다.
+
+    "상위 N" 처럼 행 수가 명시된 표기를 먼저 읽고, 그 다음 "가장 많이",
+    "최다", "1위" 처럼 첫 행만 요청한 표현을 1행으로 읽습니다.
+    """
     for pattern in (GROUP_TOP_PATTERN, GROUP_RANK_COUNT_PATTERN):
         match = pattern.search(lowered)
         if not match:
@@ -1151,6 +1166,8 @@ def _requested_group_limit(lowered: str) -> int:
             return min(max(value, 1), MAX_GROUP_LIMIT)
     if GROUP_FIRST_PATTERN.search(lowered):
         return 1
+    if any(marker in lowered for marker in GROUP_SINGLE_TOP_MARKERS):
+        return 1
     return DEFAULT_GROUP_LIMIT
 
 
@@ -1160,8 +1177,9 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     목록 질의(result_limit)에는 축을 붙이지 않습니다. 목록과 축 표가 한 응답에서
     충돌하기 때문입니다. 축 마커가 없어도 분기 버킷이 있는 건수 질의는 축을
     "time" 으로 기록해 응답 단계가 낙찰 건수 대신 공고 건수를 고르게 합니다.
-    업체 축은 낙찰 결과 테이블에만 존재하므로 지표를 낙찰 건수로 고정하고,
-    "1위"·"상위 N" 표현은 축 표의 행 수로 읽습니다.
+    업체 축은 낙찰 결과 테이블에만 있으므로 지표를 낙찰 건수로 두되, "낙찰률"
+    표지가 있으면 기존 축과 같은 규칙으로 평균 낙찰률을 씁니다.
+    "1위"·"상위 N"·"가장 많이" 표현은 축 표의 행 수로 읽습니다.
     """
     lowered = _query_lower(query)
     metric = ""
@@ -1181,6 +1199,8 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
         if any(marker in lowered for marker in markers):
             group_by = axis
             break
+    if not group_by and WINNER_AXIS_PATTERN.search(lowered):
+        group_by = "winner"
 
     current = filters or {}
     if group_by and current.get("result_limit"):
@@ -1190,7 +1210,7 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     if not group_by:
         return {}
 
-    if group_by == "winner":
+    if group_by == "winner" and metric != "avg_rate":
         metric = "bid_count"
 
     aggregate: dict[str, Any] = {
