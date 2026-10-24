@@ -35,6 +35,11 @@ STATISTICS_KEYWORDS = (
     "빈도",
     "많이",
 )
+# 건수를 묻는 표현은 "건수" 라는 낱말 없이도 통계 질의입니다.
+# "몇 건", "총 몇", "얼마나 올라" 만으로는 목록과 구분되지 않으므로,
+# 공고·낙찰 도메인 표지가 함께 있을 때만 통계로 봅니다.
+COUNT_QUERY_PATTERN = re.compile(r"몇\s*건|몇\s*개|총\s*몇|얼마나\s*(?:올라|있)")
+COUNT_QUERY_DOMAIN_MARKERS = ("공고", "낙찰")
 SEMANTIC_KEYWORDS = (
     "사례",
     "상세",
@@ -521,6 +526,18 @@ def _query_lower(query: str) -> str:
     return _normalize_text(query).lower()
 
 
+def _is_count_statistics_query(query: str) -> bool:
+    """건수 표현만으로 통계 질의인지 판정합니다.
+
+    "몇 건", "몇 개", "총 몇", "얼마나 올라/있" 은 목록 요청에도 쓰입니다.
+    공고·낙찰 도메인 표지가 함께 있을 때만 정형 집계 대상으로 봅니다.
+    """
+    lowered = _query_lower(query)
+    if not COUNT_QUERY_PATTERN.search(lowered):
+        return False
+    return any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS)
+
+
 QUOTED_TITLE_PATTERN = re.compile(
     r'["\'\u2018\u201c\u300c\u300e\[]([^"\'\u2019\u201d\u300d\u300f\]]{2,})["\'\u2019\u201d\u300d\u300f\]]'
 )
@@ -921,6 +938,10 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
         start, end = _to_iso(week_start, today)
         return start, end, "recent", True
 
+    if "이번 달" in lowered or "이번 월" in lowered:
+        start, end = _to_iso(today.replace(day=1), today)
+        return start, end, "recent", True
+
     if "지난달" in lowered:
         first_this_month = today.replace(day=1)
         last_prev_month = first_this_month - timedelta(days=1)
@@ -1028,6 +1049,27 @@ def _requested_metric(lowered: str) -> str:
     return "bid_count" if "낙찰" in lowered else "announcement_count"
 
 
+def _single_metric(lowered: str) -> str:
+    """단일 지표 질의의 지표를 축별 집계와 같은 우선순위로 정합니다.
+
+    extract_aggregate_filters 의 지표 결정 규칙(낙찰률 > 낙찰 > 공고)을 따르되,
+    도메인 표지가 전혀 없으면 지표를 정하지 않고 빈 문자열을 돌려줍니다.
+    """
+    if any(marker in lowered for marker in AGGREGATE_RATE_MARKERS):
+        return "avg_rate"
+    if (
+        any(marker in lowered for marker in AGGREGATE_BID_MARKERS)
+        and "낙찰률" not in lowered
+        and "평균" not in lowered
+    ):
+        return "bid_count"
+    if any(marker in lowered for marker in AGGREGATE_ANNOUNCEMENT_MARKERS):
+        return "announcement_count"
+    if "낙찰" in lowered:
+        return "bid_count"
+    return ""
+
+
 def build_retrieval_plan(query: str) -> RetrievalPlan:
     normalized_query = _normalize_text(query)
     lowered = normalized_query.lower()
@@ -1035,7 +1077,9 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     is_entity = is_entity_specific_query(normalized_query)
     result_list_query = is_result_list_query(normalized_query)
     announcement_list_query = is_announcement_list_query(normalized_query)
-    has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
+    has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS) or (
+        _is_count_statistics_query(normalized_query)
+    )
     has_semantic_keywords = any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
     is_bid_number = is_bid_number_query(normalized_query)

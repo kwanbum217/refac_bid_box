@@ -12,6 +12,7 @@ from typing import Any
 from src.rag.query_planning import (
     _category_label,
     _normalize_text,
+    _single_metric,
 )
 from src.rag.schemas import (
     EvidenceItem,
@@ -394,6 +395,141 @@ def _build_comparison_answer(
             f"{_format_axis_value(metric, item.get(metric))} |"
         )
     return "\n".join(lines)
+
+
+SINGLE_METRIC_LABELS = {
+    "bid_count": "낙찰 건수는",
+    "announcement_count": "공고는",
+    "avg_rate": "평균 낙찰률은",
+}
+# 단일 지표 직접 응답이 답하면 안 되는 질문입니다. 순위·경쟁률·추세·설명형은
+# 값 하나로 답할 수 없거나 다른 경로가 맡습니다.
+SINGLE_METRIC_EXCLUDED_MARKERS = (
+    "경쟁률",
+    "순위",
+    "업체별",
+    "상위",
+    "top",
+    "비율",
+    "분포",
+    "추세",
+    "추이",
+    "흐름",
+    "변화",
+    "상승",
+    "하락",
+    "올랐",
+    "내렸",
+    "증가",
+    "감소",
+    "월별",
+    "분기별",
+    "비교",
+    "대비",
+    "차이",
+    "많이",
+    "왜",
+    "어떻게",
+    "의미",
+    "설명",
+    "이유",
+    "방법",
+    "절차",
+)
+
+
+def _format_single_metric_period(filters: dict) -> str:
+    date_from = _normalize_text(str(filters.get("date_from") or ""))
+    date_to = _normalize_text(str(filters.get("date_to") or ""))
+    if date_from and date_to:
+        return f"{date_from} ~ {date_to}"
+    if date_from:
+        return f"{date_from} 이후"
+    if date_to:
+        return f"{date_to} 이전"
+    return "전체 기간"
+
+
+def _build_single_metric_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """기간·분류가 걸린 단일 지표 질의는 DB 집계값을 문장 하나로 냅니다.
+
+    목록·축·시계열·비교·공고번호 단건은 각자의 직접 응답이 먼저 처리합니다.
+    여기서는 지표가 하나로 정해지고 summary 에 그 값이 있을 때만 답합니다.
+    값이 None 이면 빈 문자열을 돌려 LLM 경로로 넘깁니다. 0 은 측정값이므로
+    그대로 답합니다.
+    """
+    if not plan.use_sql or not isinstance(structured_data, dict):
+        return ""
+    if structured_data.get("query_skipped"):
+        return ""
+
+    summary = structured_data.get("summary")
+    if not isinstance(summary, dict) or not summary:
+        return ""
+
+    plan_filters = dict(plan.filters or {})
+    for key in ("result_limit", "announcement_limit", "bid_ntce_no", "group_by", "time_bucket"):
+        if plan_filters.get(key):
+            return ""
+    if plan_filters.get("analysis_mode") == "trend":
+        return ""
+    if (
+        summary.get("axis_breakdown")
+        or summary.get("comparison")
+        or summary.get("comparison_meta")
+        or summary.get("bid_detail")
+        or summary.get("by_institution")
+        or summary.get("time_series")
+    ):
+        return ""
+
+    query = _normalize_text(plan.semantic_query).lower()
+    if any(marker in query for marker in SINGLE_METRIC_EXCLUDED_MARKERS):
+        return ""
+
+    metric = _single_metric(query)
+    if metric not in SINGLE_METRIC_LABELS:
+        return ""
+
+    value_key = {
+        "bid_count": "total_bids",
+        "announcement_count": "announcement_count",
+        "avg_rate": "average_winning_rate",
+    }[metric]
+    value = summary.get(value_key)
+    if value is None:
+        return ""
+    try:
+        rendered = f"{float(value):.2f}%" if metric == "avg_rate" else f"{int(value):,}건"
+    except (TypeError, ValueError):
+        return ""
+
+    filters = dict(structured_data.get("filters") or {})
+    for key, filter_value in plan_filters.items():
+        if filter_value not in (None, ""):
+            filters[key] = filter_value
+
+    subject = [_format_single_metric_period(filters)]
+    region_names = filters.get("region_names")
+    institution_names = filters.get("institution_names")
+    institution_name = str(filters.get("institution_name") or "")
+    if isinstance(region_names, list) and region_names:
+        subject.append(", ".join(str(name) for name in region_names))
+    elif isinstance(institution_names, list) and institution_names:
+        subject.append(", ".join(str(name) for name in institution_names))
+    elif institution_name:
+        subject.append(institution_name)
+
+    category = _normalize_text(str(plan_filters.get("category") or filters.get("category") or ""))
+    if category:
+        category_label = _category_label(category)
+        if category_label and category_label != "-":
+            subject.append(category_label)
+
+    return f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
 
 
 def _compose_context_text(

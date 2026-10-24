@@ -6,7 +6,11 @@ RAG 컨텍스트 구성을 위한 정형/문맥/KB/추세 스냅샷 텍스트 �
 
 from __future__ import annotations
 
-from src.rag.query_planning import _normalize_text
+from src.rag.query_planning import (
+    REGION_KEYWORDS,
+    _category_label,
+    _normalize_text,
+)
 
 
 def _stat_value_text(value) -> str:
@@ -14,6 +18,46 @@ def _stat_value_text(value) -> str:
     if value is None:
         return "확인되지 않음"
     return str(value)
+
+
+def _applied_conditions_line(filters: dict | None) -> str:
+    """집계가 어떤 기간·분류·지역 조건으로 계산됐는지 한 줄로 밝힙니다.
+
+    이 줄이 없으면 LLM 은 DB 가 좁힌 집계를 전체 기간 통계로 읽고 "해당 기간
+    정보는 없다" 고 답합니다. 값이 없으면 "전체" 로 적어 조건이 없음을 드러냅니다.
+    """
+    filters = filters or {}
+    date_from = filters.get("date_from")
+    date_to = filters.get("date_to")
+    if date_from and date_to:
+        period = f"{date_from} ~ {date_to}"
+    elif date_from:
+        period = f"{date_from} 이후"
+    elif date_to:
+        period = f"{date_to} 이전"
+    else:
+        period = "전체"
+
+    category_label = _normalize_text(str(filters.get("category_label") or ""))
+    if not category_label:
+        category = _normalize_text(str(filters.get("category") or ""))
+        category_label = _category_label(category) if category else "전체"
+
+    parts = [f"기간 {period}", f"분류 {category_label or '전체'}"]
+
+    region_names = filters.get("region_names")
+    if isinstance(region_names, list) and region_names:
+        parts.append("지역 " + ", ".join(str(name) for name in region_names))
+
+    institution_names = filters.get("institution_names")
+    if isinstance(institution_names, list) and institution_names:
+        parts.append("기관 " + ", ".join(str(name) for name in institution_names))
+    elif filters.get("institution_name"):
+        institution_name = str(filters["institution_name"])
+        label = "지역" if institution_name in REGION_KEYWORDS else "기관"
+        parts.append(f"{label} {institution_name}")
+
+    return "- 적용 조건: " + ", ".join(parts)
 
 
 def _extract_statistical_snapshot(structured_data: dict | None) -> str:
@@ -27,9 +71,10 @@ def _extract_statistical_snapshot(structured_data: dict | None) -> str:
         return "\n".join(lines)
 
     summary = structured_data.get("summary") or {}
+    applied_conditions = _applied_conditions_line(structured_data.get("filters"))
     by_institution = summary.get("by_institution")
     if by_institution:
-        lines = ["정형 데이터 집계:"]
+        lines = ["정형 데이터 집계:", applied_conditions]
         for inst_data in by_institution:
             inst_name = inst_data.get("institution_name") or "-"
             lines.append(f"[{inst_name}]")
@@ -58,6 +103,7 @@ def _extract_statistical_snapshot(structured_data: dict | None) -> str:
 
     lines = [
         "정형 데이터 집계:",
+        applied_conditions,
         f"- 낙찰 결과 수: {_stat_value_text(summary.get('total_bids'))}",
         f"- 공고 수: {_stat_value_text(summary.get('announcement_count'))}",
         f"- 평균 낙찰률: {_stat_value_text(summary.get('average_winning_rate'))}",
