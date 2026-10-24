@@ -129,26 +129,76 @@ RESULT_QUERY_MARKERS = (
 )
 RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
 RESULT_LIST_REQUEST_VERBS = ("보여", "알려", "보여줄래", "줘", "뽑아", "나열")
-RESULT_LIST_SCOPE_WORDS = (
-    "최근",
-    "요즘",
-    "이번주",
-    "이번 주",
-    "지난주",
-    "지난달",
-    "이번달",
-    "오늘",
-    "어제",
-    "올해",
-    "작년",
-    "분기",
-    "용역",
-    "공사",
-    "물품",
-    "외자",
-    "전체",
+# 요청 동사만 있는 질의는 업체명·기관명·지역명이 섞이면 다른 경로가 맡습니다.
+# 어절에서 조사·어미를 떼고 남은 어간이 모두 허용 어휘일 때만 목록 요청으로 봅니다.
+RESULT_LIST_VOCABULARY_WORDS = frozenset(
+    {
+        "최근",
+        "요즘",
+        "오늘",
+        "어제",
+        "이번주",
+        "지난주",
+        "지난달",
+        "이번달",
+        "올해",
+        "작년",
+        "동안",
+        "기준",
+        "사이",
+        "이후",
+        "이전",
+        "용역",
+        "공사",
+        "물품",
+        "외자",
+        "전체",
+        "모든",
+        "낙찰",
+        "낙찰된",
+        "낙찰공고",
+        "공고",
+        "결과",
+        "보여",
+        "알려",
+        "뽑아",
+        "나열",
+        "보이",
+        "알리",
+    }
 )
-RESULT_LIST_SCOPE_PERIOD_PATTERN = re.compile(r"\d+\s*(?:월|년|일)")
+RESULT_LIST_VOCABULARY_PATTERNS = (
+    re.compile(r"\d+\s*(?:일|월|년|분기|개월|주)"),
+    re.compile(r"\d+\s*(?:개|건)"),
+)
+RESULT_LIST_TOKEN_SUFFIXES = (
+    "해줘",
+    "줄래요",
+    "주세요",
+    "볼래요",
+    "줄래",
+    "볼래",
+    "에서",
+    "으로",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "의",
+    "에",
+    "로",
+    "와",
+    "과",
+    "만",
+    "좀",
+    "도",
+    "요",
+    "줘",
+)
+RESULT_LIST_TOKEN_SPLIT_PATTERN = re.compile(r"[\s,.;:!?~()\[\]{}'\"·/|\\-]+")
+RESULT_LIST_SPACED_PERIOD_REPLACEMENTS = (("이번 주", "이번주"),)
 RESULT_LIST_EXCLUDED_MARKERS = (
     "평균",
     "낙찰률",
@@ -372,11 +422,37 @@ def is_result_query(query: str) -> bool:
     return bool(RESULT_ATTRIBUTE_PATTERN.search(lowered))
 
 
-def _has_result_list_scope(lowered: str) -> bool:
-    """질의가 기간이나 분류로 범위를 한정하는지 판정합니다."""
-    if any(word in lowered for word in RESULT_LIST_SCOPE_WORDS):
+def _result_list_token_allowed(token: str) -> bool:
+    """어절에서 조사·어미를 뗀 어간이 모두 허용 어휘인지 판정합니다."""
+    if token in RESULT_LIST_VOCABULARY_WORDS:
         return True
-    return bool(RESULT_LIST_SCOPE_PERIOD_PATTERN.search(lowered))
+    if any(pattern.fullmatch(token) for pattern in RESULT_LIST_VOCABULARY_PATTERNS):
+        return True
+
+    current = token
+    while current:
+        for suffix in RESULT_LIST_TOKEN_SUFFIXES:
+            if current.endswith(suffix):
+                current = current[: -len(suffix)]
+                break
+        else:
+            return False
+        if not current:
+            return True
+        if current in RESULT_LIST_VOCABULARY_WORDS:
+            return True
+        if any(pattern.fullmatch(current) for pattern in RESULT_LIST_VOCABULARY_PATTERNS):
+            return True
+    return True
+
+
+def _has_only_result_list_vocabulary(lowered: str) -> bool:
+    """질의의 모든 어절이 기간·분류·낙찰 표지·요청 동사 어간으로만 되어 있는지 판정합니다."""
+    normalized = lowered
+    for spaced, compact in RESULT_LIST_SPACED_PERIOD_REPLACEMENTS:
+        normalized = normalized.replace(spaced, compact)
+    tokens = [token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized) if token]
+    return bool(tokens) and all(_result_list_token_allowed(token) for token in tokens)
 
 
 def is_result_list_query(query: str) -> bool:
@@ -384,11 +460,12 @@ def is_result_list_query(query: str) -> bool:
 
     결과 마커에 목록 신호가 붙은 기존 형태 외에, 목록 신호 없이 요청 동사
     (보여·알려·줘 등)만 붙은 요청과 낙찰 단독 표현에 개수가 붙은 요청도
-    목록 질의로 봅니다. 요청 동사만으로 판정하는 경로는 기간이나 분류 범위를
-    한정한 질의에만 적용해, 업체명만 지목한 질의가 전체 최신 목록으로
-    새지 않게 합니다. 통계 표지, 공고번호 단건, 설명형 질의는 각자의
-    경로가 맡도록 거짓을 반환하고, 개체를 지목한 질의도 기존 개체 조회
-    경로를 그대로 쓰도록 거짓을 반환합니다.
+    목록 질의로 봅니다. 요청 동사만으로 판정하는 경로는 질의의 모든 어절이
+    허용 어휘(기간·분류·낙찰 표지·요청 동사 어간·수량)일 때만 적용해,
+    업체명·기관명·지역명이 섞인 질의가 전체 최신 목록으로 새지 않게 합니다.
+    통계 표지, 공고번호 단건, 설명형 질의는 각자의 경로가 맡도록 거짓을
+    반환하고, 개체를 지목한 질의도 기존 개체 조회 경로를 그대로 쓰도록
+    거짓을 반환합니다.
     """
     lowered = _query_lower(query)
     has_result_marker = any(marker in lowered for marker in RESULT_QUERY_MARKERS)
@@ -396,9 +473,15 @@ def is_result_list_query(query: str) -> bool:
         re.search(r"\d+\s*(?:개|건)", lowered)
     )
     has_request_verb = any(verb in lowered for verb in RESULT_LIST_REQUEST_VERBS)
+    has_vocabulary_only = (
+        has_result_marker
+        and has_request_verb
+        and not has_list_marker
+        and _has_only_result_list_vocabulary(lowered)
+    )
     matched = (
         (has_result_marker and has_list_marker)
-        or (has_result_marker and has_request_verb and _has_result_list_scope(lowered))
+        or has_vocabulary_only
         or ("낙찰" in lowered and bool(re.search(r"\d+\s*(?:개|건)", lowered)))
     )
     if not matched:

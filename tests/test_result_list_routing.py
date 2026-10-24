@@ -25,6 +25,7 @@ from src.rag.query_planning import build_retrieval_plan, is_result_list_query
         "지난달 낙찰 결과 5개 보여줘",
         "이번주 낙찰 결과 알려줘",
         "용역 낙찰 결과 보여줘",
+        "오늘 낙찰 결과 보여줘",
     ],
 )
 def test_result_list_query_matches_result_request(query):
@@ -46,6 +47,10 @@ def test_result_list_query_matches_result_request(query):
         "도화엔지니어링 낙찰 결과 알려줘",
         "한국종합기술 낙찰 결과 보여줘",
         "건화 낙찰된 공고 보여줘",
+        "최근 도화엔지니어링 낙찰 결과 보여줘",
+        "공사업체 낙찰 결과 보여줘",
+        "서울 최근 낙찰 결과 보여줘",
+        "최근 한국전력공사 낙찰된 공고 보여줘",
     ],
 )
 def test_result_list_query_excludes_statistics_bid_number_and_explanation(query):
