@@ -78,6 +78,21 @@ def test_spaced_bid_number_field_lookup_is_not_announcement_list(query):
 @pytest.mark.parametrize(
     "query",
     [
+        "공고번호 최신 공고 알려줘",
+        "공고명 최신 공고 보여줘",
+        "최신 공고 공고번호 알려줘",
+        "오늘 올라온 공고 명 알려줘",
+    ],
+)
+def test_field_name_before_or_after_list_signal_is_not_announcement_list(query):
+    assert is_announcement_list_query(query) is False
+    assert is_result_list_query(query) is False
+    assert "announcement_limit" not in build_retrieval_plan(query).filters
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
         "공고번호 R26BK01778156 알려줘",
         "공고 목록 작성 방법 알려줘",
         "공고 알림 설정하고 싶어",
@@ -129,6 +144,7 @@ def test_few_count_marker_is_not_announcement_list(query):
         "오늘 등록된 물품 공고 알려줘",
         "이번 주 신규 용역 공고 알려줘",
         "공고 목록 두 건 보여줘",
+        "최근 용역 공고 5개만 리스트해줘",
     ],
 )
 def test_freshness_route_keeps_list_cases(query):

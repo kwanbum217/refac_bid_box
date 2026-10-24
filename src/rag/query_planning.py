@@ -631,6 +631,9 @@ def is_result_list_query(query: str) -> bool:
 
 
 ANNOUNCEMENT_FRESHNESS_MARKERS = ("올라온", "등록된", "게시된", "신규", "최신")
+# 공고번호·공고명은 필드 이름입니다. 필드 이름이 질의 앞에 오면 '공고' 뒤를 보는
+# 부정 전방 탐색이 거르지 못하므로 목록 판정 전체에서 먼저 배제합니다.
+ANNOUNCEMENT_FIELD_MARKER_PATTERN = re.compile(r"공고\s*(?:번호|명)")
 ANNOUNCEMENT_LIST_REQUEST_VERB_FRAGMENT = (
     r"(?:보여|알려|뽑아|나열|줄\s*수\s*있|볼\s*수\s*있|줄래|볼래|부탁|가르쳐|보내|줘)"
 )
@@ -690,6 +693,8 @@ def is_announcement_list_query(query: str) -> bool:
     전체 최신 목록으로 새지 않게 합니다.
     """
     lowered = _query_lower(query)
+    if ANNOUNCEMENT_FIELD_MARKER_PATTERN.search(lowered):
+        return False
     # 신선도 표지나 요청 동사만으로 통계 질의가 공고 목록으로 새지 않도록,
     # 낙찰 결과 목록과 같은 통계 제외 표지를 먼저 검사합니다. "두 건" 의 "건" 은
     # 개수 단위이지 "건수" 통계 표지가 아닙니다.
