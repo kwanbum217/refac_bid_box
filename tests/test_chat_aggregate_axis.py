@@ -18,6 +18,8 @@ from sqlalchemy import event, func, select
 from src.app.core.cache import cache
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.rag import structured_data
+from src.rag.answer_format import _build_axis_answer
+from src.rag.engine import HybridRAGEngine
 from src.rag.query_planning import build_retrieval_plan
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import _cached_rows, retrieve_structured_data
@@ -258,10 +260,18 @@ def test_axis_keys_absent_without_axis_marker(isolated_db):
         ("기관별 평균 낙찰률 알려줘", "institution", "avg_rate"),
         ("분류별 공고 건수 알려줘", "category", "announcement_count"),
         ("지역별 공고 건수 알려줘", "region", "announcement_count"),
+        ("분류별로 낙찰 결과 보여줘", "category", "bid_count"),
+        ("기관별 낙찰 건수 알려줘", "institution", "bid_count"),
+        ("지역별 낙찰 공고 수 알려줘", "region", "bid_count"),
     ],
 )
 def test_required_axis_questions_set_group_by_and_metric(query, axis, metric):
-    """프로브 R10·R13·S01·S07 질문이 축과 지표를 정확히 고릅니다."""
+    """프로브 R10·R13·S01·S07 질문이 축과 지표를 정확히 고릅니다.
+
+    낙찰 결과·낙찰된·낙찰 공고를 묻는 질의는 공고 건수가 아니라 낙찰 건수로
+    집계해야 합니다. "낙찰 공고" 안의 "공고" 를 먼저 집으면 F6 와 같은 혼동이
+    재발합니다.
+    """
     filters = build_retrieval_plan(query).filters
 
     assert filters.get("group_by") == axis
@@ -269,6 +279,98 @@ def test_required_axis_questions_set_group_by_and_metric(query, axis, metric):
     assert filters.get("group_limit") == 20
     assert "result_limit" not in filters
     assert "announcement_limit" not in filters
+
+
+def test_axis_answer_renders_bid_count_with_winning_label():
+    """직접 응답 표는 bid_count 를 낙찰 건수 라벨과 값으로만 냅니다."""
+    plan = RetrievalPlan(filters={"group_by": "category", "metric": "bid_count"})
+    structured = {
+        "summary": {
+            "axis_breakdown": [
+                {
+                    "label": "용역",
+                    "key": "Servc",
+                    "announcement_count": 1022938,
+                    "bid_count": 551246,
+                    "avg_rate": 90.0146,
+                    "sample_count": 551246,
+                }
+            ],
+            "aggregate_meta": {
+                "group_by": "category",
+                "metric": "bid_count",
+                "limit": 20,
+                "truncated": False,
+            },
+        }
+    }
+
+    answer = _build_axis_answer(plan, structured)
+
+    assert "분류별 낙찰 건수입니다." in answer
+    assert "| 분류 | 낙찰 건수 |" in answer
+    assert "| 용역 | 551,246 |" in answer
+    assert "1,022,938" not in answer
+    assert "공고 건수" not in answer
+
+
+class _RecordingBackend:
+    name = "recording"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(self, *args, **kwargs) -> str:
+        self.calls += 1
+        return "LLM 응답"
+
+
+def test_announcement_list_answer_wins_over_axis_table():
+    """축 판정과 공고 목록 판정이 겹치면 엔진은 공고 목록을 먼저 냅니다."""
+    plan = build_retrieval_plan("기관별 공고 목록 보여줘")
+    assert plan.filters.get("announcement_limit") == 5
+    assert plan.filters.get("group_by") == "institution"
+
+    structured = {
+        "filters": {},
+        "summary": {
+            "sample_announcements": [
+                {
+                    "bid_ntce_no": "ANN-1",
+                    "bid_ntce_nm": "기관별 공고",
+                    "dminstt_nm": "서울특별시",
+                    "presmpt_prce": 1000,
+                    "bid_ntce_dt": "2026-10-01 09:00:00",
+                    "bid_clse_dt": "2026-10-02 18:00:00",
+                }
+            ],
+            "axis_breakdown": [
+                {"label": "서울특별시", "key": "서울특별시", "announcement_count": 1}
+            ],
+            "aggregate_meta": {
+                "group_by": "institution",
+                "metric": "announcement_count",
+                "limit": 20,
+                "truncated": False,
+            },
+        },
+        "insufficiency_hints": [],
+    }
+
+    engine = HybridRAGEngine()
+    backend = _RecordingBackend()
+    engine._backend_resolved = True
+    engine._backend = backend
+
+    bundle = engine.get_answer_sync(
+        "기관별 공고 목록 보여줘",
+        tool_context={"tool_results": {"bid_query": {"result": structured}}},
+    )
+
+    assert backend.calls == 0
+    assert "최근 조건 공고 1건입니다." in bundle.answer
+    assert "| # | 공고명(공고번호) |" in bundle.answer
+    assert "기관별 공고 건수입니다." not in bundle.answer
 
 
 def test_quarter_announcement_count_question_records_time_axis():

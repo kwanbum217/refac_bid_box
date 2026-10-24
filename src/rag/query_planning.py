@@ -143,13 +143,21 @@ AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
     "institution": ("기관별", "수요기관별", "발주기관별", "기관순위"),
     "region": ("지역별", "시도별", "시·도별", "권역별"),
 }
-# 순서가 곧 우선순위입니다. "공고 건수" 를 "낙찰 건수" 보다 먼저 판정하지 않으면
-# 공고 건수 질문에 낙찰 건수를 답하는 결함이 재발합니다.
-AGGREGATE_METRIC_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("avg_rate", ("평균 낙찰률", "평균낙찰률", "낙찰률 평균")),
-    ("announcement_count", ("공고 건수", "공고건수", "공고 수", "공고수")),
-    ("bid_count", ("낙찰 건수", "낙찰건수", "낙찰 수")),
+# 순서가 곧 우선순위입니다. "낙찰 공고" 를 "공고" 보다 먼저 판정하지 않으면
+# 낙찰을 묻는 질문에 공고 건수를 답하는 결함이 재발합니다. "낙찰률" 이 있으면
+# 건수 표현과 함께 있어도 평균 낙찰률 질의로 봅니다.
+AGGREGATE_RATE_MARKERS = ("낙찰률", "평균 낙찰률", "평균낙찰률", "낙찰률 평균")
+AGGREGATE_BID_MARKERS = (
+    "낙찰 결과",
+    "낙찰된",
+    "낙찰 건수",
+    "낙찰건수",
+    "낙찰 공고",
+    "낙찰공고",
+    "낙찰 중",
+    "낙찰 수",
 )
+AGGREGATE_ANNOUNCEMENT_MARKERS = ("공고 건수", "공고건수", "공고 수", "공고수", "공고")
 DEFAULT_GROUP_LIMIT = 20
 MAX_GROUP_LIMIT = 50
 
@@ -818,10 +826,16 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     """
     lowered = _query_lower(query)
     metric = ""
-    for name, markers in AGGREGATE_METRIC_MARKERS:
-        if any(marker in lowered for marker in markers):
-            metric = name
-            break
+    if any(marker in lowered for marker in AGGREGATE_RATE_MARKERS):
+        metric = "avg_rate"
+    elif (
+        any(marker in lowered for marker in AGGREGATE_BID_MARKERS)
+        and "낙찰률" not in lowered
+        and "평균" not in lowered
+    ):
+        metric = "bid_count"
+    elif any(marker in lowered for marker in AGGREGATE_ANNOUNCEMENT_MARKERS):
+        metric = "announcement_count"
 
     group_by = ""
     for axis, markers in AGGREGATE_AXIS_MARKERS.items():
