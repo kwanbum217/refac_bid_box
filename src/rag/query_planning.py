@@ -123,6 +123,9 @@ RESULT_QUERY_MARKERS = (
     "낙찰 정보",
     "낙찰 사업",
     "낙찰 업체",
+    "낙찰 공고",
+    "낙찰공고",
+    "낙찰받은",
 )
 RESULT_LIST_MARKERS = ("리스트", "목록", "나열", "뽑아", "골라")
 
@@ -362,6 +365,7 @@ ANNOUNCEMENT_EXPLANATION_MARKERS = (
     "란",
 )
 ANNOUNCEMENT_LIST_REQUEST_VERBS = ("보여", "알려", "뽑아", "줘", "해줘", "나열")
+ANNOUNCEMENT_RESULT_STATUS_MARKERS = ("낙찰", "유찰", "개찰")
 
 
 def is_announcement_list_query(query: str) -> bool:
@@ -369,11 +373,14 @@ def is_announcement_list_query(query: str) -> bool:
 
     목록 신호가 '공고' 바로 뒤에 붙어야 합니다. '공고번호'처럼 공고가 다른 낱말의
     일부이거나, 목록 신호가 문장 멀리 떨어진 일반 질의는 여기에 해당하지 않습니다.
-    낙찰 표지가 있는 질의는 기존 낙찰 결과 목록 경로가 그대로 맡도록 거짓을 반환합니다.
+    낙찰·유찰·개찰처럼 결과 상태를 가리키는 질의는 기존 낙찰 결과 목록 경로가
+    그대로 맡도록 거짓을 반환합니다.
     설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
     개수 없이 '목록'·'리스트' 같은 낱말만 있으면 요청 동사가 함께 있을 때만 참입니다.
     """
     lowered = _query_lower(query)
+    if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
+        return False
     if any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS):
         return False
     if not ANNOUNCEMENT_LIST_PATTERN.search(lowered):

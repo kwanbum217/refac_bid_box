@@ -11,7 +11,11 @@ import pytest
 from src.app.models.bids import BidAnnouncement
 from src.app.services.planner_interpreter import interpret_request
 from src.rag.answer_format import _build_announcement_list_answer
-from src.rag.query_planning import build_retrieval_plan, is_announcement_list_query
+from src.rag.query_planning import (
+    build_retrieval_plan,
+    is_announcement_list_query,
+    is_result_list_query,
+)
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
 
@@ -24,6 +28,7 @@ from src.rag.structured_data import retrieve_structured_data
         "물품 공고 10건",
         "서울시 공사 공고 목록 보여줘",
         "조달청 용역 공고 3건 뽑아줘",
+        "한국농어촌공사 공고 최근 거 5개만 뽑아줘",
     ],
 )
 def test_announcement_list_query_matches_request(query):
@@ -52,10 +57,26 @@ def test_announcement_list_query_excludes_explanatory_questions(query):
         "용역 공고 낙찰률 평균",
         "공고번호 R26BK01775039 알려줘",
         "최근 입찰 동향 알려줘",
+        "최근 낙찰 공고 목록 5개 보여줘",
+        "수요기관이 공고 목록을 낙찰받은 금액 알려줘",
+        "용역 낙찰 공고 리스트 줘",
+        "유찰 공고 5개 보여줘",
+        "개찰 완료된 공고 목록 보여줘",
     ],
 )
 def test_announcement_list_query_excludes_result_and_statistics_queries(query):
     assert is_announcement_list_query(query) is False
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "최근 낙찰 공고 목록 5개 보여줘",
+        "용역 낙찰 공고 리스트 줘",
+    ],
+)
+def test_result_list_query_accepts_winning_announcement_markers(query):
+    assert is_result_list_query(query) is True
 
 
 def test_announcement_list_query_excludes_field_lookup_and_distant_marker():
