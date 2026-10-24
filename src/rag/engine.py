@@ -24,6 +24,7 @@ from src.app.core.config import settings
 from src.rag.answer_format import (
     _build_announcement_list_answer,
     _build_axis_answer,
+    _build_comparison_answer,
     _build_evidence_items,
     _build_result_list_answer,
     _build_series_answer,
@@ -1135,6 +1136,8 @@ class HybridRAGEngine:
             direct_result_list_answer = _build_axis_answer(plan, structured_data)
         if not direct_result_list_answer:
             direct_result_list_answer = _build_series_answer(plan, structured_data)
+        if not direct_result_list_answer:
+            direct_result_list_answer = _build_comparison_answer(plan, structured_data)
         if direct_result_list_answer:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
@@ -1384,6 +1387,8 @@ class HybridRAGEngine:
             direct_result_list_answer = _build_axis_answer(plan, structured_data)
         if not direct_result_list_answer:
             direct_result_list_answer = _build_series_answer(plan, structured_data)
+        if not direct_result_list_answer:
+            direct_result_list_answer = _build_comparison_answer(plan, structured_data)
         if direct_result_list_answer:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
@@ -1556,6 +1561,7 @@ __all__ = [
     "PreparedContext",
     "SemanticSearchResult",
     "_build_announcement_list_answer",
+    "_build_comparison_answer",
     "_build_evidence_items",
     "_build_result_list_answer",
     "_build_source_citation_from_context",

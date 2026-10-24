@@ -37,6 +37,8 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
 
     labels = {
         "institution_name": "기관/지역",
+        "institution_names": "대상 기관",
+        "region_names": "대상 지역",
         "date_from": "시작일",
         "date_to": "종료일",
         "relative_years": "최근 연수",
@@ -53,8 +55,8 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         if key == "category":
             lines.append(f"- 분야: {_category_label(str(value))}")
             continue
-        if key == "institution_names" and isinstance(value, list):
-            lines.append(f"- 대상 기관: {', '.join(str(v) for v in value)}")
+        if key in ("institution_names", "region_names") and isinstance(value, list):
+            lines.append(f"- {labels[key]}: {', '.join(str(v) for v in value)}")
             continue
         lines.append(f"- {labels.get(key, key)}: {value}")
     return "\n".join(lines)
@@ -269,6 +271,47 @@ def _build_series_answer(
         except (TypeError, ValueError):
             rendered = "-"
         lines.append(f"| {_markdown_result_cell(item.get('label'))} | {rendered} |")
+    return "\n".join(lines)
+
+
+COMPARISON_DIMENSION_LABELS = {
+    "region": "지역",
+    "institution": "기관",
+}
+
+
+def _build_comparison_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """지역·기관 비교는 요청한 지표 하나만 표로 냅니다.
+
+    공고 건수 비교에 낙찰 건수를 함께 놓으면 지표 혼동이 재발합니다. 나머지
+    값은 summary["comparison"] 에 남기고 화면에는 요청 지표 열만 냅니다.
+    """
+    if not structured_data:
+        return ""
+    summary = structured_data.get("summary") or {}
+    rows = summary.get("comparison") or []
+    meta = summary.get("comparison_meta") or {}
+    dimension = str(meta.get("dimension") or "")
+    metric = str(meta.get("metric") or "")
+    if not rows or dimension not in COMPARISON_DIMENSION_LABELS or metric not in METRIC_LABELS:
+        return ""
+
+    dimension_label = COMPARISON_DIMENSION_LABELS[dimension]
+    metric_label = METRIC_LABELS[metric]
+    lines = [
+        f"{dimension_label}별 {metric_label} 비교입니다.",
+        "",
+        f"| {dimension_label} | {metric_label} |",
+        "| --- | ---: |",
+    ]
+    for item in rows:
+        lines.append(
+            f"| {_markdown_result_cell(item.get('label'))} | "
+            f"{_format_axis_value(metric, item.get(metric))} |"
+        )
     return "\n".join(lines)
 
 

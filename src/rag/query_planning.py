@@ -361,6 +361,109 @@ NON_INSTITUTION_TERMS = frozenset(
 )
 NON_INSTITUTION_SUFFIXES = ("금액", "가격", "낙찰률", "투찰률", "사정률", "경쟁률")
 
+COMPARISON_MARKERS = ("비교", "대비", "차이", "vs")
+# 비교 질의라도 입찰 지표를 묻지 않으면 지역·기관 비교가 아닙니다.
+# "부산이랑 대구 여행 코스 비교" 같은 질의를 통계 비교로 오인하지 않습니다.
+COMPARISON_DOMAIN_MARKERS = ("공고", "낙찰", "입찰", "개찰", "유찰")
+COMPARISON_TARGET_CONNECTOR_PATTERN = re.compile(r"\s*(?:이랑|랑|하고|와|과|,)\s*")
+# 대상 구간은 지표·도메인 표지 앞까지만 봅니다. leftmost 일치가 곧 절단 위치입니다.
+COMPARISON_TARGET_STOP_PATTERN = re.compile(
+    r"공고\s*건수|낙찰\s*결과|낙찰\s*건수|낙찰\s*공고|낙찰률|평균|건수|결과|통계|순위|"
+    r"공고|낙찰|입찰|개찰|유찰|비교|대비|차이|vs",
+    re.IGNORECASE,
+)
+REGION_ADMIN_SUFFIXES = ("특별자치시", "특별자치도", "특별시", "광역시", "시", "도")
+COMPARISON_TARGET_TRAILING_PARTICLES = ("의", "은", "는", "이", "가", "을", "를", "만")
+
+
+def _strip_comparison_particle(text: str) -> str:
+    cleaned = text.strip()
+    for particle in COMPARISON_TARGET_TRAILING_PARTICLES:
+        if cleaned.endswith(particle) and len(cleaned) > len(particle):
+            return cleaned[: -len(particle)].strip()
+    return cleaned
+
+
+def _match_comparison_region(text: str) -> str:
+    """구간이 지역명과 행정 접미사로만 되어 있으면 대표 지역명을 돌려줍니다.
+
+    "서울시" 는 "서울", "충청북도" 는 "충북" 으로 정규화해야 기관명 부분 일치와
+    같은 값 체계를 씁니다. "대구 여행 코스" 처럼 뒤에 다른 낱말이 붙으면 지역
+    대상이 아닙니다.
+    """
+    for label, aliases in REGION_ALIASES.items():
+        for alias in sorted(aliases, key=len, reverse=True):
+            if not text.startswith(alias):
+                continue
+            remainder = text[len(alias) :]
+            if not remainder or remainder in REGION_ADMIN_SUFFIXES:
+                return label
+    return ""
+
+
+def _normalize_comparison_target(text: str) -> tuple[str, str] | None:
+    cleaned = _strip_comparison_particle(text)
+    if not cleaned:
+        return None
+    region = _match_comparison_region(cleaned)
+    if region:
+        return "region", region
+    if not INSTITUTION_CANDIDATE_PATTERN.fullmatch(cleaned):
+        return None
+    if cleaned in NON_INSTITUTION_TERMS or cleaned.endswith(NON_INSTITUTION_SUFFIXES):
+        return None
+    return "institution", cleaned
+
+
+def _extract_comparison_targets(query: str) -> tuple[list[str], list[str]]:
+    """비교 질의에서 지역명과 정확 기관명 대상을 추출합니다.
+
+    "비교/대비/차이/vs" 표지와 입찰 도메인 표지가 함께 있을 때만 동작합니다.
+    지표·도메인 표지 앞 구간을 연결어(이랑·랑·하고·와·과·쉼표)로 나눠 정확히
+    두 대상이 나올 때만 비교로 봅니다. 연결어가 없는 "부산 대구 공고 건수 비교"
+    는 공백 토큰 두 개가 모두 대상일 때만 인정합니다. 지역과 기관이 섞이거나
+    "낙찰금액과 추정가격" 처럼 지표 이름이 대상 자리에 오면 비교가 아닙니다.
+
+    반환값은 (지역명 목록, 정확 기관명 목록)이며 둘 중 하나만 채워집니다.
+    """
+    normalized = _normalize_text(query)
+    lowered = normalized.lower()
+    if not any(marker in lowered for marker in COMPARISON_MARKERS):
+        return [], []
+    if not any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
+        return [], []
+
+    stop = COMPARISON_TARGET_STOP_PATTERN.search(lowered)
+    prefix = normalized[: stop.start()] if stop else normalized
+    parts = [
+        part.strip(" \t\r\n.,;:!?~()[]{}'\"·/|\\-")
+        for part in COMPARISON_TARGET_CONNECTOR_PATTERN.split(prefix)
+    ]
+    parts = [part for part in parts if part]
+    if len(parts) != 2:
+        tokens = [token for token in re.split(r"\s+", prefix.strip()) if token]
+        if len(tokens) != 2:
+            return [], []
+        parts = tokens
+
+    targets: list[tuple[str, str]] = []
+    for part in parts:
+        target = _normalize_comparison_target(part)
+        if target is None:
+            return [], []
+        targets.append(target)
+
+    kinds = {target[0] for target in targets}
+    if len(kinds) != 1:
+        return [], []
+    if len({target[1] for target in targets}) != 2:
+        return [], []
+    kind = next(iter(kinds))
+    labels = [target[1] for target in targets]
+    if kind == "region":
+        return labels, []
+    return [], labels
+
 
 def _extract_institution_list(query: str) -> list[str]:
     """질의에서 여러 기관을 나열해 비교·구분을 요청하는 기관 후보 목록을 추출합니다.
@@ -859,6 +962,26 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     return aggregate
 
 
+def _requested_metric(lowered: str) -> str:
+    """비교 응답이 낼 지표를 축별 집계와 같은 마커 우선순위로 읽습니다.
+
+    축 마커가 없는 비교 질의에도 filters["metric"] 을 채워, 응답 단계가 요청한
+    지표 하나만 표로 내게 합니다. 새 키를 만들지 않고 축별 집계와 같은 키를
+    씁니다.
+    """
+    if any(marker in lowered for marker in AGGREGATE_RATE_MARKERS):
+        return "avg_rate"
+    if (
+        any(marker in lowered for marker in AGGREGATE_BID_MARKERS)
+        and "낙찰률" not in lowered
+        and "평균" not in lowered
+    ):
+        return "bid_count"
+    if any(marker in lowered for marker in AGGREGATE_ANNOUNCEMENT_MARKERS):
+        return "announcement_count"
+    return "bid_count" if "낙찰" in lowered else "announcement_count"
+
+
 def build_retrieval_plan(query: str) -> RetrievalPlan:
     normalized_query = _normalize_text(query)
     lowered = normalized_query.lower()
@@ -888,7 +1011,8 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_vector = True
 
     inst_candidates = _extract_institution_list(normalized_query)
-    if inst_candidates:
+    comparison_regions, comparison_institutions = _extract_comparison_targets(normalized_query)
+    if inst_candidates or comparison_regions or comparison_institutions:
         use_sql = True
 
     date_from, date_to, time_bias, explicit_range = _parse_time_window(normalized_query)
@@ -947,7 +1071,11 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if matched_category is not None:
         filters["category"] = matched_category
 
-    if inst_candidates:
+    if comparison_regions:
+        filters["region_names"] = comparison_regions
+    elif comparison_institutions:
+        filters["institution_names"] = comparison_institutions
+    elif inst_candidates:
         filters["institution_names"] = inst_candidates
     else:
         for region in REGION_KEYWORDS:
@@ -955,16 +1083,21 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
                 filters["institution_name"] = region
                 break
 
-    if result_list_query:
+    # 비교 대상이 확정되면 목록 제한은 의미가 없습니다. "부산이랑 대구 공고 5건
+    # 비교" 처럼 개수가 붙은 비교 질의가 공고 목록 응답으로 새는 것을 막습니다.
+    has_comparison = bool(comparison_regions or comparison_institutions)
+    if result_list_query and not has_comparison:
         filters["result_limit"] = extract_result_limit(normalized_query)
 
-    if announcement_list_query:
+    if announcement_list_query and not has_comparison:
         filters["announcement_limit"] = extract_result_limit(normalized_query)
 
     if any(keyword in lowered for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
 
     filters.update(extract_aggregate_filters(normalized_query, filters))
+    if has_comparison and not filters.get("group_by"):
+        filters["metric"] = _requested_metric(lowered)
 
     route_reason_parts = []
     if is_entity:
