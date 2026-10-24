@@ -43,6 +43,15 @@
   "2 입니다", 금지어 "GPT" 와 답변 "G P T" 를 같은 낱말로 잡기 위해서다. 업무
   표지와 안내 표지 검사에도 같은 정규화를 쓴다.
 
+업체 순위(winner_ranking):
+
+- 창은 오늘 포함 N일 반개구간이다. `rl_openg_dt >= 오늘-(N-1)일` 이고
+  `rl_openg_dt < 오늘+1일` 이다. 질문의 "최근 한 달"은 30일이다.
+- 업체명이 NULL 이거나 TRIM 후 빈 문자열, U+FFFD(대체 문자)를 포함한 행은 뺀다.
+- `ORDER BY COUNT(*) DESC, bidwinnr_nm ASC` 로 동점 순서를 고정한다.
+- 기준값 질의는 업체명과 건수를 함께 돌려주고, 업체명은 결과 JSON 의
+  `detail.winner_name` 에 남긴다. 판정은 numeric_fact 와 같은 건수 비교다.
+
 수치 판정(numeric_fact):
 
 - 답변 숫자에서 질문 문장에 나온 숫자(기간 일수, 개수 등)를 먼저 뺀 뒤 비교한다.
@@ -149,12 +158,16 @@ CHECK_TYPES = (
     "announcement_latest",
     "result_latest",
     "numeric_fact",
+    "winner_ranking",
     "bid_lookup",
     "refuse_or_redirect",
     "tool_only",
 )
 SPLITS = ("public", "blind")
 FAILURE_PRIORITY = ("routing", "forbidden_phrase", "data_mismatch", "error", "rate_limited")
+
+WINNER_RANKING_WINDOW_DAYS = 30
+CORRUPTED_TEXT_MARKER = "\ufffd"
 
 LATEST_CHECKS = {
     "announcement_latest": ("bid_announcements", "bid_ntce_dt"),
@@ -585,6 +598,32 @@ def _lookup_bid_record(bid_no: str, query: QueryFn) -> dict[str, Any]:
     return record
 
 
+def build_winner_ranking_sql(check: dict[str, Any]) -> str:
+    """업체 순위 기준값 SQL 을 만든다.
+
+    창은 오늘 포함 N일 반개구간(`오늘-(N-1)일` 이상, `오늘+1일` 미만)이다.
+    업체명이 NULL 이거나 TRIM 후 빈 문자열, U+FFFD(대체 문자)를 포함한 행은 뺀다.
+    동점은 업체명 오름차순으로 고정해 같은 데이터에서 항상 같은 1위를 고른다.
+    """
+    days = int(check.get("days", WINNER_RANKING_WINDOW_DAYS))
+    conditions = [
+        f"rl_openg_dt >= CURDATE() - INTERVAL {days - 1} DAY",
+        "rl_openg_dt < CURDATE() + INTERVAL 1 DAY",
+        "bidwinnr_nm IS NOT NULL",
+        "TRIM(bidwinnr_nm) <> ''",
+        f"bidwinnr_nm NOT LIKE '%{CORRUPTED_TEXT_MARKER}%'",
+    ]
+    category = check.get("category")
+    if category:
+        conditions.append(f"category = '{category}'")
+    where = " AND ".join(conditions)
+    return (
+        "SELECT bidwinnr_nm, COUNT(*) AS win_count FROM bid_results "  # noqa: S608  # nosec B608 - 보간값은 상수다
+        f"WHERE {where} GROUP BY bidwinnr_nm "
+        "ORDER BY COUNT(*) DESC, bidwinnr_nm ASC LIMIT 1"
+    )
+
+
 def build_truth(
     item: dict[str, Any],
     placeholders: dict[str, str],
@@ -597,6 +636,31 @@ def build_truth(
 
     if kind in LATEST_CHECKS:
         return build_latest_truth(kind, check, query)
+
+    if kind == "winner_ranking":
+        statement = build_winner_ranking_sql(check)
+        try:
+            _, rows = _run_read_only(statement, 1, query)
+            winner_name = str(rows[0][0]) if rows and rows[0][0] is not None else None
+            raw_count = rows[0][1] if rows and len(rows[0]) > 1 else None
+            value = None if raw_count is None else float(raw_count)
+        except Exception as exc:
+            return {
+                "kind": kind,
+                "value": None,
+                "winner_name": None,
+                "sql": statement,
+                "data_available": False,
+                "error": str(exc),
+            }
+        return {
+            "kind": kind,
+            "value": value,
+            "winner_name": winner_name,
+            "sql": statement,
+            "data_available": value is not None,
+            "error": None,
+        }
 
     if kind == "numeric_fact":
         statement = fill_placeholders(str(check["sql"]), placeholders)
@@ -762,6 +826,8 @@ def _evaluate_numeric(
         "absence_phrases": _absence_hits(answer),
         "absence_ignored": True,
     }
+    if "winner_name" in truth:
+        detail["winner_name"] = truth.get("winner_name")
 
     if truth.get("error"):
         detail["db_error"] = truth["error"]
@@ -917,7 +983,7 @@ def evaluate_check(
     kind = check["type"]
     if kind in LATEST_CHECKS:
         return _evaluate_latest(truth, answer)
-    if kind == "numeric_fact":
+    if kind in ("numeric_fact", "winner_ranking"):
         return _evaluate_numeric(check, truth, answer, question)
     if kind == "bid_lookup":
         return _evaluate_bid_lookup(truth, answer, question)
@@ -1187,6 +1253,18 @@ def _check_required_keys(check: dict[str, Any]) -> list[str]:
             errors.append("check.tolerance_ratio 는 0 이상 수여야 합니다")
         if "expected_value" in check:
             errors.append("정답을 fixture 에 고정할 수 없습니다. sql 로 계산하십시오")
+    elif kind == "winner_ranking":
+        category = check.get("category")
+        if category is not None and category not in CATEGORY_CODES:
+            errors.append(f"check.category 값이 잘못됐습니다: {category!r}")
+        days = check.get("days")
+        if not isinstance(days, int) or days < 1:
+            errors.append("check.days 는 1 이상 정수여야 합니다")
+        ratio = check.get("tolerance_ratio")
+        if ratio is not None and (not isinstance(ratio, (int, float)) or ratio < 0):
+            errors.append("check.tolerance_ratio 는 0 이상 수여야 합니다")
+        if "expected_value" in check:
+            errors.append("정답을 fixture 에 고정할 수 없습니다. DB 로 계산하십시오")
     elif kind == "bid_lookup":
         placeholder = check.get("bid_no_placeholder")
         if not isinstance(placeholder, str) or not placeholder:

@@ -946,6 +946,77 @@ def test_numeric_fact_question_numbers_are_still_subtracted() -> None:
     assert result["detail"]["candidate_numbers"] == [3405.0]
 
 
+def _winner_ranking_item(item_id: str) -> dict[str, Any]:
+    item = _fixture_item(item_id)
+    assert item["check"]["type"] == "winner_ranking"
+    return item
+
+
+def test_winner_ranking_pub_res_12_has_no_category_condition() -> None:
+    # pub_res_12 의 질문에는 분야 표현이 없다. 기준값도 전체 분야를 집계해야 한다.
+    item = _winner_ranking_item("pub_res_12")
+    assert "category" not in item["check"]
+    statement = measure.build_winner_ranking_sql(item["check"])
+    assert "category" not in statement.casefold()
+
+
+def test_winner_ranking_pub_res_13_uses_cnstwk_and_thirty_day_window() -> None:
+    # pub_res_13 은 질문에 "공사"와 "최근 한 달"이 있으므로 분류와 30일 창을
+    # 기준값에 함께 쓴다. 둘 중 하나라도 빠지면 질문과 다른 조건이 된다.
+    item = _winner_ranking_item("pub_res_13")
+    assert item["check"]["category"] == "Cnstwk"
+    assert item["check"]["days"] == 30
+    assert "최근 한 달" in item["question"]
+    statement = measure.build_winner_ranking_sql(item["check"])
+    assert "category = 'Cnstwk'" in statement
+    assert "rl_openg_dt >= CURDATE() - INTERVAL 29 DAY" in statement
+    assert "rl_openg_dt < CURDATE() + INTERVAL 1 DAY" in statement
+    assert "INTERVAL 30 DAY" not in statement
+
+
+def test_winner_ranking_excludes_blank_and_corrupted_names_and_fixes_sort() -> None:
+    statement = measure.build_winner_ranking_sql({"days": 30})
+    assert "bidwinnr_nm IS NOT NULL" in statement
+    assert "TRIM(bidwinnr_nm) <> ''" in statement
+    assert f"bidwinnr_nm NOT LIKE '%{measure.CORRUPTED_TEXT_MARKER}%'" in statement
+    assert "ORDER BY COUNT(*) DESC, bidwinnr_nm ASC" in statement
+    assert statement.endswith("LIMIT 1")
+
+
+def test_winner_ranking_truth_records_winner_name_in_detail() -> None:
+    item = _winner_ranking_item("pub_res_12")
+
+    def fake_query(statement: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        assert "INTERVAL 29 DAY" in statement
+        assert "category" not in statement.casefold()
+        return ["bidwinnr_nm", "win_count"], [("주식회사 한백", 42)]
+
+    truth = measure.build_truth(item, {}, query_fn=fake_query)
+    result = measure.grade_attempt(item, truth, _payload("주식회사 한백이 42건으로 1위입니다."))
+    assert truth["winner_name"] == "주식회사 한백"
+    assert truth["value"] == 42.0
+    assert result["passed"] is True
+    assert result["detail"]["winner_name"] == "주식회사 한백"
+    assert result["detail"]["db_value"] == 42.0
+
+
+def test_winner_ranking_rejects_unknown_category_and_missing_days() -> None:
+    check = {"type": "winner_ranking", "category": "Unknown", "days": 0}
+    errors = measure._check_required_keys(check)
+    assert any("category" in error for error in errors)
+    assert any("days" in error for error in errors)
+
+
+@pytest.mark.parametrize("item_id", ["pub_res_08", "pub_res_09", "pub_res_10", "pub_res_15"])
+def test_thirty_day_windows_use_half_open_interval(item_id: str) -> None:
+    # "최근 한 달"과 "최근 30일"을 쓰는 같은 창의 기준값도 앱과 같은 30일
+    # 반개구간으로 맞춘다. 31일 창(INTERVAL 30 DAY)이 남으면 하루가 더 세진다.
+    statement = _fixture_item(item_id)["check"]["sql"]
+    assert "rl_openg_dt >= CURDATE() - INTERVAL 29 DAY" in statement
+    assert "rl_openg_dt < CURDATE() + INTERVAL 1 DAY" in statement
+    assert "INTERVAL 30 DAY" not in statement
+
+
 def test_refuse_or_redirect_fails_on_reviewer_weather_counterexample() -> None:
     result = measure.grade_attempt(
         _refusal_item("오늘 서울 날씨 어때?", WEATHER_CLAIMS),

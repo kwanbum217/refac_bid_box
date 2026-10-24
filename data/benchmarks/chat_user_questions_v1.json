@@ -603,7 +603,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND sucsf_bid_rate IS NOT NULL",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY AND sucsf_bid_rate IS NOT NULL",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -624,7 +624,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND sucsf_bid_rate IS NOT NULL",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY AND sucsf_bid_rate IS NOT NULL",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -645,7 +645,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Thng' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Thng' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -686,8 +686,8 @@
       ],
       "forbidden_tools": [],
       "check": {
-        "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND bidwinnr_nm = (SELECT bidwinnr_nm FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND bidwinnr_nm IS NOT NULL AND bidwinnr_nm <> '' GROUP BY bidwinnr_nm ORDER BY COUNT(*) DESC LIMIT 1)",
+        "type": "winner_ranking",
+        "days": 30,
         "tolerance_ratio": 0.0
       },
       "must_not_contain": [
@@ -695,20 +695,21 @@
         "컨텍스트에 포함되어 있지 않"
       ],
       "repeats": 1,
-      "note": "업체명은 고정하지 않고 SQL 이 1위 업체를 찾는다"
+      "note": "질문에 분류가 없으므로 전체 분야 최근 한 달(30일 반개구간) 1위를 센다"
     },
     {
       "id": "pub_res_13",
       "category": "result_analysis",
       "split": "public",
-      "question": "공사 쪽에서 낙찰 많이 한 업체 1위는 몇 건이야?",
+      "question": "최근 한 달 동안 공사 쪽에서 낙찰 많이 한 업체 1위는 몇 건이야?",
       "expected_tools": [
         "bid_query_tool"
       ],
       "forbidden_tools": [],
       "check": {
-        "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND bidwinnr_nm = (SELECT bidwinnr_nm FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND bidwinnr_nm IS NOT NULL AND bidwinnr_nm <> '' GROUP BY bidwinnr_nm ORDER BY COUNT(*) DESC LIMIT 1)",
+        "type": "winner_ranking",
+        "category": "Cnstwk",
+        "days": 30,
         "tolerance_ratio": 0.0
       },
       "must_not_contain": [
@@ -716,7 +717,7 @@
         "컨텍스트에 포함되어 있지 않"
       ],
       "repeats": 1,
-      "note": ""
+      "note": "질문의 공사 분류와 최근 한 달(30일 반개구간)을 함께 적용한다"
     },
     {
       "id": "pub_res_14",
@@ -750,7 +751,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
