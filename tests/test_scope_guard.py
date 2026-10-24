@@ -12,6 +12,7 @@ import re
 
 import pytest
 
+from src.app.services import planner
 from src.app.services.planner_interpreter import interpret_request
 from src.rag.engine import HybridRAGEngine
 from src.rag.injection_guard import INJECTION_NOTICE
@@ -100,6 +101,19 @@ def test_bid_questions_are_never_refused(message: str) -> None:
 @pytest.mark.parametrize("message", ["", "   ", "그거 어떻게 해?"])
 def test_unknown_requests_fail_open(message: str) -> None:
     assert is_out_of_scope_request(message) is False
+
+
+OUT_OF_SCOPE_FOLLOWUP_CASES = (
+    "오늘 서울 날씨 어때? 그리고 주식 시장 전망도 알려줘",
+    "1 더하기 1은 뭐야? 그리고 영화 추천해줘",
+    "3+5는? 그리고 고양이 키우는 법",
+)
+
+IN_SCOPE_FOLLOWUP_CASE = "최근 용역 공고 5개 보여줘 그리고 낙찰 결과도 알려줘"
+
+
+def _fail_llm_plan_draft(*args: object, **kwargs: object) -> None:
+    raise AssertionError("범위 밖 질문은 LLM 계획 초안을 호출하면 안 됩니다")
 
 
 def test_refusal_message_has_no_system_prompt_leak() -> None:
@@ -196,3 +210,39 @@ def test_stream_refusal_keeps_injection_notice(monkeypatch: pytest.MonkeyPatch) 
     events = asyncio.run(collect())
     expected = f"{INJECTION_NOTICE} {OUT_OF_SCOPE_REFUSAL_MESSAGE}"
     assert events[-1]["final_answer"] == expected
+
+
+@pytest.mark.parametrize("message", OUT_OF_SCOPE_FOLLOWUP_CASES)
+def test_out_of_scope_followup_skips_llm_plan_draft(
+    message: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(planner.LLM_PLAN_DRAFT_ENV, "true")
+    monkeypatch.setattr(planner, "_request_llm_plan_draft", _fail_llm_plan_draft)
+
+    plan = planner.plan_chat_request(message)
+
+    assert plan.mode == "answer"
+    assert plan.llm_draft_used is False
+    assert [(step.kind, step.tool) for step in plan.steps] == [("respond", "respond")]
+
+
+def test_in_scope_followup_still_attempts_llm_plan_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(planner.LLM_PLAN_DRAFT_ENV, "true")
+    calls: list[str] = []
+
+    def _spy(message: str) -> None:
+        calls.append(message)
+        return None
+
+    monkeypatch.setattr(planner, "_request_llm_plan_draft", _spy)
+
+    plan = planner.plan_chat_request(IN_SCOPE_FOLLOWUP_CASE)
+
+    assert calls == [IN_SCOPE_FOLLOWUP_CASE]
+    assert plan.llm_draft_used is False
+    assert [(step.kind, step.tool) for step in plan.steps] == [
+        ("internal_tool", "bid_query_tool"),
+        ("respond", "respond"),
+    ]
