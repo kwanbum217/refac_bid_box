@@ -260,6 +260,16 @@ RESULT_LIST_EXCLUDED_MARKERS = (
 )
 RESULT_LIST_EXPLANATION_MARKERS = ("방법", "규정", "설명", "어떻게", "의미", "절차", "뭐야")
 RESULT_LIST_BID_NUMBER_PATTERN = re.compile(r"[A-Z]\d{2}[A-Z]{2}\d{8}|\d{11,}", re.IGNORECASE)
+# 공고번호는 "R26BK01778156" 처럼 영문 1자, 숫자 2자, 영문 2자, 숫자 8자로 고정됩니다.
+# 접수번호(11자리 숫자)나 금액처럼 숫자만 긴 값을 공고번호로 읽지 않도록 숫자 대안을
+# 두지 않습니다. 차수 접미사("-001")가 붙은 값은 다른 식별자이므로 단건 조회로
+# 읽지 않습니다. 값은 대문자로 정규화해 DB 의 표기와 맞춥니다.
+BID_NTCE_NO_PATTERN = re.compile(
+    r"(?:공고\s*번호\s*)?(?<![A-Za-z0-9])"
+    r"(?P<bid_ntce_no>[A-Z]\d{2}[A-Z]{2}\d{8})(?!\d)(?!-\d)",
+    re.IGNORECASE,
+)
+BID_NTCE_NO_EXPLANATION_MARKERS = ("방법", "계산", "설명", "어떻게", "의미", "절차", "규정", "뭐야")
 
 ENTITY_ORG_SUFFIXES = (
     "주식회사",
@@ -567,6 +577,28 @@ def is_result_query(query: str) -> bool:
     if "낙찰률" in lowered:
         return True
     return bool(RESULT_ATTRIBUTE_PATTERN.search(lowered))
+
+
+def extract_bid_ntce_no(query: str) -> str:
+    """질의에 등장한 공고번호를 대문자로 정규화해 돌려줍니다.
+
+    엄격형 패턴에 맞는 값만 인정하므로 접수번호나 금액 숫자는 빈 문자열입니다.
+    """
+    match = BID_NTCE_NO_PATTERN.search(_normalize_text(query))
+    return match.group("bid_ntce_no").upper() if match else ""
+
+
+def is_bid_number_query(query: str) -> bool:
+    """공고번호 하나를 지목한 단건 조회 질의인지 판정합니다.
+
+    공고번호 형식이 있고, 계산 방법이나 의미를 묻는 설명형 표지가 없을 때만
+    참입니다. 설명형은 기존 LLM 경로가 맡습니다.
+    """
+    normalized = _normalize_text(query)
+    if not BID_NTCE_NO_PATTERN.search(normalized):
+        return False
+    lowered = normalized.lower()
+    return not any(marker in lowered for marker in BID_NTCE_NO_EXPLANATION_MARKERS)
 
 
 def _result_list_token_allowed(token: str) -> bool:
@@ -1006,8 +1038,13 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
     has_semantic_keywords = any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
+    is_bid_number = is_bid_number_query(normalized_query)
+    bid_ntce_no = extract_bid_ntce_no(normalized_query) if is_bid_number else ""
 
-    if is_entity:
+    if is_bid_number:
+        use_sql = True
+        use_vector = has_semantic_keywords
+    elif is_entity:
         use_sql = True
         use_vector = True
     elif announcement_list_query or result_list_query or has_stat_keywords:
@@ -1046,6 +1083,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         date_from, date_to = "", ""
 
     filters: dict[str, Any] = {}
+    # 공고번호 단건은 다른 조건과 달리 목록·집계 경로로 새지 않게 전용 필터로
+    # 넘깁니다. 값이 비어 있으면 키를 만들지 않습니다.
+    if bid_ntce_no:
+        filters["bid_ntce_no"] = bid_ntce_no
     if date_from:
         filters["date_from"] = date_from
     if date_to:
@@ -1091,7 +1132,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["institution_names"] = comparison_institutions
     elif inst_candidates:
         filters["institution_names"] = inst_candidates
-    else:
+    elif not is_bid_number:
         for region in REGION_KEYWORDS:
             if region in lowered:
                 filters["institution_name"] = region
@@ -1099,11 +1140,12 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     # 비교 대상이 확정되면 목록 제한은 의미가 없습니다. "부산이랑 대구 공고 5건
     # 비교" 처럼 개수가 붙은 비교 질의가 공고 목록 응답으로 새는 것을 막습니다.
+    # 공고번호 단건도 같은 이유로 목록 제한을 두지 않습니다.
     has_comparison = bool(comparison_regions or comparison_institutions)
-    if result_list_query and not has_comparison:
+    if result_list_query and not has_comparison and not is_bid_number:
         filters["result_limit"] = extract_result_limit(normalized_query)
 
-    if announcement_list_query and not has_comparison:
+    if announcement_list_query and not has_comparison and not is_bid_number:
         filters["announcement_limit"] = extract_result_limit(normalized_query)
 
     if any(keyword in lowered for keyword in TREND_KEYWORDS):
@@ -1114,6 +1156,8 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["metric"] = _requested_metric(lowered)
 
     route_reason_parts = []
+    if is_bid_number:
+        route_reason_parts.append("공고번호 단건 질의")
     if is_entity:
         route_reason_parts.append("개체 지정 질의")
     if result_list_query:

@@ -317,7 +317,14 @@ def _result_conditions(
     *,
     enable_ngram_prefilter: bool = False,
     institution_names: list[str] | None = None,
+    bid_ntce_no: str | None = None,
 ) -> list:
+    # 공고번호 단건 조회는 유일 키 하나만 조건으로 씁니다. "최근" 같은 상대 기간
+    # 표지나 분류·기관·지역·목록 필터를 함께 걸면 개찰일이 그 창 밖인 행을
+    # 놓칩니다. 이 조기 반환이 단건 경로와 집계 경로의 경계입니다.
+    if bid_ntce_no:
+        return [BidResult.bid_ntce_no == bid_ntce_no]
+
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
@@ -340,6 +347,10 @@ def _result_conditions(
         )
     if category:
         conditions.append(BidResult.category == category)
+    # 단건 조회 호출만 값을 넘깁니다. 이 조건이 집계용 조건에 섞이면 평균
+    # 기준선이 그 공고 자체가 되거나 축 집계가 1행으로 붕괴합니다.
+    if bid_ntce_no:
+        conditions.append(BidResult.bid_ntce_no == bid_ntce_no)
     return conditions
 
 
@@ -348,7 +359,13 @@ def _announcement_conditions(
     *,
     enable_ngram_prefilter: bool = False,
     institution_names: list[str] | None = None,
+    bid_ntce_no: str | None = None,
 ) -> list:
+    # 공고번호 단건 조회는 유일 키 하나만 조건으로 씁니다. 공고일 기준 기간
+    # 필터를 함께 걸면 "최근" 표지가 붙은 질의가 그 공고를 놓칩니다.
+    if bid_ntce_no:
+        return [BidAnnouncement.bid_ntce_no == bid_ntce_no]
+
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
@@ -373,6 +390,8 @@ def _announcement_conditions(
         )
     if category:
         conditions.append(BidAnnouncement.category == category)
+    if bid_ntce_no:
+        conditions.append(BidAnnouncement.bid_ntce_no == bid_ntce_no)
     return conditions
 
 
@@ -401,6 +420,8 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     if date_from or date_to:
         return None
     if filters.get("region_names") or filters.get("institution_names"):
+        return None
+    if filters.get("bid_ntce_no"):
         return None
     if _normalize_text(str(filters.get("institution_name") or "")):
         return None
@@ -1864,11 +1885,102 @@ def _empty_result(plan: RetrievalPlan, hint: str) -> dict[str, Any]:
                 "date_to": filters.get("date_to"),
             },
         }
+    # 공고번호 단건은 미발견을 전체 통계로 폴백하지 않습니다. 응답 단계가
+    # "해당 공고번호 없음" 을 낼 수 있도록 키만 가법적으로 표시합니다.
+    if filters.get("bid_ntce_no"):
+        summary["bid_detail"] = None
     return {
         "filters": filters,
         "summary": summary,
         "insufficiency_hints": [hint],
         "query_skipped": True,
+    }
+
+
+def _bid_detail_result(db: Session, plan: RetrievalPlan, bid_ntce_no: str) -> dict[str, Any]:
+    """공고번호 단건 조회 결과를 기존 summary 키를 유지한 채 만듭니다.
+
+    공고와 낙찰을 각각 유일 인덱스 범위로 한 번씩 읽고, 낙찰 행이 있으면 그
+    행의 분류와 같은 기간의 평균을 한 번 계산합니다. 어느 쪽도 없으면 전체
+    통계로 넓히지 않고 해당 공고번호가 없다는 빈 결과를 냅니다.
+    """
+    filters = plan.filters or {}
+    announcements = _fetch_sample_announcements(
+        db,
+        _announcement_conditions(plan, bid_ntce_no=bid_ntce_no),
+        limit=1,
+        detailed=True,
+    )
+    results = _fetch_recent_results(db, _result_conditions(plan, bid_ntce_no=bid_ntce_no), 1)
+    announcement = announcements[0] if announcements else None
+    result = results[0] if results else None
+
+    if announcement is None and result is None:
+        return _empty_result(
+            plan,
+            f"공고번호 {bid_ntce_no} 은(는) 수집 데이터에서 확인할 수 없습니다.",
+        )
+
+    comparison: dict[str, Any] | None = None
+    if result is not None:
+        category = _normalize_text(str(filters.get("category") or result.get("category") or ""))
+        date_from, date_to = _resolve_window(filters)
+        baseline_conditions = []
+        if date_from:
+            baseline_conditions.append(BidResult.rl_openg_dt >= date_from)
+        if date_to:
+            baseline_conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+        if category:
+            baseline_conditions.append(BidResult.category == category)
+        baseline_count, baseline_rate, baseline_samples = _cached_aggregate(
+            db,
+            select(
+                func.count(BidResult.id),
+                func.avg(BidResult.sucsf_bid_rate),
+                func.count(BidResult.sucsf_bid_rate),
+            ).where(*baseline_conditions),
+        )
+        comparison = {
+            "category": category,
+            "category_label": _category_label(category),
+            "average_winning_rate": (
+                round(float(baseline_rate), 4) if baseline_rate is not None else None
+            ),
+            "sample_count": int(baseline_samples or 0),
+            "bid_count": int(baseline_count or 0),
+            "date_from": filters.get("date_from"),
+            "date_to": filters.get("date_to"),
+        }
+
+    response_filters = dict(filters)
+    if response_filters.get("category"):
+        response_filters["category_label"] = _category_label(str(response_filters["category"]))
+
+    summary: dict[str, Any] = {
+        "total_bids": 1 if result else 0,
+        "announcement_count": 1 if announcement else 0,
+        "average_winning_rate": (
+            round(float(result.get("sucsf_bid_rate") or 0), 4) if result else 0.0
+        ),
+        "total_winning_amount": float(result.get("sucsf_bid_amt") or 0) if result else 0.0,
+        "top_winners": [],
+        "top_institutions": [],
+        "top_announcements": [],
+        "sample_announcements": announcements,
+        "recent_results": results,
+        "latest_available_result_at": None,
+        "time_series": [],
+        "bid_detail": {
+            "bid_ntce_no": bid_ntce_no,
+            "announcement": announcement,
+            "result": result,
+            "comparison": comparison,
+        },
+    }
+    return {
+        "filters": response_filters,
+        "summary": summary,
+        "insufficiency_hints": [],
     }
 
 
@@ -2089,6 +2201,13 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             "summary": summary_payload,
             "insufficiency_hints": leftovers,
         }
+
+    # 공고번호 단건은 다중 기관 분기 뒤, 집계 준비 앞에서 끝냅니다. 여기서
+    # 반환해야 5개 대형 집계와 스냅샷을 타지 않고, 조건에 공고번호를 섞지
+    # 않으므로 다른 경로의 평균 기준선도 오염되지 않습니다.
+    bid_ntce_no = _normalize_text(str(filters.get("bid_ntce_no") or "")).upper()
+    if bid_ntce_no:
+        return _bid_detail_result(db, plan, bid_ntce_no)
 
     institution_name = _normalize_text(str((plan.filters or {}).get("institution_name") or ""))
     result_names = announcement_names = None
