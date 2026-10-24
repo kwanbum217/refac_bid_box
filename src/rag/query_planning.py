@@ -805,6 +805,18 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
         start, end = _to_iso(today - timedelta(days=(30 * months) - 1), today)
         return start, end, "recent", True
 
+    year_match = re.search(r"(?:최근|지난)\s*(\d+)\s*(?:년|해)", lowered)
+    if year_match:
+        years = max(int(year_match.group(1)), 1)
+        start, end = _to_iso(today - timedelta(days=(365 * years) - 1), today)
+        return start, end, "recent", True
+
+    week_match = re.search(r"(?:최근|지난)\s*(\d+)\s*주", lowered)
+    if week_match:
+        weeks = max(int(week_match.group(1)), 1)
+        start, end = _to_iso(today - timedelta(days=(7 * weeks) - 1), today)
+        return start, end, "recent", True
+
     if "최근 한 달" in lowered or "최근 1달" in lowered or "최근 한달" in lowered:
         start, end = _to_iso(today - timedelta(days=29), today)
         return start, end, "recent", True
