@@ -211,6 +211,48 @@ def test_single_metric_is_empty_for_ranking_and_explanatory_questions():
     assert _build_single_metric_answer(explanatory_plan, _structured_data()) == ""
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "낙찰률이 무슨 뜻이야?",
+        "평균 낙찰률 정의 알려줘",
+        "낙찰률이란?",
+        "낙찰률 산식 알려줘",
+        "공고 건수는 어떤 기준이야?",
+        "낙찰률이 왜 낮아?",
+    ],
+)
+def test_single_metric_is_empty_for_definitional_questions(query):
+    """뜻·정의·산식·기준·이유를 묻는 설명형 질문은 직접 응답 대상이 아닙니다."""
+    plan = build_retrieval_plan(query)
+
+    assert _build_single_metric_answer(plan, _structured_data()) == ""
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            "최근 한 달 용역 평균 낙찰률 얼마야?",
+            "2026-09-25 ~ 2026-10-24 용역 평균 낙찰률은 90.83%입니다.",
+        ),
+        (
+            "최근 한 달 용역 낙찰 건수 몇 건이야?",
+            "2026-09-25 ~ 2026-10-24 용역 낙찰 건수는 4,857건입니다.",
+        ),
+        (
+            "이번 달 용역 공고 몇 건 올라왔어?",
+            "2026-10-01 ~ 2026-10-24 용역 공고는 10,165건입니다.",
+        ),
+    ],
+)
+def test_value_questions_still_answer_directly(query, expected):
+    """값(얼마야·몇 건이야)을 묻는 기간 통계 질문은 직접 응답을 유지합니다."""
+    plan = build_retrieval_plan(query)
+
+    assert _build_single_metric_answer(plan, _structured_data()) == expected
+
+
 class _NoLlmBackend:
     name = "no-llm"
 
