@@ -322,6 +322,9 @@ ENTITY_ORG_SUFFIXES = (
 ADMIN_REGION_PATTERN = re.compile(
     r"^[가-힣]{2,10}(?:특별자치시|특별자치도|특별시|광역시|도|시|군|구)$"
 )
+# 광역 단축명보다 좁은 범위는 시·군·구 행정 구역입니다. "도시" 처럼 기저가 한 글자인
+# 낱말은 제외되도록 기저를 두 글자 이상 요구합니다.
+ADMIN_DISTRICT_PATTERN = re.compile(r"^[가-힣]{2,8}(?:시|군|구)$")
 ADMIN_REGION_OFFICE_SUFFIX = "청"
 INSTITUTION_SUBUNIT_SUFFIXES = ("지역본부", "본부", "지사", "지부", "지점", "출장소", "사업단")
 INSTITUTION_SCOPE_EXPLANATORY_MARKERS = (
@@ -538,6 +541,43 @@ def extract_institution_scope(
     if len(best_aliases) > 1:
         scope["institution_aliases"] = list(best_aliases)
     return scope
+
+
+def _is_broad_region_name(name: str) -> bool:
+    """광역 단축명이나 그 행정 접미사형인지 판정합니다.
+
+    "광주" 와 "광주시", "충남" 과 "충청남도" 는 같은 광역 범위입니다. 이런 값은
+    더 좁은 기관 범위가 아니므로 광역 사전 대체 값을 바꾸지 않습니다.
+    """
+    if name in REGION_ALIASES:
+        return True
+    if any(name in aliases for aliases in REGION_ALIASES.values()):
+        return True
+    for suffix in ("특별자치시", "특별자치도", "특별시", "광역시", "도", "시"):
+        if name.endswith(suffix) and name[: -len(suffix)] in REGION_ALIASES:
+            return True
+    return False
+
+
+def _is_specific_institution_scope(name: str) -> bool:
+    """광역 단축명보다 좁은 기관 범위인지 판정합니다.
+
+    시·군·구 행정 구역과 공공기관, 기관 접미사 토큰은 광역 사전이 먼저 넣은
+    값보다 구체적이므로 대체 대상입니다. 광역 범위 자체는 대체하지 않습니다.
+    """
+    normalized = _normalize_text(name)
+    if not normalized or _is_broad_region_name(normalized):
+        return False
+    if _extract_public_corporation_tokens(normalized):
+        return True
+    # "인입철도" 처럼 도 접미사로 끝나는 사업명은 행정 구역이 아닙니다. 시·군·구만
+    # 광역보다 좁은 행정 구역으로 인정합니다.
+    if ADMIN_DISTRICT_PATTERN.fullmatch(normalized):
+        return True
+    return any(
+        normalized.endswith(suffix) and len(normalized) > len(suffix)
+        for suffix in ENTITY_ORG_SUFFIXES
+    )
 
 
 def _extract_public_corporation_tokens(text: str) -> list[str]:
@@ -1347,6 +1387,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if matched_category is not None:
         filters["category"] = matched_category
 
+    region_fallback_name = ""
     if comparison_regions:
         filters["region_names"] = comparison_regions
     elif comparison_institutions:
@@ -1357,6 +1398,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         for region in REGION_KEYWORDS:
             if region in lowered:
                 filters["institution_name"] = region
+                region_fallback_name = region
                 break
 
     # 기관 범위는 목록·집계·개체 지정 질의에서만 붙입니다. 설명형 질의에 붙으면
@@ -1375,8 +1417,19 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         scope = extract_institution_scope(normalized_query, include_entity_org_tokens=list_intent)
         scope_name = str(scope.get("institution_name") or "")
         existing_name = _normalize_text(str(filters.get("institution_name") or ""))
-        if scope_name and not existing_name:
+        # 광역 사전 대체 경로는 "대전 유성구" 에서 먼저 "대전" 을 넣습니다. 추출기가
+        # 더 좁은 범위를 돌려주면 그 값으로 바꿔야 채팅 경로와 같은 기관 조건이
+        # 걸립니다. 사용자나 상위 계층이 명시한 값은 대체 경로 값이 아니므로
+        # 그대로 둡니다.
+        replace_region_fallback = bool(
+            region_fallback_name
+            and existing_name == region_fallback_name
+            and scope_name != existing_name
+            and _is_specific_institution_scope(scope_name)
+        )
+        if scope_name and (not existing_name or replace_region_fallback):
             filters["institution_name"] = scope_name
+            existing_name = scope_name
         if scope.get("institution_aliases") and (not existing_name or existing_name == scope_name):
             filters["institution_aliases"] = list(scope["institution_aliases"])
 

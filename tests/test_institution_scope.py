@@ -140,6 +140,32 @@ def test_chat_plan_carries_region_aliases():
 
 
 @pytest.mark.parametrize(
+    ("query", "expected_name", "expected_aliases"),
+    [
+        ("대전 유성구 공고 5개 보여줘", "유성구", None),
+        ("충남 공주시 최근 공고 5개", "공주시", None),
+        ("경기 수원시 낙찰 결과 5개 보여줘", "수원시", None),
+        ("서울 지역 공고 최근 5개 보여줘", "서울", None),
+        ("충남 공고 최근 5개 보여줘", "충남", ["충남", "충청남도"]),
+    ],
+)
+def test_both_planners_use_specific_scope_over_region_dictionary(
+    query: str, expected_name: str, expected_aliases: list[str] | None
+):
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.filters.get("institution_name") == expected_name
+    assert execution_plan.parameters.get("institution_name") == expected_name
+    if expected_aliases:
+        assert plan.filters.get("institution_aliases") == expected_aliases
+        assert execution_plan.parameters.get("institution_aliases") == expected_aliases
+    else:
+        assert "institution_aliases" not in plan.filters
+        assert "institution_aliases" not in execution_plan.parameters
+
+
+@pytest.mark.parametrize(
     ("query", "expected_category"),
     [
         ("시설 공사 공고 5개", "Cnstwk"),
@@ -271,6 +297,21 @@ def test_district_scope_returns_only_that_district(institution_db):
     samples = _sample_announcements(institution_db, {**scope, "announcement_limit": 5})
 
     assert {sample["bid_ntce_no"] for sample in samples} == {"ANN-009"}
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("대전 유성구 공고 5개 보여줘", {"ANN-009"}),
+        ("충남 공주시 공고 5개 보여줘", {"ANN-001", "ANN-002"}),
+        ("경기 수원시 공고 5개 보여줘", set()),
+    ],
+)
+def test_rag_plan_scope_filters_sql_rows(institution_db, query: str, expected: set[str]):
+    plan = build_retrieval_plan(query)
+    samples = _sample_announcements(institution_db, plan.filters)
+
+    assert {sample["bid_ntce_no"] for sample in samples} == expected
 
 
 def test_result_query_returns_only_scoped_institution(institution_db):
