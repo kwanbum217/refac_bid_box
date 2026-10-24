@@ -1,0 +1,1256 @@
+{
+  "schema": "CHAT_USER_QUESTIONS_V1",
+  "version": "1.0.0",
+  "split": "public",
+  "created_at": "2026-10-24T00:00:00Z",
+  "description": "실제 사용자가 챗봇에 묻는 형태의 공개 점검 세트. 정답은 fixture 에 고정하지 않고 측정 시점 DB 에서 계산한다.",
+  "categories": [
+    "announcement_list",
+    "result_analysis",
+    "bid_lookup",
+    "stats",
+    "prediction",
+    "out_of_scope"
+  ],
+  "category_counts": {
+    "announcement_list": 17,
+    "result_analysis": 17,
+    "bid_lookup": 5,
+    "stats": 6,
+    "prediction": 5,
+    "out_of_scope": 6
+  },
+  "total_items": 56,
+  "items": [
+    {
+      "id": "pub_ann_01",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "최근 용역 공고 5개만 리스트해줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Servc"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "가장 흔한 형태의 목록 요청"
+    },
+    {
+      "id": "pub_ann_02",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "요즘 올라온 공사 공고 좀 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Cnstwk"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "건수 표현 없이 목록을 요구"
+    },
+    {
+      "id": "pub_ann_03",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "물품 입찰 공고 최신 10건 뽑아줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 10,
+        "days": 7,
+        "category": "Thng"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_ann_04",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "최근 한 달 외자 공고 목록 보여줄래?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 30,
+        "category": "Frgcpt"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_ann_05",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "지난 3일 사이에 올라온 용역 공고 다섯 건만 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 3,
+        "category": "Servc"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_ann_06",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "이번 주 건설 공고 열 개 정리해줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 10,
+        "days": 7,
+        "category": "Cnstwk"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_ann_07",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "최근 공고 5건 목록으로 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "분류를 말하지 않은 전체 목록 요청"
+    },
+    {
+      "id": "pub_ann_08",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "공주시 최근 공고 5개만 리스트로 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "institution_like": "공주시"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "수요기관 조건 목록"
+    },
+    {
+      "id": "pub_ann_09",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "한국농어촌공사 공고 최근 거 5개만 뽑아줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "institution_like": "한국농어촌공사"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "공고기관 조건 목록"
+    },
+    {
+      "id": "pub_ann_10",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "서울 지역 공고 최근 5개 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "institution_like": "서울"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "지역명 조건 목록"
+    },
+    {
+      "id": "pub_ann_11",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "최근 올라온 공고 중 3개만 골라줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 3,
+        "days": 3
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_ann_12",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "최신 공고 20건 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 20,
+        "days": 7
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "상한 20건 목록"
+    },
+    {
+      "id": "pub_ann_13",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "최근 이틀 사이 공고 5건 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 2
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_ann_14",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "이번 주 올라온 용역 입찰 공고 목록 좀 뽑아줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Servc"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_ann_15",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "최근 공사 공고 10건 리스트로 정리해줄래",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 10,
+        "days": 7,
+        "category": "Cnstwk"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_ann_16",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "물품 공고 최근 다섯 건만 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Thng"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "숫자를 한글로 표현"
+    },
+    {
+      "id": "pub_ann_17",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "지난 한 달 용역 공고 5개만",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_latest",
+        "limit": 5,
+        "days": 30,
+        "category": "Servc"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_01",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 낙찰된 용역 결과 5개만 리스트해줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Servc"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_02",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "요즘 낙찰된 공사 5건 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Cnstwk"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_03",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 낙찰 결과 10건 목록으로 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 10,
+        "days": 7
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_04",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 한 달 외자 낙찰 결과 5건 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 5,
+        "days": 30,
+        "category": "Frgcpt"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_05",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "이번 주 낙찰된 용역 5건 목록 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 5,
+        "days": 7,
+        "category": "Servc"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_06",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 공사 낙찰 결과 20건 보여줄래",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 20,
+        "days": 7,
+        "category": "Cnstwk"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_07",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 낙찰 3건만 뽑아줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "result_latest",
+        "limit": 3,
+        "days": 7
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_08",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "용역 평균 낙찰률 최근 한 달 기준으로 얼마야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND sucsf_bid_rate IS NOT NULL",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_09",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "지난 30일 공사 평균 낙찰률 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND sucsf_bid_rate IS NOT NULL",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_10",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 30일 물품 낙찰 건수 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Thng' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_11",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "이번 달 용역 낙찰이 총 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_12",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 한 달 동안 가장 많이 낙찰받은 업체는 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND bidwinnr_nm = (SELECT bidwinnr_nm FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND bidwinnr_nm IS NOT NULL AND bidwinnr_nm <> '' GROUP BY bidwinnr_nm ORDER BY COUNT(*) DESC LIMIT 1)",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "업체명은 고정하지 않고 SQL 이 1위 업체를 찾는다"
+    },
+    {
+      "id": "pub_res_13",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "공사 쪽에서 낙찰 많이 한 업체 1위는 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND bidwinnr_nm = (SELECT bidwinnr_nm FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY AND bidwinnr_nm IS NOT NULL AND bidwinnr_nm <> '' GROUP BY bidwinnr_nm ORDER BY COUNT(*) DESC LIMIT 1)",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_14",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "{latest_servc_result_institution}의 최근 60일 용역 평균 낙찰률 얼마야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 60 DAY AND sucsf_bid_rate IS NOT NULL AND dminstt_nm LIKE '%{latest_servc_result_institution}%'",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "기관명은 실행 시점 DB 의 최신 용역 수요기관으로 채운다"
+    },
+    {
+      "id": "pub_res_15",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 한 달 용역 낙찰 건수 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_16",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "공사 낙찰 평균 낙찰률 지난 14일 기준으로 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 14 DAY AND sucsf_bid_rate IS NOT NULL",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_res_17",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 2주 용역 평균 낙찰률은?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 14 DAY AND sucsf_bid_rate IS NOT NULL",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_lkp_01",
+      "category": "bid_lookup",
+      "split": "public",
+      "question": "{latest_servc_result_bid_no} 이 공고 낙찰 결과 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "bid_lookup",
+        "bid_no_placeholder": "latest_servc_result_bid_no"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_lkp_02",
+      "category": "bid_lookup",
+      "split": "public",
+      "question": "{latest_cnstwk_result_bid_no} 공고 뭐야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "bid_lookup",
+        "bid_no_placeholder": "latest_cnstwk_result_bid_no"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_lkp_03",
+      "category": "bid_lookup",
+      "split": "public",
+      "question": "{latest_servc_announcement_bid_no} 공고 내용 요약해줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "bid_lookup",
+        "bid_no_placeholder": "latest_servc_announcement_bid_no"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_lkp_04",
+      "category": "bid_lookup",
+      "split": "public",
+      "question": "{latest_servc_result_bid_no} 낙찰업체랑 낙찰률 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "bid_lookup",
+        "bid_no_placeholder": "latest_servc_result_bid_no"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_lkp_05",
+      "category": "bid_lookup",
+      "split": "public",
+      "question": "{latest_cnstwk_result_bid_no} 건 낙찰금액 얼마야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "bid_lookup",
+        "bid_no_placeholder": "latest_cnstwk_result_bid_no"
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_sta_01",
+      "category": "stats",
+      "split": "public",
+      "question": "이번 달 용역 공고 몇 건 올라왔어?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE category = 'Servc' AND bid_ntce_dt >= DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_sta_02",
+      "category": "stats",
+      "split": "public",
+      "question": "최근 일주일 공사 공고 건수 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE category = 'Cnstwk' AND bid_ntce_dt >= CURDATE() - INTERVAL 7 DAY",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_sta_03",
+      "category": "stats",
+      "split": "public",
+      "question": "지난달 물품 공고 몇 건이었어?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE category = 'Thng' AND bid_ntce_dt >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01') AND bid_ntce_dt < DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_sta_04",
+      "category": "stats",
+      "split": "public",
+      "question": "최근 7일 동안 올라온 공고 총 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE bid_ntce_dt >= CURDATE() - INTERVAL 7 DAY",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_sta_05",
+      "category": "stats",
+      "split": "public",
+      "question": "최근 2주 동안 용역 낙찰 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 14 DAY",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_sta_06",
+      "category": "stats",
+      "split": "public",
+      "question": "지난달 공사 낙찰 건수 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01') AND rl_openg_dt < DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+        "tolerance_ratio": 0.02
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_prd_01",
+      "category": "prediction",
+      "split": "public",
+      "question": "{latest_servc_announcement_bid_no} 공고 낙찰가 예측해줘",
+      "expected_tools": [
+        "bid_prediction_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "tool_only"
+      },
+      "must_not_contain": [],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_prd_02",
+      "category": "prediction",
+      "split": "public",
+      "question": "이번에 올라온 용역 공고 {latest_servc_announcement_bid_no} 투찰가 예측 부탁해",
+      "expected_tools": [
+        "bid_prediction_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "tool_only"
+      },
+      "must_not_contain": [],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_prd_03",
+      "category": "prediction",
+      "split": "public",
+      "question": "{latest_servc_announcement_bid_no} 건 예상 낙찰금액 얼마로 보여?",
+      "expected_tools": [
+        "bid_prediction_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "tool_only"
+      },
+      "must_not_contain": [],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_prd_04",
+      "category": "prediction",
+      "split": "public",
+      "question": "최근 공사 공고 {latest_cnstwk_announcement_bid_no} 낙찰가 예측해줘",
+      "expected_tools": [
+        "bid_prediction_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "tool_only"
+      },
+      "must_not_contain": [],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_prd_05",
+      "category": "prediction",
+      "split": "public",
+      "question": "{latest_servc_announcement_bid_no} 예측 모델 돌려줘",
+      "expected_tools": [
+        "bid_prediction_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "tool_only"
+      },
+      "must_not_contain": [],
+      "repeats": 1,
+      "note": ""
+    },
+    {
+      "id": "pub_oos_01",
+      "category": "out_of_scope",
+      "split": "public",
+      "question": "안녕하세요, 너는 누구야?",
+      "expected_tools": [],
+      "forbidden_tools": [
+        "bid_query_tool"
+      ],
+      "check": {
+        "type": "refuse_or_redirect"
+      },
+      "must_not_contain": [],
+      "forbidden_claims": [
+        "GPT",
+        "언어 모델",
+        "학습 데이터",
+        "파라미터"
+      ],
+      "repeats": 3,
+      "note": "인사말"
+    },
+    {
+      "id": "pub_oos_02",
+      "category": "out_of_scope",
+      "split": "public",
+      "question": "오늘 서울 날씨 어때?",
+      "expected_tools": [],
+      "forbidden_tools": [
+        "bid_query_tool"
+      ],
+      "check": {
+        "type": "refuse_or_redirect"
+      },
+      "must_not_contain": [],
+      "forbidden_claims": [
+        "맑",
+        "흐리",
+        "비가",
+        "눈이",
+        "기온",
+        "습도",
+        "도입니다",
+        "℃"
+      ],
+      "repeats": 3,
+      "note": "날씨"
+    },
+    {
+      "id": "pub_oos_03",
+      "category": "out_of_scope",
+      "split": "public",
+      "question": "주식 시장 전망 알려줘",
+      "expected_tools": [],
+      "forbidden_tools": [
+        "bid_query_tool"
+      ],
+      "check": {
+        "type": "refuse_or_redirect"
+      },
+      "must_not_contain": [],
+      "forbidden_claims": [
+        "코스피",
+        "코스닥",
+        "주가",
+        "지수",
+        "상승",
+        "하락",
+        "매수",
+        "매도"
+      ],
+      "repeats": 3,
+      "note": "입찰과 무관한 시장 전망"
+    },
+    {
+      "id": "pub_oos_04",
+      "category": "out_of_scope",
+      "split": "public",
+      "question": "1 더하기 1은 뭐야?",
+      "expected_tools": [],
+      "forbidden_tools": [
+        "bid_query_tool"
+      ],
+      "check": {
+        "type": "refuse_or_redirect"
+      },
+      "must_not_contain": [],
+      "forbidden_claims": [
+        "2입니다",
+        "정답은 2",
+        "둘입니다",
+        "= 2",
+        "=2"
+      ],
+      "repeats": 3,
+      "note": "단순 계산"
+    },
+    {
+      "id": "pub_oos_05",
+      "category": "out_of_scope",
+      "split": "public",
+      "question": "내일 점심 뭐 먹을까?",
+      "expected_tools": [],
+      "forbidden_tools": [
+        "bid_query_tool"
+      ],
+      "check": {
+        "type": "refuse_or_redirect"
+      },
+      "must_not_contain": [],
+      "forbidden_claims": [
+        "김치찌개",
+        "비빔밥",
+        "식당",
+        "맛집",
+        "메뉴 추천"
+      ],
+      "repeats": 3,
+      "note": "일상 잡담"
+    },
+    {
+      "id": "pub_oos_06",
+      "category": "out_of_scope",
+      "split": "public",
+      "question": "파이썬으로 크롤러 코드 좀 짜줘",
+      "expected_tools": [],
+      "forbidden_tools": [
+        "bid_query_tool"
+      ],
+      "check": {
+        "type": "refuse_or_redirect"
+      },
+      "must_not_contain": [],
+      "forbidden_claims": [
+        "import ",
+        "def ",
+        "requests",
+        "BeautifulSoup",
+        "selenium",
+        "크롤러 코드"
+      ],
+      "repeats": 3,
+      "note": "범위 밖 코드 작성 요청"
+    }
+  ]
+}
