@@ -110,10 +110,79 @@ class UnsafeQueryError(ValueError):
     """읽기 전용이 아닌 질의를 거부할 때 냅니다."""
 
 
-def strip_string_literals(sql: str) -> str:
-    """문자열 리터럴만 지운 사본을 만듭니다. 주석은 그대로 둡니다."""
-    without_single = re.sub(r"'(?:[^'\\]|\\.)*'", " ", sql)
-    return re.sub(r'"(?:[^"\\]|\\.)*"', " ", without_single)
+# 상태 기반 스캐너가 쓰는 인용 문맥과 그 닫는 문자입니다. 백틱은 식별자라
+# 백슬래시 이스케이프가 없고, 겹친 백틱(``)이 이스케이프입니다.
+QUOTED_STATES = {"single": "'", "double": '"', "backtick": "`"}
+
+
+def reject_executable_comments(sql: str) -> None:
+    """원문을 왼쪽에서 오른쪽으로 한 번 훑어 실행 주석과 힌트 주석을 찾습니다.
+
+    문자열 리터럴 제거와 주석 제거를 정규식으로 따로 돌리면 서로의 경계를
+    오인합니다. `SELECT 1 /* ' */ /*! DELETE FROM t */ 'x'` 처럼 블록 주석 안의
+    따옴표를 리터럴 시작으로 보면 뒤따르는 실행 주석을 놓치고, 반대로 리터럴
+    안의 `/*!` 를 주석 시작으로 보면 정상 질의를 막습니다. 문맥을 유지한 한 번의
+    순회는 두 문제를 함께 없앱니다.
+
+    MySQL 은 `/*! ... */` 와 `/*+ ... */` 의 본문을 주석이 아니라 실행할 SQL 로
+    취급합니다. `/* !` 처럼 구분자 사이에 공백이 있으면 일반 주석입니다.
+    닫히지 않은 리터럴이나 블록 주석도 경계를 신뢰할 수 없으므로 거부합니다.
+    """
+    state = "normal"
+    index = 0
+    length = len(sql)
+    while index < length:
+        char = sql[index]
+
+        if state in QUOTED_STATES:
+            quote = QUOTED_STATES[state]
+            if char == "\\" and state != "backtick":
+                index += 2
+            elif char == quote:
+                if sql.startswith(quote * 2, index):
+                    index += 2
+                else:
+                    state = "normal"
+                    index += 1
+            else:
+                index += 1
+            continue
+
+        if state == "block":
+            if char == "*" and sql.startswith("*/", index):
+                state = "normal"
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if state == "line":
+            if char == "\n":
+                state = "normal"
+            index += 1
+            continue
+
+        if char in "'\"`":
+            state = {"'": "single", '"': "double", "`": "backtick"}[char]
+            index += 1
+        elif char == "/" and sql.startswith("/*", index):
+            if sql.startswith(EXECUTABLE_COMMENT_MARKERS, index):
+                raise UnsafeQueryError(
+                    "MySQL 실행 주석(/*! */)이나 힌트 주석(/*+ */)은 허용하지 않습니다."
+                )
+            state = "block"
+            index += 2
+        elif char == "-" and sql.startswith("--", index):
+            state = "line"
+            index += 2
+        elif char == "#":
+            state = "line"
+            index += 1
+        else:
+            index += 1
+
+    if state in QUOTED_STATES or state == "block":
+        raise UnsafeQueryError("닫히지 않은 문자열 리터럴이나 주석이 있습니다.")
 
 
 def strip_sql_noise(sql: str) -> str:
@@ -137,9 +206,8 @@ def assert_read_only(sql: str) -> str:
 
     # 일반 주석 제거(strip_sql_noise)보다 먼저 봐야 합니다. MySQL 실행 주석과
     # 힌트 주석의 본문은 서버가 실행하므로, 주석으로 지우면 검사를 통째로
-    # 우회합니다. 문자열 리터럴 안의 표기는 데이터이므로 먼저 제거합니다.
-    if any(marker in strip_string_literals(statement) for marker in EXECUTABLE_COMMENT_MARKERS):
-        raise UnsafeQueryError("MySQL 실행 주석(/*! */)이나 힌트 주석(/*+ */)은 허용하지 않습니다.")
+    # 우회합니다.
+    reject_executable_comments(statement)
 
     probe = strip_sql_noise(statement)
 

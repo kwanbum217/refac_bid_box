@@ -55,6 +55,19 @@ class TestReadOnlyAccepts:
         """문자열 리터럴과 일반 주석 안의 표기는 데이터이므로 막지 않습니다."""
         assert assert_read_only(sql)
 
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT \"it's\", '/*!' FROM t",
+            "SELECT `a/*!b` FROM t",
+            "SELECT 'it''s /*!' AS a",
+            "SELECT 1 /* 일반 */",
+        ],
+    )
+    def test_executable_comment_lookalikes_in_quoted_contexts_pass(self, sql):
+        """겹친 따옴표나 백틱 식별자 안의 표기는 데이터이므로 막지 않습니다."""
+        assert assert_read_only(sql)
+
 
 class TestReadOnlyRejects:
     @pytest.mark.parametrize(
@@ -87,6 +100,22 @@ class TestReadOnlyRejects:
         with pytest.raises(UnsafeQueryError) as exc:
             assert_read_only(sql)
         assert "실행 주석" in str(exc.value)
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT 1 /* ' */ /*! DELETE FROM t */ 'x'",
+            "SELECT 1 -- '\n/*! DROP TABLE x */",
+            "select 1 /*!*/",
+            "SELECT /*+ X */ 1",
+            "SELECT 'abc",
+            "SELECT 1 /* 닫히지 않은 주석",
+        ],
+    )
+    def test_executable_comments_hidden_by_other_constructs_are_rejected(self, sql):
+        """앞선 주석이나 리터럴에 가려진 실행 주석도 놓치지 않아야 합니다."""
+        with pytest.raises(UnsafeQueryError):
+            assert_read_only(sql)
 
     def test_multi_statement_is_rejected(self):
         """세미콜론으로 이어 붙인 우회를 막아야 합니다."""
