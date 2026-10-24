@@ -410,6 +410,16 @@ def _result_limit(plan: RetrievalPlan) -> int:
         return 0
 
 
+def _announcement_limit(plan: RetrievalPlan) -> int:
+    raw_limit = (plan.filters or {}).get("announcement_limit")
+    if raw_limit in (None, ""):
+        return 0
+    try:
+        return min(max(int(raw_limit), 1), 20)
+    except (TypeError, ValueError):
+        return 0
+
+
 # 낙찰업체 집계는 날짜만 걸리고 category 가 없을 때 옵티마이저가 그룹 인덱스
 # (ix_bid_results_bidwinnr_nm)를 골라 인덱스 전체를 훑습니다(filtered 15.29%).
 # EXPLAIN rows 추정은 약 3.27M 이고 bid_results 의 실제 행 수는 3,423,008 입니다.
@@ -1106,28 +1116,53 @@ def _select_recent_results(candidates: list[BidResult], limit: int) -> list[dict
 
 
 def _fetch_sample_announcements(
-    db: Session, conditions: list, limit: int = 3
+    db: Session, conditions: list, limit: int = 3, *, detailed: bool = False
 ) -> list[dict[str, Any]]:
-    """표본 공고 목록을 조회하고 화면 표시용 대체 텍스트를 적용합니다."""
-    rows = db.execute(
-        select(
-            BidAnnouncement.bid_ntce_no,
-            BidAnnouncement.bid_ntce_nm,
-            BidAnnouncement.dminstt_nm,
+    """표본 공고 목록을 조회하고 화면 표시용 대체 텍스트를 적용합니다.
+
+    공고 목록 질의는 detailed 로 불러 공고일·마감일 같은 표 열을 함께 담습니다.
+    detailed 가 아니면 기존 표본 3건과 키 구성이 그대로 유지됩니다.
+    """
+    columns: list[Any] = [
+        BidAnnouncement.bid_ntce_no,
+        BidAnnouncement.bid_ntce_nm,
+        BidAnnouncement.dminstt_nm,
+    ]
+    if detailed:
+        columns.extend(
+            [
+                BidAnnouncement.bid_ntce_dt,
+                BidAnnouncement.category,
+                BidAnnouncement.presmpt_prce,
+                BidAnnouncement.bid_clse_dt,
+            ]
         )
+    rows = db.execute(
+        select(*columns)
         .where(*conditions)
         .order_by(BidAnnouncement.bid_ntce_dt.desc())
         .limit(limit)
     ).all()
-    return [
-        {
+    samples: list[dict[str, Any]] = []
+    for row in rows:
+        sample: dict[str, Any] = {
             "bid_ntce_no": row[0],
             # 표본은 순위와 달리 건너뛸 수 없으므로 화면과 같은 안내 문구로 대체합니다.
             "bid_ntce_nm": clean_display_text(row[1], CORRUPTED_TEXT_FALLBACKS["title"]),
             "dminstt_nm": clean_display_text(row[2], CORRUPTED_TEXT_FALLBACKS["agency"]),
         }
-        for row in rows
-    ]
+        if detailed:
+            sample.update(
+                {
+                    "bid_ntce_dt": row[3].isoformat(sep=" ") if row[3] is not None else None,
+                    "category": row[4],
+                    "category_label": _category_label(row[4]),
+                    "presmpt_prce": int(row[5]) if row[5] is not None else None,
+                    "bid_clse_dt": row[6].isoformat(sep=" ") if row[6] is not None else None,
+                }
+            )
+        samples.append(sample)
+    return samples
 
 
 def _generate_quarters_between(
@@ -1534,6 +1569,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     announcement_conditions = _announcement_conditions(plan, institution_names=announcement_names)
     snapshot_scope = _snapshot_scope(plan)
     result_limit = _result_limit(plan)
+    announcement_limit = _announcement_limit(plan)
     latest_available_result_at = None
     if result_limit:
         latest_available_result_at = db.scalar(
@@ -1678,7 +1714,12 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         for row in announcement_rows
     ]
 
-    sample_announcements = _fetch_sample_announcements(db, announcement_conditions)
+    sample_announcements = _fetch_sample_announcements(
+        db,
+        announcement_conditions,
+        limit=announcement_limit or 3,
+        detailed=bool(announcement_limit),
+    )
     time_series = _build_time_series(
         db,
         plan,

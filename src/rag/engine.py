@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
 from src.rag.answer_format import (
+    _build_announcement_list_answer,
     _build_evidence_items,
     _build_result_list_answer,
     _build_source_citation_from_context,
@@ -60,6 +61,7 @@ from src.rag.query_planning import (
     _query_lower,
     build_retrieval_plan,
     extract_result_limit,
+    is_announcement_list_query,
     is_result_list_query,
 )
 from src.rag.schemas import (
@@ -1125,6 +1127,8 @@ class HybridRAGEngine:
 
         t_direct_start = _safe_perf_counter()
         direct_result_list_answer = _build_result_list_answer(plan, structured_data)
+        if not direct_result_list_answer:
+            direct_result_list_answer = _build_announcement_list_answer(plan, structured_data)
         if direct_result_list_answer:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
@@ -1368,6 +1372,8 @@ class HybridRAGEngine:
         yield {"type": "docs", "docs": vector_docs}
 
         direct_result_list_answer = _build_result_list_answer(plan, structured_data)
+        if not direct_result_list_answer:
+            direct_result_list_answer = _build_announcement_list_answer(plan, structured_data)
         if direct_result_list_answer:
             citation_suffix = _build_source_citation_from_context(
                 structured_data, vector_docs, kb_status
@@ -1539,6 +1545,7 @@ __all__ = [
     "HybridRAGEngine",
     "PreparedContext",
     "SemanticSearchResult",
+    "_build_announcement_list_answer",
     "_build_evidence_items",
     "_build_result_list_answer",
     "_build_source_citation_from_context",
@@ -1566,6 +1573,7 @@ __all__ = [
     "extract_result_limit",
     "get_bidding_statistics",
     "get_chatbot_response",
+    "is_announcement_list_query",
     "is_result_list_query",
     "rag_engine",
     "retrieve_semantic_context",

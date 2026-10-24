@@ -132,6 +132,39 @@ def _build_result_list_answer(
     return "\n".join(lines)
 
 
+def _build_announcement_list_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """공고 목록 질의는 LLM 추측 없이 DB 결과를 최신 공고일순 표로 표시합니다."""
+    announcement_limit = (plan.filters or {}).get("announcement_limit")
+    if not announcement_limit or not structured_data:
+        return ""
+
+    summary = structured_data.get("summary") or {}
+    samples = summary.get("sample_announcements") or []
+    category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
+    if not samples:
+        return f"요청하신 기간에 조건에 맞는 {category_label} 공고는 0건입니다."
+
+    lines = [
+        f"최근 {category_label} 공고 {len(samples)}건입니다.",
+        "",
+        "| # | 공고명(공고번호) | 수요기관 | 추정가격 | 공고일 | 마감일 |",
+        "| ---: | --- | --- | ---: | --- | --- |",
+    ]
+    for index, item in enumerate(samples, start=1):
+        lines.append(
+            f"| {index} | {_markdown_result_cell(item.get('bid_ntce_nm'))} "
+            f"({_markdown_result_cell(item.get('bid_ntce_no'))}) | "
+            f"{_markdown_result_cell(item.get('dminstt_nm'))} | "
+            f"{_format_result_amount(item.get('presmpt_prce'))} | "
+            f"{_markdown_result_cell(item.get('bid_ntce_dt'))} | "
+            f"{_markdown_result_cell(item.get('bid_clse_dt'))} |"
+        )
+    return "\n".join(lines)
+
+
 def _compose_context_text(
     plan: RetrievalPlan,
     structured_data: dict | None,

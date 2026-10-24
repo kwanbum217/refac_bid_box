@@ -37,7 +37,7 @@ from src.app.services.planner_intent_signals import (
     _is_bid_price_prediction_request,
     _select_action,
 )
-from src.rag.engine import extract_result_limit, is_result_list_query
+from src.rag.engine import extract_result_limit, is_announcement_list_query, is_result_list_query
 
 
 def _load_last_plan(context_state: dict[str, Any] | None) -> ChatPlan | None:
@@ -207,6 +207,16 @@ def interpret_request(
         )
         execution_plan.parameters["limit"] = extract_result_limit(normalized)
         execution_plan.reasoning = "recent winning result list request"
+        return execution_plan
+
+    if is_announcement_list_query(normalized):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = ["bid_query_tool"]
+        execution_plan.parameters.update(
+            _extract_bid_query_params(execution_plan.effective_query, execution_plan.filters)
+        )
+        execution_plan.parameters["announcement_limit"] = extract_result_limit(normalized)
+        execution_plan.reasoning = "recent announcement list request"
         return execution_plan
 
     wants_detail = any(keyword in normalized for keyword in FOLLOWUP_DETAIL_KEYWORDS)
