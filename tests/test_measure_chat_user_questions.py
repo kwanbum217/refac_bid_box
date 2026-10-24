@@ -441,7 +441,59 @@ def test_principle3_bid_lookup_passes_on_title_prefix() -> None:
         _bid_lookup_item(), _bid_lookup_truth(), _payload("2026년 공주시 도로정비 공사입니다.")
     )
     assert result["passed"] is True
+    assert result["detail"]["title_anchor"] == "공주시 도로정비 공사"
     assert result["detail"]["title_found"] is True
+
+
+def test_principle3_bid_lookup_fails_on_year_token_only_prefix() -> None:
+    # 리뷰어 반례: 공고명이 "2026년" 으로 시작해도 연도 토큰만으로는 통과하지
+    # 못한다. 낙찰업체와 낙찰금액이 답변에 없으므로 실패다.
+    answer = "2026년 기준으로 낙찰 결과가 확인되지 않습니다."
+    result = measure.grade_attempt(_bid_lookup_item(), _bid_lookup_truth(), _payload(answer))
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["title_anchor"] == "공주시 도로정비 공사"
+    assert result["detail"]["title_prefix"] == ""
+    assert result["detail"]["title_found"] is False
+
+
+def test_principle3_bid_lookup_skips_year_token_before_title_match() -> None:
+    # 공고명 "2026년 서울시 도로 정비 용역" 에 답변 "서울시 도로 정비 용역 ..."
+    # 처럼 연도 토큰을 건너뛴 낱말부터 대조해도 통과해야 한다.
+    truth = {**_bid_lookup_truth(), "title": "2026년 서울시 도로 정비 용역"}
+    answer = "서울시 도로 정비 용역 낙찰은 대성건설 주식회사입니다."
+    result = measure.grade_attempt(_bid_lookup_item(), truth, _payload(answer))
+    assert result["passed"] is True
+    assert result["detail"]["title_anchor"] == "서울시 도로 정비 용역"
+    assert result["detail"]["title_found"] is True
+
+
+def test_principle3_bid_lookup_skips_parenthesized_token_before_title_match() -> None:
+    # 공고명 "(가칭)창릉5유 신축공사 설계의도구현용역" 에 답변 "창릉5유 신축공사
+    # ..." 처럼 괄호 토큰을 건너뛴 낱말부터 대조해도 통과해야 한다.
+    truth = {
+        **_bid_lookup_truth(),
+        "title": "(가칭)창릉5유 신축공사 설계의도구현용역",
+        "winner": "",
+        "amount": None,
+    }
+    answer = "창릉5유 신축공사 설계의도구현용역이 낙찰되었습니다."
+    result = measure.grade_attempt(_bid_lookup_item(), truth, _payload(answer))
+    assert result["passed"] is True
+    assert result["detail"]["title_anchor"] == "창릉5유 신축공사 설계의도구현용역"
+    assert result["detail"]["title_found"] is True
+
+
+def test_principle3_bid_lookup_ignores_title_remnant_shorter_than_six_chars() -> None:
+    # 앞쪽 토큰을 건너뛴 뒤 6자 미만만 남으면 공고명 대조를 쓰지 않는다.
+    # 낙찰업체명과 낙찰금액도 답변에 없으므로 실패다.
+    truth = {**_bid_lookup_truth(), "title": "2026년 공사"}
+    answer = "2026년 공사 관련 낙찰 결과가 확인되지 않습니다."
+    result = measure.grade_attempt(_bid_lookup_item(), truth, _payload(answer))
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["title_anchor"] == "공사"
+    assert result["detail"]["title_prefix"] == ""
 
 
 def test_principle3_bid_lookup_passes_on_winner_name() -> None:

@@ -24,8 +24,11 @@
   로 시작하는 줄)이 없어야 통과다. 목록 행이 없어도 쉼표로 공사명을 늘어놓은
   답(공고명 낱말 "공사|용역|구매|입찰" 이 두 번 이상)은 실패다.
 - 원칙 3 (단건): `bid_lookup` 은 질문에 나온 공고번호를 답변에서 지운 뒤, DB 의
-  공고명 앞 6자 이상 일부나 낙찰업체명이나 낙찰금액 숫자 중 하나가 있어야
-  통과다. 공고번호를 되풀이한 것만으로는 통과하지 못한다.
+  공고명에서 앞쪽 연도·숫자·괄호·서수 토큰("2026년", "(가칭)", "[긴급]",
+  "제1차")을 건너뛴 낱말 시작점부터 6자 이상 일부, 또는 낙찰업체명, 또는
+  낙찰금액 숫자가 있어야 통과다. 남는 글자가 6자보다 짧으면 공고명 대조를 쓰지
+  않고 낙찰업체명과 낙찰금액으로만 판정한다. 공고번호를 되풀이한 것만으로는
+  통과하지 못한다.
 - 원칙 4 (범위 밖): `refuse_or_redirect` 는 낱말 기반 근사 판정이다. 업무 안내
   표지 또는 안내/거절 표지가 있고 지어낸 수치·공고번호·`forbidden_claims` 가
   없으면 통과로 본다. 이 판정은 근사이므로 결과 JSON 의 해당 문항에
@@ -156,6 +159,22 @@ BID_NO_PATTERN = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]\d{2}[A-Za-z]{2}\d{6,10}(?
 FABRICATED_NUMBER_PATTERN = re.compile(r"\d{8,}")
 NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?")
 PLACEHOLDER_PATTERN = re.compile(r"\{([a-z][a-z0-9_]*)\}")
+
+# 원칙 3: 공고명 대조 전에 건너뛰는 앞쪽 토큰. 연도("2026년"), 숫자, 괄호 묶음
+# ("(가칭)", "[긴급]"), 서수("제1차")만으로 답변이 통과하는 것을 막는다.
+TITLE_NOISE_TOKEN_PATTERN = re.compile(
+    r"""
+    \s*
+    (?:
+        [\(\[\{<][^\)\]\}>]*[\)\]\}>]
+      | 제\s*\d+\s*(?:개월|분기|년|월|일|시|분|초|주|차|회|호|건|개|위)?
+      | \d[\d,.]*\s*(?:개월|분기|년|월|일|시|분|초|주|차|회|호|건|개|위)?
+      | [\-\u2013~·,./:;_]+
+    )
+    """,
+    re.VERBOSE,
+)
+TITLE_START_PATTERN = re.compile(r"[가-힣A-Za-z]")
 
 # 특정 공고번호가 필요한 문항은 번호를 박지 않고 placeholder 로 둔다.
 PLACEHOLDER_QUERIES: dict[str, str] = {
@@ -696,14 +715,38 @@ def _evaluate_numeric(
     return matched is not None, detail
 
 
-def _title_prefix_hit(title: str, text: str) -> str:
-    """원칙 3: 공고명 앞 6자 이상 일부가 답변에 있으면 그 조각을 돌려준다."""
+def _title_anchor(title: str) -> str:
+    """원칙 3: 공고명 앞쪽의 연도·숫자·괄호·서수 토큰을 건너뛴 대조 시작점.
+
+    "2026년 공주시 도로정비 공사" 는 "공주시 도로정비 공사" 부터,
+    "(가칭)창릉5유 신축공사 설계의도구현용역" 은 "창릉5유 신축공사 ..." 부터
+    대조한다. 앞쪽 토큰만으로 답변이 통과하는 것을 막기 위해서다.
+    """
     normalized = re.sub(r"\s+", " ", title or "").strip()
-    if len(normalized) < 6:
+    position = 0
+    while position < len(normalized):
+        match = TITLE_NOISE_TOKEN_PATTERN.match(normalized, position)
+        if match is None or match.end() == position:
+            break
+        position = match.end()
+    start = TITLE_START_PATTERN.search(normalized, position)
+    if start is None:
+        return ""
+    return normalized[start.start() :].strip()
+
+
+def _title_prefix_hit(title: str, text: str) -> str:
+    """원칙 3: 공고명 대조 시작점부터 6자 이상 일부가 답변에 있으면 그 조각을 돌려준다.
+
+    앞쪽 연도·숫자·괄호·서수 토큰을 건너뛴 뒤 남는 글자가 6자보다 짧으면 공고명
+    대조를 쓰지 않는다. 호출부는 낙찰업체명과 낙찰금액만으로 판정한다.
+    """
+    anchor = _title_anchor(title)
+    if len(anchor) < 6:
         return ""
     collapsed = re.sub(r"\s+", " ", text or "")
     for length in (40, 30, 20, 12, 8, 6):
-        prefix = normalized[: min(len(normalized), length)]
+        prefix = anchor[: min(len(anchor), length)]
         if len(prefix) >= 6 and prefix in collapsed:
             return prefix
     return ""
@@ -733,6 +776,7 @@ def _evaluate_bid_lookup(
     title = str(truth.get("title") or "")
     winner = str(truth.get("winner") or "")
     amount = truth.get("amount")
+    title_anchor = _title_anchor(title)
     title_prefix = _title_prefix_hit(title, cleaned)
     winner_hit = bool(winner) and winner in cleaned
     amount_hit = False
@@ -744,6 +788,7 @@ def _evaluate_bid_lookup(
     detail.update(
         {
             "removed_bid_numbers": sorted(removed),
+            "title_anchor": title_anchor,
             "title_prefix": title_prefix,
             "title_found": bool(title_prefix),
             "winner": winner,
