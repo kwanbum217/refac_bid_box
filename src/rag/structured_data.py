@@ -48,6 +48,7 @@ from src.rag.query_planning import (
     DEFAULT_GROUP_LIMIT,
     MAX_GROUP_LIMIT,
     REGION_ALIASES,
+    RESULT_AMOUNT_FIELD,
 )
 from src.rag.schemas import RetrievalPlan
 
@@ -343,13 +344,15 @@ def _int_filter(filters: dict[str, Any], key: str) -> int | None:
         return None
 
 
-def _amount_field_filter(filters: dict[str, Any]) -> str:
-    return _normalize_text(str(filters.get("amount_field") or "")) or DEFAULT_AMOUNT_FIELD
+def _amount_field_filter(filters: dict[str, Any], default: str = DEFAULT_AMOUNT_FIELD) -> str:
+    return _normalize_text(str(filters.get("amount_field") or "")) or default
 
 
-def _amount_conditions(filters: dict[str, Any], columns: dict[str, Any]) -> list:
+def _amount_conditions(
+    filters: dict[str, Any], columns: dict[str, Any], *, default_field: str = DEFAULT_AMOUNT_FIELD
+) -> list:
     """금액 하한·상한 조건을 만듭니다. 대상 컬럼이 없으면 빈 목록입니다."""
-    column = columns.get(_amount_field_filter(filters))
+    column = columns.get(_amount_field_filter(filters, default_field))
     if column is None:
         return []
     min_amount = _int_filter(filters, "min_amount")
@@ -443,7 +446,9 @@ def _result_conditions(
         )
     if category:
         conditions.append(BidResult.category == category)
-    conditions.extend(_amount_conditions(filters, RESULT_AMOUNT_COLUMNS))
+    conditions.extend(
+        _amount_conditions(filters, RESULT_AMOUNT_COLUMNS, default_field=RESULT_AMOUNT_FIELD)
+    )
     # 단건 조회 호출만 값을 넘깁니다. 이 조건이 집계용 조건에 섞이면 평균
     # 기준선이 그 공고 자체가 되거나 축 집계가 1행으로 붕괴합니다.
     if bid_ntce_no:

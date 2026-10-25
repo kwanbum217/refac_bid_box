@@ -9,7 +9,7 @@ from datetime import date, datetime
 
 import pytest
 
-from src.app.models.bids import BidAnnouncement
+from src.app.models.bids import BidAnnouncement, BidResult
 from src.rag import query_planning
 from src.rag.answer_format import _build_announcement_list_answer
 from src.rag.query_planning import build_retrieval_plan, extract_result_limit
@@ -95,6 +95,31 @@ def test_amount_condition_is_not_read_as_list_limit():
     assert extract_result_limit("참가업체 수 10개 이상인 공고 보여줘") == 5
     assert extract_result_limit("추정가격 5억 이상 용역 공고 5개 보여줘") == 5
     assert extract_result_limit("추정가격 3억 이상인 공고 12건 보여줘") == 12
+
+
+def test_number_without_unit_or_amount_noun_is_not_an_amount_condition():
+    plan = build_retrieval_plan("5 이상 공고 보여줘")
+
+    assert plan.filters == build_retrieval_plan("공고 보여줘").filters
+    assert "min_amount" not in plan.filters
+    assert "max_amount" not in plan.filters
+    assert "amount_field" not in plan.filters
+
+
+def test_result_query_without_amount_field_uses_winning_amount():
+    plan = build_retrieval_plan("3억 넘는 낙찰 결과 5건")
+
+    assert plan.filters.get("min_amount") == 300_000_001
+    assert plan.filters.get("amount_field") == "sucsf_bid_amt"
+    assert plan.filters.get("result_limit") == 5
+
+
+def test_announcement_query_keeps_estimated_price_field():
+    plan = build_retrieval_plan("5억 이상 용역 공고 5개")
+
+    assert plan.filters.get("min_amount") == 500_000_000
+    assert plan.filters.get("amount_field") == "presmpt_prce"
+    assert plan.filters.get("announcement_limit") == 5
 
 
 @pytest.mark.parametrize(
@@ -301,6 +326,42 @@ def test_deadline_and_amount_filters_apply_to_counts(frozen_today, isolated_db, 
     ]
 
     assert amount_count == 3
+
+
+def _result(index: int, *, sucsf_bid_amt: int, rl_openg_dt: datetime) -> BidResult:
+    return BidResult(
+        bid_ntce_no=f"RES-{index:03d}",
+        bid_ntce_ord="000",
+        category="Servc",
+        bid_ntce_nm=f"용역 낙찰 {index}",
+        dminstt_nm="수요기관",
+        bidwinnr_nm="낙찰업체",
+        sucsf_bid_amt=sucsf_bid_amt,
+        rl_openg_dt=rl_openg_dt,
+        collected_at=datetime(2026, 10, 20),
+    )
+
+
+@pytest.fixture
+def result_rows(isolated_db):
+    rows = [
+        _result(1, sucsf_bid_amt=400_000_000, rl_openg_dt=datetime(2026, 10, 20)),
+        _result(2, sucsf_bid_amt=300_000_000, rl_openg_dt=datetime(2026, 10, 21)),
+        _result(3, sucsf_bid_amt=250_000_000, rl_openg_dt=datetime(2026, 10, 22)),
+    ]
+    for row in rows:
+        isolated_db.add(row)
+    isolated_db.commit()
+    return rows
+
+
+def test_result_amount_condition_excludes_rows_below_bound(isolated_db, result_rows):
+    plan = build_retrieval_plan("3억 넘는 낙찰 결과 5건")
+    recent = retrieve_structured_data(isolated_db, plan)["summary"]["recent_results"]
+
+    assert [row["bid_ntce_no"] for row in recent] == ["RES-001"]
+    for row in recent:
+        assert row["sucsf_bid_amt"] > 300_000_000
 
 
 def test_announcement_list_answer_shows_applied_conditions():

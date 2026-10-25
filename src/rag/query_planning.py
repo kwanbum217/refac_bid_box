@@ -1289,6 +1289,7 @@ CLOSE_SORT_PATTERN = re.compile(
 AMOUNT_UNIT_MULTIPLIERS: dict[str, int] = {
     "억": 100_000_000,
     "천만": 10_000_000,
+    "백만": 1_000_000,
     "만": 10_000,
     "천": 1_000,
     "원": 1,
@@ -1297,10 +1298,17 @@ AMOUNT_UNIT_MULTIPLIERS: dict[str, int] = {
 AMOUNT_COMPARATOR_PATTERN = re.compile(r"이상|이하|초과|미만|넘는|넘게|넘")
 AMOUNT_MIN_COMPARATORS = ("이상", "초과", "넘는", "넘게", "넘")
 AMOUNT_MAX_COMPARATORS = ("이하", "미만")
-AMOUNT_TOKEN_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(억|천만|만|천)?")
+AMOUNT_UNIT_PATTERN = re.compile(r"억|천만|백만|만|천|원")
+AMOUNT_TOKEN_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(억|천만|백만|만|천)?")
 # 비교 표지 바로 앞이 금액 표기로 끝날 때만 금액 조건으로 읽습니다.
 # "10개 이상" 의 "10개" 처럼 단위가 아닌 글자로 끝나면 금액이 아닙니다.
-AMOUNT_TOKEN_SEQUENCE_PATTERN = re.compile(r"((?:\d+(?:\.\d+)?\s*(?:억|천만|만|천)?\s*)+원?)$")
+AMOUNT_TOKEN_SEQUENCE_PATTERN = re.compile(r"((?:\d+(?:\.\d+)?\s*(?:억|천만|백만|만|천)?\s*)+원?)$")
+# 단위 없는 수는 금액이 아닙니다. "5 이상 공고" 의 5 는 금액 하한이 아니라
+# 범위 없는 조건 수치이므로, 금액 명사가 수치 바로 앞에 붙은 경우에만 금액으로
+# 읽습니다. 이 규칙이 없으면 금액 조건이 없던 기존 질의에 min_amount 5 가 붙습니다.
+AMOUNT_NOUN_PREFIX_PATTERN = re.compile(
+    r"(?:추정\s*가격|추정\s*금액|기초\s*금액|낙찰\s*금액|낙찰가|금액|예산)\s*$"
+)
 AMOUNT_FIELD_MARKERS: tuple[tuple[str, str], ...] = (
     ("낙찰금액", "sucsf_bid_amt"),
     ("낙찰가", "sucsf_bid_amt"),
@@ -1309,6 +1317,9 @@ AMOUNT_FIELD_MARKERS: tuple[tuple[str, str], ...] = (
     ("추정 금액", "presmpt_prce"),
 )
 DEFAULT_AMOUNT_FIELD = "presmpt_prce"
+# 낙찰 결과 조회에 걸 금액 축의 기본 컬럼입니다. 공고 조회는 추정가격이
+# 기본이지만 낙찰 테이블에는 추정가격 컬럼이 없으므로 낙찰금액을 씁니다.
+RESULT_AMOUNT_FIELD = "sucsf_bid_amt"
 
 SORT_AMOUNT_DESC_MARKERS = (
     "높은순",
@@ -1386,13 +1397,23 @@ def _amount_value(text: str) -> int | None:
     return value or None
 
 
-def extract_amount_field(query: str) -> str:
-    """질의가 지목한 금액 컬럼을 돌려줍니다. 지목이 없으면 추정가격입니다."""
+def extract_amount_field(query: str, default: str = DEFAULT_AMOUNT_FIELD) -> str:
+    """질의가 지목한 금액 컬럼을 돌려줍니다. 지목이 없으면 default 입니다."""
     lowered = _query_lower(query)
     for marker, field in AMOUNT_FIELD_MARKERS:
         if marker in lowered:
             return field
-    return DEFAULT_AMOUNT_FIELD
+    return default
+
+
+def has_explicit_amount_field(query: str) -> bool:
+    """질의가 금액 컬럼을 낱말로 지목했는지 판정합니다.
+
+    "낙찰 결과" 처럼 결과 도메인만 말하고 금액 축을 지목하지 않은 질의와
+    "낙찰금액" 처럼 축을 직접 말한 질의를 가릅니다.
+    """
+    lowered = _query_lower(query)
+    return any(marker in lowered for marker, _ in AMOUNT_FIELD_MARKERS)
 
 
 def extract_amount_filters(query: str) -> dict[str, Any]:
@@ -1401,7 +1422,8 @@ def extract_amount_filters(query: str) -> dict[str, Any]:
     금액 표기 바로 뒤에 비교 표지(이상·이하·초과·미만·넘는·넘게)가 붙은 경우만
     조건으로 봅니다. 이상은 경계 포함, 초과·넘는·넘게는 경계 제외이므로 제외
     조건의 하한은 1원을 더합니다. "10개 이상" 처럼 금액 단위가 없는 수는
-    조건으로 읽지 않습니다.
+    조건으로 읽지 않습니다. 단위 없는 수라도 금액 명사(추정가격·기초금액·
+    낙찰금액·금액·예산)가 바로 앞에 있으면 금액으로 읽습니다.
     """
     lowered = _query_lower(query)
     filters: dict[str, Any] = {}
@@ -1410,7 +1432,12 @@ def extract_amount_filters(query: str) -> dict[str, Any]:
         token_match = AMOUNT_TOKEN_SEQUENCE_PATTERN.search(prefix)
         if not token_match:
             continue
-        value = _amount_value(token_match.group(1))
+        raw_sequence = token_match.group(1)
+        if not AMOUNT_UNIT_PATTERN.search(raw_sequence) and not AMOUNT_NOUN_PREFIX_PATTERN.search(
+            prefix[: token_match.start()]
+        ):
+            continue
+        value = _amount_value(raw_sequence)
         if value is None:
             continue
         comparator = match.group(0)
@@ -1886,7 +1913,17 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["date_to"] = date_to
     if close_scope_applicable and close_window is not None:
         filters["close_from"], filters["close_to"] = close_window
-    filters.update(extract_amount_filters(normalized_query))
+    amount_filters = extract_amount_filters(normalized_query)
+    # 낙찰 결과 질의가 금액 축을 낱말로 지목하지 않았으면 낙찰금액으로 읽습니다.
+    # 공고 질의의 기본값(추정가격)을 그대로 두면 낙찰 테이블에 그 컬럼이 없어
+    # 조회 계층이 조건을 버리고, "3억 넘는 낙찰 결과" 가 전체 낙찰로 넓어집니다.
+    if (
+        "amount_field" in amount_filters
+        and not has_explicit_amount_field(normalized_query)
+        and is_result_query(normalized_query)
+    ):
+        amount_filters["amount_field"] = RESULT_AMOUNT_FIELD
+    filters.update(amount_filters)
     filters.update(extract_sort_filters(normalized_query))
 
     # 분기 비교 및 time_bucket 판정: 분기가 둘 이상이거나 "분기별"이 포함된 경우 quarter 버킷 활성화
