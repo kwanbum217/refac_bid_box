@@ -11,6 +11,10 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from src.rag.engine import build_retrieval_plan
+from src.rag.query_planning import (
+    apply_default_statistics_window,
+    replace_whole_period_insufficiency_hint,
+)
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
 
@@ -21,7 +25,7 @@ def execute(
     query: str = "",
     institution_name: str = "",
     category: str = "",
-    years: int = 5,
+    years: int | None = None,
     date_from: str = "",
     date_to: str = "",
     limit: int = 0,
@@ -37,8 +41,11 @@ def execute(
         filters["date_from"] = date_from
     if date_to:
         filters["date_to"] = date_to
-    if years and "date_from" not in filters and "date_to" not in filters:
+    explicit_window = bool(filters.get("date_from") or filters.get("date_to"))
+    is_quarter_bucket = str(filters.get("time_bucket") or "") == "quarter"
+    if years is not None and not explicit_window and not is_quarter_bucket:
         filters["relative_years"] = years
+    filters = apply_default_statistics_window(filters)
     if limit:
         filters["result_limit"] = min(max(int(limit), 1), 20)
 
@@ -51,7 +58,9 @@ def execute(
         top_k=retrieval_plan.top_k,
         time_bias=retrieval_plan.time_bias,
         route_reason=retrieval_plan.route_reason or "bid_query_tool execution",
-        insufficiency_hints=list(retrieval_plan.insufficiency_hints),
+        insufficiency_hints=replace_whole_period_insufficiency_hint(
+            list(retrieval_plan.insufficiency_hints), filters
+        ),
     )
     result = retrieve_structured_data(db, explicit_plan)
 

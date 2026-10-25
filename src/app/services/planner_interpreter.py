@@ -32,12 +32,14 @@ from src.app.services.planner_intent_signals import (
     _extract_prediction_model_id,
     _has_collection_command,
     _has_collection_context_only,
+    _has_count_statistics_intent,
     _has_kb_refresh_intent,
     _has_prediction_action_intent,
     _is_bid_price_prediction_request,
     _is_model_validation_request,
     _select_action,
 )
+from src.rag.data_gap_guard import detect_data_gap
 from src.rag.engine import (
     extract_bid_ntce_no,
     extract_result_limit,
@@ -112,6 +114,18 @@ def interpret_request(
         execution_plan.requested_capabilities = []
         execution_plan.parameters["out_of_scope"] = True
         execution_plan.reasoning = "out_of_scope request"
+        return execution_plan
+
+    # 수집 스키마에 없는 항목은 후속 병합이나 필터 추출보다 앞에서 막는다.
+    # 지역 제한을 수요기관 지역으로, 참가업체 수를 목록 개수로 바꾸는
+    # 대체 해석을 원문 단계에서 차단하기 위해서다.
+    data_gap_item = detect_data_gap(normalized)
+    if data_gap_item:
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = []
+        execution_plan.parameters["data_gap"] = data_gap_item
+        execution_plan.parameters["out_of_scope"] = True
+        execution_plan.reasoning = "data_gap request"
         return execution_plan
 
     # 1. 후속 질문 여부 판단 및 메시지 병합
@@ -301,7 +315,10 @@ def interpret_request(
 
     # 8. 일반 Answer 판단
     execution_plan.query_type = "answer"
-    has_statistics = any(keyword in normalized for keyword in STATISTICS_KEYWORDS)
+    has_count_statistics = _has_count_statistics_intent(normalized)
+    has_statistics = (
+        any(keyword in normalized for keyword in STATISTICS_KEYWORDS) or has_count_statistics
+    )
     has_semantic = any(keyword in normalized for keyword in SEMANTIC_KEYWORDS)
     has_kb = any(keyword in normalized for keyword in KB_KEYWORDS)
 
@@ -326,7 +343,9 @@ def interpret_request(
         execution_plan.reasoning = "kb status request"
     elif has_statistics:
         capabilities.append("bid_query_tool")
-        if has_semantic or wants_detail:
+        # 건수·순위 질의의 "최근" 같은 기간 표지는 의미 검색 신호가 아닙니다.
+        # 통계 도구 하나로 답해야 하므로 의미 검색을 덧붙이지 않습니다.
+        if not has_count_statistics and (has_semantic or wants_detail):
             capabilities.append("semantic_search_tool")
         if execution_plan.response_mode == "visual" or any(
             keyword in normalized for keyword in TREND_VISUAL_KEYWORDS

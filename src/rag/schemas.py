@@ -12,6 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 DEFAULT_VECTOR_TOP_K = 5
+DEFAULT_STATISTICS_WINDOW_YEARS = 5
 
 
 class RetrievalPlan(BaseModel):

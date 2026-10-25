@@ -292,6 +292,7 @@ def _winner_axis_caption(
     window = meta.get("window") or {}
     date_from = str(window.get("date_from") or "")
     date_to = str(window.get("date_to") or "")
+    relative_years = int((plan.filters or {}).get("relative_years") or 0)
     filters = structured_data.get("filters") or {}
     category = str(filters.get("category_label") or "").strip()
     if not category:
@@ -304,6 +305,8 @@ def _winner_axis_caption(
         period = f"{date_from} 이후"
     elif date_to:
         period = f"{date_to} 이전"
+    elif relative_years:
+        period = f"최근 {relative_years}년 기준"
     else:
         period = "전체 기간 기준"
     return f"{period} {category} 업체별 {metric_label}입니다."
@@ -500,6 +503,9 @@ def _format_single_metric_period(filters: dict) -> str:
         return f"{date_from} 이후"
     if date_to:
         return f"{date_to} 이전"
+    relative_years = int(filters.get("relative_years") or 0)
+    if relative_years:
+        return f"최근 {relative_years}년"
     return "전체 기간"
 
 

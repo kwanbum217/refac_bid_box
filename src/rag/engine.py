@@ -15,7 +15,7 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -39,6 +39,7 @@ from src.rag.answer_format import (
     _markdown_result_cell,
     _normalize_category_wording,
 )
+from src.rag.data_gap_guard import DATA_GAP_MESSAGES, detect_data_gap
 from src.rag.injection_guard import (
     INJECTION_NOTICE,
     strip_injected_source_blocks,
@@ -64,12 +65,14 @@ from src.rag.query_planning import (
     _parse_time_window,
     _parse_year_month_window,
     _query_lower,
+    apply_default_statistics_window,
     build_retrieval_plan,
     extract_bid_ntce_no,
     extract_result_limit,
     is_announcement_list_query,
     is_bid_number_query,
     is_result_list_query,
+    replace_whole_period_insufficiency_hint,
 )
 from src.rag.schemas import (
     DEFAULT_VECTOR_TOP_K,
@@ -186,19 +189,38 @@ def get_bidding_statistics(
         filters["date_to"] = date_to
     if query and any(keyword in _query_lower(query) for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
-    if not filters.get("date_from") and not filters.get("date_to") and years:
-        today = date.today()
-        filters["date_from"] = (today - timedelta(days=(365 * years) - 1)).isoformat()
-        filters["date_to"] = today.isoformat()
+    if not filters.get("date_from") and not filters.get("date_to"):
+        filters["relative_years"] = years
+    filters = apply_default_statistics_window(filters)
 
     plan = RetrievalPlan(
         use_sql=True,
         filters=filters,
         semantic_query=_normalize_text(query),
-        time_bias="recent" if filters.get("date_from") else "",
+        time_bias="recent" if filters.get("relative_years") else "",
         route_reason="정형 통계 함수 호출",
     )
     return json.dumps(retrieve_structured_data(db, plan), ensure_ascii=False, default=str)
+
+
+def _apply_entry_default_statistics_window(plan: RetrievalPlan) -> RetrievalPlan:
+    """엔진 직접 SQL 분기에 기본 통계 창을 주입합니다.
+
+    개체 지정 질의는 어휘 채널로도 처리되고 기간 필터를 걸면 대상 공고를 놓칠
+    수 있으므로, 공고번호 단건과 함께 기본 창을 만들지 않습니다.
+    """
+    filters = plan.filters or {}
+    if plan.use_lexical or filters.get("bid_ntce_no"):
+        return plan
+    windowed = apply_default_statistics_window(filters)
+    return plan.model_copy(
+        update={
+            "filters": windowed,
+            "insufficiency_hints": replace_whole_period_insufficiency_hint(
+                plan.insufficiency_hints, windowed
+            ),
+        }
+    )
 
 
 def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
@@ -767,11 +789,23 @@ class HybridRAGEngine:
         plan_elapsed_ms = (_safe_perf_counter() - t_plan_start) * 1000.0
 
         structured_data, vector_docs, kb_status = _normalize_tool_context(tool_context)
+        # 도구가 이미 창을 정해 돌려줬으면 계획 안내도 같은 창을 가리키게 맞춥니다.
+        if plan.use_sql and isinstance(structured_data, dict):
+            tool_filters = structured_data.get("filters")
+            if isinstance(tool_filters, dict):
+                plan = plan.model_copy(
+                    update={
+                        "insufficiency_hints": replace_whole_period_insufficiency_hint(
+                            plan.insufficiency_hints, tool_filters
+                        )
+                    }
+                )
         vector_failed = False
 
         sql_elapsed_ms = 0.0
         structured_sql_segments: dict[str, Any] | None = None
         if plan.use_sql and structured_data is None and db is not None:
+            plan = _apply_entry_default_statistics_window(plan)
             t_sql_start = _safe_perf_counter()
             structured_data = retrieve_structured_data(db, plan)
             sql_elapsed_ms = (_safe_perf_counter() - t_sql_start) * 1000.0
@@ -1001,6 +1035,52 @@ class HybridRAGEngine:
             segment_metrics=metrics_to_include,
         )
 
+    def _data_gap_bundle(
+        self,
+        item: str,
+        trace_id: str,
+        injection_stripped: bool,
+        started_at: float,
+    ) -> AnswerBundle:
+        """수집 데이터에 없는 항목 질문의 고정 안내 번들을 만듭니다.
+
+        검색과 LLM 을 호출하지 않고, 다른 수치로 대체 해석하지 않습니다.
+        """
+        message = DATA_GAP_MESSAGES[item]
+        if injection_stripped:
+            message = f"{INJECTION_NOTICE} {message}"
+        total_elapsed_ms = (_safe_perf_counter() - started_at) * 1000.0
+        expose_flag = getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False)
+        metrics_to_include = (
+            {
+                "plan_ms": 0.0,
+                "sql_ms": 0.0,
+                "vector_ms": 0.0,
+                "lexical_ms": 0.0,
+                "kb_status_ms": 0.0,
+                "assembly_ms": 0.0,
+                "prepare_total_ms": 0.0,
+                "llm_ms": 0.0,
+                "guard_ms": 0.0,
+                "total_ms": round(total_elapsed_ms, 2),
+            }
+            if expose_flag
+            else None
+        )
+        return AnswerBundle(
+            answer=message,
+            provenance=Provenance(
+                trace_id=trace_id,
+                retrieval_mode="data_gap",
+                items=[],
+                insufficiency_hints=[],
+            ),
+            citations=[],
+            retrieved_docs=[],
+            latency_ms=total_elapsed_ms,
+            segment_metrics=metrics_to_include,
+        )
+
     def get_answer_sync(
         self,
         user_query: str,
@@ -1047,6 +1127,14 @@ class HybridRAGEngine:
         effective_query = cleaned_query if injection_stripped else user_query
         if is_out_of_scope_request(effective_query):
             return self._out_of_scope_bundle(
+                trace_id=f"rag-{int(time.time() * 1000)}-{os.urandom(4).hex()}",
+                injection_stripped=injection_stripped,
+                started_at=t_start,
+            )
+        data_gap_item = detect_data_gap(effective_query)
+        if data_gap_item:
+            return self._data_gap_bundle(
+                item=data_gap_item,
                 trace_id=f"rag-{int(time.time() * 1000)}-{os.urandom(4).hex()}",
                 injection_stripped=injection_stripped,
                 started_at=t_start,
@@ -1389,6 +1477,34 @@ class HybridRAGEngine:
         effective_query = cleaned_query if injection_stripped else user_query
         if is_out_of_scope_request(effective_query):
             message = OUT_OF_SCOPE_REFUSAL_MESSAGE
+            if injection_stripped:
+                message = f"{INJECTION_NOTICE} {message}"
+            yield {"type": "docs", "docs": []}
+            yield {"type": "token", "text": message}
+            done_event = {
+                "type": "done",
+                "citations": [],
+                "trace_id": f"rag-{int(time.time() * 1000)}-{os.urandom(4).hex()}",
+                "final_answer": message,
+            }
+            if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
+                done_event["segment_metrics"] = {
+                    "plan_ms": 0.0,
+                    "sql_ms": 0.0,
+                    "vector_ms": 0.0,
+                    "lexical_ms": 0.0,
+                    "kb_status_ms": 0.0,
+                    "assembly_ms": 0.0,
+                    "prepare_total_ms": 0.0,
+                    "llm_ms": 0.0,
+                    "guard_ms": 0.0,
+                    "total_ms": round((_safe_perf_counter() - t_stream_start) * 1000.0, 2),
+                }
+            yield done_event
+            return
+        data_gap_item = detect_data_gap(effective_query)
+        if data_gap_item:
+            message = DATA_GAP_MESSAGES[data_gap_item]
             if injection_stripped:
                 message = f"{INJECTION_NOTICE} {message}"
             yield {"type": "docs", "docs": []}
