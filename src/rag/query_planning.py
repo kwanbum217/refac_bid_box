@@ -1240,20 +1240,198 @@ def is_announcement_list_query(query: str) -> bool:
     return not is_entity_specific_query(query)
 
 
+# 개수 단위 뒤에 비교·범위 표지가 붙은 수는 목록 개수가 아니라 조건 수치입니다.
+# "참가업체 수 10개 이상" 의 10개를 목록 크기로 읽으면 조건이 사라진 10행 표가 나옵니다.
+COUNT_CONDITION_SUFFIX_PATTERN = re.compile(r"\s*(?:이상|이하|초과|미만|넘는|넘게|넘)")
+
+
 def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
     """목록 질의의 요청 건수를 안전한 범위로 정규화합니다.
 
     숫자와 한글 수사(한~스무)를 같은 자리에서 읽고, 단위(개/건)가 붙은 형태만
-    개수로 인정합니다. 범위는 1 이상 maximum 이하로 자릅니다.
+    개수로 인정합니다. 범위는 1 이상 maximum 이하로 자릅니다. 단위 뒤에 비교
+    표지가 붙은 수는 조건 수치이므로 목록 개수로 읽지 않습니다.
     """
-    match = COUNT_PATTERN.search(_query_lower(query))
-    if not match:
-        return default
-    numeral = re.sub(r"\s*(?:개|건)$", "", match.group(0)).strip()
-    value = int(numeral) if numeral.isdigit() else KOREAN_NUMERALS.get(numeral)
-    if value is None:
-        return default
-    return min(max(value, 1), maximum)
+    lowered = _query_lower(query)
+    for match in COUNT_PATTERN.finditer(lowered):
+        if COUNT_CONDITION_SUFFIX_PATTERN.match(lowered, match.end()):
+            continue
+        numeral = re.sub(r"\s*(?:개|건)$", "", match.group(0)).strip()
+        value = int(numeral) if numeral.isdigit() else KOREAN_NUMERALS.get(numeral)
+        if value is None:
+            continue
+        return min(max(value, 1), maximum)
+    return default
+
+
+# 마감 표지는 기간 표현을 공고일이 아니라 마감일 창으로 바꾸는 신호입니다.
+# 표지가 있어도 아래 상대 기간 표현이 함께 있어야 창이 확정됩니다.
+CLOSE_MARKER_PATTERN = re.compile(r"마감")
+CLOSE_IMMINENT_PATTERN = re.compile(r"마감\s*임박")
+CLOSE_WINDOW_DAYS = 3
+
+AMOUNT_UNIT_MULTIPLIERS: dict[str, int] = {
+    "억": 100_000_000,
+    "천만": 10_000_000,
+    "만": 10_000,
+    "천": 1_000,
+    "원": 1,
+}
+# 금액 비교 표지는 최장 일치를 먼저 두어 "넘는" 이 "넘" 으로 잘리지 않게 합니다.
+AMOUNT_COMPARATOR_PATTERN = re.compile(r"이상|이하|초과|미만|넘는|넘게|넘")
+AMOUNT_MIN_COMPARATORS = ("이상", "초과", "넘는", "넘게", "넘")
+AMOUNT_MAX_COMPARATORS = ("이하", "미만")
+AMOUNT_TOKEN_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(억|천만|만|천)?")
+# 비교 표지 바로 앞이 금액 표기로 끝날 때만 금액 조건으로 읽습니다.
+# "10개 이상" 의 "10개" 처럼 단위가 아닌 글자로 끝나면 금액이 아닙니다.
+AMOUNT_TOKEN_SEQUENCE_PATTERN = re.compile(r"((?:\d+(?:\.\d+)?\s*(?:억|천만|만|천)?\s*)+원?)$")
+AMOUNT_FIELD_MARKERS: tuple[tuple[str, str], ...] = (
+    ("낙찰금액", "sucsf_bid_amt"),
+    ("낙찰가", "sucsf_bid_amt"),
+    ("기초금액", "base_amount"),
+    ("추정가격", "presmpt_prce"),
+    ("추정 금액", "presmpt_prce"),
+)
+DEFAULT_AMOUNT_FIELD = "presmpt_prce"
+
+SORT_AMOUNT_DESC_MARKERS = (
+    "높은순",
+    "높은 순",
+    "큰순",
+    "큰 순",
+    "많은순",
+    "많은 순",
+    "비싼순",
+    "비싼 순",
+    "금액순",
+    "금액 순",
+    "가장 큰",
+    "가장 높은",
+)
+SORT_AMOUNT_ASC_MARKERS = ("낮은순", "낮은 순", "적은순", "적은 순")
+SORT_DEADLINE_ASC_MARKERS = (
+    "마감임박순",
+    "마감 임박순",
+    "마감빠른순",
+    "마감 빠른 순",
+    "마감일순",
+    "마감일 순",
+)
+
+
+def _compact_text(value: str) -> str:
+    return re.sub(r"\s+", "", value)
+
+
+def _parse_close_window(query: str) -> tuple[str, str] | None:
+    """마감 표지와 상대 기간 표현으로 마감일 창을 계산합니다.
+
+    마감 표지가 있어도 함께 쓰인 상대 기간 표현이 아래 네 가지일 때만 창을
+    확정합니다. 확정하지 못하면 기존 기간 해석(공고일 창)을 그대로 둡니다.
+
+    | 표현 | 마감일 창 |
+    | --- | --- |
+    | `마감 임박` | 오늘 ~ 오늘+3일 |
+    | `오늘 마감` | 오늘 |
+    | `내일 마감` | 내일 |
+    | `이번 주 마감` | 이번 주 월요일 ~ 일요일 |
+    """
+    lowered = _query_lower(query)
+    if not CLOSE_MARKER_PATTERN.search(lowered):
+        return None
+    today = date.today()
+    if CLOSE_IMMINENT_PATTERN.search(lowered):
+        return today.isoformat(), (today + timedelta(days=CLOSE_WINDOW_DAYS)).isoformat()
+    if "오늘" in lowered:
+        return today.isoformat(), today.isoformat()
+    if "내일" in lowered:
+        tomorrow = today + timedelta(days=1)
+        return tomorrow.isoformat(), tomorrow.isoformat()
+    if "이번 주" in lowered or "이번주" in lowered:
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+        return week_start.isoformat(), week_end.isoformat()
+    return None
+
+
+def _amount_value(text: str) -> int | None:
+    """금액 표기 문자열을 원 단위 정수로 바꿉니다.
+
+    "5억" 은 500,000,000, "1억 5천만" 은 150,000,000, "300000000원" 은
+    300,000,000 입니다. 단위가 없으면 원 단위로 읽습니다.
+    """
+    cleaned = text.strip()
+    if cleaned.endswith("원"):
+        cleaned = cleaned[: -len("원")].strip()
+    tokens = AMOUNT_TOKEN_PATTERN.findall(cleaned)
+    if not tokens:
+        return None
+    total = 0.0
+    for raw_number, unit in tokens:
+        total += float(raw_number) * AMOUNT_UNIT_MULTIPLIERS[unit or "원"]
+    value = round(total)
+    return value or None
+
+
+def extract_amount_field(query: str) -> str:
+    """질의가 지목한 금액 컬럼을 돌려줍니다. 지목이 없으면 추정가격입니다."""
+    lowered = _query_lower(query)
+    for marker, field in AMOUNT_FIELD_MARKERS:
+        if marker in lowered:
+            return field
+    return DEFAULT_AMOUNT_FIELD
+
+
+def extract_amount_filters(query: str) -> dict[str, Any]:
+    """질의의 금액 하한·상한과 대상 컬럼을 읽습니다.
+
+    금액 표기 바로 뒤에 비교 표지(이상·이하·초과·미만·넘는·넘게)가 붙은 경우만
+    조건으로 봅니다. 이상은 경계 포함, 초과·넘는·넘게는 경계 제외이므로 제외
+    조건의 하한은 1원을 더합니다. "10개 이상" 처럼 금액 단위가 없는 수는
+    조건으로 읽지 않습니다.
+    """
+    lowered = _query_lower(query)
+    filters: dict[str, Any] = {}
+    for match in AMOUNT_COMPARATOR_PATTERN.finditer(lowered):
+        prefix = lowered[: match.start()].rstrip()
+        token_match = AMOUNT_TOKEN_SEQUENCE_PATTERN.search(prefix)
+        if not token_match:
+            continue
+        value = _amount_value(token_match.group(1))
+        if value is None:
+            continue
+        comparator = match.group(0)
+        if comparator in AMOUNT_MIN_COMPARATORS:
+            candidate = value if comparator == "이상" else value + 1
+            current = filters.get("min_amount")
+            filters["min_amount"] = max(current, candidate) if current is not None else candidate
+        elif comparator in AMOUNT_MAX_COMPARATORS:
+            candidate = value if comparator == "이하" else value - 1
+            current = filters.get("max_amount")
+            filters["max_amount"] = min(current, candidate) if current is not None else candidate
+        else:
+            continue
+        filters["amount_field"] = extract_amount_field(lowered)
+    return filters
+
+
+def extract_sort_filters(query: str) -> dict[str, str]:
+    """질의의 정렬 축과 방향을 읽습니다.
+
+    금액 정렬(높은 순·큰 순·많은 순·비싼 순·금액순)은 대상 금액 컬럼의 내림차순,
+    낮은 순·적은 순은 오름차순입니다. 마감 임박순·마감 빠른 순은 마감일
+    오름차순입니다. 표지가 없으면 빈 사전을 돌려주어 기존 정렬을 유지합니다.
+    """
+    lowered = _query_lower(query)
+    compact = _compact_text(lowered)
+    if any(_compact_text(marker) in compact for marker in SORT_DEADLINE_ASC_MARKERS):
+        return {"order_by": "bid_clse_dt", "order_dir": "asc"}
+    amount_field = extract_amount_field(lowered)
+    if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_ASC_MARKERS):
+        return {"order_by": amount_field, "order_dir": "asc"}
+    if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_DESC_MARKERS):
+        return {"order_by": amount_field, "order_dir": "desc"}
+    return {}
 
 
 def _month_end(year: int, month: int) -> date:
@@ -1662,6 +1840,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_sql = True
 
     date_from, date_to, time_bias, explicit_range = _parse_time_window(normalized_query)
+    close_window = _parse_close_window(normalized_query)
 
     # 공고명에는 사업연도와 대상월이 흔히 들어갑니다. "2026년 9월분 학교급식물품"
     # 의 9월은 급식 대상 월이지 공고 게시월이 아니고, "(긴급)2025년 조사료
@@ -1676,6 +1855,11 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     suppress_implicit_window = is_entity and not explicit_range
     if suppress_implicit_window:
         date_from, date_to = "", ""
+    # 마감 표지와 상대 기간 표현이 함께 있으면 같은 기간을 공고일이 아니라
+    # 마감일 창으로 읽습니다. 확정된 마감 창이 있을 때만 공고일 필터를 비웁니다.
+    close_scope_applicable = close_window is not None and not is_entity
+    if close_scope_applicable:
+        date_from, date_to = "", ""
 
     filters: dict[str, Any] = {}
     # 공고번호 단건은 다른 조건과 달리 목록·집계 경로로 새지 않게 전용 필터로
@@ -1686,6 +1870,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["date_from"] = date_from
     if date_to:
         filters["date_to"] = date_to
+    if close_scope_applicable and close_window is not None:
+        filters["close_from"], filters["close_to"] = close_window
+    filters.update(extract_amount_filters(normalized_query))
+    filters.update(extract_sort_filters(normalized_query))
 
     # 분기 비교 및 time_bucket 판정: 분기가 둘 이상이거나 "분기별"이 포함된 경우 quarter 버킷 활성화
     quarter_matches = re.findall(r"[1-4]\s*분기", lowered)
@@ -1837,7 +2025,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         route_reason=route_reason,
     )
 
-    if use_sql and not filters.get("date_from"):
+    if use_sql and not filters.get("date_from") and not filters.get("close_from"):
         plan.insufficiency_hints.append(
             "기간 조건이 명시되지 않아 전체 기준 통계를 사용할 수 있습니다."
         )
