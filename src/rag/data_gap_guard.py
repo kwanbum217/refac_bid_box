@@ -49,36 +49,89 @@ DATA_GAP_MESSAGES: dict[str, str] = {
     ),
 }
 
-_DEFLATION_RATE = re.compile(r"사정\s*[률율]")
+_DEFLATION_RATE = re.compile(r"사정[률율]")
 
-_LOWER_RATE = re.compile(r"(?:낙찰\s*)?하한율")
+_LOWER_RATE = re.compile(r"(?:낙찰)?하한율")
 
-# 제도·개념 설명은 수집 데이터 없이도 답할 수 있습니다. 실측·평균·추이·적용
-# 사례처럼 데이터 값이 필요한 표현이 있을 때만 미보유로 판정합니다.
-_RATE_ACTUAL_VALUE = re.compile(
-    r"평균|실측|추이|적용된|적용한|적용\s*공고|통계|분포|공고별|건별|"
-    r"넘는|이상|이하|미만|높은|낮은|상위|하위|\d+\s*%"
+_COMPETITION = re.compile(r"경쟁률|경쟁(?:이|은|도)?치열")
+
+_PARTICIPANT_COUNT = re.compile(r"(?:참가|참여|투찰)(?:한|된)?(?:업체|기업)")
+
+_BIDDER_HISTORY = re.compile(
+    r"투찰자|투찰한(?:입찰|공고)|참여한(?:입찰|공고)|참여내역|참여이력|"
+    r"투찰내역|투찰이력|응찰"
 )
-
-_RATE_DEFINITION = re.compile(r"뭐야|뭔가요|무엇|뜻|의미|이란|설명|계산|개념|정의|기준")
-
-_COMPETITION = re.compile(r"경쟁률|경쟁(?:\s*이|\s*은|\s*도)?\s*치열")
-
-_PARTICIPANT_COUNT = re.compile(r"참가\s*업체|참여\s*업체|투찰\s*업체")
-
-_BIDDER_HISTORY = re.compile(r"참여한\s*입찰|참여\s*입찰|투찰\s*내역|투찰\s*이력|투찰자")
 
 _QUALIFICATION_RESTRICTION = re.compile(
-    r"지역\s*제한|지역\s*업체만|지역업체만|업체만\s*참여|"
-    r"업종\s*제한|참가자격|참가\s*자격\s*제한|면허\s*필요|면허\s*필수"
+    r"지역\s*제한|지역\s*업체만|업체만\s*참여|업종\s*제한|참가자격|"
+    r"참가\s*자격\s*제한|참가\s*자격\s*조건|면허\s*필요|면허\s*필수"
 )
 
-_VOID_STATUS = re.compile(r"유찰된|유찰\s*건|유찰\s*상태|유찰\s*후|유찰\s*공고")
+_VOID_STATUS = re.compile(r"유찰")
+
+# 제도·개념·정의 설명은 수집 데이터 없이도 답할 수 있습니다. 다만 평균·실측·
+# 추이처럼 실제 값을 요구하는 표현이 함께 있으면 미보유 판정을 유지합니다.
+_EXPLANATION = re.compile(
+    r"제도|뜻|의미|정의|개념|뭐야|뭔가요|무엇|이란|설명|기준|방법|계산"
+    r"|(?<![가-힣])란(?![가-힣])"
+)
+
+_ACTUAL_VALUE = re.compile(
+    r"평균|실측|추이|적용된|적용한|적용\s*공고|통계|분포|공고별|건별|"
+    r"넘는|이상|이하|미만|높은|낮은|상위|하위|건수|개수|몇\s*건|몇\s*개|"
+    r"\d+\s*%|\d+\s*건"
+)
+
+# 사업명(공고명) 구 안에 들어간 낱말은 미보유 항목이 아닙니다.
+# 예: "참가자격 심사 용역 공고", "경쟁률 분석 용역 낙찰 결과"
+_PROJECT_HEAD_NOUNS = (
+    "용역",
+    "사업",
+    "구매",
+    "심사",
+    "분석",
+    "컨설팅",
+    "연구",
+    "방지",
+    "개선",
+)
+
+_PROJECT_TAIL_LENGTH = 12
+
+_WHITESPACE = re.compile(r"\s+")
+
+# (항목, 패턴, 공백 제거 문자열로 검사할지 여부)
+# "참가 자격" 처럼 띄어 쓴 일반 자격 안내는 사업명·속성 판정과 구분해야 하므로
+# 참가자격 항목만 원문 공백을 유지한 문자열로 검사합니다.
+_ITEM_PATTERNS: tuple[tuple[str, tuple[re.Pattern[str], ...], bool], ...] = (
+    ("사정률", (_DEFLATION_RATE,), True),
+    ("낙찰하한율", (_LOWER_RATE,), True),
+    ("경쟁률", (_COMPETITION,), True),
+    ("참가업체 수", (_PARTICIPANT_COUNT,), True),
+    ("투찰자·참여 업체", (_BIDDER_HISTORY,), True),
+    ("지역 제한·업종 제한 참가자격", (_QUALIFICATION_RESTRICTION,), False),
+    ("유찰 상태", (_VOID_STATUS,), True),
+)
 
 
 def _normalize_request(message: str) -> str:
     """NFC 정규화와 소문자 변환만 수행합니다."""
     return unicodedata.normalize("NFC", message or "").lower()
+
+
+def _is_project_name_phrase(text: str, match: re.Match[str]) -> bool:
+    """미보유 낱말이 사업 명사와 붙어 공고명 구를 이루는지 판정합니다."""
+    token = match.group()
+    if not (
+        token.startswith("참가자격")
+        or token.startswith("경쟁률")
+        or token.endswith("사정률")
+        or token.endswith("사정율")
+        or token.endswith("하한율")
+    ):
+        return False
+    tail = text[match.end() : match.end() + _PROJECT_TAIL_LENGTH]
+    return _WHITESPACE.sub("", tail).startswith(_PROJECT_HEAD_NOUNS)
 
 
 def detect_data_gap(message: str) -> str | None:
@@ -91,22 +144,17 @@ def detect_data_gap(message: str) -> str | None:
     if not normalized.strip():
         return None
 
-    if _DEFLATION_RATE.search(normalized):
-        if _RATE_ACTUAL_VALUE.search(normalized) or not _RATE_DEFINITION.search(normalized):
-            return "사정률"
+    if _EXPLANATION.search(normalized) and not _ACTUAL_VALUE.search(normalized):
         return None
-    if _LOWER_RATE.search(normalized) and _RATE_ACTUAL_VALUE.search(normalized):
-        return "낙찰하한율"
-    if _COMPETITION.search(normalized):
-        return "경쟁률"
-    if _PARTICIPANT_COUNT.search(normalized):
-        return "참가업체 수"
-    if _BIDDER_HISTORY.search(normalized):
-        return "투찰자·참여 업체"
-    if _QUALIFICATION_RESTRICTION.search(normalized):
-        return "지역 제한·업종 제한 참가자격"
-    if _VOID_STATUS.search(normalized):
-        return "유찰 상태"
+
+    compact = _WHITESPACE.sub("", normalized)
+    for item, patterns, use_compact in _ITEM_PATTERNS:
+        text = compact if use_compact else normalized
+        for pattern in patterns:
+            for match in pattern.finditer(text):
+                if _is_project_name_phrase(text, match):
+                    continue
+                return item
     return None
 
 
