@@ -144,6 +144,24 @@ REGION_ALIASES: dict[str, tuple[str, ...]] = {
     "경남": ("경남", "경상남도"),
     "제주": ("제주",),
 }
+# "도" 접미사는 공식 광역 도 명칭일 때만 행정 구역입니다. "인입철도", "도시철도",
+# "고속도" 처럼 사업명·일반 명사가 도 접미사로 끝나는 경우를 걷어냅니다.
+OFFICIAL_PROVINCE_NAMES = frozenset(
+    {
+        "경기도",
+        "강원도",
+        "강원특별자치도",
+        "충청북도",
+        "충청남도",
+        "전라북도",
+        "전북특별자치도",
+        "전라남도",
+        "경상북도",
+        "경상남도",
+        "제주도",
+        "제주특별자치도",
+    }
+)
 TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별")
 
 AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
@@ -379,6 +397,289 @@ ENTITY_ORG_SUFFIXES = (
     "주민센터",
     "행정복지센터",
 )
+
+
+ADMIN_REGION_PATTERN = re.compile(
+    r"^[가-힣]{2,10}(?:특별자치시|특별자치도|특별시|광역시|도|시|군|구)$"
+)
+# 광역 단축명보다 좁은 범위는 시·군·구 행정 구역입니다. "도시" 처럼 기저가 한 글자인
+# 낱말은 제외되도록 기저를 두 글자 이상 요구합니다.
+ADMIN_DISTRICT_PATTERN = re.compile(r"^[가-힣]{2,8}(?:시|군|구)$")
+ADMIN_REGION_OFFICE_SUFFIX = "청"
+INSTITUTION_SUBUNIT_SUFFIXES = ("지역본부", "본부", "지사", "지부", "지점", "출장소", "사업단")
+INSTITUTION_SCOPE_EXPLANATORY_MARKERS = (
+    "왜",
+    "어떻게",
+    "방법",
+    "의미",
+    "설명",
+    "절차",
+    "규정",
+)
+# 어절에서 떼어 낼 조사·어미입니다. 행정 구역 접미사(도·시·군·구)와 겹치는 값은
+# 원형이 먼저 판정되므로 여기서 문제되지 않습니다.
+INSTITUTION_SCOPE_PARTICLES = (
+    "해줘",
+    "줄래요",
+    "주세요",
+    "볼래요",
+    "줄래",
+    "볼래",
+    "에서",
+    "으로",
+    "께서",
+    "에게",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "의",
+    "에",
+    "로",
+    "와",
+    "과",
+    "만",
+    "좀",
+    "도",
+    "요",
+    "줘",
+)
+# 행정 구역 접미사와 같은 글자로 끝나는 일반 명사입니다. 이 목록이 없으면
+# "도시", "지구", "연구" 같은 낱말이 기관 범위로 승격됩니다.
+INSTITUTION_SCOPE_EXCLUDED_TERMS = frozenset(
+    {
+        "시장",
+        "시설",
+        "시험",
+        "시공",
+        "시행",
+        "구매",
+        "구축",
+        "구입",
+        "군수",
+        "도로",
+        "도급",
+        "시스템",
+        "구조",
+        "지구",
+        "도시",
+        "당시",
+        "무시",
+        "개시",
+        "실시",
+        "임시",
+        "표시",
+        "제시",
+        "명시",
+        "비상시",
+        "연도",
+        "년도",
+        "회계연도",
+        "연구",
+        "도구",
+        "가구",
+        "기구",
+        "농구",
+        "야구",
+        "축구",
+        "배구",
+        "투구",
+        "제도",
+        "정도",
+        "속도",
+        "태도",
+        "각도",
+        "온도",
+        "기도",
+        "유도",
+        "과도",
+        "한도",
+        "해군",
+        "공군",
+        "육군",
+        "인입철도",
+        "도시철도",
+        "지하철도",
+        "고속도",
+        "궤도",
+        "보도",
+        "수도",
+        "지도",
+        "시도",
+        "강도",
+        "습도",
+    }
+)
+INSTITUTION_SCOPE_EXCLUDED_SUFFIXES = (
+    "지구",
+    "일시",
+    "도시",
+    "수구",
+    "입구",
+    "출구",
+    "창구",
+    "풍구",
+    "전구",
+    "문구",
+    "광구",
+    "연구",
+    "도구",
+    "가구",
+    "기구",
+)
+
+
+def _strip_institution_particle(token: str) -> str:
+    for particle in INSTITUTION_SCOPE_PARTICLES:
+        if token.endswith(particle) and len(token) > len(particle) + 1:
+            return token[: -len(particle)]
+    return token
+
+
+def _admin_region_name(token: str) -> str:
+    """행정 구역 형태의 토큰을 지명으로 정규화합니다.
+
+    "공주시청" 처럼 뒤에 청이 붙으면 청을 떼고 다시 판정합니다. "시청"·"군청"·
+    "구청" 단독은 지명이 없으므로 빈 문자열입니다.
+    """
+    if token in INSTITUTION_SCOPE_EXCLUDED_TERMS:
+        return ""
+    # 택지지구·배수구·개찰일시·해저도시처럼 행정 구역이 아닌 일반 명사가
+    # 시·군·구·도 접미사와 같은 글자로 끝나는 경우를 걷어냅니다.
+    if token.endswith(INSTITUTION_SCOPE_EXCLUDED_SUFFIXES):
+        return ""
+    if ADMIN_REGION_PATTERN.fullmatch(token):
+        return token
+    if token.endswith(ADMIN_REGION_OFFICE_SUFFIX) and len(token) > 2:
+        stripped = token[: -len(ADMIN_REGION_OFFICE_SUFFIX)]
+        if stripped not in INSTITUTION_SCOPE_EXCLUDED_TERMS and ADMIN_REGION_PATTERN.fullmatch(
+            stripped
+        ):
+            return stripped
+    return ""
+
+
+def _institution_token_candidates(token: str, *, include_entity_org_tokens: bool) -> list[str]:
+    """토큰 하나에서 기관 범위 후보를 뽑습니다. 원형을 먼저 보고 조사를 뗀 형태를 봅니다."""
+    candidates: list[str] = []
+    for value in (token, _strip_institution_particle(token)):
+        if not value:
+            continue
+        corporations = _extract_public_corporation_tokens(value)
+        if corporations:
+            candidates.append(corporations[0])
+        if (
+            include_entity_org_tokens
+            and len(value) > 2
+            and value not in INSTITUTION_SCOPE_EXCLUDED_TERMS
+            and any(
+                value.endswith(suffix) and len(value) > len(suffix)
+                for suffix in ENTITY_ORG_SUFFIXES
+            )
+        ):
+            candidates.append(value)
+        region = _admin_region_name(value)
+        if region:
+            candidates.append(region)
+        if value in REGION_ALIASES and value not in candidates:
+            candidates.append(value)
+    return candidates
+
+
+def extract_institution_scope(
+    query: str, *, include_entity_org_tokens: bool = True
+) -> dict[str, Any]:
+    """목록·집계 질의에서 기관·지역 범위를 뽑습니다.
+
+    공공기관 접미사 토큰을 먼저 보고, 다음으로 행정 구역(시·군·구·도)을 봅니다.
+    "공주시청" 은 "공주시" 로 정규화하고, "시장"·"시설"·"지구" 같은 일반 명사는
+    제외합니다. 광역 단축명은 정식 명칭과 함께 institution_aliases 로 돌려줍니다.
+    한 질의에서 기관 하나만 채택하며, 가장 긴 이름을 씁니다.
+    """
+    normalized = _normalize_text(query)
+    tokens = [token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized) if token]
+
+    best_name = ""
+    best_aliases: tuple[str, ...] = ()
+    for index, token in enumerate(tokens):
+        for candidate in _institution_token_candidates(
+            token, include_entity_org_tokens=include_entity_org_tokens
+        ):
+            # "도" 접미사는 공식 광역 도 명칭만 행정 구역으로 인정합니다. 이 검사가
+            # 없으면 "경북 인입철도 공사" 의 "인입철도" 나 "도시철도 공사" 의
+            # "도시철도" 가 기관 범위로 승격됩니다.
+            if candidate.endswith("도") and candidate not in OFFICIAL_PROVINCE_NAMES:
+                continue
+            name = candidate
+            if candidate in _extract_public_corporation_tokens(candidate) and index + 1 < len(
+                tokens
+            ):
+                following = _strip_institution_particle(tokens[index + 1])
+                if (
+                    following
+                    and following not in INSTITUTION_SCOPE_EXCLUDED_TERMS
+                    and any(
+                        following.endswith(suffix) and len(following) > len(suffix)
+                        for suffix in INSTITUTION_SUBUNIT_SUFFIXES
+                    )
+                ):
+                    name = f"{candidate} {following}"
+            if len(name) > len(best_name):
+                best_name = name
+                best_aliases = REGION_ALIASES.get(name, ())
+
+    if not best_name:
+        return {}
+
+    scope: dict[str, Any] = {"institution_name": best_name}
+    if len(best_aliases) > 1:
+        scope["institution_aliases"] = list(best_aliases)
+    return scope
+
+
+def _is_broad_region_name(name: str) -> bool:
+    """광역 단축명이나 그 행정 접미사형인지 판정합니다.
+
+    "광주" 와 "광주시", "충남" 과 "충청남도" 는 같은 광역 범위입니다. 이런 값은
+    더 좁은 기관 범위가 아니므로 광역 사전 대체 값을 바꾸지 않습니다.
+    """
+    if name in REGION_ALIASES:
+        return True
+    if any(name in aliases for aliases in REGION_ALIASES.values()):
+        return True
+    for suffix in ("특별자치시", "특별자치도", "특별시", "광역시", "도", "시"):
+        if name.endswith(suffix) and name[: -len(suffix)] in REGION_ALIASES:
+            return True
+    return False
+
+
+def _is_specific_institution_scope(name: str) -> bool:
+    """광역 사전 대체 값보다 구체적인 기관 범위인지 판정합니다.
+
+    시·군·구 행정 구역과 공공기관, 기관 접미사 토큰은 광역 사전이 먼저 넣은
+    값보다 구체적이므로 대체 대상입니다. 광역 범위 자체는 대체하지 않되,
+    "경기도"·"제주특별자치도" 처럼 광역 단축명의 공식 도 명칭은 표기가 더
+    정확하므로 대체합니다.
+    """
+    normalized = _normalize_text(name)
+    if not normalized:
+        return False
+    if normalized in OFFICIAL_PROVINCE_NAMES:
+        return True
+    if _is_broad_region_name(normalized):
+        return False
+    if _extract_public_corporation_tokens(normalized):
+        return True
+    # "인입철도" 처럼 도 접미사로 끝나는 사업명은 행정 구역이 아닙니다. 시·군·구만
+    # 광역보다 좁은 행정 구역으로 인정합니다.
+    if ADMIN_DISTRICT_PATTERN.fullmatch(normalized):
+        return True
+    return any(
+        normalized.endswith(suffix) and len(normalized) > len(suffix)
+        for suffix in ENTITY_ORG_SUFFIXES
+    )
 
 
 def _extract_public_corporation_tokens(text: str) -> list[str]:
@@ -1338,6 +1639,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if matched_category is not None:
         filters["category"] = matched_category
 
+    region_fallback_name = ""
     if comparison_regions:
         filters["region_names"] = comparison_regions
     elif comparison_institutions:
@@ -1348,7 +1650,48 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         for region in REGION_KEYWORDS:
             if region in lowered:
                 filters["institution_name"] = region
+                region_fallback_name = region
                 break
+
+    # 기관 범위는 목록·집계·개체 지정 질의에서만 붙입니다. 설명형 질의에 붙으면
+    # 의미 검색이 기관 하나로 좁혀지고, 추출만으로 use_sql 이 켜지면 안 됩니다.
+    # 기관 상세 조회에는 학교·병원 같은 개체 접미사 토큰을 기관 조건으로 승격하지
+    # 않습니다. 그 토큰은 공고명의 일부인 경우가 많습니다.
+    list_intent = announcement_list_query or result_list_query
+    scope_applicable = bool(list_intent or has_stat_keywords)
+    scope_explanatory = any(marker in lowered for marker in INSTITUTION_SCOPE_EXPLANATORY_MARKERS)
+    if (
+        scope_applicable
+        and not scope_explanatory
+        and not filters.get("institution_names")
+        and not filters.get("region_names")
+    ):
+        scope = extract_institution_scope(normalized_query, include_entity_org_tokens=list_intent)
+        scope_name = str(scope.get("institution_name") or "")
+        existing_name = _normalize_text(str(filters.get("institution_name") or ""))
+        # 광역 사전 대체 경로는 "대전 유성구" 에서 먼저 "대전" 을 넣습니다. 추출기가
+        # 더 좁은 범위를 돌려주면 그 값으로 바꿔야 채팅 경로와 같은 기관 조건이
+        # 걸립니다. 사용자나 상위 계층이 명시한 값은 대체 경로 값이 아니므로
+        # 그대로 둡니다.
+        replace_region_fallback = bool(
+            region_fallback_name
+            and existing_name == region_fallback_name
+            and scope_name != existing_name
+            and _is_specific_institution_scope(scope_name)
+        )
+        if scope_name and (not existing_name or replace_region_fallback):
+            filters["institution_name"] = scope_name
+            existing_name = scope_name
+        if scope.get("institution_aliases") and (not existing_name or existing_name == scope_name):
+            filters["institution_aliases"] = list(scope["institution_aliases"])
+
+    # 광역 단축명이 최종 기관 조건으로 남으면 정식 명칭 별칭을 함께 넘깁니다.
+    # 목록·집계 표지가 없는 질의도 광역 사전 대체 경로에서 단축명을 얻으므로,
+    # "경북 인입철도 공사 공고" 에서 별칭 없이 "경북" 만 남지 않게 합니다.
+    if region_fallback_name and filters.get("institution_name") == region_fallback_name:
+        fallback_aliases = REGION_ALIASES.get(region_fallback_name, ())
+        if len(fallback_aliases) > 1 and not filters.get("institution_aliases"):
+            filters["institution_aliases"] = list(fallback_aliases)
 
     # 비교 대상이 확정되면 목록 제한은 의미가 없습니다. "부산이랑 대구 공고 5건
     # 비교" 처럼 개수가 붙은 비교 질의가 공고 목록 응답으로 새는 것을 막습니다.
