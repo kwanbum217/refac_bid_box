@@ -937,6 +937,48 @@ def _query_lower(query: str) -> str:
     return _normalize_text(query).lower()
 
 
+# 공고 종류는 공고명 안 낱말과 겹칩니다. "재공고 방지 용역" 처럼 사업 명사가
+# 앞에 붙은 제목을 재공고 질의로 읽지 않도록, 종류 표기 바로 뒤에 오는
+# 금지 낱말을 확인합니다.
+NOTICE_KIND_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"(?<![가-힣])취소\s*된\s*공고"), "취소공고"),
+    (re.compile(r"(?<![가-힣])변경\s*된\s*공고"), "변경공고"),
+    (re.compile(r"(?<![가-힣])취소\s*공고"), "취소공고"),
+    (re.compile(r"(?<![가-힣])정정\s*공고"), "변경공고"),
+    (re.compile(r"(?<![가-힣])변경\s*공고"), "변경공고"),
+    (re.compile(r"(?<![가-힣])신규\s*공고"), "등록공고"),
+    (re.compile(r"(?<![가-힣])등록\s*공고"), "등록공고"),
+    (re.compile(r"(?<![가-힣])재\s*공고"), "재공고"),
+)
+NOTICE_KIND_IGNORED_FOLLOWERS = ("방지", "금지")
+
+
+def extract_notice_kind(query: str) -> str:
+    """질의가 지목한 공고 종류(ntce_kind_nm)를 돌려줍니다.
+
+    "재공고", "취소공고", "변경공고", "등록공고" 만 인정하고, 표기가 없으면
+    빈 문자열입니다. "변경 사항", "취소 방법" 처럼 종류 표기가 아닌 일반어와,
+    "재공고 방지 용역" 처럼 사업 명사가 결합한 제목 속 낱말은 무시합니다.
+    종류가 여러 번 나오면 가장 앞의 표기를 씁니다.
+    """
+    normalized = _normalize_text(query)
+    if not normalized:
+        return ""
+
+    best_position = len(normalized)
+    best_kind = ""
+    for pattern, kind in NOTICE_KIND_PATTERNS:
+        for match in pattern.finditer(normalized):
+            remainder = normalized[match.end() :].lstrip()
+            if any(remainder.startswith(word) for word in NOTICE_KIND_IGNORED_FOLLOWERS):
+                continue
+            if match.start() < best_position:
+                best_position = match.start()
+                best_kind = kind
+            break
+    return best_kind
+
+
 def _is_count_statistics_query(query: str) -> bool:
     """건수 표현만으로 통계 질의인지 판정합니다.
 
@@ -1720,6 +1762,18 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     if matched_category is not None:
         filters["category"] = matched_category
+
+    # 공고 종류 조건은 공고 목록·건수 질의에만 겁니다. 낙찰 결과 질의에 걸면
+    # 결과 테이블에 없는 조건이 되어 답이 비거나, 결과와 무관한 종류로 범위를
+    # 좁히게 됩니다.
+    notice_kind = extract_notice_kind(normalized_query)
+    if (
+        notice_kind
+        and (announcement_list_query or has_stat_keywords)
+        and not result_list_query
+        and not is_result_query(normalized_query)
+    ):
+        filters["notice_kind"] = notice_kind
 
     region_fallback_name = ""
     if comparison_regions:
