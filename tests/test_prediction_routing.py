@@ -78,6 +78,23 @@ def test_validation_requests_match_main_routing(query):
 @pytest.mark.parametrize(
     "query",
     [
+        f"{_BID_NO} 예측 검증해줘",
+        f"{_BID_NO} 예측 결과 검증해",
+        f"예측 검증해줘 {_BID_NO}",
+        f"{_BID_NO} 모델 검증해줘",
+    ],
+)
+def test_bid_number_validation_requests_match_main(query):
+    """공고번호가 붙은 검증 요청도 예측 도구가 아니라 검증 경로로 갑니다."""
+    plan = interpret_request(query)
+
+    assert plan.query_type == _MAIN_VALIDATION_QUERY_TYPE
+    assert plan.requested_capabilities == _MAIN_VALIDATION_CAPABILITIES
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
         "R26BK01788818 건 낙찰금액 얼마야?",
         f"{_BID_NO} 공고 뭐야?",
         "R26BK01778156 낙찰 결과 알려줘",
