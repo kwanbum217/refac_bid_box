@@ -1,0 +1,417 @@
+{
+  "schema": "CHAT_USER_QUESTIONS_V2",
+  "version": "2.0.0",
+  "split": "public",
+  "created_at": "2026-10-25T00:00:00Z",
+  "description": "실무 조건(마감일, 금액, 업체, 정렬, 재공고)과 데이터 미보유 방어를 재는 공개 점검 세트. 정답은 fixture 에 고정하지 않고 측정 시점 DB 에서 계산한다. v1 세트는 그대로 둔다.",
+  "categories": [
+    "announcement_list",
+    "result_analysis",
+    "stats"
+  ],
+  "category_counts": {
+    "announcement_list": 7,
+    "result_analysis": 4,
+    "stats": 9
+  },
+  "total_items": 20,
+  "items": [
+    {
+      "id": "v2_dln_01",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "이번 주 마감되는 용역 공고 5개만 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_deadline",
+        "days": 7,
+        "category": "Servc",
+        "limit": 5
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "공고일이 아니라 마감일(bid_clse_dt) 창으로 판정한다. 창은 오늘 00시부터 7일 뒤 00시 전까지다."
+    },
+    {
+      "id": "v2_dln_02",
+      "category": "stats",
+      "split": "public",
+      "question": "내일 마감인 공고 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE bid_clse_dt >= CURDATE() + INTERVAL 1 DAY AND bid_clse_dt < CURDATE() + INTERVAL 2 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "마감일 하루 창(내일 00시 이상, 모레 00시 미만)의 건수"
+    },
+    {
+      "id": "v2_dln_03",
+      "category": "stats",
+      "split": "public",
+      "question": "이번 달 마감일이 지난 공사 공고 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE category = 'Cnstwk' AND bid_clse_dt >= DATE_FORMAT(CURDATE(), '%Y-%m-01') AND bid_clse_dt < CURDATE()",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "이번 달 1일 이상, 오늘 00시 미만에 마감된 공사 공고"
+    },
+    {
+      "id": "v2_amt_01",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "추정가격 5억 이상 용역 공고 5개 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "announcement_filtered",
+        "category": "Servc",
+        "amount_field": "presmpt_prce",
+        "min_amount": 500000000,
+        "window_days": 30,
+        "limit": 5
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "반환 전건의 추정가격이 5억 이상이어야 한다. 기준 건수는 최근 30일 창으로 센다."
+    },
+    {
+      "id": "v2_amt_02",
+      "category": "stats",
+      "split": "public",
+      "question": "기초금액 3억 넘는 공사 공고 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE category = 'Cnstwk' AND base_amount > 300000000 AND bid_ntce_dt >= CURDATE() - INTERVAL 29 DAY AND bid_ntce_dt < CURDATE() + INTERVAL 1 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "기초금액 3억 초과(경계 제외), 최근 30일 반개구간"
+    },
+    {
+      "id": "v2_amt_03",
+      "category": "stats",
+      "split": "public",
+      "question": "금액대별 용역 공고 건수 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "tool_only"
+      },
+      "must_not_contain": [],
+      "repeats": 1,
+      "note": "axis_breakdown_fact 미구현. 구간표 판정 유형은 다음 작업에서 추가하고, 지금은 도구 선택만 본다."
+    },
+    {
+      "id": "v2_rat_01",
+      "category": "stats",
+      "split": "public",
+      "question": "최근 한 달 용역 사정률 평균 알려줘",
+      "expected_tools": [],
+      "forbidden_tools": [],
+      "check": {
+        "type": "not_supported",
+        "forbidden_number_units": [
+          "%"
+        ]
+      },
+      "must_not_contain": [],
+      "forbidden_claims": [
+        "사정률 평균은",
+        "평균 사정률은"
+      ],
+      "repeats": 3,
+      "note": "사정률 원자료 미보유. 퍼센트 수치를 단정하면 실패다."
+    },
+    {
+      "id": "v2_com_01",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "{company}의 최근 30일 낙찰 건수 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE bidwinnr_nm LIKE '%{company}%' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "업체명은 측정 시점 DB 의 최근 30일 낙찰 1위 업체로 채운다."
+    },
+    {
+      "id": "v2_com_02",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "{company}가 최근 낙찰받은 공고 5개 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "winner_result_list",
+        "winner_like": "{company}",
+        "window_days": 365,
+        "limit": 5
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "반환 전건의 낙찰업체가 해당 업체여야 한다. 다른 업체 낙찰을 섞은 범위 확대를 잡는다."
+    },
+    {
+      "id": "v2_com_03",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "(주){company}가 참여한 입찰 목록 보여줘",
+      "expected_tools": [],
+      "forbidden_tools": [],
+      "check": {
+        "type": "not_supported"
+      },
+      "must_not_contain": [],
+      "repeats": 3,
+      "note": "투찰자(참여업체) 컬럼이 없다. 참여 목록을 지어내면 공고번호 검출로 실패한다."
+    },
+    {
+      "id": "v2_cmp_01",
+      "category": "result_analysis",
+      "split": "public",
+      "question": "최근 한 달 평균 경쟁률 알려줘",
+      "expected_tools": [],
+      "forbidden_tools": [],
+      "check": {
+        "type": "not_supported",
+        "forbidden_number_units": [
+          "배",
+          "대 1",
+          ":1"
+        ]
+      },
+      "must_not_contain": [],
+      "repeats": 3,
+      "note": "경쟁률 컬럼이 없다. 비율 수치를 단정하면 실패다."
+    },
+    {
+      "id": "v2_cmp_02",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "참가업체 수 10개 이상인 공고 보여줘",
+      "expected_tools": [],
+      "forbidden_tools": [],
+      "check": {
+        "type": "not_supported",
+        "forbidden_number_units": [
+          "건"
+        ]
+      },
+      "must_not_contain": [],
+      "repeats": 3,
+      "note": "참가업체 수 데이터 미보유. 목록으로 대체하면 공고번호 검출로, 건수로 답하면 건 표기 검출로 실패한다."
+    },
+    {
+      "id": "v2_rbd_01",
+      "category": "stats",
+      "split": "public",
+      "question": "최근 한 달 재공고 공고 몇 건이야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE ntce_kind_nm LIKE '%재공고%' AND bid_ntce_dt >= CURDATE() - INTERVAL 29 DAY AND bid_ntce_dt < CURDATE() + INTERVAL 1 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "재공고는 ntce_kind_nm 에 있고 유찰 상태 컬럼은 없다."
+    },
+    {
+      "id": "v2_rbd_02",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "유찰된 공사 공고 최근 5건 보여줘",
+      "expected_tools": [],
+      "forbidden_tools": [],
+      "check": {
+        "type": "not_supported"
+      },
+      "must_not_contain": [],
+      "repeats": 3,
+      "note": "유찰 상태 컬럼이 없다. 최근 공고 목록으로 대체하면 공고번호 검출로 실패한다."
+    },
+    {
+      "id": "v2_rst_01",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "지역제한 있는 공고 최근 5건 보여줘",
+      "expected_tools": [],
+      "forbidden_tools": [],
+      "check": {
+        "type": "not_supported"
+      },
+      "must_not_contain": [],
+      "repeats": 3,
+      "note": "참가자격(지역제한) 데이터 미보유. 목록으로 대체하면 공고번호 검출로 실패한다."
+    },
+    {
+      "id": "v2_rst_02",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "부산 지역 제한 공고 몇 건이야?",
+      "expected_tools": [],
+      "forbidden_tools": [],
+      "check": {
+        "type": "filter_assertion",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE dminstt_nm LIKE '%부산%' AND bid_ntce_dt >= CURDATE() - INTERVAL 29 DAY AND bid_ntce_dt < CURDATE() + INTERVAL 1 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [],
+      "repeats": 3,
+      "note": "지역제한을 수요기관 지역(dminstt_nm)으로 바꿔 센 건수가 답에 있으면 오배정이다."
+    },
+    {
+      "id": "v2_srt_01",
+      "category": "announcement_list",
+      "split": "public",
+      "question": "추정가격 높은 순으로 용역 공고 5개 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "ordered_list_fact",
+        "sql": "SELECT MAX(presmpt_prce) FROM bid_announcements WHERE category = 'Servc' AND bid_ntce_dt >= CURDATE() - INTERVAL 29 DAY AND bid_ntce_dt < CURDATE() + INTERVAL 1 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "리스트해 드릴 수 없",
+        "제공된 검색 컨텍스트에는",
+        "검색 컨텍스트에 포함되어 있지 않",
+        "1건만 있어"
+      ],
+      "repeats": 1,
+      "note": "1위 값이 최근 30일 용역 추정가격 MAX 와 같은지 본다. 정렬 위반은 값 대조로만 근사 판정한다."
+    },
+    {
+      "id": "v2_srt_02",
+      "category": "stats",
+      "split": "public",
+      "question": "용역 공고 중 추정가격이 가장 큰 건 얼마야?",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact",
+        "sql": "SELECT MAX(presmpt_prce) FROM bid_announcements WHERE category = 'Servc' AND bid_ntce_dt >= CURDATE() - INTERVAL 29 DAY AND bid_ntce_dt < CURDATE() + INTERVAL 1 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "최근 30일 창의 용역 추정가격 최댓값"
+    },
+    {
+      "id": "v2_cpr_01",
+      "category": "stats",
+      "split": "public",
+      "question": "작년 대비 올해 용역 공고 건수 알려줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "numeric_fact_set",
+        "sql": "SELECT SUM(bid_ntce_dt >= DATE_FORMAT(CURDATE(), '%Y-01-01')) AS this_year_count, SUM(bid_ntce_dt >= DATE_FORMAT(CURDATE() - INTERVAL 1 YEAR, '%Y-01-01') AND bid_ntce_dt < DATE_FORMAT(CURDATE(), '%Y-01-01')) AS last_year_count FROM bid_announcements WHERE category = 'Servc' AND bid_ntce_dt >= DATE_FORMAT(CURDATE() - INTERVAL 1 YEAR, '%Y-01-01') AND bid_ntce_dt < CURDATE() + INTERVAL 1 DAY",
+        "tolerance_ratio": 0.0
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "올해 누적 건수와 작년 전체 건수를 모두 답에 담아야 한다."
+    },
+    {
+      "id": "v2_cpr_02",
+      "category": "stats",
+      "split": "public",
+      "question": "분기별 낙찰률 추이 보여줘",
+      "expected_tools": [
+        "bid_query_tool"
+      ],
+      "forbidden_tools": [],
+      "check": {
+        "type": "time_series_fact",
+        "sql": "SELECT CONCAT(YEAR(rl_openg_dt), '-Q', QUARTER(rl_openg_dt)) AS bucket, ROUND(AVG(sucsf_bid_rate), 2) AS avg_rate FROM bid_results WHERE rl_openg_dt >= CURDATE() - INTERVAL 400 DAY AND rl_openg_dt < CURDATE() AND sucsf_bid_rate IS NOT NULL GROUP BY bucket ORDER BY bucket DESC LIMIT 4",
+        "min_buckets": 2,
+        "tolerance_ratio": 0.001
+      },
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "최근 4개 분기 버킷 중 2개 이상의 평균 낙찰률 수치가 답에 있어야 한다."
+    }
+  ]
+}

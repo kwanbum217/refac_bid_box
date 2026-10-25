@@ -22,6 +22,7 @@ from scripts import measure_chat_user_questions as measure
 
 PUBLIC_FIXTURE = PROJECT_ROOT / "data/benchmarks/chat_user_questions_v1.json"
 BLIND_FIXTURE = PROJECT_ROOT / "data/benchmarks/chat_user_questions_blind_v1.json"
+V2_FIXTURE = PROJECT_ROOT / "data/benchmarks/chat_user_questions_v2.json"
 
 ALLOWED = [f"R26BK01789{index:03d}" for index in range(500, 505)]
 
@@ -1374,3 +1375,487 @@ def test_dry_run_does_not_call_http_or_db(
     assert exit_code == 0
     output = capsys.readouterr().out
     assert "선택 문항: 70" in output
+
+
+# ---------------------------------------------------------------------------
+# 점검 세트 v2: 실무 조건 판정과 데이터 미보유 방어
+# ---------------------------------------------------------------------------
+
+MAX_SERVC_PRICE = 287681818182.0
+
+
+def _v2_item(item_id: str) -> dict[str, Any]:
+    for item in _load(V2_FIXTURE)["items"]:
+        if item["id"] == item_id:
+            return item
+    raise AssertionError(f"v2 문항을 찾지 못했습니다: {item_id}")
+
+
+def _list_truth(
+    item: dict[str, Any],
+    *,
+    expected_count: int,
+    verified: list[str],
+    placeholders: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """목록 판정 truth 를 가짜 DB 로 만든다. 기준 건수와 행 검사를 나눠 응답한다."""
+
+    def fake_query(sql: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        if sql.startswith("SELECT COUNT("):
+            return ["count"], [(expected_count,)]
+        return ["bid_ntce_no"], [(number,) for number in verified]
+
+    return measure.build_truth(item, placeholders or {}, fake_query)
+
+
+def test_v2_fixture_schema_is_valid() -> None:
+    payload = _load(V2_FIXTURE)
+    assert measure.validate_fixture(payload, "public", V2_FIXTURE) == []
+
+
+def test_v2_fixture_declares_twenty_items_and_counts() -> None:
+    payload = _load(V2_FIXTURE)
+    counts = Counter(item["category"] for item in payload["items"])
+    assert payload["total_items"] == len(payload["items"]) == 20
+    assert payload["category_counts"] == dict(counts)
+    assert len({item["id"] for item in payload["items"]}) == 20
+
+
+def test_v2_fixture_uses_every_new_check_type() -> None:
+    kinds = {item["check"]["type"] for item in _load(V2_FIXTURE)["items"]}
+    assert {
+        "announcement_deadline",
+        "announcement_filtered",
+        "winner_result_list",
+        "ordered_list_fact",
+        "numeric_fact_set",
+        "time_series_fact",
+        "not_supported",
+        "filter_assertion",
+    } <= kinds
+    # axis_breakdown_fact 는 이번 작업에서 만들지 않는다.
+    assert "axis_breakdown_fact" not in measure.CHECK_TYPES
+    amt_breakdown = _v2_item("v2_amt_03")
+    assert amt_breakdown["check"]["type"] == "tool_only"
+    assert "axis_breakdown_fact" in amt_breakdown["note"]
+
+
+def test_v2_dry_run_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+    exit_code = measure.main(["--dry-run", "--fixture", str(V2_FIXTURE)])
+    assert exit_code == 0
+    assert "선택 문항: 20" in capsys.readouterr().out
+
+
+def test_company_placeholder_uses_thirty_day_winner_window() -> None:
+    statement = measure.PLACEHOLDER_QUERIES["company"]
+    assert "rl_openg_dt >= CURDATE() - INTERVAL 29 DAY" in statement
+    assert "rl_openg_dt < CURDATE() + INTERVAL 1 DAY" in statement
+    assert "GROUP BY bidwinnr_nm" in statement
+    assert "ORDER BY COUNT(*) DESC, bidwinnr_nm ASC" in statement
+    assert f"NOT LIKE '%{measure.CORRUPTED_TEXT_MARKER}%'" in statement
+
+
+@pytest.mark.parametrize("item_id", ["v2_com_01", "v2_com_02", "v2_com_03"])
+def test_collect_placeholders_reads_company_from_any_field(item_id: str) -> None:
+    assert measure.collect_placeholders(_v2_item(item_id)) == {"company"}
+
+
+def test_company_placeholder_resolves_from_winner_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[str] = []
+
+    def fake_run_query(statement: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        seen.append(statement)
+        return ["bidwinnr_nm"], [("아이비클럽",)]
+
+    monkeypatch.setattr(measure, "run_query", fake_run_query)
+    values, errors = measure.resolve_placeholders({"company"})
+    assert errors == {}
+    assert values["company"] == "아이비클럽"
+    assert "ORDER BY COUNT(*) DESC" in seen[0]
+
+
+def test_announcement_deadline_passes_when_all_rows_in_window() -> None:
+    item = _v2_item("v2_dln_01")
+    truth = _list_truth(item, expected_count=40, verified=ALLOWED)
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+    assert result["passed"] is True
+    assert result["detail"]["unverified_bid_numbers"] == []
+    assert truth["spec"]["match"][0] == "bid_clse_dt >= CURDATE()"
+
+
+def test_announcement_deadline_fails_on_row_outside_window() -> None:
+    item = _v2_item("v2_dln_01")
+    truth = _list_truth(item, expected_count=40, verified=ALLOWED[:4])
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["unverified_bid_numbers"] == [ALLOWED[4]]
+
+
+def test_announcement_filtered_passes_when_all_rows_meet_amount() -> None:
+    item = _v2_item("v2_amt_01")
+    truth = _list_truth(item, expected_count=1493, verified=ALLOWED)
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+    assert result["passed"] is True
+    assert "presmpt_prce >= 500000000" in truth["count_sql"]
+
+
+def test_announcement_filtered_fails_on_row_below_min_amount() -> None:
+    item = _v2_item("v2_amt_01")
+    truth = _list_truth(item, expected_count=1493, verified=ALLOWED[:4])
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+    assert result["passed"] is False
+    assert result["detail"]["unverified_bid_numbers"] == [ALLOWED[4]]
+
+
+def test_winner_result_list_passes_when_all_rows_match_company() -> None:
+    item = _v2_item("v2_com_02")
+    truth = _list_truth(
+        item, expected_count=589, verified=ALLOWED, placeholders={"company": "아이비클럽"}
+    )
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+    assert result["passed"] is True
+    assert "bidwinnr_nm LIKE '%아이비클럽%'" in truth["count_sql"]
+
+
+def test_winner_result_list_fails_on_other_company_row() -> None:
+    item = _v2_item("v2_com_02")
+    truth = _list_truth(
+        item, expected_count=589, verified=ALLOWED[:4], placeholders={"company": "아이비클럽"}
+    )
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+    assert result["passed"] is False
+    assert result["detail"]["unverified_bid_numbers"] == [ALLOWED[4]]
+
+
+def test_list_filter_fails_when_rows_are_fewer_than_limit() -> None:
+    item = _v2_item("v2_amt_01")
+    truth = _list_truth(item, expected_count=1493, verified=ALLOWED[:3])
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED[:3])))
+    assert result["passed"] is False
+    assert result["detail"]["required_count"] == 5
+    assert result["detail"]["detected_count"] == 3
+
+
+def test_list_filter_fails_when_answer_has_no_bid_numbers() -> None:
+    item = _v2_item("v2_amt_01")
+    truth = _list_truth(item, expected_count=1493, verified=[])
+    result = measure.grade_attempt(item, truth, _payload("조건에 맞는 공고가 있습니다."))
+    assert result["passed"] is False
+    assert result["detail"]["reason"] == "공고번호가 답변에 없습니다"
+
+
+def test_list_filter_zero_expected_uses_zero_count_rule() -> None:
+    item = _v2_item("v2_amt_01")
+    truth = _list_truth(item, expected_count=0, verified=[])
+    result = measure.grade_attempt(item, truth, _payload("조건에 맞는 공고는 0건입니다."))
+    assert result["passed"] is True
+    assert result["detail"]["db_empty"] is True
+
+
+def test_list_filter_count_sql_keeps_date_window_and_verify_sql_is_keyed() -> None:
+    item = _v2_item("v2_amt_01")
+    truth = _list_truth(item, expected_count=1493, verified=ALLOWED)
+    assert "bid_ntce_dt >= CURDATE() - INTERVAL 29 DAY" in truth["count_sql"]
+
+    captured: list[str] = []
+
+    def fake_query(sql: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        captured.append(sql)
+        return ["bid_ntce_no"], [(number,) for number in ALLOWED]
+
+    truth["query_fn"] = fake_query
+    measure._evaluate_list_filter(truth, ", ".join(ALLOWED))
+    verify_sql = captured[-1]
+    assert "bid_ntce_no IN (" in verify_sql
+    assert "presmpt_prce >= 500000000" in verify_sql
+    assert "bid_ntce_dt" not in verify_sql
+
+
+def test_list_filter_fails_when_db_has_no_such_bid_number() -> None:
+    # 답변이 지어낸 번호를 담으면 조건을 만족하는 행이 없으므로 실패다.
+    item = _v2_item("v2_amt_01")
+    truth = _list_truth(item, expected_count=1493, verified=[])
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+    assert result["passed"] is False
+    assert result["detail"]["unverified_bid_numbers"] == sorted(ALLOWED)
+
+
+def test_ordered_list_fact_matches_db_max() -> None:
+    item = _v2_item("v2_srt_01")
+    truth = {
+        "kind": "ordered_list_fact",
+        "value": MAX_SERVC_PRICE,
+        "data_available": True,
+        "error": None,
+    }
+    result = measure.grade_attempt(item, truth, _payload("1위는 287,681,818,182원입니다."))
+    assert result["passed"] is True
+
+
+def test_ordered_list_fact_matches_korean_unit_amount() -> None:
+    item = _v2_item("v2_srt_01")
+    truth = {
+        "kind": "ordered_list_fact",
+        "value": MAX_SERVC_PRICE,
+        "data_available": True,
+        "error": None,
+    }
+    result = measure.grade_attempt(item, truth, _payload("1위는 2,876억 8,181만 8,182원입니다."))
+    assert result["passed"] is True
+
+
+def test_ordered_list_fact_rejects_other_amount() -> None:
+    item = _v2_item("v2_srt_01")
+    truth = {
+        "kind": "ordered_list_fact",
+        "value": MAX_SERVC_PRICE,
+        "data_available": True,
+        "error": None,
+    }
+    result = measure.grade_attempt(item, truth, _payload("1위는 100,000,000원입니다."))
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+
+
+def _numeric_set_truth(values: list[float]) -> dict[str, Any]:
+    return {
+        "kind": "numeric_fact_set",
+        "values": values,
+        "labels": ["this_year_count", "last_year_count"],
+        "data_available": True,
+        "error": None,
+    }
+
+
+def test_numeric_fact_set_requires_every_value() -> None:
+    item = _v2_item("v2_cpr_01")
+    truth = _numeric_set_truth([171223.0, 211708.0])
+    passed = measure.grade_attempt(item, truth, _payload("올해 171,223건, 작년 211,708건입니다."))
+    assert passed["passed"] is True
+
+    missing = measure.grade_attempt(item, truth, _payload("올해는 171,223건입니다."))
+    assert missing["passed"] is False
+    assert missing["detail"]["missing_values"] == [211708.0]
+
+
+def test_numeric_fact_set_matches_korean_unit_counts() -> None:
+    item = _v2_item("v2_cpr_01")
+    truth = _numeric_set_truth([171223.0, 211708.0])
+    result = measure.grade_attempt(
+        item, truth, _payload("올해 17만 1,223건, 작년 21만 1,708건입니다.")
+    )
+    assert result["passed"] is True
+
+
+def _time_series_truth() -> dict[str, Any]:
+    return {
+        "kind": "time_series_fact",
+        "buckets": [
+            {"label": "2026-Q4", "value": 90.89},
+            {"label": "2026-Q3", "value": 90.79},
+            {"label": "2026-Q2", "value": 90.81},
+            {"label": "2026-Q1", "value": 90.17},
+        ],
+        "data_available": True,
+        "error": None,
+    }
+
+
+def test_time_series_fact_passes_when_every_bucket_value_is_present() -> None:
+    item = _v2_item("v2_cpr_02")
+    answer = "2026년 4분기 90.89%, 3분기 90.79%, 2분기 90.81%, 1분기 90.17%"
+    result = measure.grade_attempt(item, _time_series_truth(), _payload(answer))
+    assert result["passed"] is True
+    assert result["detail"]["matched_buckets"] == 4
+
+
+def test_time_series_fact_fails_when_one_bucket_value_is_missing() -> None:
+    item = _v2_item("v2_cpr_02")
+    answer = "2026년 4분기 90.89%, 3분기 90.79%, 2분기 90.81%"
+    result = measure.grade_attempt(item, _time_series_truth(), _payload(answer))
+    assert result["passed"] is False
+    assert result["detail"]["missing_values"] == [90.17]
+
+
+def test_time_series_fact_fails_when_bucket_count_below_minimum() -> None:
+    item = _v2_item("v2_cpr_02")
+    truth = {
+        "kind": "time_series_fact",
+        "buckets": [{"label": "2026-Q4", "value": 90.89}],
+        "data_available": True,
+        "error": None,
+    }
+    result = measure.grade_attempt(item, truth, _payload("2026년 4분기 90.89%"))
+    assert result["passed"] is False
+    assert result["detail"]["min_buckets"] == 2
+
+
+def _not_supported_truth() -> dict[str, Any]:
+    return {"kind": "not_supported", "data_available": False, "error": None}
+
+
+def test_not_supported_passes_on_data_absence_guidance() -> None:
+    result = measure.grade_attempt(
+        _v2_item("v2_rat_01"),
+        _not_supported_truth(),
+        _payload("사정률 자료는 보유하고 있지 않아 제공할 수 없습니다.", tools=()),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["supported_markers"]
+
+
+def test_not_supported_passes_when_percent_sign_has_no_number() -> None:
+    # 안내 문장의 "(%)" 는 수치 단정이 아니다.
+    result = measure.grade_attempt(
+        _v2_item("v2_rat_01"),
+        _not_supported_truth(),
+        _payload("사정률(%) 수치는 보유하고 있지 않습니다.", tools=()),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["forbidden_unit_hits"] == []
+
+
+def test_not_supported_fails_on_fabricated_rate() -> None:
+    result = measure.grade_attempt(
+        _v2_item("v2_rat_01"),
+        _not_supported_truth(),
+        _payload("최근 한 달 용역 사정률 평균은 88.12%입니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert "data_mismatch" in result["failure_reasons"]
+    assert result["detail"]["forbidden_unit_hits"] == ["%"]
+
+
+def test_not_supported_fails_on_forbidden_claim_phrase() -> None:
+    result = measure.grade_attempt(
+        _v2_item("v2_rat_01"),
+        _not_supported_truth(),
+        _payload("평균 사정률은 확인되지 않습니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["forbidden_claim_hits"] == ["평균 사정률은"]
+
+
+def test_not_supported_fails_on_list_substitution() -> None:
+    result = measure.grade_attempt(
+        _v2_item("v2_rst_01"),
+        _not_supported_truth(),
+        _payload("지역제한 공고입니다: R26BK01789500, R26BK01789501", tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["detected_bid_numbers"]
+
+
+def test_not_supported_fails_without_guidance_marker() -> None:
+    result = measure.grade_attempt(
+        _v2_item("v2_rst_01"),
+        _not_supported_truth(),
+        _payload("지역제한 공고 목록을 정리했습니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["supported_markers"] == []
+
+
+def _filter_assertion_truth() -> dict[str, Any]:
+    return {
+        "kind": "filter_assertion",
+        "value": 1086.0,
+        "data_available": False,
+        "error": None,
+    }
+
+
+def test_filter_assertion_fails_on_misassigned_count() -> None:
+    result = measure.grade_attempt(
+        _v2_item("v2_rst_02"),
+        _filter_assertion_truth(),
+        _payload("부산 지역 제한 공고는 1,086건입니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["substituted_value_found"] is True
+
+
+def test_filter_assertion_passes_on_data_absence_guidance() -> None:
+    result = measure.grade_attempt(
+        _v2_item("v2_rst_02"),
+        _filter_assertion_truth(),
+        _payload("지역제한 정보는 보유하고 있지 않아 확인할 수 없습니다.", tools=()),
+    )
+    assert result["passed"] is True
+    assert result["detail"]["substituted_value_found"] is False
+
+
+def test_filter_assertion_fails_without_guidance_marker() -> None:
+    result = measure.grade_attempt(
+        _v2_item("v2_rst_02"),
+        _filter_assertion_truth(),
+        _payload("부산 지역 공고 목록을 정리했습니다.", tools=()),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["supported_markers"] == []
+
+
+def test_check_required_keys_validates_new_types() -> None:
+    assert any(
+        "days" in error
+        for error in measure._check_required_keys({"type": "announcement_deadline", "limit": 5})
+    )
+    assert any(
+        "amount_field" in error
+        for error in measure._check_required_keys(
+            {"type": "announcement_filtered", "limit": 5, "min_amount": 1}
+        )
+    )
+    assert any(
+        "winner_like" in error
+        for error in measure._check_required_keys({"type": "winner_result_list", "limit": 5})
+    )
+    assert any(
+        "min_buckets" in error
+        for error in measure._check_required_keys(
+            {"type": "time_series_fact", "sql": "SELECT 1", "min_buckets": 0}
+        )
+    )
+    assert any(
+        "sql" in error for error in measure._check_required_keys({"type": "filter_assertion"})
+    )
+    assert any(
+        "forbidden_number_units" in error
+        for error in measure._check_required_keys(
+            {"type": "not_supported", "forbidden_number_units": "x"}
+        )
+    )
+
+
+def test_validator_allows_item_claims_for_not_supported() -> None:
+    item = _v2_item("v2_rat_01")
+    assert measure.validate_fixture({"split": "public", "items": [item]}, "public", "x") == []
+
+
+def test_validator_rejects_item_claims_for_numeric_fact() -> None:
+    item = _numeric_item("이번 달 용역 낙찰 몇 건이야?")
+    item["forbidden_claims"] = ["x"]
+    errors = measure.validate_fixture({"split": "public", "items": [item]}, "public", "x")
+    assert any("forbidden_claims" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("1억 2,345만 6,789원", 123456789.0),
+        ("2,876억 8,181만 8,182원", 287681818182.0),
+        ("12만 3,456건", 123456.0),
+        ("5억", 500000000.0),
+    ],
+)
+def test_extract_korean_amounts(text: str, expected: float) -> None:
+    assert expected in measure.extract_korean_amounts(text)
+
+
+def test_summarize_marks_v2_defensive_checks_as_heuristic() -> None:
+    for item_id in ("v2_rat_01", "v2_rst_01", "v2_rst_02"):
+        summary = measure.summarize_item(_v2_item(item_id), [_attempt(True)])
+        assert summary["heuristic"] is True
