@@ -67,7 +67,7 @@ v2 유형별: 공고 목록 5/7, 낙찰 분석 3/4, 통계 4/9.
 
 ## 2. 미병합 브랜치
 
-세 워크트리는 `/Users/kwanbum/orca/workspaces/refac_bid_box/` 아래에 남아 있다. 워커 터미널은 모두 회수했다.
+워커 터미널과 세 워크트리는 2026-10-25 세션 종료 때 모두 회수했다. 커밋은 `refs/backup/chat-period-compare-20261025`(`20a96b74`), `refs/backup/chat-winner-variant-20261025`(`203a2cef`)에 고정했다. 재개할 때는 `git branch kwanbum217/<이름> refs/backup/<이름>-20261025` 로 브랜치를 되살린 뒤 `orca worktree create` 로 워크트리를 만든다(기준 커밋이 main 이 아니게 되므로 만든 직후 `git -C <워크트리> log --oneline -1` 로 확인).
 
 | 브랜치 | 커밋 | 상태 | 다음 조치 |
 | --- | ---: | --- | --- |
@@ -95,7 +95,7 @@ v2 유형별: 공고 목록 5/7, 낙찰 분석 3/4, 통계 4/9.
 ### 2.3 낙찰률 추이 표 (`chat-trend-series`)
 
 - Intent: `.orca/intents/chat_trend_series_answer_20261025.yaml`. 빌더 Task `task_cfdf418632b2`, Task 상태 `blocked`.
-- 빌더가 question 을 보냈는데 코디네이터가 같은 명령에서 회수까지 실행해 터미널을 닫았다(4.1 절). 미커밋 변경 2개 파일(`src/rag/answer_format.py`, `tests/test_trend_series_answer.py`)이 워크트리에 있고, 사본을 `.orca/capsules/task_cfdf418632b2/uncommitted_20261025.patch`(413줄)에 두었다. **워크트리를 지우기 전에 이 패치를 확인할 것.**
+- 빌더가 question 을 보냈는데 코디네이터가 같은 명령에서 회수까지 실행해 터미널을 닫았다(4.1 절). 미커밋 변경 2개 파일(`src/rag/answer_format.py`, `tests/test_trend_series_answer.py`)은 `.orca/capsules/task_cfdf418632b2/uncommitted_20261025.patch`(413줄, gitignore 대상이라 주 저장소에만 있음)로 보존하고 워크트리는 회수했다. 회수 직전 워크트리 diff 와 동일함, `56b79ff1` 에 `git apply --check` 통과를 확인했다. 재작업은 새 워크트리에서 이 패치를 적용한 상태로 시작할 수 있다.
 - 빌더의 질문: Intent 의 "metric 이 없고 time_series 에 avg_rate 가 있으면 avg_rate 로 다룬다" 조항이 기존 시험 `tests/test_chat_aggregate_answer.py::test_series_answer_skips_when_metric_missing` 과 충돌한다(전체 시험 1건 실패).
 - 코디네이터 판단: 그 조항을 뺀다. 실패 질문 `분기별 낙찰률 추이 보여줘` 는 필터에 `metric: avg_rate` 가 이미 있으므로 조항 없이 고쳐진다. 재작업은 Intent 의 해당 ground_truth 한 문장을 지우고 새 Task 로 띄운다(blocked Task 에 재주입하지 않는다).
 - v2 `v2_cpr_02` 가 이 브랜치로 풀린다.
