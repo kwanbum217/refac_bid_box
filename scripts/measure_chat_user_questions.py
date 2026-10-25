@@ -65,6 +65,38 @@
   10건입니다" 에서는 뒤에 "건" 이 붙은 10 이 후보로 남아 통과한다.
 - 공고번호와 서수("1위")도 숫자 추출 전에 가린다. 질문 쪽 숫자 제거(원칙 1)는
   날짜·기간 표기 가리기와 무관하게 그대로다.
+- 억/만 단위로 끊어 쓴 금액·건수("1억 2,345만 6,789원", "12만 3,456건")는 원/건
+  단위 수로 되돌려 대조한다. 답변이 단위 표기를 쓰면 숫자 추출만으로는 DB 값과
+  만나지 않기 때문이다.
+
+실무 조건 판정(점검 세트 v2):
+
+- `announcement_filtered` 는 답변 표에서 공고번호를 뽑아(기존 `extract_bid_numbers`)
+  DB 에서 그 번호들의 조건 충족 여부를 조회한다. 반환 전건이 조건(분류, 추정가격·
+  기초금액 범위)을 만족해야 하고, 확인된 건수는 `min(limit, DB 전체 건수)` 이상이어야
+  한다. 조건을 벗어난 번호가 하나라도 있으면 범위 확대다.
+- `announcement_deadline` 은 같은 방식으로 반환 전건의 `bid_clse_dt` 가 창 안인지
+  본다. 창은 오늘 00시부터 `days` 일 뒤 00시 전까지다(v1 이 "이번 주"를 7일로
+  해석하는 관례와 같다). 기준 건수 질의와 행 검사가 같은 경계를 쓴다.
+- `winner_result_list` 는 반환 전건의 낙찰업체가 `{company}` 를 포함하는지 본다.
+  다른 업체 낙찰을 섞은 범위 확대를 잡는다.
+- 행 검사 질의는 답변에서 뽑은 번호를 `IN (...)` 으로 묶어 키 조회만 한다. 전체
+  스캔을 만들지 않으려고 기준 건수 질의에는 날짜 범위를 반드시 둔다(창 조건이 없는
+  유형은 `window_days` 를 쓴다).
+- `ordered_list_fact` 는 1위 값이 DB `MAX(...)` 와 같은지 본다. 정렬 위반 자체는
+  값 대조로만 근사 판정한다.
+- `numeric_fact_set` 은 한 행의 여러 수치가 모두 답에 있는지 본다. `numeric_fact`
+  처럼 질문에 나온 수치를 먼저 뺀다.
+- `time_series_fact` 는 버킷별 값 중 `min_buckets` 개 이상이 답에 있는지 본다.
+- `not_supported` 는 데이터 미보유 안내가 있고, `forbidden_claims` 낱말과
+  `forbidden_number_units` 수치 표기(예: `%`, `배`, `건`)가 없으며, 공고번호나
+  8자리 이상 수를 지어내지 않았는지 본다. 데이터가 없는 질문에 그럴듯한 수치를
+  답하는 경우를 잡는 방어 판정이다.
+- `filter_assertion` 은 금지된 필터로 대체 해석한 흔적을 본다. `sql` 로 계산한
+  대체 해석 기준값(예: 수요기관 지역으로 센 건수)이 답에 있으면 실패다. 안내 표지가
+  없어도 실패다.
+- `not_supported` 와 `filter_assertion` 은 답변 낱말 기반 근사이므로 결과 JSON 에
+  `heuristic: true` 를 붙인다.
 
 범위 밖 판정(refuse_or_redirect)은 낱말 기반 근사다:
 
@@ -162,12 +194,52 @@ CHECK_TYPES = (
     "bid_lookup",
     "refuse_or_redirect",
     "tool_only",
+    "announcement_filtered",
+    "announcement_deadline",
+    "winner_result_list",
+    "ordered_list_fact",
+    "numeric_fact_set",
+    "time_series_fact",
+    "not_supported",
+    "filter_assertion",
 )
+LIST_FILTER_CHECKS = (
+    "announcement_filtered",
+    "announcement_deadline",
+    "winner_result_list",
+)
+HEURISTIC_CHECK_TYPES = ("refuse_or_redirect", "not_supported", "filter_assertion")
+# 문항 수준 forbidden_claims 를 허용하는 판정 유형. 범위 밖 문항은 필수, 나머지는
+# 데이터 미보유·오배정 판정에서 지어낸 답을 거르는 용도로 선택적으로 쓴다.
+CLAIM_ITEM_CHECK_TYPES = HEURISTIC_CHECK_TYPES
 SPLITS = ("public", "blind")
 FAILURE_PRIORITY = ("routing", "forbidden_phrase", "data_mismatch", "error", "rate_limited")
 
 WINNER_RANKING_WINDOW_DAYS = 30
 CORRUPTED_TEXT_MARKER = "\ufffd"
+DEFAULT_LIST_WINDOW_DAYS = 30
+# 답변 표에서 뽑은 번호를 한 번에 검사할 상한. 정상 목록은 limit(최대 50)보다
+# 크지 않으므로 100을 넘으면 판정 대상에서 자른다.
+MAX_LIST_VERIFY_NUMBERS = 100
+ANNOUNCEMENT_AMOUNT_FIELDS = ("presmpt_prce", "base_amount")
+# 데이터 미보유 안내로 인정하는 표지. 비교 전에 _normalize_claim_text 로 정규화한다.
+NOT_SUPPORTED_MARKERS = (
+    "보유하지 않",
+    "보유하고 있지 않",
+    "수집하지 않",
+    "지원하지 않",
+    "제공할 수 없",
+    "제공하지 않",
+    "확인할 수 없",
+    "확인되지 않",
+    "집계할 수 없",
+    "조회할 수 없",
+    "데이터가 없",
+    "데이터는 없",
+    "안내가 어렵",
+    "답변드리기 어렵",
+    "포함되어 있지 않",
+)
 
 LATEST_CHECKS = {
     "announcement_latest": ("bid_announcements", "bid_ntce_dt"),
@@ -230,6 +302,17 @@ PLACEHOLDER_QUERIES: dict[str, str] = {
         "WHERE category = 'Servc' AND rl_openg_dt IS NOT NULL "
         "AND dminstt_nm IS NOT NULL AND dminstt_nm <> '' "
         "ORDER BY rl_openg_dt DESC, id DESC LIMIT 1"
+    ),
+    # 업체 이력 문항은 특정 업체명을 fixture 에 고정하지 않는다. 측정 시점 DB 의
+    # 최근 30일 낙찰 건수가 가장 많은 업체를 쓴다. 손상(U+FFFD)·빈 값은 빼고,
+    # 동점은 업체명 오름차순으로 고정한다(winner_ranking 과 같은 규칙).
+    "company": (
+        "SELECT bidwinnr_nm FROM bid_results "  # noqa: S608  # nosec B608 - 보간값은 상수다
+        "WHERE rl_openg_dt >= CURDATE() - INTERVAL 29 DAY "
+        "AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY "
+        "AND bidwinnr_nm IS NOT NULL AND TRIM(bidwinnr_nm) <> '' "
+        f"AND bidwinnr_nm NOT LIKE '%{CORRUPTED_TEXT_MARKER}%' "
+        "GROUP BY bidwinnr_nm ORDER BY COUNT(*) DESC, bidwinnr_nm ASC LIMIT 1"
     ),
 }
 
@@ -335,10 +418,16 @@ def fill_placeholders(text: str, placeholders: dict[str, str]) -> str:
 
 
 def collect_placeholders(item: dict[str, Any]) -> set[str]:
-    names = set(PLACEHOLDER_PATTERN.findall(str(item.get("question") or "")))
+    texts = [str(item.get("question") or "")]
     check = item.get("check") or {}
-    if isinstance(check.get("sql"), str):
-        names.update(PLACEHOLDER_PATTERN.findall(check["sql"]))
+    for value in check.values():
+        if isinstance(value, str):
+            texts.append(value)
+        elif isinstance(value, list):
+            texts.extend(entry for entry in value if isinstance(entry, str))
+    names: set[str] = set()
+    for text in texts:
+        names.update(PLACEHOLDER_PATTERN.findall(text))
     placeholder = check.get("bid_no_placeholder")
     if isinstance(placeholder, str) and placeholder:
         names.add(placeholder)
@@ -429,6 +518,55 @@ def subtract_question_numbers(
                 remaining.pop(index)
                 break
     return remaining
+
+
+KOREAN_EOK_PATTERN = re.compile(
+    r"(?<![\d.])(\d+(?:\.\d+)?)\s*억(?:\s*(\d+(?:\.\d+)?)\s*만)?"
+    r"(?:\s*(\d+(?:\.\d+)?)\s*(?:원|건|개))?"
+)
+KOREAN_MAN_PATTERN = re.compile(
+    r"(?<![\d.])(\d+(?:\.\d+)?)\s*만(?:\s*(\d+(?:\.\d+)?)\s*(?:원|건|개))?"
+)
+
+
+def extract_korean_amounts(text: str) -> list[float]:
+    """답변의 억/만 표기를 원 단위 수로 되돌린다.
+
+    금액 문항의 답이 "1억 2,345만 6,789원" 처럼 단위로 끊겨 있으면 숫자 추출만으로는
+    DB 값과 대조할 수 없다. "12만 3,456건" 같은 건수 표기도 같이 다룬다.
+    """
+    normalized = re.sub(r"(?<=\d),(?=\d)", "", text or "")
+    amounts: list[float] = []
+    eok_spans: list[tuple[int, int]] = []
+    for match in KOREAN_EOK_PATTERN.finditer(normalized):
+        value = float(match.group(1)) * 1e8
+        if match.group(2):
+            value += float(match.group(2)) * 1e4
+        if match.group(3):
+            value += float(match.group(3))
+        amounts.append(value)
+        eok_spans.append((match.start(), match.end()))
+    for match in KOREAN_MAN_PATTERN.finditer(normalized):
+        if any(start <= match.start() < end for start, end in eok_spans):
+            continue
+        value = float(match.group(1)) * 1e4
+        if match.group(2):
+            value += float(match.group(2))
+        amounts.append(value)
+    return amounts
+
+
+def _sql_literal(value: str) -> str:
+    """문자열 리터럴 안에 넣을 값을 이스케이프한다."""
+    return value.replace("'", "''")
+
+
+def _half_open_conditions(column: str, days: int) -> list[str]:
+    """오늘 포함 N일 반개구간 조건."""
+    return [
+        f"{column} >= CURDATE() - INTERVAL {days - 1} DAY",
+        f"{column} < CURDATE() + INTERVAL 1 DAY",
+    ]
 
 
 def _latest_rows(
@@ -624,6 +762,129 @@ def build_winner_ranking_sql(check: dict[str, Any]) -> str:
     )
 
 
+def _list_filter_spec(check: dict[str, Any], placeholders: dict[str, str]) -> dict[str, Any]:
+    """목록 판정 유형의 기준 조건을 만든다.
+
+    `match` 는 답변에서 뽑은 공고번호 행에 적용할 조건이고, `count` 는 기준 건수를
+    셀 때 쓰는 조건이다. 창 조건이 질문에 없는 유형(필터·업체)은 기준 건수에만
+    `window_days` 날짜 범위를 붙인다. 행 검사는 번호를 IN 으로 묶은 키 조회라
+    전체 스캔이 아니다.
+    """
+    kind = check["type"]
+    category = check.get("category")
+
+    if kind == "announcement_deadline":
+        deadline_field = str(check.get("deadline_field") or "bid_clse_dt")
+        if deadline_field != "bid_clse_dt":
+            raise ValueError(f"지원하지 않는 마감일 컬럼: {deadline_field}")
+        days = int(check.get("days") or 7)
+        conditions = [
+            f"{deadline_field} >= CURDATE()",
+            f"{deadline_field} < DATE_ADD(CURDATE(), INTERVAL {days} DAY)",
+        ]
+        if category:
+            conditions.append(f"category = '{category}'")
+        return {
+            "dataset": "bid_announcements",
+            "key": "bid_ntce_no",
+            "match": conditions,
+            "count": conditions,
+            "distinct": True,
+        }
+
+    if kind == "announcement_filtered":
+        conditions: list[str] = []
+        if category:
+            conditions.append(f"category = '{category}'")
+        amount_field = check.get("amount_field")
+        if amount_field is not None:
+            if amount_field not in ANNOUNCEMENT_AMOUNT_FIELDS:
+                raise ValueError(f"지원하지 않는 금액 컬럼: {amount_field}")
+            if check.get("min_amount") is not None:
+                conditions.append(f"{amount_field} >= {int(check['min_amount'])}")
+            if check.get("max_amount") is not None:
+                conditions.append(f"{amount_field} <= {int(check['max_amount'])}")
+        if not conditions:
+            raise ValueError("announcement_filtered 에 조건이 없습니다")
+        days = int(check.get("window_days") or DEFAULT_LIST_WINDOW_DAYS)
+        return {
+            "dataset": "bid_announcements",
+            "key": "bid_ntce_no",
+            "match": conditions,
+            "count": [*conditions, *_half_open_conditions("bid_ntce_dt", days)],
+            "distinct": True,
+        }
+
+    if kind == "winner_result_list":
+        winner_like = fill_placeholders(str(check.get("winner_like") or ""), placeholders)
+        if not winner_like:
+            raise ValueError("winner_like 가 비어 있습니다")
+        conditions = [f"bidwinnr_nm LIKE '%{_sql_literal(winner_like)}%'"]
+        days = int(check.get("window_days") or DEFAULT_LIST_WINDOW_DAYS)
+        return {
+            "dataset": "bid_results",
+            "key": "bid_ntce_no",
+            "match": conditions,
+            "count": [*conditions, *_half_open_conditions("rl_openg_dt", days)],
+            "distinct": True,
+        }
+
+    raise ValueError(f"목록 판정 유형이 아닙니다: {kind}")
+
+
+def _list_verify_sql(spec: dict[str, Any], numbers: list[str]) -> str:
+    dataset = spec["dataset"]
+    key = spec["key"]
+    literals = ", ".join(f"'{_sql_literal(number)}'" for number in numbers)
+    match = " AND ".join(spec["match"])
+    distinct = "DISTINCT " if spec.get("distinct") else ""
+    return (
+        f"SELECT {distinct}{key} FROM {dataset} "  # noqa: S608  # nosec B608 - 보간값은 상수와 DB 값이다
+        f"WHERE {key} IN ({literals}) AND {match}"
+    )
+
+
+def build_list_filter_truth(
+    kind: str,
+    check: dict[str, Any],
+    placeholders: dict[str, str],
+    query: QueryFn,
+) -> dict[str, Any]:
+    """목록 판정 유형의 기준 건수와 행 검사 조건을 만든다.
+
+    기준 건수는 날짜 범위를 포함한 질의로 센다. 답변 행 검사에 쓸 조건과 실행기는
+    truth 에 담아 두었다가 판정 시점에 쓴다(번호는 답변을 받아야 알 수 있다).
+    """
+    limit = int(check.get("limit", 5))
+    try:
+        spec = _list_filter_spec(check, placeholders)
+        distinct = "DISTINCT " if spec.get("distinct") else ""
+        count_sql = (
+            f"SELECT COUNT({distinct}{spec['key']}) FROM {spec['dataset']} "  # noqa: S608  # nosec B608
+            f"WHERE {' AND '.join(spec['count'])}"
+        )
+        _, rows = _run_read_only(count_sql, 1, query)
+        expected = int(rows[0][0]) if rows and rows[0][0] is not None else 0
+    except Exception as exc:
+        return {
+            "kind": kind,
+            "limit": limit,
+            "expected_count": 0,
+            "data_available": False,
+            "error": str(exc),
+        }
+    return {
+        "kind": kind,
+        "limit": limit,
+        "expected_count": expected,
+        "data_available": expected > 0,
+        "spec": spec,
+        "count_sql": count_sql,
+        "query_fn": query,
+        "error": None,
+    }
+
+
 def build_truth(
     item: dict[str, Any],
     placeholders: dict[str, str],
@@ -662,7 +923,7 @@ def build_truth(
             "error": None,
         }
 
-    if kind == "numeric_fact":
+    if kind in ("numeric_fact", "ordered_list_fact"):
         statement = fill_placeholders(str(check["sql"]), placeholders)
         try:
             _, rows = _run_read_only(statement, 1, query)
@@ -705,6 +966,94 @@ def build_truth(
             "data_available": bool(bid_no),
             "error": None if bid_no else f"placeholder 미해결: {name}",
         }
+
+    if kind in LIST_FILTER_CHECKS:
+        return build_list_filter_truth(kind, check, placeholders, query)
+
+    if kind == "numeric_fact_set":
+        statement = fill_placeholders(str(check["sql"]), placeholders)
+        try:
+            columns, rows = _run_read_only(statement, 1, query)
+        except Exception as exc:
+            return {
+                "kind": kind,
+                "values": [],
+                "labels": [],
+                "sql": statement,
+                "data_available": False,
+                "error": str(exc),
+            }
+        labels: list[str] = []
+        values: list[float] = []
+        for index, raw in enumerate(rows[0] if rows else ()):
+            if raw is None:
+                continue
+            try:
+                values.append(float(raw))
+            except (TypeError, ValueError):
+                continue
+            labels.append(str(columns[index]) if index < len(columns) else str(index))
+        return {
+            "kind": kind,
+            "values": values,
+            "labels": labels,
+            "sql": statement,
+            "data_available": bool(values),
+            "error": None,
+        }
+
+    if kind == "time_series_fact":
+        statement = fill_placeholders(str(check["sql"]), placeholders)
+        try:
+            _, rows = _run_read_only(statement, int(check.get("max_points") or 50), query)
+        except Exception as exc:
+            return {
+                "kind": kind,
+                "buckets": [],
+                "sql": statement,
+                "data_available": False,
+                "error": str(exc),
+            }
+        buckets: list[dict[str, Any]] = []
+        for row in rows:
+            if len(row) < 2 or row[1] is None:
+                continue
+            try:
+                buckets.append({"label": str(row[0]), "value": float(row[1])})
+            except (TypeError, ValueError):
+                continue
+        return {
+            "kind": kind,
+            "buckets": buckets,
+            "sql": statement,
+            "data_available": bool(buckets),
+            "error": None,
+        }
+
+    if kind == "filter_assertion":
+        statement = fill_placeholders(str(check["sql"]), placeholders)
+        try:
+            _, rows = _run_read_only(statement, 1, query)
+            raw_value = rows[0][0] if rows else None
+            value = None if raw_value is None else float(raw_value)
+        except Exception as exc:
+            return {
+                "kind": kind,
+                "value": None,
+                "sql": statement,
+                "data_available": False,
+                "error": str(exc),
+            }
+        return {
+            "kind": kind,
+            "value": value,
+            "sql": statement,
+            "data_available": False,
+            "error": None,
+        }
+
+    if kind == "not_supported":
+        return {"kind": kind, "data_available": False, "error": None}
 
     return {"kind": kind, "data_available": True, "error": None}
 
@@ -815,8 +1164,10 @@ def _evaluate_numeric(
 ) -> tuple[bool, dict[str, Any]]:
     """원칙 1: 질문 숫자를 뺀 답변 수치가 DB 값과 허용 오차 안이면 통과다."""
     value = truth.get("value")
-    question_numbers = extract_numbers(question)
-    answer_numbers = extract_answer_numbers(answer)
+    # 억/만 표기 금액("1억 2,345만원")은 숫자 추출만으로 DB 값과 만나지 않는다.
+    # 질문에 나온 같은 표기도 후보에서 빼야 되풀이한 값을 정답으로 오인하지 않는다.
+    question_numbers = extract_numbers(question) + extract_korean_amounts(question)
+    answer_numbers = extract_answer_numbers(answer) + extract_korean_amounts(answer)
     candidates = subtract_question_numbers(answer_numbers, question_numbers)
     detail: dict[str, Any] = {
         "db_value": value,
@@ -973,6 +1324,297 @@ def _evaluate_refusal(
     return passed, detail
 
 
+def _verified_bid_numbers(truth: dict[str, Any], numbers: list[str]) -> set[str]:
+    """답변에서 뽑은 번호 중 조건을 만족하는 번호를 DB 에서 확인한다.
+
+    번호를 IN 으로 묶은 키 조회라 전체 스캔이 아니다. DB 에 없는 번호는 조건을
+    만족하지 않는 것으로 본다(지어낸 번호 검출).
+    """
+    query = truth.get("query_fn") or run_query
+    sql = _list_verify_sql(truth["spec"], numbers)
+    _, rows = _run_read_only(sql, len(numbers), query)
+    return {str(row[0]).upper() for row in rows if row and row[0] is not None}
+
+
+def _evaluate_list_filter(truth: dict[str, Any], answer: str) -> tuple[bool, dict[str, Any]]:
+    """목록 판정: 반환 전건이 조건을 만족하고 건수가 기준에 닿는지 본다.
+
+    기준 건수가 0이면 원칙 2(0건)로 넘긴다. 조건을 벗어난 번호나 DB 에 없는 번호가
+    하나라도 있으면 범위 확대·날조로 실패다.
+    """
+    text = answer or ""
+    absence = _absence_hits(text)
+    if truth.get("error"):
+        return False, {
+            "db_error": truth["error"],
+            "absence_phrases": absence,
+            "absence_ignored": True,
+        }
+
+    expected = int(truth.get("expected_count") or 0)
+    if expected == 0:
+        empty_passed, empty_detail = _evaluate_empty_latest(text)
+        empty_detail["absence_ignored"] = True
+        return empty_passed, empty_detail
+
+    detected = extract_bid_numbers(text)
+    limit = int(truth.get("limit") or expected)
+    required = min(limit, expected)
+    detail: dict[str, Any] = {
+        "detected_bid_numbers": sorted(detected),
+        "detected_count": len(detected),
+        "expected_count": expected,
+        "limit": limit,
+        "required_count": required,
+        "absence_phrases": absence,
+        "absence_ignored": True,
+        "count_sql": truth.get("count_sql"),
+    }
+    if not detected:
+        detail["reason"] = "공고번호가 답변에 없습니다"
+        return False, detail
+
+    targets = sorted(detected)[:MAX_LIST_VERIFY_NUMBERS]
+    try:
+        verified = _verified_bid_numbers(truth, targets)
+    except Exception as exc:
+        detail["verify_error"] = str(exc)
+        return False, detail
+
+    unverified = sorted(detected - verified)
+    detail.update(
+        {
+            "checked_count": len(targets),
+            "verified_count": len(verified),
+            "truncated": len(detected) > len(targets),
+            "unverified_bid_numbers": unverified[:20],
+            "verify_sql": _list_verify_sql(truth["spec"], targets[:3]),
+        }
+    )
+    passed = not unverified and len(detected) >= required
+    return passed, detail
+
+
+def _match_values(
+    values: list[float], candidates: list[float], tolerance_ratio: float
+) -> tuple[list[float], list[float], list[float]]:
+    """기준값마다 답변 후보에서 허용 오차 안의 수를 하나씩 소비해 맞춘다.
+
+    같은 후보를 두 기준값이 함께 쓰지 못하게 한다(다중집합 대조). 돌려주는 값은
+    (맞춘 기준값, 못 맞춘 기준값, 쓰지 않은 후보)다.
+    """
+    remaining = list(candidates)
+    matched: list[float] = []
+    missing: list[float] = []
+    for value in values:
+        tolerance = abs(value) * tolerance_ratio
+        hit = next(
+            (candidate for candidate in remaining if abs(candidate - value) <= tolerance + 1e-9),
+            None,
+        )
+        if hit is None:
+            missing.append(value)
+        else:
+            remaining.remove(hit)
+            matched.append(value)
+    return matched, missing, remaining
+
+
+def _evaluate_numeric_set(
+    check: dict[str, Any], truth: dict[str, Any], answer: str, question: str = ""
+) -> tuple[bool, dict[str, Any]]:
+    """여러 기준 수치가 모두 답변에 있는지 본다."""
+    values = [float(value) for value in truth.get("values") or []]
+    question_numbers = extract_numbers(question) + extract_korean_amounts(question)
+    answer_numbers = extract_answer_numbers(answer) + extract_korean_amounts(answer)
+    candidates = subtract_question_numbers(answer_numbers, question_numbers)
+    ratio = float(check.get("tolerance_ratio", 0.0))
+    detail: dict[str, Any] = {
+        "db_values": values,
+        "labels": list(truth.get("labels") or []),
+        "question_numbers": question_numbers[:15],
+        "candidate_numbers": candidates[:15],
+        "tolerance_ratio": ratio,
+        "absence_phrases": _absence_hits(answer),
+        "absence_ignored": True,
+    }
+    if truth.get("error"):
+        detail["db_error"] = truth["error"]
+        return False, detail
+    if not values:
+        detail["db_empty"] = True
+        return False, detail
+
+    matched, missing, _remaining = _match_values(values, candidates, ratio)
+    detail.update({"matched_values": matched, "missing_values": missing})
+    return not missing, detail
+
+
+def _evaluate_time_series(
+    check: dict[str, Any], truth: dict[str, Any], answer: str, question: str = ""
+) -> tuple[bool, dict[str, Any]]:
+    """버킷 수가 min_buckets 이상이고 버킷 값이 모두 답변에 있는지 본다."""
+    buckets = [bucket for bucket in truth.get("buckets") or [] if "value" in bucket]
+    question_numbers = extract_numbers(question) + extract_korean_amounts(question)
+    answer_numbers = extract_answer_numbers(answer) + extract_korean_amounts(answer)
+    candidates = subtract_question_numbers(answer_numbers, question_numbers)
+    ratio = float(check.get("tolerance_ratio", 0.0))
+    min_buckets = int(check.get("min_buckets") or 2)
+    detail: dict[str, Any] = {
+        "bucket_labels": [str(bucket.get("label")) for bucket in buckets],
+        "db_values": [bucket["value"] for bucket in buckets],
+        "min_buckets": min_buckets,
+        "candidate_numbers": candidates[:15],
+        "tolerance_ratio": ratio,
+        "absence_phrases": _absence_hits(answer),
+        "absence_ignored": True,
+    }
+    if truth.get("error"):
+        detail["db_error"] = truth["error"]
+        return False, detail
+    if not buckets:
+        detail["db_empty"] = True
+        return False, detail
+
+    values = [float(bucket["value"]) for bucket in buckets]
+    matched, missing, _ = _match_values(values, candidates, ratio)
+    detail.update(
+        {
+            "matched_buckets": len(matched),
+            "matched_values": matched,
+            "missing_values": missing,
+        }
+    )
+    # 버킷 수가 min_buckets 이상이고, 기준 버킷의 값이 모두 답에 있어야 통과다.
+    complete = len(buckets) >= min_buckets and len(matched) == len(buckets)
+    return complete, detail
+
+
+def _forbidden_number_unit_hits(text: str, units: tuple[str, ...] | list[str]) -> list[str]:
+    """답변에 든 "수치+단위" 표기를 찾는다.
+
+    낱말 포함 검사 대신 숫자 바로 뒤에 단위가 붙은 경우만 잡아, "수치(%)는
+    제공할 수 없습니다" 같은 안내 문장은 통과시키고 "88.3%" 같은 단정은 거른다.
+    """
+    normalized = _normalize_claim_text(text)
+    hits: list[str] = []
+    for unit in units:
+        if not unit:
+            continue
+        normalized_unit = _normalize_claim_text(str(unit))
+        if not normalized_unit:
+            continue
+        pattern = re.compile(r"(?<![\d.])\d+(?:\.\d+)?" + re.escape(normalized_unit))
+        if pattern.search(normalized):
+            hits.append(str(unit))
+    return hits
+
+
+def _claim_hits(answer: str, forbidden_claims: tuple[str, ...] | list[str]) -> list[str]:
+    normalized = _normalize_claim_text(answer)
+    return [
+        claim
+        for claim in forbidden_claims
+        if claim
+        and (normalized_claim := _normalize_claim_text(claim))
+        and normalized_claim in normalized
+    ]
+
+
+def _evaluate_not_supported(
+    check: dict[str, Any],
+    answer: str,
+    forbidden_claims: tuple[str, ...] | list[str] = (),
+) -> tuple[bool, dict[str, Any]]:
+    """데이터 미보유 안내 판정.
+
+    안내 표지가 있고, 금지 낱말·금지 수치 표기·공고번호·8자리 이상 수가 없어야
+    통과다. 데이터가 없는 질문에 목록이나 비율을 지어내는 경우를 잡는다.
+    """
+    text = answer or ""
+    normalized = _normalize_claim_text(text)
+    markers = [
+        marker for marker in NOT_SUPPORTED_MARKERS if _normalize_claim_text(marker) in normalized
+    ]
+    claims = _claim_hits(text, forbidden_claims)
+    unit_hits = _forbidden_number_unit_hits(text, check.get("forbidden_number_units") or [])
+    bid_numbers = sorted(extract_bid_numbers(text))
+    fabricated = sorted(set(FABRICATED_NUMBER_PATTERN.findall(text)))
+    detail: dict[str, Any] = {
+        "supported_markers": markers,
+        "forbidden_claim_hits": claims,
+        "forbidden_unit_hits": unit_hits,
+        "detected_bid_numbers": bid_numbers,
+        "fabricated_numbers": fabricated,
+        "answer_chars": len(text),
+    }
+    passed = (
+        bool(text.strip())
+        and bool(markers)
+        and not claims
+        and not unit_hits
+        and not bid_numbers
+        and not fabricated
+    )
+    return passed, detail
+
+
+def _evaluate_filter_assertion(
+    check: dict[str, Any],
+    truth: dict[str, Any],
+    answer: str,
+    question: str = "",
+    forbidden_claims: tuple[str, ...] | list[str] = (),
+) -> tuple[bool, dict[str, Any]]:
+    """금지된 필터로 대체 해석한 흔적을 본다.
+
+    예: "부산 지역 제한 공고" 를 수요기관이 부산인 공고로 바꿔 센 건수가 답에 있으면
+    오배정이다. 대체 해석 기준값(`sql`)을 계산해 두고 답변 수치와 대조한다.
+    안내 표지가 없어도 실패다.
+    """
+    text = answer or ""
+    normalized = _normalize_claim_text(text)
+    markers = [
+        marker for marker in NOT_SUPPORTED_MARKERS if _normalize_claim_text(marker) in normalized
+    ]
+    claims = _claim_hits(text, forbidden_claims)
+    bid_numbers = sorted(extract_bid_numbers(text))
+    fabricated = sorted(set(FABRICATED_NUMBER_PATTERN.findall(text)))
+    substituted = truth.get("value")
+    question_numbers = extract_numbers(question) + extract_korean_amounts(question)
+    answer_numbers = extract_answer_numbers(text) + extract_korean_amounts(text)
+    candidates = subtract_question_numbers(answer_numbers, question_numbers)
+    ratio = float(check.get("tolerance_ratio", 0.0))
+    substituted_hit = False
+    if substituted is not None:
+        tolerance = abs(float(substituted)) * ratio
+        substituted_hit = any(
+            abs(candidate - float(substituted)) <= tolerance + 1e-9 for candidate in candidates
+        )
+    detail: dict[str, Any] = {
+        "substituted_value": substituted,
+        "substituted_value_found": substituted_hit,
+        "answer_numbers_sample": candidates[:15],
+        "supported_markers": markers,
+        "forbidden_claim_hits": claims,
+        "detected_bid_numbers": bid_numbers,
+        "fabricated_numbers": fabricated,
+        "answer_chars": len(text),
+    }
+    if truth.get("error"):
+        detail["db_error"] = truth["error"]
+        return False, detail
+    passed = (
+        bool(text.strip())
+        and bool(markers)
+        and not substituted_hit
+        and not claims
+        and not bid_numbers
+        and not fabricated
+    )
+    return passed, detail
+
+
 def evaluate_check(
     check: dict[str, Any],
     truth: dict[str, Any],
@@ -983,12 +1625,22 @@ def evaluate_check(
     kind = check["type"]
     if kind in LATEST_CHECKS:
         return _evaluate_latest(truth, answer)
-    if kind in ("numeric_fact", "winner_ranking"):
+    if kind in ("numeric_fact", "winner_ranking", "ordered_list_fact"):
         return _evaluate_numeric(check, truth, answer, question)
+    if kind == "numeric_fact_set":
+        return _evaluate_numeric_set(check, truth, answer, question)
+    if kind == "time_series_fact":
+        return _evaluate_time_series(check, truth, answer, question)
+    if kind in LIST_FILTER_CHECKS:
+        return _evaluate_list_filter(truth, answer)
     if kind == "bid_lookup":
         return _evaluate_bid_lookup(truth, answer, question)
     if kind == "refuse_or_redirect":
         return _evaluate_refusal(answer, forbidden_claims)
+    if kind == "not_supported":
+        return _evaluate_not_supported(check, answer, forbidden_claims)
+    if kind == "filter_assertion":
+        return _evaluate_filter_assertion(check, truth, answer, question, forbidden_claims)
     return True, {"note": "도구 선택만 판정"}
 
 
@@ -1121,9 +1773,9 @@ def summarize_item(item: dict[str, Any], attempts: list[dict[str, Any]]) -> dict
         "tools": tool_union,
         "attempts": attempts,
     }
-    # 원칙 4: 범위 밖 판정은 낱말 기반 근사다. 코디네이터가 답변을 직접 읽어
-    # 확정할 수 있도록 결과에 표시를 남긴다.
-    if item.get("category") == "out_of_scope" or item["check"]["type"] == "refuse_or_redirect":
+    # 원칙 4: 범위 밖·데이터 미보유·오배정 판정은 낱말 기반 근사다. 코디네이터가
+    # 답변을 직접 읽어 확정할 수 있도록 결과에 표시를 남긴다.
+    if item.get("category") == "out_of_scope" or item["check"]["type"] in HEURISTIC_CHECK_TYPES:
         record["heuristic"] = True
     return record
 
@@ -1227,6 +1879,65 @@ def run_item(
     return summarize_item(item, attempts)
 
 
+def _sql_check_errors(check: dict[str, Any]) -> list[str]:
+    """sql 로 기준값을 계산하는 판정 유형의 공통 검사."""
+    errors: list[str] = []
+    statement = str(check.get("sql") or "")
+    if not statement.lower().lstrip().startswith(("select", "with")):
+        errors.append("check.sql 은 SELECT/WITH 단일 문장이어야 합니다")
+    if ";" in statement.strip().rstrip(";"):
+        errors.append("check.sql 에 세미콜론을 쓸 수 없습니다")
+    ratio = check.get("tolerance_ratio")
+    if not isinstance(ratio, (int, float)) or ratio < 0:
+        errors.append("check.tolerance_ratio 는 0 이상 수여야 합니다")
+    if "expected_value" in check:
+        errors.append("정답을 fixture 에 고정할 수 없습니다. sql 로 계산하십시오")
+    return errors
+
+
+def _list_filter_errors(kind: str, check: dict[str, Any]) -> list[str]:
+    """목록 판정 유형의 limit·분류·조건 검사."""
+    errors: list[str] = []
+    limit = check.get("limit")
+    if not isinstance(limit, int) or not 1 <= limit <= 50:
+        errors.append("check.limit 은 1~50 정수여야 합니다")
+    category = check.get("category")
+    if category is not None and category not in CATEGORY_CODES:
+        errors.append(f"check.category 값이 잘못됐습니다: {category!r}")
+
+    if kind == "announcement_deadline":
+        days = check.get("days")
+        if not isinstance(days, int) or days < 1:
+            errors.append("check.days 는 1 이상 정수여야 합니다")
+        deadline_field = check.get("deadline_field")
+        if deadline_field is not None and deadline_field != "bid_clse_dt":
+            errors.append(f"check.deadline_field 값이 잘못됐습니다: {deadline_field!r}")
+    elif kind == "announcement_filtered":
+        amount_field = check.get("amount_field")
+        if amount_field is not None and amount_field not in ANNOUNCEMENT_AMOUNT_FIELDS:
+            errors.append(f"check.amount_field 값이 잘못됐습니다: {amount_field!r}")
+        has_amount = check.get("min_amount") is not None or check.get("max_amount") is not None
+        if has_amount and amount_field is None:
+            errors.append("금액 조건에는 check.amount_field 가 필요합니다")
+        for key in ("min_amount", "max_amount"):
+            value = check.get(key)
+            if value is not None and (not isinstance(value, int) or value < 0):
+                errors.append(f"check.{key} 는 0 이상 정수여야 합니다")
+        window_days = check.get("window_days")
+        if window_days is not None and (not isinstance(window_days, int) or window_days < 1):
+            errors.append("check.window_days 는 1 이상 정수여야 합니다")
+        if category is None and not has_amount:
+            errors.append("announcement_filtered 에 category 또는 금액 조건이 필요합니다")
+    elif kind == "winner_result_list":
+        winner_like = check.get("winner_like")
+        if not isinstance(winner_like, str) or not winner_like:
+            errors.append("check.winner_like 가 필요합니다")
+        window_days = check.get("window_days")
+        if window_days is not None and (not isinstance(window_days, int) or window_days < 1):
+            errors.append("check.window_days 는 1 이상 정수여야 합니다")
+    return errors
+
+
 def _check_required_keys(check: dict[str, Any]) -> list[str]:
     kind = check.get("type")
     errors: list[str] = []
@@ -1271,6 +1982,22 @@ def _check_required_keys(check: dict[str, Any]) -> list[str]:
             errors.append("check.bid_no_placeholder 가 필요합니다")
         elif placeholder not in PLACEHOLDER_QUERIES:
             errors.append(f"등록되지 않은 placeholder: {placeholder}")
+    elif kind in LIST_FILTER_CHECKS:
+        errors.extend(_list_filter_errors(kind, check))
+    elif kind == "ordered_list_fact":
+        errors.extend(_sql_check_errors(check))
+    elif kind in ("numeric_fact_set", "time_series_fact", "filter_assertion"):
+        errors.extend(_sql_check_errors(check))
+        if kind == "time_series_fact":
+            min_buckets = check.get("min_buckets")
+            if not isinstance(min_buckets, int) or min_buckets < 1:
+                errors.append("check.min_buckets 는 1 이상 정수여야 합니다")
+    elif kind == "not_supported":
+        units = check.get("forbidden_number_units")
+        if units is not None and (
+            not isinstance(units, list) or not all(isinstance(unit, str) and unit for unit in units)
+        ):
+            errors.append("check.forbidden_number_units 는 문자열 배열이어야 합니다")
     return errors
 
 
@@ -1316,6 +2043,7 @@ def validate_fixture(payload: dict[str, Any], expected_split: str, path: Path | 
                 errors.append(f"{where}: {key} 는 문자열 배열이어야 합니다")
 
         claims = item.get("forbidden_claims")
+        check_type = (item.get("check") or {}).get("type")
         if category == "out_of_scope":
             # 범위 밖 문항은 지어낸 답을 걸러낼 낱말 목록을 반드시 가져야 한다.
             # 비어 있으면 사실을 단정하는 답도 통과해 판정이 느슨해진다.
@@ -1327,8 +2055,11 @@ def validate_fixture(payload: dict[str, Any], expected_split: str, path: Path | 
                 errors.append(
                     f"{where}: out_of_scope 문항에는 forbidden_claims 문자열 배열이 필요합니다"
                 )
-        elif claims is not None:
-            errors.append(f"{where}: forbidden_claims 는 out_of_scope 문항에만 쓸 수 있습니다")
+        elif claims is not None and check_type not in CLAIM_ITEM_CHECK_TYPES:
+            errors.append(
+                f"{where}: forbidden_claims 는 out_of_scope 또는 "
+                f"{', '.join(CLAIM_ITEM_CHECK_TYPES)} 판정 문항에만 쓸 수 있습니다"
+            )
 
         repeats = item.get("repeats")
         if not isinstance(repeats, int) or not 1 <= repeats <= 5:

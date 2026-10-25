@@ -35,6 +35,7 @@ from src.app.services.planner_intent_signals import (
     _has_kb_refresh_intent,
     _has_prediction_action_intent,
     _is_bid_price_prediction_request,
+    _is_model_validation_request,
     _select_action,
 )
 from src.rag.engine import (
@@ -45,6 +46,7 @@ from src.rag.engine import (
     is_result_list_query,
 )
 from src.rag.query_planning import extract_institution_scope
+from src.rag.scope_guard import is_out_of_scope_request
 
 
 def _load_last_plan(context_state: dict[str, Any] | None) -> ChatPlan | None:
@@ -103,6 +105,15 @@ def interpret_request(
         execution_plan.reasoning = "empty request"
         return execution_plan
 
+    # 범위 밖 질문은 후속 질문 병합보다 앞에서 막는다. 병합하면 이전 입찰
+    # 질문의 도메인 표지를 상속해 범위 밖 질문이 구제될 수 있다.
+    if is_out_of_scope_request(normalized):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = []
+        execution_plan.parameters["out_of_scope"] = True
+        execution_plan.reasoning = "out_of_scope request"
+        return execution_plan
+
     # 1. 후속 질문 여부 판단 및 메시지 병합
     if last_query:
         execution_plan.is_followup = True
@@ -154,7 +165,10 @@ def interpret_request(
         return execution_plan
 
     # 4. 특정 공고 투찰가 예측은 파이프라인 모델 검증이 아니라 내부 예측 도구로 즉시 답변한다.
-    if _is_bid_price_prediction_request(normalized):
+    #    공고번호가 있는 예측 요청은 예측 동작 표지만으로도 단건 조회보다 우선합니다.
+    bid_ntce_no = extract_bid_ntce_no(normalized)
+    is_prediction_price_request = _is_bid_price_prediction_request(normalized, bid_ntce_no)
+    if is_prediction_price_request:
         execution_plan.query_type = "answer"
         execution_plan.requested_capabilities = ["bid_prediction_tool"]
         execution_plan.parameters["query"] = message
@@ -188,14 +202,22 @@ def interpret_request(
         for action in ACTION_CATALOG.values()
         if any(keyword in normalized for keyword in action.keywords)
     ]
+    is_model_validation = _is_model_validation_request(normalized)
     if _has_prediction_action_intent(normalized):
         if _has_collection_context_only(normalized):
             matched_actions = [
                 action for action in matched_actions if action.action_key != "collect_refresh"
             ]
-        if not _has_collection_command(normalized) and not any(
+        if is_prediction_price_request:
+            matched_actions = [
+                action for action in matched_actions if action.action_key != "prediction_validate"
+            ]
+        elif not _has_collection_command(normalized) and not any(
             action.action_key == "prediction_validate" for action in matched_actions
         ):
+            matched_actions.append(ACTION_CATALOG["prediction_validate"])
+    elif is_model_validation and not is_prediction_price_request:
+        if not any(action.action_key == "prediction_validate" for action in matched_actions):
             matched_actions.append(ACTION_CATALOG["prediction_validate"])
 
     wants_kb_refresh = _has_kb_refresh_intent(normalized)
@@ -238,7 +260,6 @@ def interpret_request(
     # 공고번호 단건은 목록·집계가 아니라 단건 조회 도구로 보냅니다. 도구는
     # 질의를 다시 계획하므로 여기서는 도구 선택과 파라미터만 맞춥니다.
     if is_bid_number_query(normalized):
-        bid_ntce_no = extract_bid_ntce_no(normalized)
         if bid_ntce_no:
             execution_plan.filters["bid_ntce_no"] = bid_ntce_no
         execution_plan.query_type = "answer"
