@@ -36,7 +36,8 @@ def _applied_conditions_line(filters: dict | None) -> str:
     elif date_to:
         period = f"{date_to} 이전"
     else:
-        period = "전체"
+        relative_years = int(filters.get("relative_years") or 0)
+        period = f"최근 {relative_years}년" if relative_years else "전체"
 
     category_label = _normalize_text(str(filters.get("category_label") or ""))
     if not category_label:

@@ -15,7 +15,7 @@ import os
 import re
 import time
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -64,12 +64,14 @@ from src.rag.query_planning import (
     _parse_time_window,
     _parse_year_month_window,
     _query_lower,
+    apply_default_statistics_window,
     build_retrieval_plan,
     extract_bid_ntce_no,
     extract_result_limit,
     is_announcement_list_query,
     is_bid_number_query,
     is_result_list_query,
+    replace_whole_period_insufficiency_hint,
 )
 from src.rag.schemas import (
     DEFAULT_VECTOR_TOP_K,
@@ -186,19 +188,38 @@ def get_bidding_statistics(
         filters["date_to"] = date_to
     if query and any(keyword in _query_lower(query) for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
-    if not filters.get("date_from") and not filters.get("date_to") and years:
-        today = date.today()
-        filters["date_from"] = (today - timedelta(days=(365 * years) - 1)).isoformat()
-        filters["date_to"] = today.isoformat()
+    if not filters.get("date_from") and not filters.get("date_to"):
+        filters["relative_years"] = years
+    filters = apply_default_statistics_window(filters)
 
     plan = RetrievalPlan(
         use_sql=True,
         filters=filters,
         semantic_query=_normalize_text(query),
-        time_bias="recent" if filters.get("date_from") else "",
+        time_bias="recent" if filters.get("relative_years") else "",
         route_reason="정형 통계 함수 호출",
     )
     return json.dumps(retrieve_structured_data(db, plan), ensure_ascii=False, default=str)
+
+
+def _apply_entry_default_statistics_window(plan: RetrievalPlan) -> RetrievalPlan:
+    """엔진 직접 SQL 분기에 기본 통계 창을 주입합니다.
+
+    개체 지정 질의는 어휘 채널로도 처리되고 기간 필터를 걸면 대상 공고를 놓칠
+    수 있으므로, 공고번호 단건과 함께 기본 창을 만들지 않습니다.
+    """
+    filters = plan.filters or {}
+    if plan.use_lexical or filters.get("bid_ntce_no"):
+        return plan
+    windowed = apply_default_statistics_window(filters)
+    return plan.model_copy(
+        update={
+            "filters": windowed,
+            "insufficiency_hints": replace_whole_period_insufficiency_hint(
+                plan.insufficiency_hints, windowed
+            ),
+        }
+    )
 
 
 def search_recent_details(query: str, top_k: int = DEFAULT_VECTOR_TOP_K) -> str:
@@ -767,11 +788,23 @@ class HybridRAGEngine:
         plan_elapsed_ms = (_safe_perf_counter() - t_plan_start) * 1000.0
 
         structured_data, vector_docs, kb_status = _normalize_tool_context(tool_context)
+        # 도구가 이미 창을 정해 돌려줬으면 계획 안내도 같은 창을 가리키게 맞춥니다.
+        if plan.use_sql and isinstance(structured_data, dict):
+            tool_filters = structured_data.get("filters")
+            if isinstance(tool_filters, dict):
+                plan = plan.model_copy(
+                    update={
+                        "insufficiency_hints": replace_whole_period_insufficiency_hint(
+                            plan.insufficiency_hints, tool_filters
+                        )
+                    }
+                )
         vector_failed = False
 
         sql_elapsed_ms = 0.0
         structured_sql_segments: dict[str, Any] | None = None
         if plan.use_sql and structured_data is None and db is not None:
+            plan = _apply_entry_default_statistics_window(plan)
             t_sql_start = _safe_perf_counter()
             structured_data = retrieve_structured_data(db, plan)
             sql_elapsed_ms = (_safe_perf_counter() - t_sql_start) * 1000.0
