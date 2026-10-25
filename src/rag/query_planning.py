@@ -653,17 +653,120 @@ def _institution_token_candidates(token: str, *, include_entity_org_tokens: bool
     return candidates
 
 
-def extract_institution_scope(
+# 기관을 둘 이상 나열할 때 쓰는 연결어입니다. "이랑" 은 "랑" 보다 먼저 떼어야
+# "공주시이랑" 이 "공주시이" 로 잘리지 않습니다.
+INSTITUTION_ENUM_CONNECTORS = ("이랑", "랑", "하고", "와", "과", "및")
+# 연결어 하나만 있는 어절은 기관 이름이 아니라 나열 표지입니다.
+INSTITUTION_ENUM_STANDALONE_CONNECTORS = frozenset({"및", "와", "과", "랑", "이랑", "하고"})
+# 쉼표도 나열 표지입니다. 어절 안에 붙은 쉽표는 어절 분리 단계에서 떨어집니다.
+INSTITUTION_ENUM_SEPARATORS = (",", "·", "/")
+
+
+def _institution_scope_name(token: str, *, include_entity_org_tokens: bool) -> str:
+    """어절 하나에서 대표 기관 범위 이름을 고릅니다. 없으면 빈 문자열입니다."""
+    best = ""
+    for candidate in _institution_token_candidates(
+        token, include_entity_org_tokens=include_entity_org_tokens
+    ):
+        if candidate.endswith("도") and candidate not in OFFICIAL_PROVINCE_NAMES:
+            continue
+        if len(candidate) > len(best):
+            best = candidate
+    return best
+
+
+def _institution_enumeration_token_pairs(query: str) -> list[tuple[str, str]]:
+    """어절과 그 앞 구분자를 순서대로 돌려줍니다.
+
+    쉼표로 나열한 "공주시, 서산시" 와 공백으로 나열한 "대전 유성구" 를
+    구분해야 하므로 구분자 문자열을 함께 남깁니다.
+    """
+    normalized = _normalize_text(query)
+    pairs: list[tuple[str, str]] = []
+    position = 0
+    separator = ""
+    for match in RESULT_LIST_TOKEN_SPLIT_PATTERN.finditer(normalized):
+        token = normalized[position : match.start()]
+        if token:
+            pairs.append((token, separator))
+        separator = match.group(0)
+        position = match.end()
+    token = normalized[position:]
+    if token:
+        pairs.append((token, separator))
+    return pairs
+
+
+def _split_institution_enum_connector(token: str) -> tuple[str, str]:
+    """어절 끝의 나열 연결어를 떼어 (기관 어절, 연결어)를 돌려줍니다."""
+    for connector in INSTITUTION_ENUM_CONNECTORS:
+        if token.endswith(connector) and len(token) > len(connector) + 1:
+            return token[: -len(connector)], connector
+    return token, ""
+
+
+def _extract_enumerated_institution_names(
     query: str, *, include_entity_org_tokens: bool = True
+) -> list[str]:
+    """나열 연결어로 이어진 기관 이름을 질의 순서대로 돌려줍니다.
+
+    "공주시와 서산시의 ...", "공주시랑 서산시 ...", "한국전력공사와
+    한국농어촌공사 ..." 처럼 와·과·랑·이랑·하고·및·쉼표로 기관이 이어질 때만
+    동작합니다. 기관이 아닌 낱말이 끼면 그 자리에서 나열 구간이 끝나므로
+    "대전 유성구" 나 "결과" 안의 "과" 를 나열로 오인하지 않습니다.
+    """
+    names: list[str] = []
+    previous_connector = False
+    pending_connector = False
+    for token, separator in _institution_enumeration_token_pairs(query):
+        if token in INSTITUTION_ENUM_STANDALONE_CONNECTORS:
+            pending_connector = True
+            continue
+        body, connector = _split_institution_enum_connector(token)
+        name = _institution_scope_name(body, include_entity_org_tokens=include_entity_org_tokens)
+        if not name:
+            if names:
+                break
+            previous_connector = False
+            pending_connector = False
+            continue
+        if names:
+            separated = (
+                pending_connector
+                or previous_connector
+                or any(marker in separator for marker in INSTITUTION_ENUM_SEPARATORS)
+            )
+            if not separated:
+                break
+        if name not in names:
+            names.append(name)
+        previous_connector = bool(connector)
+        pending_connector = False
+    return names if len(names) >= 2 else []
+
+
+def extract_institution_scope(
+    query: str,
+    *,
+    include_entity_org_tokens: bool = True,
+    multiple: bool = False,
 ) -> dict[str, Any]:
     """목록·집계 질의에서 기관·지역 범위를 뽑습니다.
 
     공공기관 접미사 토큰을 먼저 보고, 다음으로 행정 구역(시·군·구·도)을 봅니다.
     "공주시청" 은 "공주시" 로 정규화하고, "시장"·"시설"·"지구" 같은 일반 명사는
     제외합니다. 광역 단축명은 정식 명칭과 함께 institution_aliases 로 돌려줍니다.
-    한 질의에서 기관 하나만 채택하며, 가장 긴 이름을 씁니다.
+    기본값은 기관 하나를 가장 긴 이름으로 채택하는 기존 동작입니다. multiple 이
+    참이면 와·과·랑·이랑·하고·및·쉼표로 나열한 기관을 모두 institution_names 로
+    돌려줍니다.
     """
     normalized = _normalize_text(query)
+    if multiple:
+        enumerated = _extract_enumerated_institution_names(
+            normalized, include_entity_org_tokens=include_entity_org_tokens
+        )
+        if enumerated:
+            return {"institution_names": enumerated}
     tokens = [token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized) if token]
 
     best_name = ""
@@ -1331,6 +1434,49 @@ def is_result_query(query: str) -> bool:
     if "낙찰률" in lowered:
         return True
     return bool(RESULT_ATTRIBUTE_PATTERN.search(lowered))
+
+
+def is_multi_institution_result_list_query(query: str) -> bool:
+    """기관 둘 이상을 나열한 낙찰 결과 목록 질의인지 판정합니다.
+
+    "한국전력공사와 한국농어촌공사 낙찰 결과 5건" 은 기관 접미사만 보면 개체
+    지정 질의로 판정되어 기존 목록 판정이 거짓이 됩니다. 기관을 둘 이상
+    나열했다면 개체 하나를 지목한 질의가 아니므로, 기존 목록 판정을 바꾸지
+    않고 이 함수로 목록 경로에 보냅니다.
+    """
+    lowered = _query_lower(query)
+    if not _extract_enumerated_institution_names(_normalize_text(query)):
+        return False
+    if not is_result_query(query):
+        return False
+    if COUNT_PATTERN.search(lowered):
+        return True
+    return any(marker in lowered for marker in RESULT_LIST_MARKERS)
+
+
+def is_multi_institution_announcement_list_query(query: str) -> bool:
+    """기관 둘 이상을 나열한 공고 목록 질의인지 판정합니다.
+
+    "공주시 및 서산시 및 천안시 공고", "공주시, 서산시, 천안시 공고" 처럼 개수나
+    목록 표지가 없어 기존 공고 목록 판정이 거짓이 되는 질의를 목록 경로에
+    보냅니다. 기존 판정을 바꾸지 않고 기관 나열이 확인될 때만 참을 돌려줍니다.
+    지역 비교("부산이랑 대구 공고 건수 비교")와 통계·설명 질의, 낙찰 결과 질의는
+    각자의 기존 경로가 맡도록 거짓입니다.
+    """
+    normalized = _normalize_text(query)
+    lowered = _query_lower(query)
+    if len(_extract_enumerated_institution_names(normalized)) < 2:
+        return False
+    if not any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS):
+        return False
+    comparison_regions, comparison_institutions = _extract_comparison_targets(normalized)
+    if comparison_regions or comparison_institutions:
+        return False
+    if _has_excluded_list_marker(lowered):
+        return False
+    if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
+        return False
+    return not any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS)
 
 
 # 요청 어미는 어절마다 나열하지 않고 한 번에 뗍니다. 띄어 쓴 "줄 수 있어" 처럼
@@ -2297,7 +2443,9 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     is_entity = is_entity_specific_query(normalized_query)
     result_list_query = is_result_list_query(normalized_query)
-    announcement_list_query = is_announcement_list_query(normalized_query)
+    announcement_list_query = is_announcement_list_query(
+        normalized_query
+    ) or is_multi_institution_announcement_list_query(normalized_query)
     has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS) or (
         _is_count_statistics_query(normalized_query)
     )
@@ -2327,8 +2475,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_vector = True
 
     inst_candidates = _extract_institution_list(normalized_query)
+    enumerated_names = _extract_enumerated_institution_names(normalized_query)
+    multi_result_list = is_multi_institution_result_list_query(normalized_query)
     comparison_regions, comparison_institutions = _extract_comparison_targets(normalized_query)
-    if inst_candidates or comparison_regions or comparison_institutions:
+    if inst_candidates or enumerated_names or comparison_regions or comparison_institutions:
         use_sql = True
 
     date_from, date_to, time_bias, explicit_range = _parse_time_window(normalized_query)
@@ -2416,12 +2566,25 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["notice_kind"] = notice_kind
 
     region_fallback_name = ""
+    # 기관 나열은 목록 질의이거나, 공고·낙찰 도메인 표지가 있는 집계 질의에서만
+    # 범위로 승격합니다. "부산이랑 대구 여행 코스 비교" 처럼 통계 표지("비교")만
+    # 있는 비입찰 질의는 기관 조건을 만들지 않습니다.
+    enumerated_scope = bool(
+        announcement_list_query
+        or result_list_query
+        or multi_result_list
+        or (has_stat_keywords and any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS))
+    )
     if comparison_regions:
         filters["region_names"] = comparison_regions
     elif comparison_institutions:
         filters["institution_names"] = comparison_institutions
     elif inst_candidates:
         filters["institution_names"] = inst_candidates
+    elif enumerated_names and enumerated_scope:
+        # 기관을 둘 이상 지목하면 하나만 남기지 않고 모두 담습니다. 비교 표지가
+        # 있으면 위 비교 경로가 먼저 잡으므로 목록으로 바꾸지 않습니다.
+        filters["institution_names"] = enumerated_names
     elif not is_bid_number:
         for region in REGION_KEYWORDS:
             if region in lowered:
@@ -2434,7 +2597,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     # 기관 상세 조회에는 학교·병원 같은 개체 접미사 토큰을 기관 조건으로 승격하지
     # 않습니다. 그 토큰은 공고명의 일부인 경우가 많습니다.
     list_intent = announcement_list_query or result_list_query
-    scope_applicable = bool(list_intent or has_stat_keywords)
+    scope_applicable = bool(list_intent or has_stat_keywords or multi_result_list)
     scope_explanatory = any(marker in lowered for marker in INSTITUTION_SCOPE_EXPLANATORY_MARKERS)
     if (
         scope_applicable
@@ -2442,7 +2605,11 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         and not filters.get("institution_names")
         and not filters.get("region_names")
     ):
-        scope = extract_institution_scope(normalized_query, include_entity_org_tokens=list_intent)
+        scope = extract_institution_scope(
+            normalized_query,
+            include_entity_org_tokens=list_intent,
+            multiple=bool(list_intent or multi_result_list),
+        )
         scope_name = str(scope.get("institution_name") or "")
         existing_name = _normalize_text(str(filters.get("institution_name") or ""))
         # 광역 사전 대체 경로는 "대전 유성구" 에서 먼저 "대전" 을 넣습니다. 추출기가
@@ -2473,7 +2640,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     # 비교" 처럼 개수가 붙은 비교 질의가 공고 목록 응답으로 새는 것을 막습니다.
     # 공고번호 단건도 같은 이유로 목록 제한을 두지 않습니다.
     has_comparison = bool(comparison_regions or comparison_institutions)
-    if result_list_query and not has_comparison and not is_bid_number:
+    if (result_list_query or multi_result_list) and not has_comparison and not is_bid_number:
         filters["result_limit"] = extract_result_limit(normalized_query)
 
     if announcement_list_query and not has_comparison and not is_bid_number:

@@ -36,6 +36,7 @@ from src.app.services.planner_intent_signals import (
     _has_kb_refresh_intent,
     _has_prediction_action_intent,
     _is_bid_price_prediction_request,
+    _is_institution_list_message,
     _is_model_validation_request,
     _select_action,
 )
@@ -47,7 +48,11 @@ from src.rag.engine import (
     is_bid_number_query,
     is_result_list_query,
 )
-from src.rag.query_planning import extract_institution_scope
+from src.rag.query_planning import (
+    extract_institution_scope,
+    is_multi_institution_announcement_list_query,
+    is_multi_institution_result_list_query,
+)
 from src.rag.scope_guard import is_out_of_scope_request
 
 
@@ -156,10 +161,17 @@ def interpret_request(
 
     # 2. 지역/기관/분야 필터 추출 및 누적
     region = _extract_followup_region(normalized)
-    institution_scope = extract_institution_scope(normalized)
+    institution_scope = extract_institution_scope(
+        normalized, multiple=_is_institution_list_message(normalized)
+    )
     _, category_code = _extract_followup_category(normalized)
-    if institution_scope.get("institution_name"):
+    if institution_scope.get("institution_names"):
+        execution_plan.filters["institution_names"] = list(institution_scope["institution_names"])
+        execution_plan.filters.pop("institution_name", None)
+        execution_plan.filters.pop("institution_aliases", None)
+    elif institution_scope.get("institution_name"):
         execution_plan.filters["institution_name"] = institution_scope["institution_name"]
+        execution_plan.filters.pop("institution_names", None)
         if institution_scope.get("institution_aliases"):
             execution_plan.filters["institution_aliases"] = list(
                 institution_scope["institution_aliases"]
@@ -168,6 +180,7 @@ def interpret_request(
             execution_plan.filters.pop("institution_aliases", None)
     elif region:
         execution_plan.filters["institution_name"] = region
+        execution_plan.filters.pop("institution_names", None)
     if category_code:
         execution_plan.filters["category"] = category_code
 
@@ -269,6 +282,32 @@ def interpret_request(
         )
         execution_plan.parameters["announcement_limit"] = extract_result_limit(normalized)
         execution_plan.reasoning = "recent announcement list request"
+        return execution_plan
+
+    # 개수 표지가 없어 기존 공고 목록 판정이 거짓이 되는 복수 기관 나열
+    # ("공주시 및 서산시 및 천안시 공고")도 목록 도구로 보내 모든 기관 조건을
+    # 겁니다. 기존 판정은 그대로 둡니다.
+    if is_multi_institution_announcement_list_query(normalized):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = ["bid_query_tool"]
+        execution_plan.parameters.update(
+            _extract_bid_query_params(execution_plan.effective_query, execution_plan.filters)
+        )
+        execution_plan.parameters["announcement_limit"] = extract_result_limit(normalized)
+        execution_plan.reasoning = "multi institution announcement list request"
+        return execution_plan
+
+    # 기관 둘 이상을 지목한 낙찰 결과 목록은 기관 접미사 때문에 기존 목록
+    # 판정이 거짓이 됩니다. 개체 하나를 지목한 질의가 아니므로 목록 도구로
+    # 보내 두 기관 조건을 모두 겁니다.
+    if is_multi_institution_result_list_query(normalized):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = ["bid_query_tool"]
+        execution_plan.parameters.update(
+            _extract_bid_query_params(execution_plan.effective_query, execution_plan.filters)
+        )
+        execution_plan.parameters["limit"] = extract_result_limit(normalized)
+        execution_plan.reasoning = "multi institution result list request"
         return execution_plan
 
     # 공고번호 단건은 목록·집계가 아니라 단건 조회 도구로 보냅니다. 도구는

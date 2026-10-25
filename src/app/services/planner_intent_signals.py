@@ -15,6 +15,10 @@ from src.rag.query_planning import (
     extract_aggregate_filters,
     extract_category,
     extract_institution_scope,
+    is_announcement_list_query,
+    is_multi_institution_announcement_list_query,
+    is_multi_institution_result_list_query,
+    is_result_list_query,
 )
 
 ADVISORY_KEYWORDS = ("매일", "매주", "알림", "구독", "자동으로", "정기")
@@ -220,17 +224,32 @@ COLLECTION_COMMAND_KEYWORDS = (
 COLLECTION_CONTEXT_KEYWORDS = ("수집된", "수집한", "수집 완료")
 
 
+def _is_institution_list_message(message: str) -> bool:
+    """기관을 둘 이상 지목할 수 있는 목록 질문인지 판정합니다.
+
+    기관 나열 추출은 목록 질문에서만 켭니다. "부산이랑 대구 공고 건수 비교" 같은
+    지역 비교 질의는 기존 비교 경로를 그대로 쓰게 하기 위해서입니다.
+    """
+    return (
+        is_announcement_list_query(message)
+        or is_result_list_query(message)
+        or is_multi_institution_announcement_list_query(message)
+        or is_multi_institution_result_list_query(message)
+    )
+
+
 def _extract_bid_query_params(
     message: str, filters: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     params: dict[str, Any] = {"query": message, "years": 5}
     lowered = message.lower()
-    scope = extract_institution_scope(message)
+    scope = extract_institution_scope(message, multiple=_is_institution_list_message(message))
 
     if filters:
         for key in (
             "category",
             "institution_name",
+            "institution_names",
             "institution_aliases",
             "years",
             "date_from",
@@ -240,10 +259,17 @@ def _extract_bid_query_params(
             if key in filters:
                 params[key] = filters[key]
 
+    if "institution_names" not in params and scope.get("institution_names"):
+        params["institution_names"] = list(scope["institution_names"])
     if "institution_name" not in params and scope.get("institution_name"):
         params["institution_name"] = scope["institution_name"]
     if "institution_aliases" not in params and scope.get("institution_aliases"):
         params["institution_aliases"] = scope["institution_aliases"]
+    # 기관을 둘 이상 담았으면 단일 기관 조건은 싣지 않습니다. 두 조건이 함께
+    # 도구에 도착하면 범위가 한 기관으로 좁혀질 수 있습니다.
+    if params.get("institution_names"):
+        params.pop("institution_name", None)
+        params.pop("institution_aliases", None)
 
     if "category" not in params:
         _, category = extract_category(message)
