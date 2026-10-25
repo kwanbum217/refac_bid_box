@@ -50,6 +50,7 @@ from src.rag.query_planning import (
     REGION_ALIASES,
     RESULT_AMOUNT_FIELD,
     collect_unapplied_result_conditions,
+    is_result_amount_scope,
     unapplied_result_condition_notice,
 )
 from src.rag.schemas import RetrievalPlan
@@ -2453,8 +2454,14 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     result_limit = _result_limit(plan)
     announcement_limit = _announcement_limit(plan)
     # 낙찰 결과 테이블이 지원하지 않는 축의 조건은 조회에서 빠집니다. 조용히 빼지
-    # 않고 남겨, 사용자가 조건이 적용된 줄 오해하지 않게 합니다.
-    unapplied_conditions = collect_unapplied_result_conditions(plan.filters) if result_limit else []
+    # 않고 남겨, 사용자가 조건이 적용된 줄 오해하지 않게 합니다. 목록뿐 아니라
+    # 낙찰 건수·평균 낙찰률 같은 통계도 같은 테이블을 집계하므로 함께 밝힙니다.
+    result_amount_scope = is_result_amount_scope(plan.semantic_query)
+    unapplied_conditions = (
+        collect_unapplied_result_conditions(plan.filters)
+        if result_limit or result_amount_scope
+        else []
+    )
     latest_available_result_at = None
     if result_limit:
         latest_available_result_at = db.scalar(

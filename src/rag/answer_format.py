@@ -672,7 +672,13 @@ def _build_single_metric_answer(
         if category_label and category_label != "-":
             subject.append(category_label)
 
-    return f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
+    answer = f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
+    unapplied_notice = unapplied_result_condition_notice(
+        structured_data.get("unapplied_conditions") or []
+    )
+    if unapplied_notice:
+        answer += f"\n{unapplied_notice}"
+    return answer
 
 
 def _compose_context_text(

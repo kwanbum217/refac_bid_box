@@ -11,7 +11,11 @@ import pytest
 
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.rag import query_planning
-from src.rag.answer_format import _build_announcement_list_answer, _build_result_list_answer
+from src.rag.answer_format import (
+    _build_announcement_list_answer,
+    _build_result_list_answer,
+    _build_single_metric_answer,
+)
 from src.rag.query_planning import build_retrieval_plan, extract_result_limit
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
@@ -506,6 +510,52 @@ def test_condition_with_statistics_marker_stays_statistics():
     assert "result_limit" not in plan.filters
     assert "announcement_limit" not in plan.filters
     assert plan.route_reason == "정형 통계 질의"
+
+
+def test_result_count_query_without_amount_field_uses_winning_amount():
+    query = "3억 넘는 낙찰 건수 알려줘"
+    plan = build_retrieval_plan(query)
+
+    assert plan.filters.get("min_amount") == 300_000_001
+    assert plan.filters.get("amount_field") == "sucsf_bid_amt"
+    assert plan.route_reason == "정형 통계 질의"
+    assert query_planning.is_result_amount_scope(query) is True
+
+
+def test_result_count_aggregate_excludes_rows_below_bound(isolated_db, result_rows):
+    plan = build_retrieval_plan("3억 넘는 낙찰 건수 알려줘")
+    summary = retrieve_structured_data(isolated_db, plan)["summary"]
+
+    assert summary["total_bids"] == 1
+
+
+def test_average_winning_rate_query_without_amount_field_uses_winning_amount():
+    plan = build_retrieval_plan("5억 이상 낙찰 평균 낙찰률 알려줘")
+
+    assert plan.filters.get("min_amount") == 500_000_000
+    assert plan.filters.get("amount_field") == "sucsf_bid_amt"
+    assert plan.route_reason == "정형 통계 질의"
+
+
+def test_announcement_count_query_keeps_estimated_price_field():
+    query = "5억 이상 용역 공고 몇 건이야"
+    plan = build_retrieval_plan(query)
+
+    assert plan.filters.get("min_amount") == 500_000_000
+    assert plan.filters.get("amount_field") == "presmpt_prce"
+    assert query_planning.is_result_amount_scope(query) is False
+
+
+def test_estimated_price_result_count_reports_unapplied_condition(isolated_db, result_rows):
+    query = "추정가격 5억 이상 낙찰 건수"
+    plan = build_retrieval_plan(query)
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert plan.filters.get("amount_field") == "presmpt_prce"
+    assert plan.route_reason == "정형 통계 질의"
+    assert structured_data["unapplied_conditions"] == [{"kind": "amount", "field": "presmpt_prce"}]
+    assert any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
+    assert UNAPPLIED_NOTICE in _build_single_metric_answer(plan, structured_data)
 
 
 def test_list_without_conditions_keeps_main_judgment():

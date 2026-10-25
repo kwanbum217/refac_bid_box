@@ -1943,6 +1943,19 @@ def _single_metric(lowered: str) -> str:
     return ""
 
 
+def is_result_amount_scope(query: str) -> bool:
+    """금액 필드를 지목하지 않은 질의가 낙찰 결과 대상을 읽는지 판정합니다.
+
+    낙찰 결과 목록뿐 아니라 낙찰 건수·평균 낙찰률·낙찰 금액 합계처럼 낙찰 결과를
+    집계하는 통계 질의도 같은 테이블을 읽습니다. 이런 질의의 금액 축 기본값은
+    추정가격이 아니라 낙찰금액입니다. 공고 목록·공고 통계는 추정가격을 그대로
+    씁니다.
+    """
+    if is_result_query(query):
+        return True
+    return _single_metric(_query_lower(query)) in ("bid_count", "avg_rate")
+
+
 def build_retrieval_plan(query: str) -> RetrievalPlan:
     normalized_query = _normalize_text(query)
     lowered = normalized_query.lower()
@@ -2020,10 +2033,11 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     # 낙찰 결과 질의가 금액 축을 낱말로 지목하지 않았으면 낙찰금액으로 읽습니다.
     # 공고 질의의 기본값(추정가격)을 그대로 두면 낙찰 테이블에 그 컬럼이 없어
     # 조회 계층이 조건을 버리고, "3억 넘는 낙찰 결과" 가 전체 낙찰로 넓어집니다.
+    # 목록과 통계를 같은 규칙으로 판정해야 "3억 넘는 낙찰 건수" 도 조건이 걸립니다.
     if (
         "amount_field" in amount_filters
         and not has_explicit_amount_field(normalized_query)
-        and is_result_query(normalized_query)
+        and is_result_amount_scope(normalized_query)
     ):
         amount_filters["amount_field"] = RESULT_AMOUNT_FIELD
     filters.update(amount_filters)
