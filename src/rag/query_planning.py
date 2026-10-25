@@ -1243,6 +1243,11 @@ def is_announcement_list_query(query: str) -> bool:
 # 개수 단위 뒤에 비교·범위 표지가 붙은 수는 목록 개수가 아니라 조건 수치입니다.
 # "참가업체 수 10개 이상" 의 10개를 목록 크기로 읽으면 조건이 사라진 10행 표가 나옵니다.
 COUNT_CONDITION_SUFFIX_PATTERN = re.compile(r"\s*(?:이상|이하|초과|미만|넘는|넘게|넘)")
+# 조건 수치 판정은 수치 앞에 붙은 속성 명사로 가릅니다. "공고 10건 이상",
+# "낙찰 결과 10개 이상" 은 목록 개수이고, "참가업체 수 10개 이상" 만 조건입니다.
+COUNT_ATTRIBUTE_PREFIX_PATTERN = re.compile(
+    r"(?:참가\s*업체|참여\s*업체|업체\s*수|추정\s*가격|기초\s*금액|낙찰\s*금액|금액)\s*$"
+)
 
 
 def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
@@ -1250,11 +1255,14 @@ def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int
 
     숫자와 한글 수사(한~스무)를 같은 자리에서 읽고, 단위(개/건)가 붙은 형태만
     개수로 인정합니다. 범위는 1 이상 maximum 이하로 자릅니다. 단위 뒤에 비교
-    표지가 붙은 수는 조건 수치이므로 목록 개수로 읽지 않습니다.
+    표지가 붙어도 수치 앞이 속성 명사(참가업체 수·추정가격·금액 등)이면 조건
+    수치이므로 목록 개수로 읽지 않습니다.
     """
     lowered = _query_lower(query)
     for match in COUNT_PATTERN.finditer(lowered):
-        if COUNT_CONDITION_SUFFIX_PATTERN.match(lowered, match.end()):
+        if COUNT_CONDITION_SUFFIX_PATTERN.match(
+            lowered, match.end()
+        ) and COUNT_ATTRIBUTE_PREFIX_PATTERN.search(lowered[: match.start()]):
             continue
         numeral = re.sub(r"\s*(?:개|건)$", "", match.group(0)).strip()
         value = int(numeral) if numeral.isdigit() else KOREAN_NUMERALS.get(numeral)
@@ -1269,6 +1277,14 @@ def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int
 CLOSE_MARKER_PATTERN = re.compile(r"마감")
 CLOSE_IMMINENT_PATTERN = re.compile(r"마감\s*임박")
 CLOSE_WINDOW_DAYS = 3
+# 정렬을 뜻하는 표지(순·순서·순으로·정렬)가 마감 표지에 붙으면 그 표현은 기간
+# 창이 아니라 정렬 요청입니다. 창을 판정하기 전에 이 표현을 걷어냅니다.
+CLOSE_SORT_PATTERN = re.compile(
+    r"마감(?:\s*(?:이|가))?"
+    r"(?:\s*(?:임박|빠른|일|날짜))?"
+    r"(?:\s*(?:한|인|하는|되는))?"
+    r"\s*(?:순서|순으로|순|정렬)"
+)
 
 AMOUNT_UNIT_MULTIPLIERS: dict[str, int] = {
     "억": 100_000_000,
@@ -1309,14 +1325,6 @@ SORT_AMOUNT_DESC_MARKERS = (
     "가장 높은",
 )
 SORT_AMOUNT_ASC_MARKERS = ("낮은순", "낮은 순", "적은순", "적은 순")
-SORT_DEADLINE_ASC_MARKERS = (
-    "마감임박순",
-    "마감 임박순",
-    "마감빠른순",
-    "마감 빠른 순",
-    "마감일순",
-    "마감일 순",
-)
 
 
 def _compact_text(value: str) -> str:
@@ -1335,19 +1343,24 @@ def _parse_close_window(query: str) -> tuple[str, str] | None:
     | `오늘 마감` | 오늘 |
     | `내일 마감` | 내일 |
     | `이번 주 마감` | 이번 주 월요일 ~ 일요일 |
+
+    `마감 임박순`, `마감 빠른 순`, `마감일 순` 처럼 정렬 표지가 붙은 마감
+    표현은 창을 만들지 않습니다. 그 표현은 정렬 요청이므로 창으로 읽으면
+    정렬 대상이 오늘 이후 사흘로 잘립니다.
     """
     lowered = _query_lower(query)
-    if not CLOSE_MARKER_PATTERN.search(lowered):
+    scope = CLOSE_SORT_PATTERN.sub(" ", lowered)
+    if not CLOSE_MARKER_PATTERN.search(scope):
         return None
     today = date.today()
-    if CLOSE_IMMINENT_PATTERN.search(lowered):
+    if CLOSE_IMMINENT_PATTERN.search(scope):
         return today.isoformat(), (today + timedelta(days=CLOSE_WINDOW_DAYS)).isoformat()
-    if "오늘" in lowered:
+    if "오늘" in scope:
         return today.isoformat(), today.isoformat()
-    if "내일" in lowered:
+    if "내일" in scope:
         tomorrow = today + timedelta(days=1)
         return tomorrow.isoformat(), tomorrow.isoformat()
-    if "이번 주" in lowered or "이번주" in lowered:
+    if "이번 주" in scope or "이번주" in scope:
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
         return week_start.isoformat(), week_end.isoformat()
@@ -1419,12 +1432,13 @@ def extract_sort_filters(query: str) -> dict[str, str]:
     """질의의 정렬 축과 방향을 읽습니다.
 
     금액 정렬(높은 순·큰 순·많은 순·비싼 순·금액순)은 대상 금액 컬럼의 내림차순,
-    낮은 순·적은 순은 오름차순입니다. 마감 임박순·마감 빠른 순은 마감일
-    오름차순입니다. 표지가 없으면 빈 사전을 돌려주어 기존 정렬을 유지합니다.
+    낮은 순·적은 순은 오름차순입니다. 마감 임박순·마감 빠른 순처럼 마감 표지에
+    정렬 표지가 붙으면 마감일 오름차순입니다. 표지가 없으면 빈 사전을 돌려주어
+    기존 정렬을 유지합니다.
     """
     lowered = _query_lower(query)
     compact = _compact_text(lowered)
-    if any(_compact_text(marker) in compact for marker in SORT_DEADLINE_ASC_MARKERS):
+    if CLOSE_SORT_PATTERN.search(lowered):
         return {"order_by": "bid_clse_dt", "order_dir": "asc"}
     amount_field = extract_amount_field(lowered)
     if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_ASC_MARKERS):

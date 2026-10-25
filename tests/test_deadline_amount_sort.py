@@ -113,6 +113,52 @@ def test_sort_filters(query, order_by, order_dir):
     assert plan.filters.get("order_dir") == order_dir
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "마감 임박순 공고 5개",
+        "마감 임박순으로 용역 공고 5개 보여줘",
+        "마감 빠른 순 용역 공고",
+        "마감일 순으로 용역 공고 5개 보여줘",
+    ],
+)
+def test_deadline_sort_expression_does_not_create_close_window(frozen_today, query):
+    plan = build_retrieval_plan(query)
+
+    assert "close_from" not in plan.filters
+    assert "close_to" not in plan.filters
+    assert plan.filters.get("order_by") == "bid_clse_dt"
+    assert plan.filters.get("order_dir") == "asc"
+
+
+def test_deadline_sort_keeps_list_limit(frozen_today):
+    plan = build_retrieval_plan("마감 임박순 공고 5개")
+
+    assert plan.filters.get("announcement_limit") == 5
+
+
+def test_deadline_imminent_without_sort_suffix_keeps_window(frozen_today):
+    plan = build_retrieval_plan("마감 임박 공고 보여줘")
+
+    assert plan.filters.get("close_from") == "2026-10-25"
+    assert plan.filters.get("close_to") == "2026-10-28"
+    assert "order_by" not in plan.filters
+
+
+@pytest.mark.parametrize(
+    "query,filters_key",
+    [
+        ("공고 10건 이상 보여줘", "announcement_limit"),
+        ("낙찰 결과 10개 이상 보여줘", "result_limit"),
+    ],
+)
+def test_list_count_with_comparator_is_still_a_limit(query, filters_key):
+    plan = build_retrieval_plan(query)
+
+    assert plan.filters.get(filters_key) == 10
+    assert extract_result_limit(query) == 10
+
+
 def test_queries_without_new_markers_keep_existing_filters(frozen_today):
     list_plan = build_retrieval_plan("최근 용역 공고 5개만 리스트해줘")
     assert list_plan.filters == {
