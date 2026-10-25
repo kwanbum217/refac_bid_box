@@ -96,7 +96,11 @@ _PROJECT_HEAD_NOUNS = (
     "개선",
 )
 
-_PROJECT_TAIL_LENGTH = 12
+_PROJECT_TAIL_LENGTH = 16
+
+# 미보유 낱말과 사업 명사 사이에 끼는 수량 표현은 공고명 구를 끊지 않습니다.
+# 예: "참가업체 수 분석 용역 공고"
+_PROJECT_COUNTERS = re.compile(r"^(?:가지|개|건|수|곳|회|차)+")
 
 _WHITESPACE = re.compile(r"\s+")
 
@@ -120,18 +124,15 @@ def _normalize_request(message: str) -> str:
 
 
 def _is_project_name_phrase(text: str, match: re.Match[str]) -> bool:
-    """미보유 낱말이 사업 명사와 붙어 공고명 구를 이루는지 판정합니다."""
-    token = match.group()
-    if not (
-        token.startswith("참가자격")
-        or token.startswith("경쟁률")
-        or token.endswith("사정률")
-        or token.endswith("사정율")
-        or token.endswith("하한율")
-    ):
-        return False
-    tail = text[match.end() : match.end() + _PROJECT_TAIL_LENGTH]
-    return _WHITESPACE.sub("", tail).startswith(_PROJECT_HEAD_NOUNS)
+    """미보유 낱말 뒤에 사업 명사가 붙어 공고명 구를 이루는지 판정합니다.
+
+    모든 미보유 항목에 같은 규칙을 적용합니다. 낱말 바로 뒤에 수량 표현이
+    끼어도 사업 명사가 이어지면 공고명 구로 봅니다.
+    """
+    tail = _WHITESPACE.sub("", text[match.end() :])[:_PROJECT_TAIL_LENGTH]
+    if tail.startswith(_PROJECT_HEAD_NOUNS):
+        return True
+    return _PROJECT_COUNTERS.sub("", tail).startswith(_PROJECT_HEAD_NOUNS)
 
 
 def detect_data_gap(message: str) -> str | None:
