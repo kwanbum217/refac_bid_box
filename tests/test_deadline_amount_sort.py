@@ -605,3 +605,45 @@ def test_list_without_conditions_keeps_main_judgment():
     assert query_planning.is_announcement_list_query("공고 보여줘") is False
     assert build_retrieval_plan("공고 보여줘").filters == {}
     assert build_retrieval_plan("공고 보여줘").use_sql is False
+
+
+@pytest.mark.parametrize(
+    "query,order_dir,expected_order",
+    [
+        ("낙찰 결과 금액 낮은 순 3건", "asc", ["RES-003", "RES-002", "RES-001"]),
+        ("낙찰금액 높은 순 낙찰 결과 5건", "desc", ["RES-001", "RES-002", "RES-003"]),
+        ("금액 큰 순 낙찰 결과 보여줘", "desc", ["RES-001", "RES-002", "RES-003"]),
+    ],
+)
+def test_result_amount_sort_without_field_uses_winning_amount(
+    isolated_db, result_rows, query, order_dir, expected_order
+):
+    plan = build_retrieval_plan(query)
+
+    assert plan.filters.get("order_by") == "sucsf_bid_amt"
+    assert plan.filters.get("order_dir") == order_dir
+
+    structured_data = retrieve_structured_data(isolated_db, plan)
+    recent = structured_data["summary"]["recent_results"]
+
+    assert [row["bid_ntce_no"] for row in recent] == expected_order
+    assert structured_data["unapplied_conditions"] == []
+    assert not any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
+    assert UNAPPLIED_NOTICE not in _build_result_list_answer(plan, structured_data)
+
+
+def test_estimated_price_result_sort_keeps_unapplied_notice(isolated_db, result_rows):
+    plan = build_retrieval_plan("추정가격 높은 순 낙찰 결과")
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert plan.filters.get("order_by") == "presmpt_prce"
+    assert structured_data["unapplied_conditions"] == [{"kind": "order", "field": "presmpt_prce"}]
+    assert any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
+
+
+def test_estimated_price_announcement_sort_stays_estimated_price():
+    plan = build_retrieval_plan("추정가격 높은 순으로 용역 공고 5개 보여줘")
+
+    assert plan.filters.get("order_by") == "presmpt_prce"
+    assert plan.filters.get("order_dir") == "desc"
+    assert plan.filters.get("announcement_limit") == 5

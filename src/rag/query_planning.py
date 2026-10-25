@@ -1570,12 +1570,18 @@ def extract_sort_filters(query: str) -> dict[str, str]:
     낮은 순·적은 순은 오름차순입니다. 마감 임박순·마감 빠른 순처럼 마감 표지에
     정렬 표지가 붙으면 마감일 오름차순입니다. 표지가 없으면 빈 사전을 돌려주어
     기존 정렬을 유지합니다.
+
+    낙찰 결과 질의가 금액 축을 낱말로 지목하지 않았으면 금액 조건과 같은 규칙
+    (is_result_amount_scope)을 정렬 축에도 적용해 낙찰금액을 씁니다. 추정가격을
+    명시한 질의는 그 축을 그대로 두어 미적용 안내도 유지합니다.
     """
     lowered = _query_lower(query)
     compact = _compact_text(lowered)
     if CLOSE_SORT_PATTERN.search(lowered):
         return {"order_by": "bid_clse_dt", "order_dir": "asc"}
     amount_field = extract_amount_field(lowered)
+    if not has_explicit_amount_field(lowered) and is_result_amount_scope(lowered):
+        amount_field = RESULT_AMOUNT_FIELD
     if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_ASC_MARKERS):
         return {"order_by": amount_field, "order_dir": "asc"}
     if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_DESC_MARKERS):
