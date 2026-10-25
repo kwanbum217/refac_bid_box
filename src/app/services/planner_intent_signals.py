@@ -11,7 +11,12 @@ import re
 from typing import Any
 
 from src.app.services.action_catalog import ACTION_CATALOG
-from src.rag.query_planning import extract_institution_scope
+from src.rag.query_planning import (
+    extract_institution_scope,
+    is_announcement_list_query,
+    is_multi_institution_result_list_query,
+    is_result_list_query,
+)
 
 ADVISORY_KEYWORDS = ("매일", "매주", "알림", "구독", "자동으로", "정기")
 STATISTICS_KEYWORDS = (
@@ -215,17 +220,35 @@ COLLECTION_COMMAND_KEYWORDS = (
 COLLECTION_CONTEXT_KEYWORDS = ("수집된", "수집한", "수집 완료")
 
 
+def _is_institution_list_message(message: str) -> bool:
+    """기관을 둘 이상 지목할 수 있는 목록 질문인지 판정합니다.
+
+    기관 나열 추출은 목록 질문에서만 켭니다. "부산이랑 대구 공고 건수 비교" 같은
+    지역 비교 질의는 기존 비교 경로를 그대로 쓰게 하기 위해서입니다.
+    """
+    return (
+        is_announcement_list_query(message)
+        or is_result_list_query(message)
+        or is_multi_institution_result_list_query(message)
+    )
+
+
 def _strip_institution_scope(message: str, scope: dict[str, Any] | None = None) -> str:
     """기관으로 인식된 문자열을 지운 메시지를 돌려줍니다.
 
     "한국농어촌공사" 의 "공사" 가 분야 키워드로 오인되는 것을 막습니다. RAG
     플래너의 공기업 토큰 제거와 같은 방식입니다.
     """
-    resolved = scope if scope is not None else extract_institution_scope(message)
+    resolved = (
+        scope
+        if scope is not None
+        else extract_institution_scope(message, multiple=_is_institution_list_message(message))
+    )
     stripped = message
     names: list[str] = []
     if resolved.get("institution_name"):
         names.append(str(resolved["institution_name"]))
+    names.extend(str(name) for name in resolved.get("institution_names") or [])
     names.extend(str(alias) for alias in resolved.get("institution_aliases") or [])
     for name in sorted(set(names), key=len, reverse=True):
         if name:
@@ -238,12 +261,13 @@ def _extract_bid_query_params(
 ) -> dict[str, Any]:
     params: dict[str, Any] = {"query": message, "years": 5}
     lowered = message.lower()
-    scope = extract_institution_scope(message)
+    scope = extract_institution_scope(message, multiple=_is_institution_list_message(message))
 
     if filters:
         for key in (
             "category",
             "institution_name",
+            "institution_names",
             "institution_aliases",
             "years",
             "date_from",
@@ -253,10 +277,17 @@ def _extract_bid_query_params(
             if key in filters:
                 params[key] = filters[key]
 
+    if "institution_names" not in params and scope.get("institution_names"):
+        params["institution_names"] = list(scope["institution_names"])
     if "institution_name" not in params and scope.get("institution_name"):
         params["institution_name"] = scope["institution_name"]
     if "institution_aliases" not in params and scope.get("institution_aliases"):
         params["institution_aliases"] = scope["institution_aliases"]
+    # 기관을 둘 이상 담았으면 단일 기관 조건은 싣지 않습니다. 두 조건이 함께
+    # 도구에 도착하면 범위가 한 기관으로 좁혀질 수 있습니다.
+    if params.get("institution_names"):
+        params.pop("institution_name", None)
+        params.pop("institution_aliases", None)
 
     if "category" not in params:
         category_source = _strip_institution_scope(message, scope).lower()

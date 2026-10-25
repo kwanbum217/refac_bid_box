@@ -776,6 +776,43 @@ def _resolve_institution_scope_names(
     return merged
 
 
+def _resolve_multi_institution_scope_names(
+    db: Session, column, institution_names: list[str]
+) -> tuple[list[str], list[str]]:
+    """이름마다 기관명을 해석해 합집합과 부분 일치 대체 이름을 돌려줍니다.
+
+    해석 상한을 넘은 검색어는 이름 목록을 만들 수 없지만 버리지 않고 부분
+    일치 대상으로 남깁니다. 그 이름을 버리면 기관 조건이 사라져 전체 목록으로
+    조용히 넓어집니다.
+    """
+    resolved: list[str] = []
+    fallback: list[str] = []
+    for raw in institution_names:
+        name = _normalize_text(str(raw))
+        if not name:
+            continue
+        matched = _resolve_institution_names(db, column, name)
+        if matched is None:
+            if name not in fallback:
+                fallback.append(name)
+            continue
+        for value in matched:
+            if value not in resolved:
+                resolved.append(value)
+    return resolved, fallback
+
+
+def _multi_institution_condition(column, resolved: list[str], fallback: list[str]):
+    """해석된 이름 목록과 부분 일치 대체 이름을 하나의 OR 조건으로 묶습니다."""
+    terms: list[Any] = []
+    if resolved:
+        terms.append(column.in_(resolved))
+    terms.extend(column.contains(name) for name in fallback)
+    if not terms:
+        return None
+    return or_(*terms)
+
+
 # U+FFFD 는 SQL 에서 먼저 쳐내므로 배수는 작아도 됩니다.
 LIVE_OVERFETCH_FACTOR = 3
 
@@ -2109,7 +2146,18 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
 
     comparison_metric = _normalize_text(str(filters.get("metric") or ""))
     raw_institution_names = filters.get("institution_names")
-    if raw_institution_names and isinstance(raw_institution_names, list):
+    multi_list_names: list[str] = []
+    if (
+        raw_institution_names
+        and isinstance(raw_institution_names, list)
+        and (_announcement_limit(plan) or _result_limit(plan))
+    ):
+        # 기관 둘 이상을 지목한 목록 질의는 비교 요약 분기로 보내지 않고 아래
+        # 목록 경로에서 IN 조건으로 조회합니다.
+        multi_list_names = [
+            name for name in (_normalize_text(str(item)) for item in raw_institution_names) if name
+        ]
+    if raw_institution_names and isinstance(raw_institution_names, list) and not multi_list_names:
         target_names = raw_institution_names[:5]
         requested_targets: list[tuple[str, list[str] | None]] = []
         targets: list[tuple[str, list[str] | None]] = []
@@ -2311,24 +2359,73 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
 
     institution_name = _normalize_text(str((plan.filters or {}).get("institution_name") or ""))
     institution_aliases = _institution_aliases(plan.filters or {})
-    result_names = announcement_names = None
-    if institution_name or institution_aliases:
+    result_names: list[str] | None = None
+    announcement_names: list[str] | None = None
+    result_name_fallbacks: list[str] = []
+    announcement_name_fallbacks: list[str] = []
+    condition_plan = plan
+    if multi_list_names:
+        # 이름마다 해석해 IN 조건의 합집합을 만듭니다. 해석 상한을 넘은 이름은
+        # 부분 일치로 남겨 기관 조건이 사라지지 않게 합니다.
+        result_names, result_name_fallbacks = _resolve_multi_institution_scope_names(
+            db, BidResult.dminstt_nm, multi_list_names
+        )
+        announcement_names, announcement_name_fallbacks = _resolve_multi_institution_scope_names(
+            db, BidAnnouncement.dminstt_nm, multi_list_names
+        )
+        # 해석된 이름이 하나도 없으면 전체 목록으로 넘어가지 않고 빈 결과를
+        # 돌려줍니다.
+        if _announcement_limit(plan) and not (announcement_names or announcement_name_fallbacks):
+            return _empty_result(
+                plan,
+                "요청한 기관명을 데이터에서 확인하지 못해 공고 목록을 조회하지 못했습니다. "
+                "기관명을 다시 확인해 주세요.",
+            )
+        if _result_limit(plan) and not (result_names or result_name_fallbacks):
+            return _empty_result(
+                plan,
+                "요청한 기관명을 데이터에서 확인하지 못해 낙찰 결과 목록을 조회하지 못했습니다. "
+                "기관명을 다시 확인해 주세요.",
+            )
+        # 필터에 남은 단일 기관 조건이 IN 합집합과 겹쳐 걸리지 않게 지웁니다.
+        scope_filters = dict(plan.filters or {})
+        scope_filters.pop("institution_name", None)
+        scope_filters.pop("institution_aliases", None)
+        condition_plan = plan.model_copy(update={"filters": scope_filters})
+    elif institution_name or institution_aliases:
         result_names = _resolve_institution_scope_names(
             db, BidResult.dminstt_nm, institution_name, institution_aliases
         )
         announcement_names = _resolve_institution_scope_names(
             db, BidAnnouncement.dminstt_nm, institution_name, institution_aliases
         )
-    result_conditions = _result_conditions(plan, institution_names=result_names)
-    announcement_conditions = _announcement_conditions(plan, institution_names=announcement_names)
-    snapshot_scope = _snapshot_scope(plan)
+    # 해석 상한 초과(None)는 이름 목록 대신 부분 일치 OR 조건으로 넘깁니다.
+    result_names_arg = None if result_name_fallbacks else result_names
+    announcement_names_arg = None if announcement_name_fallbacks else announcement_names
+    result_conditions = _result_conditions(condition_plan, institution_names=result_names_arg)
+    announcement_conditions = _announcement_conditions(
+        condition_plan, institution_names=announcement_names_arg
+    )
+    if result_name_fallbacks:
+        fallback_condition = _multi_institution_condition(
+            BidResult.dminstt_nm, result_names or [], result_name_fallbacks
+        )
+        if fallback_condition is not None:
+            result_conditions.append(fallback_condition)
+    if announcement_name_fallbacks:
+        fallback_condition = _multi_institution_condition(
+            BidAnnouncement.dminstt_nm, announcement_names or [], announcement_name_fallbacks
+        )
+        if fallback_condition is not None:
+            announcement_conditions.append(fallback_condition)
+    snapshot_scope = _snapshot_scope(condition_plan)
     result_limit = _result_limit(plan)
     announcement_limit = _announcement_limit(plan)
     latest_available_result_at = None
     if result_limit:
         latest_available_result_at = db.scalar(
             select(func.max(BidResult.rl_openg_dt)).where(
-                *_result_availability_conditions(plan, institution_names=result_names)
+                *_result_availability_conditions(condition_plan, institution_names=result_names_arg)
             )
         )
 
@@ -2342,10 +2439,10 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         metric = "bid_count"
     group_limit = _group_limit(plan)
     winner_conditions = _result_conditions(
-        plan, enable_ngram_prefilter=True, institution_names=result_names
+        condition_plan, enable_ngram_prefilter=True, institution_names=result_names_arg
     )
     institution_conditions = _announcement_conditions(
-        plan, enable_ngram_prefilter=True, institution_names=announcement_names
+        condition_plan, enable_ngram_prefilter=True, institution_names=announcement_names_arg
     )
 
     def result_amounts(session: Session) -> list[Any]:
@@ -2357,8 +2454,8 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     func.avg(BidResult.sucsf_bid_rate),
                     func.sum(BidResult.sucsf_bid_amt),
                 ).where(*result_conditions),
-                plan,
-                result_names,
+                condition_plan,
+                result_names_arg,
             ),
         )
 
@@ -2367,8 +2464,8 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             session,
             _hint_announcement_institution_cover(
                 select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
-                plan,
-                announcement_names,
+                condition_plan,
+                announcement_names_arg,
             ),
         )
 
@@ -2390,8 +2487,8 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     ),
                     plan,
                 ),
-                plan,
-                result_names,
+                condition_plan,
+                result_names_arg,
             ),
             corrupted_probe=select(BidResult.id).where(
                 BidResult.bidwinnr_nm.contains(REPLACEMENT_CHAR), *result_conditions
@@ -2413,8 +2510,8 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     .order_by(func.count(BidAnnouncement.id).desc()),
                     plan,
                 ),
-                plan,
-                announcement_names,
+                condition_plan,
+                announcement_names_arg,
             ),
             corrupted_probe=select(BidAnnouncement.id).where(
                 BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
@@ -2439,8 +2536,8 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     .order_by(func.count(BidAnnouncement.id).desc()),
                     plan,
                 ),
-                plan,
-                announcement_names,
+                condition_plan,
+                announcement_names_arg,
             ),
             corrupted_probe=select(BidAnnouncement.id).where(
                 BidAnnouncement.bid_ntce_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
@@ -2517,11 +2614,11 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     )
     time_series = _build_time_series(
         db,
-        plan,
+        condition_plan,
         result_conditions,
         announcement_conditions=announcement_conditions,
-        result_names=result_names,
-        announcement_names=announcement_names,
+        result_names=result_names_arg,
+        announcement_names=announcement_names_arg,
     )
 
     dropped_total = dropped_winners + dropped_institutions + dropped_announcements
