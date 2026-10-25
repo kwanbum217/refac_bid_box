@@ -653,17 +653,120 @@ def _institution_token_candidates(token: str, *, include_entity_org_tokens: bool
     return candidates
 
 
-def extract_institution_scope(
+# 기관을 둘 이상 나열할 때 쓰는 연결어입니다. "이랑" 은 "랑" 보다 먼저 떼어야
+# "공주시이랑" 이 "공주시이" 로 잘리지 않습니다.
+INSTITUTION_ENUM_CONNECTORS = ("이랑", "랑", "하고", "와", "과", "및")
+# 연결어 하나만 있는 어절은 기관 이름이 아니라 나열 표지입니다.
+INSTITUTION_ENUM_STANDALONE_CONNECTORS = frozenset({"및", "와", "과", "랑", "이랑", "하고"})
+# 쉼표도 나열 표지입니다. 어절 안에 붙은 쉽표는 어절 분리 단계에서 떨어집니다.
+INSTITUTION_ENUM_SEPARATORS = (",", "·", "/")
+
+
+def _institution_scope_name(token: str, *, include_entity_org_tokens: bool) -> str:
+    """어절 하나에서 대표 기관 범위 이름을 고릅니다. 없으면 빈 문자열입니다."""
+    best = ""
+    for candidate in _institution_token_candidates(
+        token, include_entity_org_tokens=include_entity_org_tokens
+    ):
+        if candidate.endswith("도") and candidate not in OFFICIAL_PROVINCE_NAMES:
+            continue
+        if len(candidate) > len(best):
+            best = candidate
+    return best
+
+
+def _institution_enumeration_token_pairs(query: str) -> list[tuple[str, str]]:
+    """어절과 그 앞 구분자를 순서대로 돌려줍니다.
+
+    쉼표로 나열한 "공주시, 서산시" 와 공백으로 나열한 "대전 유성구" 를
+    구분해야 하므로 구분자 문자열을 함께 남깁니다.
+    """
+    normalized = _normalize_text(query)
+    pairs: list[tuple[str, str]] = []
+    position = 0
+    separator = ""
+    for match in RESULT_LIST_TOKEN_SPLIT_PATTERN.finditer(normalized):
+        token = normalized[position : match.start()]
+        if token:
+            pairs.append((token, separator))
+        separator = match.group(0)
+        position = match.end()
+    token = normalized[position:]
+    if token:
+        pairs.append((token, separator))
+    return pairs
+
+
+def _split_institution_enum_connector(token: str) -> tuple[str, str]:
+    """어절 끝의 나열 연결어를 떼어 (기관 어절, 연결어)를 돌려줍니다."""
+    for connector in INSTITUTION_ENUM_CONNECTORS:
+        if token.endswith(connector) and len(token) > len(connector) + 1:
+            return token[: -len(connector)], connector
+    return token, ""
+
+
+def _extract_enumerated_institution_names(
     query: str, *, include_entity_org_tokens: bool = True
+) -> list[str]:
+    """나열 연결어로 이어진 기관 이름을 질의 순서대로 돌려줍니다.
+
+    "공주시와 서산시의 ...", "공주시랑 서산시 ...", "한국전력공사와
+    한국농어촌공사 ..." 처럼 와·과·랑·이랑·하고·및·쉼표로 기관이 이어질 때만
+    동작합니다. 기관이 아닌 낱말이 끼면 그 자리에서 나열 구간이 끝나므로
+    "대전 유성구" 나 "결과" 안의 "과" 를 나열로 오인하지 않습니다.
+    """
+    names: list[str] = []
+    previous_connector = False
+    pending_connector = False
+    for token, separator in _institution_enumeration_token_pairs(query):
+        if token in INSTITUTION_ENUM_STANDALONE_CONNECTORS:
+            pending_connector = True
+            continue
+        body, connector = _split_institution_enum_connector(token)
+        name = _institution_scope_name(body, include_entity_org_tokens=include_entity_org_tokens)
+        if not name:
+            if names:
+                break
+            previous_connector = False
+            pending_connector = False
+            continue
+        if names:
+            separated = (
+                pending_connector
+                or previous_connector
+                or any(marker in separator for marker in INSTITUTION_ENUM_SEPARATORS)
+            )
+            if not separated:
+                break
+        if name not in names:
+            names.append(name)
+        previous_connector = bool(connector)
+        pending_connector = False
+    return names if len(names) >= 2 else []
+
+
+def extract_institution_scope(
+    query: str,
+    *,
+    include_entity_org_tokens: bool = True,
+    multiple: bool = False,
 ) -> dict[str, Any]:
     """목록·집계 질의에서 기관·지역 범위를 뽑습니다.
 
     공공기관 접미사 토큰을 먼저 보고, 다음으로 행정 구역(시·군·구·도)을 봅니다.
     "공주시청" 은 "공주시" 로 정규화하고, "시장"·"시설"·"지구" 같은 일반 명사는
     제외합니다. 광역 단축명은 정식 명칭과 함께 institution_aliases 로 돌려줍니다.
-    한 질의에서 기관 하나만 채택하며, 가장 긴 이름을 씁니다.
+    기본값은 기관 하나를 가장 긴 이름으로 채택하는 기존 동작입니다. multiple 이
+    참이면 와·과·랑·이랑·하고·및·쉼표로 나열한 기관을 모두 institution_names 로
+    돌려줍니다.
     """
     normalized = _normalize_text(query)
+    if multiple:
+        enumerated = _extract_enumerated_institution_names(
+            normalized, include_entity_org_tokens=include_entity_org_tokens
+        )
+        if enumerated:
+            return {"institution_names": enumerated}
     tokens = [token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized) if token]
 
     best_name = ""
@@ -1333,6 +1436,49 @@ def is_result_query(query: str) -> bool:
     return bool(RESULT_ATTRIBUTE_PATTERN.search(lowered))
 
 
+def is_multi_institution_result_list_query(query: str) -> bool:
+    """기관 둘 이상을 나열한 낙찰 결과 목록 질의인지 판정합니다.
+
+    "한국전력공사와 한국농어촌공사 낙찰 결과 5건" 은 기관 접미사만 보면 개체
+    지정 질의로 판정되어 기존 목록 판정이 거짓이 됩니다. 기관을 둘 이상
+    나열했다면 개체 하나를 지목한 질의가 아니므로, 기존 목록 판정을 바꾸지
+    않고 이 함수로 목록 경로에 보냅니다.
+    """
+    lowered = _query_lower(query)
+    if not _extract_enumerated_institution_names(_normalize_text(query)):
+        return False
+    if not is_result_query(query):
+        return False
+    if COUNT_PATTERN.search(lowered):
+        return True
+    return any(marker in lowered for marker in RESULT_LIST_MARKERS)
+
+
+def is_multi_institution_announcement_list_query(query: str) -> bool:
+    """기관 둘 이상을 나열한 공고 목록 질의인지 판정합니다.
+
+    "공주시 및 서산시 및 천안시 공고", "공주시, 서산시, 천안시 공고" 처럼 개수나
+    목록 표지가 없어 기존 공고 목록 판정이 거짓이 되는 질의를 목록 경로에
+    보냅니다. 기존 판정을 바꾸지 않고 기관 나열이 확인될 때만 참을 돌려줍니다.
+    지역 비교("부산이랑 대구 공고 건수 비교")와 통계·설명 질의, 낙찰 결과 질의는
+    각자의 기존 경로가 맡도록 거짓입니다.
+    """
+    normalized = _normalize_text(query)
+    lowered = _query_lower(query)
+    if len(_extract_enumerated_institution_names(normalized)) < 2:
+        return False
+    if not any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS):
+        return False
+    comparison_regions, comparison_institutions = _extract_comparison_targets(normalized)
+    if comparison_regions or comparison_institutions:
+        return False
+    if _has_excluded_list_marker(lowered):
+        return False
+    if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
+        return False
+    return not any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS)
+
+
 # 요청 어미는 어절마다 나열하지 않고 한 번에 뗍니다. 띄어 쓴 "줄 수 있어" 처럼
 # 여러 어절로 갈라지는 꼬리는 어절 분리 전에 문자열 단위로 지웁니다.
 RESULT_LIST_REQUEST_TAIL_PATTERN = re.compile(
@@ -1434,6 +1580,48 @@ def _has_excluded_list_marker(lowered: str) -> bool:
     )
 
 
+# 마감일 창·금액 조건·정렬 표지는 목록의 범위를 좁히는 표지입니다. 개수나
+# 목록·리스트 같은 목록 신호가 없어도 조건이 대상을 한정하므로, 결과·공고를
+# 요청하는 표현과 요청 동사가 함께 있으면 목록 요청으로 봅니다. 통계 표현
+# (몇 건·건수·평균)이 있으면 목록이 아니라 통계로 남깁니다.
+LIST_SCOPE_RESULT_MARKERS = ("낙찰 결과", "낙찰결과", "낙찰 내역", "낙찰내역")
+LIST_SCOPE_ANNOUNCEMENT_MARKER = "공고"
+LIST_SCOPE_STATISTICS_PATTERN = re.compile(r"몇\s*(?:건|개)|건수|평균")
+CONDITION_LIST_SCOPE_RESULT = "result"
+CONDITION_LIST_SCOPE_ANNOUNCEMENT = "announcement"
+
+
+def _has_parsed_list_scope_conditions(query: str) -> bool:
+    """이 브랜치가 파싱한 마감일 창·금액 조건·정렬 표지가 있는지 판정합니다."""
+    if _parse_close_window(query) is not None:
+        return True
+    amount_filters = extract_amount_filters(query)
+    if amount_filters.get("min_amount") is not None or amount_filters.get("max_amount") is not None:
+        return True
+    return bool(extract_sort_filters(query))
+
+
+def _condition_list_scope(query: str) -> str:
+    """조건 표지가 붙은 목록 요청의 도메인을 돌려줍니다.
+
+    "낙찰 결과"·"낙찰 내역" 을 요청하면 낙찰 결과 목록, "공고" 를 요청하면 공고
+    목록입니다. 요청 동사가 없거나 파싱된 조건이 없으면 빈 문자열입니다. 통계
+    표현(몇 건·건수·평균)이 함께 있으면 목록이 아니라 통계 질의로 남깁니다.
+    """
+    lowered = _query_lower(query)
+    if LIST_SCOPE_STATISTICS_PATTERN.search(lowered):
+        return ""
+    if not RESULT_LIST_REQUEST_VERB_PATTERN.search(lowered):
+        return ""
+    if not _has_parsed_list_scope_conditions(query):
+        return ""
+    if any(marker in lowered for marker in LIST_SCOPE_RESULT_MARKERS):
+        return CONDITION_LIST_SCOPE_RESULT
+    if LIST_SCOPE_ANNOUNCEMENT_MARKER in lowered:
+        return CONDITION_LIST_SCOPE_ANNOUNCEMENT
+    return ""
+
+
 def is_result_list_query(query: str) -> bool:
     """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다.
 
@@ -1444,7 +1632,9 @@ def is_result_list_query(query: str) -> bool:
     업체명·기관명·지역명이 섞인 질의가 전체 최신 목록으로 새지 않게 합니다.
     통계 표지, 공고번호 단건, 설명형 질의는 각자의 경로가 맡도록 거짓을
     반환하고, 개체를 지목한 질의도 기존 개체 조회 경로를 그대로 쓰도록
-    거짓을 반환합니다.
+    거짓을 반환합니다. 마감일 창·금액 조건·정렬 표지가 파싱됐고 "낙찰 결과"·
+    "낙찰 내역" 과 요청 동사가 함께 있으면 그 조건을 목록의 범위 표지로 인정해
+    참을 반환합니다. 조건이 없는 "낙찰 결과 보여줘" 의 판정은 그대로입니다.
     """
     lowered = _query_lower(query)
     has_result_marker = any(marker in lowered for marker in RESULT_QUERY_MARKERS)
@@ -1461,6 +1651,7 @@ def is_result_list_query(query: str) -> bool:
         (has_result_marker and has_list_marker)
         or has_vocabulary_only
         or ("낙찰" in lowered and has_count)
+        or _condition_list_scope(query) == CONDITION_LIST_SCOPE_RESULT
     )
     if not matched:
         return False
@@ -1533,7 +1724,9 @@ def is_announcement_list_query(query: str) -> bool:
     설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
     개수나 '목록'·'리스트' 표지가 있으면 참이고, 요청 동사만 있으면 신선도
     표지(올라온·등록된·게시된·신규·최신)를 함께 요구해 범위 없는 "공고 알려줘" 가
-    전체 최신 목록으로 새지 않게 합니다.
+    전체 최신 목록으로 새지 않게 합니다. 마감일 창·금액 조건·정렬 표지가
+    파싱됐고 요청 동사가 함께 있으면 그 조건을 목록의 범위 표지로 인정해
+    참을 반환합니다. 조건이 없는 "공고 보여줘" 의 판정은 그대로입니다.
     """
     lowered = _query_lower(query)
     if ANNOUNCEMENT_FIELD_MARKER_PATTERN.search(lowered):
@@ -1547,7 +1740,10 @@ def is_announcement_list_query(query: str) -> bool:
         return False
     if any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS):
         return False
-    if not ANNOUNCEMENT_LIST_PATTERN.search(lowered):
+    if (
+        not ANNOUNCEMENT_LIST_PATTERN.search(lowered)
+        and _condition_list_scope(query) != CONDITION_LIST_SCOPE_ANNOUNCEMENT
+    ):
         return False
     if is_result_list_query(query):
         return False
@@ -1555,6 +1751,8 @@ def is_announcement_list_query(query: str) -> bool:
         return True
     if any(marker in lowered for marker in RESULT_LIST_MARKERS):
         return True
+    if _condition_list_scope(query) == CONDITION_LIST_SCOPE_ANNOUNCEMENT:
+        return not is_entity_specific_query(query)
     if not _has_announcement_list_scope(lowered):
         return False
     # 신선도 표지만 있는 경로는 범위가 없는 전체 최신 목록입니다. 기관명을
@@ -1564,20 +1762,301 @@ def is_announcement_list_query(query: str) -> bool:
     return not is_entity_specific_query(query)
 
 
+# 개수 단위 뒤에 비교·범위 표지가 붙은 수는 목록 개수가 아니라 조건 수치입니다.
+# "참가업체 수 10개 이상" 의 10개를 목록 크기로 읽으면 조건이 사라진 10행 표가 나옵니다.
+COUNT_CONDITION_SUFFIX_PATTERN = re.compile(r"\s*(?:이상|이하|초과|미만|넘는|넘게|넘)")
+# 조건 수치 판정은 수치 앞에 붙은 속성 명사로 가릅니다. "공고 10건 이상",
+# "낙찰 결과 10개 이상" 은 목록 개수이고, "참가업체 수 10개 이상" 만 조건입니다.
+COUNT_ATTRIBUTE_PREFIX_PATTERN = re.compile(
+    r"(?:참가\s*업체|참여\s*업체|업체\s*수|추정\s*가격|기초\s*금액|낙찰\s*금액|금액)\s*$"
+)
+
+
 def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int:
     """목록 질의의 요청 건수를 안전한 범위로 정규화합니다.
 
     숫자와 한글 수사(한~스무)를 같은 자리에서 읽고, 단위(개/건)가 붙은 형태만
-    개수로 인정합니다. 범위는 1 이상 maximum 이하로 자릅니다.
+    개수로 인정합니다. 범위는 1 이상 maximum 이하로 자릅니다. 단위 뒤에 비교
+    표지가 붙어도 수치 앞이 속성 명사(참가업체 수·추정가격·금액 등)이면 조건
+    수치이므로 목록 개수로 읽지 않습니다.
     """
-    match = COUNT_PATTERN.search(_query_lower(query))
-    if not match:
-        return default
-    numeral = re.sub(r"\s*(?:개|건)$", "", match.group(0)).strip()
-    value = int(numeral) if numeral.isdigit() else KOREAN_NUMERALS.get(numeral)
-    if value is None:
-        return default
-    return min(max(value, 1), maximum)
+    lowered = _query_lower(query)
+    for match in COUNT_PATTERN.finditer(lowered):
+        if COUNT_CONDITION_SUFFIX_PATTERN.match(
+            lowered, match.end()
+        ) and COUNT_ATTRIBUTE_PREFIX_PATTERN.search(lowered[: match.start()]):
+            continue
+        numeral = re.sub(r"\s*(?:개|건)$", "", match.group(0)).strip()
+        value = int(numeral) if numeral.isdigit() else KOREAN_NUMERALS.get(numeral)
+        if value is None:
+            continue
+        return min(max(value, 1), maximum)
+    return default
+
+
+# 마감 표지는 기간 표현을 공고일이 아니라 마감일 창으로 바꾸는 신호입니다.
+# 표지가 있어도 아래 상대 기간 표현이 함께 있어야 창이 확정됩니다.
+CLOSE_MARKER_PATTERN = re.compile(r"마감")
+CLOSE_IMMINENT_PATTERN = re.compile(r"마감\s*임박")
+CLOSE_WINDOW_DAYS = 3
+# 정렬을 뜻하는 표지(순·순서·순으로·정렬)가 마감 표지에 붙으면 그 표현은 기간
+# 창이 아니라 정렬 요청입니다. 창을 판정하기 전에 이 표현을 걷어냅니다.
+CLOSE_SORT_PATTERN = re.compile(
+    r"마감(?:\s*(?:이|가))?"
+    r"(?:\s*(?:임박|빠른|일|날짜))?"
+    r"(?:\s*(?:한|인|하는|되는))?"
+    r"\s*(?:순서|순으로|순|정렬)"
+)
+
+AMOUNT_UNIT_MULTIPLIERS: dict[str, int] = {
+    "억": 100_000_000,
+    "천만": 10_000_000,
+    "백만": 1_000_000,
+    "만": 10_000,
+    "천": 1_000,
+    "원": 1,
+}
+# 금액 비교 표지는 최장 일치를 먼저 두어 "넘는" 이 "넘" 으로 잘리지 않게 합니다.
+AMOUNT_COMPARATOR_PATTERN = re.compile(r"이상|이하|초과|미만|넘는|넘게|넘")
+AMOUNT_MIN_COMPARATORS = ("이상", "초과", "넘는", "넘게", "넘")
+AMOUNT_MAX_COMPARATORS = ("이하", "미만")
+AMOUNT_UNIT_PATTERN = re.compile(r"억|천만|백만|만|천|원")
+AMOUNT_TOKEN_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*(억|천만|백만|만|천)?")
+# 비교 표지 바로 앞이 금액 표기로 끝날 때만 금액 조건으로 읽습니다.
+# "10개 이상" 의 "10개" 처럼 단위가 아닌 글자로 끝나면 금액이 아닙니다.
+AMOUNT_TOKEN_SEQUENCE_PATTERN = re.compile(r"((?:\d+(?:\.\d+)?\s*(?:억|천만|백만|만|천)?\s*)+원?)$")
+# 단위 없는 수는 금액이 아닙니다. "5 이상 공고" 의 5 는 금액 하한이 아니라
+# 범위 없는 조건 수치이므로, 금액 명사가 수치 바로 앞에 붙은 경우에만 금액으로
+# 읽습니다. 이 규칙이 없으면 금액 조건이 없던 기존 질의에 min_amount 5 가 붙습니다.
+AMOUNT_NOUN_PREFIX_PATTERN = re.compile(
+    r"(?:추정\s*가격|추정\s*금액|기초\s*금액|낙찰\s*금액|낙찰가|금액|예산)\s*$"
+)
+AMOUNT_FIELD_MARKERS: tuple[tuple[str, str], ...] = (
+    ("낙찰금액", "sucsf_bid_amt"),
+    ("낙찰가", "sucsf_bid_amt"),
+    ("기초금액", "base_amount"),
+    ("추정가격", "presmpt_prce"),
+    ("추정 금액", "presmpt_prce"),
+)
+DEFAULT_AMOUNT_FIELD = "presmpt_prce"
+# 낙찰 결과 조회에 걸 금액 축의 기본 컬럼입니다. 공고 조회는 추정가격이
+# 기본이지만 낙찰 테이블에는 추정가격 컬럼이 없으므로 낙찰금액을 씁니다.
+RESULT_AMOUNT_FIELD = "sucsf_bid_amt"
+# 낙찰 결과 테이블(bid_results)에는 추정가격·기초금액·마감일 열이 없습니다. 조건이
+# 걸렸는데 조회 계층이 조용히 빼면 사용자는 조건이 적용된 줄 압니다. 적용하지 못한
+# 조건을 응답에 밝힐 수 있도록 지원 여부를 한 곳에서 판정합니다.
+RESULT_UNSUPPORTED_AMOUNT_FIELDS = ("presmpt_prce", "base_amount")
+RESULT_UNSUPPORTED_SORT_FIELDS = ("bid_clse_dt", "presmpt_prce", "base_amount")
+UNSUPPORTED_CONDITION_LABELS = {
+    "presmpt_prce": "추정가격",
+    "base_amount": "기초금액",
+    "bid_clse_dt": "마감일",
+}
+
+
+def collect_unapplied_result_conditions(
+    filters: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    """낙찰 결과 조회가 적용하지 못한 금액·정렬 조건을 모읍니다.
+
+    낙찰 결과 테이블에는 추정가격·기초금액·마감일 열이 없습니다. 금액 조건이나
+    정렬 표지가 그 축을 가리키면 조건을 버리지 않고 목록으로 남겨 응답 단계가
+    "그 조건 없이 조회했다"고 밝히게 합니다. 낙찰금액 조건과 개찰일 정렬처럼
+    지원되는 축은 담지 않습니다.
+    """
+    if not filters:
+        return []
+    conditions: list[dict[str, str]] = []
+    has_amount_bound = (
+        filters.get("min_amount") is not None or filters.get("max_amount") is not None
+    )
+    amount_field = _normalize_text(str(filters.get("amount_field") or ""))
+    if has_amount_bound and amount_field in RESULT_UNSUPPORTED_AMOUNT_FIELDS:
+        conditions.append({"kind": "amount", "field": amount_field})
+    order_by = _normalize_text(str(filters.get("order_by") or ""))
+    if order_by in RESULT_UNSUPPORTED_SORT_FIELDS:
+        conditions.append({"kind": "order", "field": order_by})
+    has_close_window = bool(filters.get("close_from") or filters.get("close_to"))
+    if has_close_window and not any(
+        condition["field"] == "bid_clse_dt" for condition in conditions
+    ):
+        conditions.append({"kind": "close_window", "field": "bid_clse_dt"})
+    return conditions
+
+
+def unapplied_result_condition_notice(conditions: list[dict[str, str]] | None) -> str:
+    """적용하지 못한 조건을 한 줄 안내 문장으로 만듭니다."""
+    labels: list[str] = []
+    for condition in conditions or []:
+        label = UNSUPPORTED_CONDITION_LABELS.get(str(condition.get("field") or ""))
+        if label and label not in labels:
+            labels.append(label)
+    if not labels:
+        return ""
+    return (
+        f"낙찰 결과에는 {'·'.join(labels)} 정보가 없어 그 조건 없이 조회했습니다. "
+        "낙찰금액 기준 조건이나 개찰일 순 정렬은 적용할 수 있습니다."
+    )
+
+
+SORT_AMOUNT_DESC_MARKERS = (
+    "높은순",
+    "높은 순",
+    "큰순",
+    "큰 순",
+    "많은순",
+    "많은 순",
+    "비싼순",
+    "비싼 순",
+    "금액순",
+    "금액 순",
+    "가장 큰",
+    "가장 높은",
+)
+SORT_AMOUNT_ASC_MARKERS = ("낮은순", "낮은 순", "적은순", "적은 순")
+
+
+def _compact_text(value: str) -> str:
+    return re.sub(r"\s+", "", value)
+
+
+def _parse_close_window(query: str) -> tuple[str, str] | None:
+    """마감 표지와 상대 기간 표현으로 마감일 창을 계산합니다.
+
+    마감 표지가 있어도 함께 쓰인 상대 기간 표현이 아래 네 가지일 때만 창을
+    확정합니다. 확정하지 못하면 기존 기간 해석(공고일 창)을 그대로 둡니다.
+
+    | 표현 | 마감일 창 |
+    | --- | --- |
+    | `마감 임박` | 오늘 ~ 오늘+3일 |
+    | `오늘 마감` | 오늘 |
+    | `내일 마감` | 내일 |
+    | `이번 주 마감` | 이번 주 월요일 ~ 일요일 |
+
+    `마감 임박순`, `마감 빠른 순`, `마감일 순` 처럼 정렬 표지가 붙은 마감
+    표현은 창을 만들지 않습니다. 그 표현은 정렬 요청이므로 창으로 읽으면
+    정렬 대상이 오늘 이후 사흘로 잘립니다.
+    """
+    lowered = _query_lower(query)
+    scope = CLOSE_SORT_PATTERN.sub(" ", lowered)
+    if not CLOSE_MARKER_PATTERN.search(scope):
+        return None
+    today = date.today()
+    if CLOSE_IMMINENT_PATTERN.search(scope):
+        return today.isoformat(), (today + timedelta(days=CLOSE_WINDOW_DAYS)).isoformat()
+    if "오늘" in scope:
+        return today.isoformat(), today.isoformat()
+    if "내일" in scope:
+        tomorrow = today + timedelta(days=1)
+        return tomorrow.isoformat(), tomorrow.isoformat()
+    if "이번 주" in scope or "이번주" in scope:
+        week_start = today - timedelta(days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+        return week_start.isoformat(), week_end.isoformat()
+    return None
+
+
+def _amount_value(text: str) -> int | None:
+    """금액 표기 문자열을 원 단위 정수로 바꿉니다.
+
+    "5억" 은 500,000,000, "1억 5천만" 은 150,000,000, "300000000원" 은
+    300,000,000 입니다. 단위가 없으면 원 단위로 읽습니다.
+    """
+    cleaned = text.strip()
+    if cleaned.endswith("원"):
+        cleaned = cleaned[: -len("원")].strip()
+    tokens = AMOUNT_TOKEN_PATTERN.findall(cleaned)
+    if not tokens:
+        return None
+    total = 0.0
+    for raw_number, unit in tokens:
+        total += float(raw_number) * AMOUNT_UNIT_MULTIPLIERS[unit or "원"]
+    value = round(total)
+    return value or None
+
+
+def extract_amount_field(query: str, default: str = DEFAULT_AMOUNT_FIELD) -> str:
+    """질의가 지목한 금액 컬럼을 돌려줍니다. 지목이 없으면 default 입니다."""
+    lowered = _query_lower(query)
+    for marker, field in AMOUNT_FIELD_MARKERS:
+        if marker in lowered:
+            return field
+    return default
+
+
+def has_explicit_amount_field(query: str) -> bool:
+    """질의가 금액 컬럼을 낱말로 지목했는지 판정합니다.
+
+    "낙찰 결과" 처럼 결과 도메인만 말하고 금액 축을 지목하지 않은 질의와
+    "낙찰금액" 처럼 축을 직접 말한 질의를 가릅니다.
+    """
+    lowered = _query_lower(query)
+    return any(marker in lowered for marker, _ in AMOUNT_FIELD_MARKERS)
+
+
+def extract_amount_filters(query: str) -> dict[str, Any]:
+    """질의의 금액 하한·상한과 대상 컬럼을 읽습니다.
+
+    금액 표기 바로 뒤에 비교 표지(이상·이하·초과·미만·넘는·넘게)가 붙은 경우만
+    조건으로 봅니다. 이상은 경계 포함, 초과·넘는·넘게는 경계 제외이므로 제외
+    조건의 하한은 1원을 더합니다. "10개 이상" 처럼 금액 단위가 없는 수는
+    조건으로 읽지 않습니다. 단위 없는 수라도 금액 명사(추정가격·기초금액·
+    낙찰금액·금액·예산)가 바로 앞에 있으면 금액으로 읽습니다.
+    """
+    lowered = _query_lower(query)
+    filters: dict[str, Any] = {}
+    for match in AMOUNT_COMPARATOR_PATTERN.finditer(lowered):
+        prefix = lowered[: match.start()].rstrip()
+        token_match = AMOUNT_TOKEN_SEQUENCE_PATTERN.search(prefix)
+        if not token_match:
+            continue
+        raw_sequence = token_match.group(1)
+        if not AMOUNT_UNIT_PATTERN.search(raw_sequence) and not AMOUNT_NOUN_PREFIX_PATTERN.search(
+            prefix[: token_match.start()]
+        ):
+            continue
+        value = _amount_value(raw_sequence)
+        if value is None:
+            continue
+        comparator = match.group(0)
+        if comparator in AMOUNT_MIN_COMPARATORS:
+            candidate = value if comparator == "이상" else value + 1
+            current = filters.get("min_amount")
+            filters["min_amount"] = max(current, candidate) if current is not None else candidate
+        elif comparator in AMOUNT_MAX_COMPARATORS:
+            candidate = value if comparator == "이하" else value - 1
+            current = filters.get("max_amount")
+            filters["max_amount"] = min(current, candidate) if current is not None else candidate
+        else:
+            continue
+        filters["amount_field"] = extract_amount_field(lowered)
+    return filters
+
+
+def extract_sort_filters(query: str) -> dict[str, str]:
+    """질의의 정렬 축과 방향을 읽습니다.
+
+    금액 정렬(높은 순·큰 순·많은 순·비싼 순·금액순)은 대상 금액 컬럼의 내림차순,
+    낮은 순·적은 순은 오름차순입니다. 마감 임박순·마감 빠른 순처럼 마감 표지에
+    정렬 표지가 붙으면 마감일 오름차순입니다. 표지가 없으면 빈 사전을 돌려주어
+    기존 정렬을 유지합니다.
+
+    낙찰 결과 질의가 금액 축을 낱말로 지목하지 않았으면 금액 조건과 같은 규칙
+    (is_result_amount_scope)을 정렬 축에도 적용해 낙찰금액을 씁니다. 추정가격을
+    명시한 질의는 그 축을 그대로 두어 미적용 안내도 유지합니다.
+    """
+    lowered = _query_lower(query)
+    compact = _compact_text(lowered)
+    if CLOSE_SORT_PATTERN.search(lowered):
+        return {"order_by": "bid_clse_dt", "order_dir": "asc"}
+    amount_field = extract_amount_field(lowered)
+    if not has_explicit_amount_field(lowered) and is_result_amount_scope(lowered):
+        amount_field = RESULT_AMOUNT_FIELD
+    if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_ASC_MARKERS):
+        return {"order_by": amount_field, "order_dir": "asc"}
+    if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_DESC_MARKERS):
+        return {"order_by": amount_field, "order_dir": "desc"}
+    return {}
 
 
 def _month_end(year: int, month: int) -> date:
@@ -1945,13 +2424,28 @@ def _single_metric(lowered: str) -> str:
     return ""
 
 
+def is_result_amount_scope(query: str) -> bool:
+    """금액 필드를 지목하지 않은 질의가 낙찰 결과 대상을 읽는지 판정합니다.
+
+    낙찰 결과 목록뿐 아니라 낙찰 건수·평균 낙찰률·낙찰 금액 합계처럼 낙찰 결과를
+    집계하는 통계 질의도 같은 테이블을 읽습니다. 이런 질의의 금액 축 기본값은
+    추정가격이 아니라 낙찰금액입니다. 공고 목록·공고 통계는 추정가격을 그대로
+    씁니다.
+    """
+    if is_result_query(query):
+        return True
+    return _single_metric(_query_lower(query)) in ("bid_count", "avg_rate")
+
+
 def build_retrieval_plan(query: str) -> RetrievalPlan:
     normalized_query = _normalize_text(query)
     lowered = normalized_query.lower()
 
     is_entity = is_entity_specific_query(normalized_query)
     result_list_query = is_result_list_query(normalized_query)
-    announcement_list_query = is_announcement_list_query(normalized_query)
+    announcement_list_query = is_announcement_list_query(
+        normalized_query
+    ) or is_multi_institution_announcement_list_query(normalized_query)
     has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS) or (
         _is_count_statistics_query(normalized_query)
     )
@@ -1981,11 +2475,14 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_vector = True
 
     inst_candidates = _extract_institution_list(normalized_query)
+    enumerated_names = _extract_enumerated_institution_names(normalized_query)
+    multi_result_list = is_multi_institution_result_list_query(normalized_query)
     comparison_regions, comparison_institutions = _extract_comparison_targets(normalized_query)
-    if inst_candidates or comparison_regions or comparison_institutions:
+    if inst_candidates or enumerated_names or comparison_regions or comparison_institutions:
         use_sql = True
 
     date_from, date_to, time_bias, explicit_range = _parse_time_window(normalized_query)
+    close_window = _parse_close_window(normalized_query)
 
     # 공고명에는 사업연도와 대상월이 흔히 들어갑니다. "2026년 9월분 학교급식물품"
     # 의 9월은 급식 대상 월이지 공고 게시월이 아니고, "(긴급)2025년 조사료
@@ -2000,6 +2497,11 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     suppress_implicit_window = is_entity and not explicit_range
     if suppress_implicit_window:
         date_from, date_to = "", ""
+    # 마감 표지와 상대 기간 표현이 함께 있으면 같은 기간을 공고일이 아니라
+    # 마감일 창으로 읽습니다. 확정된 마감 창이 있을 때만 공고일 필터를 비웁니다.
+    close_scope_applicable = close_window is not None and not is_entity
+    if close_scope_applicable:
+        date_from, date_to = "", ""
 
     filters: dict[str, Any] = {}
     # 공고번호 단건은 다른 조건과 달리 목록·집계 경로로 새지 않게 전용 필터로
@@ -2010,6 +2512,21 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["date_from"] = date_from
     if date_to:
         filters["date_to"] = date_to
+    if close_scope_applicable and close_window is not None:
+        filters["close_from"], filters["close_to"] = close_window
+    amount_filters = extract_amount_filters(normalized_query)
+    # 낙찰 결과 질의가 금액 축을 낱말로 지목하지 않았으면 낙찰금액으로 읽습니다.
+    # 공고 질의의 기본값(추정가격)을 그대로 두면 낙찰 테이블에 그 컬럼이 없어
+    # 조회 계층이 조건을 버리고, "3억 넘는 낙찰 결과" 가 전체 낙찰로 넓어집니다.
+    # 목록과 통계를 같은 규칙으로 판정해야 "3억 넘는 낙찰 건수" 도 조건이 걸립니다.
+    if (
+        "amount_field" in amount_filters
+        and not has_explicit_amount_field(normalized_query)
+        and is_result_amount_scope(normalized_query)
+    ):
+        amount_filters["amount_field"] = RESULT_AMOUNT_FIELD
+    filters.update(amount_filters)
+    filters.update(extract_sort_filters(normalized_query))
 
     # 특정 업체를 지목한 낙찰 이력 질문은 그 업체 조건을 SQL 로 넘깁니다. 조건을
     # 빼면 전체 최신 목록이 그 업체 실적처럼 답해집니다(조용한 범위 확대).
@@ -2049,12 +2566,25 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["notice_kind"] = notice_kind
 
     region_fallback_name = ""
+    # 기관 나열은 목록 질의이거나, 공고·낙찰 도메인 표지가 있는 집계 질의에서만
+    # 범위로 승격합니다. "부산이랑 대구 여행 코스 비교" 처럼 통계 표지("비교")만
+    # 있는 비입찰 질의는 기관 조건을 만들지 않습니다.
+    enumerated_scope = bool(
+        announcement_list_query
+        or result_list_query
+        or multi_result_list
+        or (has_stat_keywords and any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS))
+    )
     if comparison_regions:
         filters["region_names"] = comparison_regions
     elif comparison_institutions:
         filters["institution_names"] = comparison_institutions
     elif inst_candidates:
         filters["institution_names"] = inst_candidates
+    elif enumerated_names and enumerated_scope:
+        # 기관을 둘 이상 지목하면 하나만 남기지 않고 모두 담습니다. 비교 표지가
+        # 있으면 위 비교 경로가 먼저 잡으므로 목록으로 바꾸지 않습니다.
+        filters["institution_names"] = enumerated_names
     elif not is_bid_number:
         for region in REGION_KEYWORDS:
             if region in lowered:
@@ -2067,7 +2597,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     # 기관 상세 조회에는 학교·병원 같은 개체 접미사 토큰을 기관 조건으로 승격하지
     # 않습니다. 그 토큰은 공고명의 일부인 경우가 많습니다.
     list_intent = announcement_list_query or result_list_query
-    scope_applicable = bool(list_intent or has_stat_keywords)
+    scope_applicable = bool(list_intent or has_stat_keywords or multi_result_list)
     scope_explanatory = any(marker in lowered for marker in INSTITUTION_SCOPE_EXPLANATORY_MARKERS)
     if (
         scope_applicable
@@ -2075,7 +2605,11 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         and not filters.get("institution_names")
         and not filters.get("region_names")
     ):
-        scope = extract_institution_scope(normalized_query, include_entity_org_tokens=list_intent)
+        scope = extract_institution_scope(
+            normalized_query,
+            include_entity_org_tokens=list_intent,
+            multiple=bool(list_intent or multi_result_list),
+        )
         scope_name = str(scope.get("institution_name") or "")
         existing_name = _normalize_text(str(filters.get("institution_name") or ""))
         # 광역 사전 대체 경로는 "대전 유성구" 에서 먼저 "대전" 을 넣습니다. 추출기가
@@ -2106,7 +2640,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     # 비교" 처럼 개수가 붙은 비교 질의가 공고 목록 응답으로 새는 것을 막습니다.
     # 공고번호 단건도 같은 이유로 목록 제한을 두지 않습니다.
     has_comparison = bool(comparison_regions or comparison_institutions)
-    if result_list_query and not has_comparison and not is_bid_number:
+    if (result_list_query or multi_result_list) and not has_comparison and not is_bid_number:
         filters["result_limit"] = extract_result_limit(normalized_query)
 
     if announcement_list_query and not has_comparison and not is_bid_number:
@@ -2164,7 +2698,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         route_reason=route_reason,
     )
 
-    if use_sql and not filters.get("date_from"):
+    if use_sql and not filters.get("date_from") and not filters.get("close_from"):
         plan.insufficiency_hints.append(
             "기간 조건이 명시되지 않아 전체 기준 통계를 사용할 수 있습니다."
         )
