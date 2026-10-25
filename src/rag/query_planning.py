@@ -1406,6 +1406,11 @@ def collect_unapplied_result_conditions(
     order_by = _normalize_text(str(filters.get("order_by") or ""))
     if order_by in RESULT_UNSUPPORTED_SORT_FIELDS:
         conditions.append({"kind": "order", "field": order_by})
+    has_close_window = bool(filters.get("close_from") or filters.get("close_to"))
+    if has_close_window and not any(
+        condition["field"] == "bid_clse_dt" for condition in conditions
+    ):
+        conditions.append({"kind": "close_window", "field": "bid_clse_dt"})
     return conditions
 
 

@@ -424,6 +424,46 @@ def test_announcement_conditions_are_not_reported_as_unapplied(isolated_db, anno
     assert not any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
 
 
+@pytest.mark.parametrize(
+    "query,close_from,close_to",
+    [
+        ("이번 주 마감되는 낙찰 결과 5건", "2026-10-19", "2026-10-25"),
+        ("마감 임박 낙찰 결과 보여줘", "2026-10-25", "2026-10-28"),
+    ],
+)
+def test_unapplied_close_window_is_reported_for_result_lists(
+    frozen_today, isolated_db, result_rows, query, close_from, close_to
+):
+    plan = build_retrieval_plan(query)
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert plan.filters.get("close_from") == close_from
+    assert plan.filters.get("close_to") == close_to
+    assert structured_data["unapplied_conditions"] == [
+        {"kind": "close_window", "field": "bid_clse_dt"}
+    ]
+    assert any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
+    answer = _build_result_list_answer(plan, structured_data)
+    assert "마감일 정보가 없어" in answer
+    assert UNAPPLIED_NOTICE in answer
+
+
+def test_close_window_applies_to_announcements_without_notice(
+    frozen_today, isolated_db, announcement_rows
+):
+    plan = build_retrieval_plan("이번 주 마감되는 용역 공고 5개만 보여줘")
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert plan.filters.get("close_from") == "2026-10-19"
+    assert plan.filters.get("close_to") == "2026-10-25"
+    assert structured_data["unapplied_conditions"] == []
+    assert not any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
+    samples = structured_data["summary"]["sample_announcements"]
+    assert samples
+    for sample in samples:
+        assert "2026-10-19" <= sample["bid_clse_dt"][:10] <= "2026-10-25"
+
+
 def test_announcement_list_answer_shows_applied_conditions():
     plan = RetrievalPlan(
         use_sql=True,
