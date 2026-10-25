@@ -1471,13 +1471,13 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
         start, end = _to_iso(date(today.year - 1, 1, 1), date(today.year - 1, 12, 31))
         return start, end, "recent", True
 
-    day_match = re.search(r"최근\s*(\d+)\s*일", lowered)
+    day_match = re.search(r"(?:최근|지난)\s*(\d+)\s*일", lowered)
     if day_match:
         days = max(int(day_match.group(1)), 1)
         start, end = _to_iso(today - timedelta(days=days - 1), today)
         return start, end, "recent", True
 
-    month_match = re.search(r"최근\s*(\d+)\s*(?:개월|달)", lowered)
+    month_match = re.search(r"(?:최근|지난)\s*(\d+)\s*(?:개월|달)", lowered)
     if month_match:
         months = max(int(month_match.group(1)), 1)
         start, end = _to_iso(today - timedelta(days=(30 * months) - 1), today)

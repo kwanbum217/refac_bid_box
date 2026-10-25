@@ -11,7 +11,11 @@ import re
 from typing import Any
 
 from src.app.services.action_catalog import ACTION_CATALOG
-from src.rag.query_planning import extract_institution_scope
+from src.rag.query_planning import (
+    _is_count_statistics_query,
+    extract_aggregate_filters,
+    extract_institution_scope,
+)
 
 ADVISORY_KEYWORDS = ("매일", "매주", "알림", "구독", "자동으로", "정기")
 STATISTICS_KEYWORDS = (
@@ -369,3 +373,15 @@ def _has_kb_refresh_intent(message: str) -> bool:
     has_target = any(keyword in normalized for keyword in KB_REFRESH_TARGET_KEYWORDS)
     has_command = any(keyword in normalized for keyword in KB_REFRESH_COMMAND_KEYWORDS)
     return has_target and has_command
+
+
+def _has_count_statistics_intent(message: str) -> bool:
+    """건수·순위 표현을 RAG 플래너와 같은 기준으로 통계 질의로 판정합니다.
+
+    "몇 건"·"총 몇" 같은 수량 표현과 업체 순위 축은 여기 키워드 목록을 따로
+    두지 않고 query_planning 의 판정을 그대로 씁니다. 목록 요청 표지가 붙은
+    질의는 RAG 판정이 이미 거짓으로 돌려줍니다.
+    """
+    if _is_count_statistics_query(message):
+        return True
+    return extract_aggregate_filters(message).get("group_by") == "winner"
