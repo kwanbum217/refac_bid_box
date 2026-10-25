@@ -16,6 +16,7 @@ from typing import Any
 
 from src.app.models.bids import CATEGORY_LABELS
 from src.rag.schemas import (
+    DEFAULT_STATISTICS_WINDOW_YEARS,
     DEFAULT_VECTOR_TOP_K,
     RetrievalPlan,
 )
@@ -1846,3 +1847,41 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
             "최신성 조건이 명확하지 않아 일반 문맥 검색으로 처리합니다."
         )
     return plan
+
+
+WHOLE_PERIOD_HINT_MARKER = "전체 기준"
+
+
+def apply_default_statistics_window(
+    filters: dict[str, Any], *, time_bucket_aware: bool = True
+) -> dict[str, Any]:
+    """기간을 말하지 않은 통계 질의에 기본 창(최근 5년)을 채웁니다.
+
+    명시 기간이 항상 이기고, 분기 버킷의 연도 미지정 기본값과 명시적 전체
+    기간(`relative_years` 가 이미 있는 경우, 예: years=0)은 그대로 둡니다.
+    원본 dict 는 바꾸지 않고 사본을 돌려줍니다.
+    """
+    windowed = dict(filters)
+    if windowed.get("date_from") or windowed.get("date_to"):
+        return windowed
+    if "relative_years" in windowed:
+        return windowed
+    if time_bucket_aware and str(windowed.get("time_bucket") or "") == "quarter":
+        return windowed
+    windowed["relative_years"] = DEFAULT_STATISTICS_WINDOW_YEARS
+    return windowed
+
+
+def replace_whole_period_insufficiency_hint(hints: list[str], filters: dict[str, Any]) -> list[str]:
+    """창이 걸린 계획의 '전체 기준' 안내를 실제 기간 안내로 바꿉니다.
+
+    명시 기간은 원래 안내가 붙지 않고, `relative_years` 가 없거나 0 이면
+    전체 기간 질의이므로 안내를 유지합니다.
+    """
+    if filters.get("date_from") or filters.get("date_to"):
+        return list(hints)
+    years = int(filters.get("relative_years") or 0)
+    if not years:
+        return list(hints)
+    replacement = f"기간을 지정하지 않아 최근 {years}년 기준으로 집계했습니다."
+    return [replacement if WHOLE_PERIOD_HINT_MARKER in str(hint) else hint for hint in hints]
