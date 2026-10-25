@@ -90,6 +90,16 @@ def winner_db(isolated_db):
     _seed_result(
         isolated_db, row_id=6, winner="가나종합건설", opened_at=datetime(2026, 10, 21, 9, 0, 0)
     )
+    # 법인 표기 변형은 같은 업체로 묶고, 접미사가 붙은 다른 업체는 섞이지 않아야 합니다.
+    _seed_result(
+        isolated_db, row_id=7, winner="주식회사 한백", opened_at=datetime(2026, 10, 19, 9, 0, 0)
+    )
+    _seed_result(
+        isolated_db, row_id=8, winner="(주)한백", opened_at=datetime(2026, 10, 18, 9, 0, 0)
+    )
+    _seed_result(
+        isolated_db, row_id=9, winner="한백건설", opened_at=datetime(2026, 10, 17, 9, 0, 0)
+    )
     isolated_db.commit()
     return isolated_db
 
@@ -124,6 +134,34 @@ def test_extract_winner_name_cases(query: str, expected: str):
 def test_extract_winner_name_skips_institution_field_and_ranking(query: str):
     """기관·분야어·순위 질의는 업체명으로 읽지 않습니다."""
     assert extract_winner_name(query) == ""
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "종합건설 공사 낙찰 결과 보여줘",
+        "서울시 종합건설 낙찰 결과",
+        "종합건설 낙찰 건수 알려줘",
+    ],
+)
+def test_generic_industry_word_is_not_a_winner(query: str):
+    """업종 접미사 앞부분이 일반 업종어뿐이면 업체명이 아닙니다."""
+    assert extract_winner_name(query) == ""
+    assert "winner_name" not in build_retrieval_plan(query).filters
+
+
+def test_corporate_marker_makes_generic_stem_a_winner():
+    """법인 표지가 붙으면 앞부분이 일반 업종어여도 업체로 봅니다."""
+    plan = build_retrieval_plan("주식회사 종합건설 낙찰 결과 보여줘")
+
+    assert plan.filters["winner_name"] == "종합건설"
+
+
+def test_company_name_before_industry_suffix_is_a_winner():
+    """고유명사가 앞에 남으면 업종 접미사가 붙어도 업체명입니다."""
+    plan = build_retrieval_plan("주식회사 가나종합건설 낙찰 결과 보여줘")
+
+    assert plan.filters["winner_name"] == "가나종합건설"
 
 
 def test_plan_applies_winner_filter_to_result_queries():
@@ -164,9 +202,26 @@ def test_result_list_returns_only_named_winner_rows(winner_db, fixed_today):
     summary = retrieve_structured_data(winner_db, plan)["summary"]
     recent = summary["recent_results"]
 
-    assert {row["bidwinnr_nm"] for row in recent} == {"한백"}
-    assert [row["bid_ntce_no"] for row in recent] == ["WIN-1", "WIN-2"]
-    assert summary["total_bids"] == 2
+    assert {row["bidwinnr_nm"] for row in recent} == {"한백", "주식회사 한백", "(주)한백"}
+    assert [row["bid_ntce_no"] for row in recent] == ["WIN-1", "WIN-2", "WIN-7", "WIN-8"]
+    assert summary["total_bids"] == 4
+
+
+def test_partial_name_does_not_broaden_to_similar_company(winner_db, fixed_today):
+    """업체명 부분 일치는 "한백" 질의에 "한백건설" 행을 섞지 않습니다."""
+    plan = build_retrieval_plan("한백이 올해 낙찰받은 공고 목록 뽑아줘")
+
+    assert plan.filters["winner_name"] == "한백"
+    recent = retrieve_structured_data(winner_db, plan)["summary"]["recent_results"]
+    assert "한백건설" not in {row["bidwinnr_nm"] for row in recent}
+
+
+def test_suffixed_winner_query_returns_only_that_company(winner_db, fixed_today):
+    plan = build_retrieval_plan("한백건설이 올해 낙찰받은 공고 목록 뽑아줘")
+
+    assert plan.filters["winner_name"] == "한백건설"
+    recent = retrieve_structured_data(winner_db, plan)["summary"]["recent_results"]
+    assert [row["bidwinnr_nm"] for row in recent] == ["한백건설"]
 
 
 def test_result_count_does_not_count_other_winners(winner_db, fixed_today):

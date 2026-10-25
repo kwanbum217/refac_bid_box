@@ -773,6 +773,28 @@ WINNER_NAME_SUFFIXES = (
     "기술",
     "개발",
 )
+# 업종 접미사 앞부분이 일반 업종 낱말뿐이면 업체명이 아니라 분야어입니다.
+# "종합건설", "전문건설", "지역건설" 은 업체가 아니지만 "가나종합건설" 은
+# 앞부분이 고유명사이므로 업체입니다. 법인 표지가 붙은 경우는 앞부분이
+# 일반어여도 업체로 봅니다("주식회사 종합건설").
+WINNER_GENERIC_INDUSTRY_STEMS = frozenset(
+    {
+        "종합",
+        "전문",
+        "일반",
+        "지역",
+        "토목",
+        "건축",
+        "전기",
+        "통신",
+        "소방",
+        "정보",
+        "환경",
+        "조경",
+        "시설",
+        "설비",
+    }
+)
 # "<업체>이/가 ... 낙찰", "<업체>의 ... 낙찰" 구조에서 업체명을 뽑습니다. 업체명과
 # 낙찰 표지 사이에는 기간 표현만 끼도록 제한합니다. 아무 낱말이나 허용하면
 # "...공사의 공고번호, 수요기관, 낙찰업체" 처럼 공고명·지표가 업체명으로 읽힙니다.
@@ -864,13 +886,33 @@ def _strip_winner_particle(name: str) -> str:
     return name
 
 
+def _is_generic_industry_name(name: str) -> bool:
+    """업종 접미사 앞부분이 일반 업종 낱말뿐인지 판정합니다.
+
+    "종합건설" 은 접미사 "건설" 을 떼면 "종합" 만 남으므로 분야어입니다.
+    "가나종합건설" 은 "가나" 가 남으므로 업체명입니다.
+    """
+    for suffix in WINNER_NAME_SUFFIXES:
+        if not name.endswith(suffix) or len(name) <= len(suffix):
+            continue
+        if name[: -len(suffix)] in WINNER_GENERIC_INDUSTRY_STEMS:
+            return True
+    return False
+
+
 def _winner_candidate_allowed(
-    name: str, institution_name: str, institution_names: frozenset[str]
+    name: str,
+    institution_name: str,
+    institution_names: frozenset[str],
+    *,
+    corporate_marker: bool = False,
 ) -> bool:
     """뽑은 문자열을 업체명으로 인정할지 판정합니다."""
     if len(name) < 2:
         return False
     if name in WINNER_NAME_EXCLUDED_TERMS:
+        return False
+    if not corporate_marker and _is_generic_industry_name(name):
         return False
     if name in CATEGORY_KEYWORDS or name in REGION_KEYWORDS:
         return False
@@ -906,22 +948,31 @@ def extract_winner_name(query: str) -> str:
         _normalize_text(name) for name in _extract_institution_list(normalized)
     )
 
-    candidates: list[str] = []
+    # 법인 표지가 앞에 붙은 후보는 앞부분이 일반 업종어여도 업체로 봅니다.
+    candidates: list[tuple[str, bool]] = []
     for pattern in (
         WINNER_CORPORATE_PREFIX_PATTERN,
         WINNER_SUBJECT_PATTERN,
         WINNER_POSSESSIVE_PATTERN,
     ):
-        candidates.extend(match.group("name") for match in pattern.finditer(normalized))
+        has_corporate_marker = pattern is WINNER_CORPORATE_PREFIX_PATTERN
+        candidates.extend(
+            (match.group("name"), has_corporate_marker) for match in pattern.finditer(normalized)
+        )
     for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized):
         for suffix in WINNER_NAME_SUFFIXES:
             if token.endswith(suffix) and len(token) > len(suffix):
-                candidates.append(token)
+                candidates.append((token, False))
                 break
 
-    for raw in candidates:
+    for raw, corporate_marker in candidates:
         candidate = _strip_winner_particle(raw)
-        if _winner_candidate_allowed(candidate, institution_name, institution_names):
+        if _winner_candidate_allowed(
+            candidate,
+            institution_name,
+            institution_names,
+            corporate_marker=corporate_marker,
+        ):
             return candidate
     return ""
 
