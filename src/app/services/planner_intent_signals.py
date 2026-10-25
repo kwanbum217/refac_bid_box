@@ -7,13 +7,13 @@ src/app/services/planner_intent_signals.py
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from src.app.services.action_catalog import ACTION_CATALOG
 from src.rag.query_planning import (
     _is_count_statistics_query,
     extract_aggregate_filters,
+    extract_category,
     extract_institution_scope,
 )
 
@@ -52,6 +52,7 @@ CATEGORY_KEYWORDS = {
     "물품": "Thng",
     "용역": "Servc",
     "외자": "Frgcpt",
+    "건설": "Cnstwk",
 }
 REGION_KEYWORDS = (
     "서울",
@@ -219,24 +220,6 @@ COLLECTION_COMMAND_KEYWORDS = (
 COLLECTION_CONTEXT_KEYWORDS = ("수집된", "수집한", "수집 완료")
 
 
-def _strip_institution_scope(message: str, scope: dict[str, Any] | None = None) -> str:
-    """기관으로 인식된 문자열을 지운 메시지를 돌려줍니다.
-
-    "한국농어촌공사" 의 "공사" 가 분야 키워드로 오인되는 것을 막습니다. RAG
-    플래너의 공기업 토큰 제거와 같은 방식입니다.
-    """
-    resolved = scope if scope is not None else extract_institution_scope(message)
-    stripped = message
-    names: list[str] = []
-    if resolved.get("institution_name"):
-        names.append(str(resolved["institution_name"]))
-    names.extend(str(alias) for alias in resolved.get("institution_aliases") or [])
-    for name in sorted(set(names), key=len, reverse=True):
-        if name:
-            stripped = re.sub(re.escape(name), " " * len(name), stripped, flags=re.IGNORECASE)
-    return stripped
-
-
 def _extract_bid_query_params(
     message: str, filters: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -263,11 +246,9 @@ def _extract_bid_query_params(
         params["institution_aliases"] = scope["institution_aliases"]
 
     if "category" not in params:
-        category_source = _strip_institution_scope(message, scope).lower()
-        for keyword, category in CATEGORY_KEYWORDS.items():
-            if keyword in category_source:
-                params["category"] = category
-                break
+        _, category = extract_category(message)
+        if category:
+            params["category"] = category
 
     if "years" not in params and any(kw in lowered for kw in ("최근", "요즘", "이번")):
         params["years"] = 1
@@ -284,11 +265,7 @@ def _extract_followup_region(message: str) -> str:
 
 
 def _extract_followup_category(message: str) -> tuple[str, str]:
-    category_source = _strip_institution_scope(message or "").lower()
-    for keyword, category in CATEGORY_KEYWORDS.items():
-        if keyword in category_source:
-            return keyword, category
-    return "", ""
+    return extract_category(message or "")
 
 
 def _has_prediction_action_intent(message: str) -> bool:
