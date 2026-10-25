@@ -44,9 +44,14 @@ from src.app.services.ranking_snapshots import (
     get_top_rankings,
 )
 from src.rag.query_planning import (
+    DEFAULT_AMOUNT_FIELD,
     DEFAULT_GROUP_LIMIT,
     MAX_GROUP_LIMIT,
     REGION_ALIASES,
+    RESULT_AMOUNT_FIELD,
+    collect_unapplied_result_conditions,
+    is_result_amount_scope,
+    unapplied_result_condition_notice,
 )
 from src.rag.schemas import RetrievalPlan
 
@@ -339,6 +344,103 @@ def _winner_name_condition(winner_name: str):
     return column == _normalize_winner_name_value(winner_name)
 
 
+# 금액 조건과 정렬에 쓰는 컬럼입니다. 계획기는 컬럼 이름 문자열을 넘기고,
+# 조회 계층이 이 표에서 실제 컬럼을 고릅니다. 대상 테이블에 없는 컬럼은
+# 조건을 만들지 않아 다른 금액 축의 조건이 잘못 적용되지 않습니다.
+ANNOUNCEMENT_AMOUNT_COLUMNS = {
+    "presmpt_prce": BidAnnouncement.presmpt_prce,
+    "base_amount": BidAnnouncement.base_amount,
+}
+RESULT_AMOUNT_COLUMNS = {
+    "sucsf_bid_amt": BidResult.sucsf_bid_amt,
+}
+ANNOUNCEMENT_SORT_COLUMNS = {
+    **ANNOUNCEMENT_AMOUNT_COLUMNS,
+    "bid_clse_dt": BidAnnouncement.bid_clse_dt,
+}
+RESULT_SORT_COLUMNS = {
+    **RESULT_AMOUNT_COLUMNS,
+    "rl_openg_dt": BidResult.rl_openg_dt,
+}
+
+
+def _int_filter(filters: dict[str, Any], key: str) -> int | None:
+    raw = filters.get(key)
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _amount_field_filter(filters: dict[str, Any], default: str = DEFAULT_AMOUNT_FIELD) -> str:
+    return _normalize_text(str(filters.get("amount_field") or "")) or default
+
+
+def _amount_conditions(
+    filters: dict[str, Any], columns: dict[str, Any], *, default_field: str = DEFAULT_AMOUNT_FIELD
+) -> list:
+    """금액 하한·상한 조건을 만듭니다. 대상 컬럼이 없으면 빈 목록입니다."""
+    column = columns.get(_amount_field_filter(filters, default_field))
+    if column is None:
+        return []
+    min_amount = _int_filter(filters, "min_amount")
+    max_amount = _int_filter(filters, "max_amount")
+    conditions = []
+    if min_amount is not None:
+        conditions.append(column >= min_amount)
+    if max_amount is not None:
+        conditions.append(column <= max_amount)
+    return conditions
+
+
+def _close_conditions(filters: dict[str, Any]) -> list:
+    """마감일 창 조건을 만듭니다. 하루 단위 창이므로 종료일 다음 날 0시 미만입니다."""
+    close_from = _parse_date(filters.get("close_from"), "close_from")
+    close_to = _parse_date(filters.get("close_to"), "close_to")
+    conditions = []
+    if close_from:
+        conditions.append(BidAnnouncement.bid_clse_dt >= close_from)
+    if close_to:
+        conditions.append(BidAnnouncement.bid_clse_dt < close_to + timedelta(days=1))
+    return conditions
+
+
+def _order_direction(filters: dict[str, Any]) -> str:
+    return (
+        "asc" if _normalize_text(str(filters.get("order_dir") or "")).lower() == "asc" else "desc"
+    )
+
+
+def _announcement_order_by(filters: dict[str, Any]) -> list:
+    """공고 목록 정렬입니다. 정렬 표지가 없으면 기존 공고일 내림차순입니다."""
+    column = ANNOUNCEMENT_SORT_COLUMNS.get(_normalize_text(str(filters.get("order_by") or "")))
+    if column is None:
+        return [BidAnnouncement.bid_ntce_dt.desc()]
+    ordered = column.asc() if _order_direction(filters) == "asc" else column.desc()
+    return [column.is_(None), ordered, BidAnnouncement.bid_ntce_dt.desc()]
+
+
+def _result_order_by(filters: dict[str, Any]) -> list:
+    """낙찰 목록 정렬입니다. 정렬 표지가 없으면 기존 개찰일 내림차순입니다."""
+    column = RESULT_SORT_COLUMNS.get(_normalize_text(str(filters.get("order_by") or "")))
+    if column is None:
+        return [
+            BidResult.rl_openg_dt.is_(None),
+            BidResult.rl_openg_dt.desc(),
+            BidResult.id.desc(),
+        ]
+    ordered = column.asc() if _order_direction(filters) == "asc" else column.desc()
+    return [
+        column.is_(None),
+        ordered,
+        BidResult.rl_openg_dt.is_(None),
+        BidResult.rl_openg_dt.desc(),
+        BidResult.id.desc(),
+    ]
+
+
 def _result_conditions(
     plan: RetrievalPlan,
     *,
@@ -381,6 +483,9 @@ def _result_conditions(
     if winner_name:
         conditions.append(_winner_name_condition(winner_name))
         conditions.append(exclude_corrupted(BidResult.bidwinnr_nm))
+    conditions.extend(
+        _amount_conditions(filters, RESULT_AMOUNT_COLUMNS, default_field=RESULT_AMOUNT_FIELD)
+    )
     # 단건 조회 호출만 값을 넘깁니다. 이 조건이 집계용 조건에 섞이면 평균
     # 기준선이 그 공고 자체가 되거나 축 집계가 1행으로 붕괴합니다.
     if bid_ntce_no:
@@ -427,6 +532,8 @@ def _announcement_conditions(
         conditions.append(BidAnnouncement.category == category)
     if notice_kind:
         conditions.append(BidAnnouncement.ntce_kind_nm == notice_kind)
+    conditions.extend(_close_conditions(filters))
+    conditions.extend(_amount_conditions(filters, ANNOUNCEMENT_AMOUNT_COLUMNS))
     if bid_ntce_no:
         conditions.append(BidAnnouncement.bid_ntce_no == bid_ntce_no)
     return conditions
@@ -469,6 +576,13 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     if filters.get("winner_name"):
         return None
     if _normalize_text(str(filters.get("notice_kind") or "")):
+        return None
+    if filters.get("close_from") or filters.get("close_to"):
+        return None
+    if (
+        _int_filter(filters, "min_amount") is not None
+        or _int_filter(filters, "max_amount") is not None
+    ):
         return None
     if _normalize_text(str(filters.get("institution_name") or "")):
         return None
@@ -1597,7 +1711,13 @@ def _format_recent_result(result: BidResult) -> dict[str, Any]:
     }
 
 
-def _fetch_recent_results(db: Session, conditions: list, limit: int) -> list[dict[str, Any]]:
+def _fetch_recent_results(
+    db: Session,
+    conditions: list,
+    limit: int,
+    *,
+    filters: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """조건에 맞는 최신 낙찰 결과를 손상값 제외 후 최대 limit 건 조회합니다."""
     if not limit:
         return []
@@ -1605,11 +1725,7 @@ def _fetch_recent_results(db: Session, conditions: list, limit: int) -> list[dic
         db.execute(
             select(BidResult)
             .where(*conditions)
-            .order_by(
-                BidResult.rl_openg_dt.is_(None),
-                BidResult.rl_openg_dt.desc(),
-                BidResult.id.desc(),
-            )
+            .order_by(*_result_order_by(filters or {}))
             .limit(limit * LIVE_OVERFETCH_FACTOR)
         )
         .scalars()
@@ -1715,12 +1831,18 @@ def _select_recent_results(candidates: list[BidResult], limit: int) -> list[dict
 
 
 def _fetch_sample_announcements(
-    db: Session, conditions: list, limit: int = 3, *, detailed: bool = False
+    db: Session,
+    conditions: list,
+    limit: int = 3,
+    *,
+    detailed: bool = False,
+    filters: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """표본 공고 목록을 조회하고 화면 표시용 대체 텍스트를 적용합니다.
 
     공고 목록 질의는 detailed 로 불러 공고일·마감일 같은 표 열을 함께 담습니다.
     detailed 가 아니면 기존 표본 3건과 키 구성이 그대로 유지됩니다.
+    정렬 표지가 없으면 기존 공고일 내림차순을 유지합니다.
     """
     columns: list[Any] = [
         BidAnnouncement.bid_ntce_no,
@@ -1739,7 +1861,7 @@ def _fetch_sample_announcements(
     rows = db.execute(
         select(*columns)
         .where(*conditions)
-        .order_by(BidAnnouncement.bid_ntce_dt.desc())
+        .order_by(*_announcement_order_by(filters or {}))
         .limit(limit)
     ).all()
     samples: list[dict[str, Any]] = []
@@ -2058,8 +2180,14 @@ def _bid_detail_result(db: Session, plan: RetrievalPlan, bid_ntce_no: str) -> di
         _announcement_conditions(plan, bid_ntce_no=bid_ntce_no),
         limit=1,
         detailed=True,
+        filters=filters,
     )
-    results = _fetch_recent_results(db, _result_conditions(plan, bid_ntce_no=bid_ntce_no), 1)
+    results = _fetch_recent_results(
+        db,
+        _result_conditions(plan, bid_ntce_no=bid_ntce_no),
+        1,
+        filters=filters,
+    )
     announcement = announcements[0] if announcements else None
     result = results[0] if results else None
 
@@ -2277,6 +2405,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     db,
                     [*common_conditions, BidResult.dminstt_nm.contains(inst_name)],
                     3,
+                    filters=filters,
                 )
 
             raw_avg_rate = inst_rate_sum / inst_rate_rows if inst_rate_rows > 0 else None
@@ -2372,6 +2501,15 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     snapshot_scope = _snapshot_scope(plan)
     result_limit = _result_limit(plan)
     announcement_limit = _announcement_limit(plan)
+    # 낙찰 결과 테이블이 지원하지 않는 축의 조건은 조회에서 빠집니다. 조용히 빼지
+    # 않고 남겨, 사용자가 조건이 적용된 줄 오해하지 않게 합니다. 목록뿐 아니라
+    # 낙찰 건수·평균 낙찰률 같은 통계도 같은 테이블을 집계하므로 함께 밝힙니다.
+    result_amount_scope = is_result_amount_scope(plan.semantic_query)
+    unapplied_conditions = (
+        collect_unapplied_result_conditions(plan.filters)
+        if result_limit or result_amount_scope
+        else []
+    )
     latest_available_result_at = None
     if result_limit:
         latest_available_result_at = db.scalar(
@@ -2525,7 +2663,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         ],
     )
 
-    recent_results = _fetch_recent_results(db, result_conditions, result_limit)
+    recent_results = _fetch_recent_results(
+        db, result_conditions, result_limit, filters=plan.filters or {}
+    )
     top_winners = [
         {"bidwinnr_nm": _normalize_text(row[0]) if row[0] else row[0], "win_count": row[1]}
         for row in winner_rows
@@ -2562,6 +2702,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         announcement_conditions,
         limit=announcement_limit or 3,
         detailed=bool(announcement_limit),
+        filters=plan.filters or {},
     )
     time_series = _build_time_series(
         db,
@@ -2585,6 +2726,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         insufficiency.append(
             "지역 구분은 기관명 부분 일치 기준이라 지역 합계가 전체 건수와 일치하지 않을 수 있습니다."
         )
+    unapplied_notice = unapplied_result_condition_notice(unapplied_conditions)
+    if unapplied_notice:
+        insufficiency.append(unapplied_notice)
 
     assembly_started = time.perf_counter()
     response_filters = dict(plan.filters or {})
@@ -2633,6 +2777,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         "filters": response_filters,
         "summary": summary,
         "insufficiency_hints": insufficiency,
+        "unapplied_conditions": unapplied_conditions,
     }
     _record_segment("result_assembly_ms", (time.perf_counter() - assembly_started) * 1000.0)
     return result

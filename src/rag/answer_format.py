@@ -14,6 +14,7 @@ from src.rag.query_planning import (
     _category_label,
     _normalize_text,
     _single_metric,
+    unapplied_result_condition_notice,
 )
 from src.rag.schemas import (
     EvidenceItem,
@@ -114,19 +115,32 @@ def _build_result_list_answer(
     summary = structured_data.get("summary") or {}
     results = summary.get("recent_results") or []
     category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
+    # 낙찰 결과 테이블에 없는 축(추정가격·기초금액·마감일)의 조건은 조회에서
+    # 빠집니다. 표만 보여주면 조건이 적용된 줄 오해하므로 한 줄로 밝힙니다.
+    unapplied_notice = unapplied_result_condition_notice(
+        structured_data.get("unapplied_conditions") or []
+    )
     if not results:
         latest = summary.get("latest_available_result_at")
         answer = f"요청하신 기간에 조건에 맞는 최근 {category_label} 낙찰 결과는 0건입니다."
         if latest:
             answer += f"\n현재 DB에서 확인 가능한 해당 분야의 최신 개찰일은 {latest}입니다."
+        if unapplied_notice:
+            answer += f"\n{unapplied_notice}"
         return answer
 
     lines = [
         f"최근 {category_label} 낙찰 결과 {len(results)}건입니다.",
         "",
-        "| # | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 | 개찰일 |",
-        "| ---: | --- | --- | --- | ---: | ---: | --- |",
     ]
+    if unapplied_notice:
+        lines.extend([unapplied_notice, ""])
+    lines.extend(
+        [
+            "| # | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 | 개찰일 |",
+            "| ---: | --- | --- | --- | ---: | ---: | --- |",
+        ]
+    )
     for index, item in enumerate(results, start=1):
         lines.append(
             f"| {index} | {_markdown_result_cell(item.get('bid_ntce_nm'))} "
@@ -138,6 +152,65 @@ def _build_result_list_answer(
             f"{_markdown_result_cell(item.get('rl_openg_dt'))} |"
         )
     return "\n".join(lines)
+
+
+AMOUNT_FIELD_LABELS = {
+    "presmpt_prce": "추정가격",
+    "base_amount": "기초금액",
+    "sucsf_bid_amt": "낙찰금액",
+}
+SORT_FIELD_LABELS = {
+    **AMOUNT_FIELD_LABELS,
+    "bid_clse_dt": "마감일",
+}
+SORT_DIRECTION_LABELS = {"asc": "오름차순", "desc": "내림차순"}
+
+
+def _format_condition_amount(value: Any) -> str:
+    try:
+        return f"{int(value):,}원"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _announcement_condition_line(filters: dict | None) -> str:
+    """목록 표에 적용된 마감일·금액·정렬 조건을 한 줄로 요약합니다."""
+    if not filters:
+        return ""
+    parts: list[str] = []
+    close_from = filters.get("close_from")
+    close_to = filters.get("close_to")
+    if close_from and close_to and close_from == close_to:
+        parts.append(f"마감일 {close_from}")
+    elif close_from and close_to:
+        parts.append(f"마감일 {close_from}~{close_to}")
+    elif close_from:
+        parts.append(f"마감일 {close_from} 이후")
+    elif close_to:
+        parts.append(f"마감일 {close_to} 이전")
+
+    amount_label = AMOUNT_FIELD_LABELS.get(str(filters.get("amount_field") or ""), "금액")
+    min_amount = filters.get("min_amount")
+    max_amount = filters.get("max_amount")
+    if min_amount is not None and max_amount is not None:
+        parts.append(
+            f"{amount_label} {_format_condition_amount(min_amount)}"
+            f"~{_format_condition_amount(max_amount)}"
+        )
+    elif min_amount is not None:
+        parts.append(f"{amount_label} {_format_condition_amount(min_amount)} 이상")
+    elif max_amount is not None:
+        parts.append(f"{amount_label} {_format_condition_amount(max_amount)} 이하")
+
+    order_by = str(filters.get("order_by") or "")
+    if order_by:
+        sort_label = SORT_FIELD_LABELS.get(order_by, order_by)
+        direction = SORT_DIRECTION_LABELS.get(
+            str(filters.get("order_dir") or "desc").lower(), "내림차순"
+        )
+        parts.append(f"{sort_label} {direction}")
+
+    return f"적용 조건: {', '.join(parts)}" if parts else ""
 
 
 def _build_announcement_list_answer(
@@ -152,15 +225,30 @@ def _build_announcement_list_answer(
     summary = structured_data.get("summary") or {}
     samples = summary.get("sample_announcements") or []
     category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
+    condition_line = _announcement_condition_line(plan.filters)
     if not samples:
-        return f"요청하신 기간에 조건에 맞는 {category_label} 공고는 0건입니다."
+        answer = f"요청하신 기간에 조건에 맞는 {category_label} 공고는 0건입니다."
+        if condition_line:
+            answer += f"\n{condition_line}"
+        return answer
 
+    head_sentence = (
+        f"조건에 맞는 {category_label} 공고 {len(samples)}건입니다."
+        if condition_line
+        else f"최근 {category_label} 공고 {len(samples)}건입니다."
+    )
     lines = [
-        f"최근 {category_label} 공고 {len(samples)}건입니다.",
+        head_sentence,
         "",
-        "| # | 공고명(공고번호) | 수요기관 | 추정가격 | 공고일 | 마감일 |",
-        "| ---: | --- | --- | ---: | --- | --- |",
     ]
+    if condition_line:
+        lines.extend([condition_line, ""])
+    lines.extend(
+        [
+            "| # | 공고명(공고번호) | 수요기관 | 추정가격 | 공고일 | 마감일 |",
+            "| ---: | --- | --- | ---: | --- | --- |",
+        ]
+    )
     for index, item in enumerate(samples, start=1):
         lines.append(
             f"| {index} | {_markdown_result_cell(item.get('bid_ntce_nm'))} "
@@ -590,7 +678,13 @@ def _build_single_metric_answer(
         if category_label and category_label != "-":
             subject.append(category_label)
 
-    return f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
+    answer = f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
+    unapplied_notice = unapplied_result_condition_notice(
+        structured_data.get("unapplied_conditions") or []
+    )
+    if unapplied_notice:
+        answer += f"\n{unapplied_notice}"
+    return answer
 
 
 def _compose_context_text(
