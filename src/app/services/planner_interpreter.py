@@ -183,17 +183,21 @@ def interpret_request(
         if any(keyword in normalized for keyword in action.keywords)
     ]
     is_model_validation = _is_model_validation_request(normalized)
-    if _has_prediction_action_intent(normalized) or is_model_validation:
+    if _has_prediction_action_intent(normalized):
         if _has_collection_context_only(normalized):
             matched_actions = [
                 action for action in matched_actions if action.action_key != "collect_refresh"
             ]
-        if (
-            is_model_validation
-            and not is_prediction_price_request
-            and not _has_collection_command(normalized)
-            and not any(action.action_key == "prediction_validate" for action in matched_actions)
+        if is_prediction_price_request:
+            matched_actions = [
+                action for action in matched_actions if action.action_key != "prediction_validate"
+            ]
+        elif not _has_collection_command(normalized) and not any(
+            action.action_key == "prediction_validate" for action in matched_actions
         ):
+            matched_actions.append(ACTION_CATALOG["prediction_validate"])
+    elif is_model_validation and not is_prediction_price_request:
+        if not any(action.action_key == "prediction_validate" for action in matched_actions):
             matched_actions.append(ACTION_CATALOG["prediction_validate"])
 
     wants_kb_refresh = _has_kb_refresh_intent(normalized)

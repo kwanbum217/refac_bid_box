@@ -53,6 +53,28 @@ def test_model_validation_stays_on_validation_pipeline(query):
     assert interpret_request(query).requested_capabilities == ["prediction_validate"]
 
 
+_MAIN_VALIDATION_QUERY_TYPE = "action"
+_MAIN_VALIDATION_CAPABILITIES = ["prediction_validate"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "예측 검증해줘",
+        "예측 결과 검증해",
+        "예측해줘",
+        "예측 실행해",
+        "예측 모델 검증해줘",
+    ],
+)
+def test_validation_requests_match_main_routing(query):
+    """공고번호 없는 검증 요청은 main 과 같은 Action 경로를 유지합니다."""
+    plan = interpret_request(query)
+
+    assert plan.query_type == _MAIN_VALIDATION_QUERY_TYPE
+    assert plan.requested_capabilities == _MAIN_VALIDATION_CAPABILITIES
+
+
 @pytest.mark.parametrize(
     "query",
     [
