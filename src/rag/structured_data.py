@@ -312,6 +312,33 @@ def _institution_condition(column, institution_name: str, institution_names: lis
     return column.contains(institution_name)
 
 
+# 업체명 표기는 "주식회사 한백", "(주)한백", "한백" 처럼 법인 표지와 공백·괄호가
+# 섞입니다. 부분 일치로 비교하면 "한백" 질의가 "한백건설" 행까지 반환하므로,
+# 양쪽에서 같은 표지를 떼고 정규화 값이 같은 행만 고릅니다.
+WINNER_NAME_NOISE_MARKERS = ("주식회사", "(주)", "㈜", "유한회사", "합자회사")
+WINNER_NAME_NOISE_CHARACTERS = (" ", "\u3000", "(", ")", "\uff08", "\uff09")
+
+
+def _normalize_winner_name_value(value: str) -> str:
+    """업체명에서 법인 표지·공백·괄호를 뗀 비교용 값을 만듭니다."""
+    normalized = _normalize_text(value)
+    for marker in WINNER_NAME_NOISE_MARKERS:
+        normalized = normalized.replace(marker, "")
+    for character in WINNER_NAME_NOISE_CHARACTERS:
+        normalized = normalized.replace(character, "")
+    return normalized
+
+
+def _winner_name_condition(winner_name: str):
+    """업체명을 컬럼 쪽도 같은 규칙으로 정규화한 뒤 등호로 비교합니다."""
+    column: Any = BidResult.bidwinnr_nm
+    for marker in WINNER_NAME_NOISE_MARKERS:
+        column = func.replace(column, marker, "")
+    for character in WINNER_NAME_NOISE_CHARACTERS:
+        column = func.replace(column, character, "")
+    return column == _normalize_winner_name_value(winner_name)
+
+
 def _result_conditions(
     plan: RetrievalPlan,
     *,
@@ -329,6 +356,7 @@ def _result_conditions(
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
+    winner_name = _normalize_text(str(filters.get("winner_name") or ""))
 
     conditions = []
     if (
@@ -347,6 +375,12 @@ def _result_conditions(
         )
     if category:
         conditions.append(BidResult.category == category)
+    # 업체 조건은 낙찰 결과 테이블에만 있습니다. 업체를 지목한 질의에서 이 조건을
+    # 빼면 전체 최신 목록이 그 업체 실적처럼 답해집니다. 손상값 제외 기준은
+    # 순위 집계와 같게 유지합니다.
+    if winner_name:
+        conditions.append(_winner_name_condition(winner_name))
+        conditions.append(exclude_corrupted(BidResult.bidwinnr_nm))
     # 단건 조회 호출만 값을 넘깁니다. 이 조건이 집계용 조건에 섞이면 평균
     # 기준선이 그 공고 자체가 되거나 축 집계가 1행으로 붕괴합니다.
     if bid_ntce_no:
@@ -426,6 +460,10 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     ):
         return None
     if filters.get("bid_ntce_no"):
+        return None
+    # 사전 집계 스냅샷은 업체 축 전체 순위입니다. 특정 업체를 지목한 조회에
+    # 쓰면 그 업체 조건이 사라진 전체 순위가 함께 나옵니다.
+    if filters.get("winner_name"):
         return None
     if _normalize_text(str(filters.get("institution_name") or "")):
         return None
@@ -599,6 +637,7 @@ def _result_availability_conditions(
     filters = plan.filters or {}
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
+    winner_name = _normalize_text(str(filters.get("winner_name") or ""))
     conditions = []
     if institution_name or institution_names is not None:
         conditions.append(
@@ -606,6 +645,10 @@ def _result_availability_conditions(
         )
     if category:
         conditions.append(BidResult.category == category)
+    # 업체 조건이 걸린 질의는 전체 최신 개찰일이 아니라 그 업체의 최신 개찰일을
+    # 확인해야 빈 결과 안내가 다른 업체 실적을 가리키지 않습니다.
+    if winner_name:
+        conditions.append(_winner_name_condition(winner_name))
     return conditions
 
 
