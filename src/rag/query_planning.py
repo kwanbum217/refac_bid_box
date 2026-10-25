@@ -67,7 +67,18 @@ CATEGORY_KEYWORDS = {
     "물품": "Thng",
     "용역": "Servc",
     "외자": "Frgcpt",
+    "건설": "Cnstwk",
 }
+# 건설 은 업체명(대한건설)·기관명(종합건설본부)·사업명(주택건설공사)에 붙어
+# 쓰입니다. 분야어는 독립 어절이거나 조사가 붙은 형태뿐이므로, 그 밖의 건설 은
+# 분야 판정에서 지웁니다.
+CONSTRUCTION_CATEGORY_PATTERN = re.compile(
+    r"(?<![가-힣])건설"
+    r"(?=$|[^가-힣]|"
+    r"(?:에서는|에게는|으로는|에서|으로|처럼|보다|까지|부터|"
+    r"은|는|이|가|을|를|의|에|로|와|과|도|만|랑)"
+    r"(?=$|[^가-힣]))"
+)
 PUBLIC_CORPORATION_PREFIXES = (
     "한국",
     "서울",
@@ -928,6 +939,59 @@ def _normalize_text(value: str | None) -> str:
     return unicodedata.normalize("NFC", (value or "").strip())
 
 
+def _mask_non_category_construction(text: str) -> str:
+    """분야어가 아닌 건설(업체·기관·사업명 내부)을 공백으로 가립니다."""
+    category_starts = {match.start() for match in CONSTRUCTION_CATEGORY_PATTERN.finditer(text)}
+
+    def _keep_or_mask(match: re.Match[str]) -> str:
+        if match.start() in category_starts:
+            return match.group(0)
+        return " " * len(match.group(0))
+
+    return re.sub("건설", _keep_or_mask, text)
+
+
+def _mask_category_scope_tokens(normalized: str) -> str:
+    """분야 키워드로 오인되는 공기업·행정구역 이름을 공백으로 가립니다.
+
+    "한국전력공사" 의 공사 나 "대전광역시 종합건설본부" 의 기관명처럼 분야
+    키워드를 품은 이름을 먼저 지워, 이름 안의 글자를 분야로 읽지 않게 합니다.
+    사업명 접미사(도로공사 등)로 끝나는 이름은 기관 범위에서 빼야 합니다.
+    "부산신항배후도로공사" 를 지우면 실제 분야어인 공사까지 사라집니다.
+    """
+    masked = normalized.lower()
+    names = list(_extract_public_corporation_tokens(normalized))
+    scope = extract_institution_scope(normalized, include_entity_org_tokens=False)
+    if scope.get("institution_name"):
+        names.append(str(scope["institution_name"]))
+    for name in sorted(set(names), key=len, reverse=True):
+        token = name.lower()
+        if token:
+            masked = masked.replace(token, " " * len(token))
+    return masked
+
+
+def extract_category(query: str) -> tuple[str, str]:
+    """질의의 분야 키워드와 분야 코드를 판정합니다.
+
+    업체명·기관명·사업명에 붙은 건설(대한건설, 종합건설본부, 주택건설공사)은
+    분야어가 아니고, 공기업 이름의 공사(한국전력공사)도 분야어가 아닙니다.
+    분야어가 여럿이면 한국어 명사구의 핵어 규칙에 따라 문장에서 가장 뒤에 나온
+    것을 씁니다. RAG 플래너와 채팅 플래너가 이 함수 하나를 함께 씁니다.
+    """
+    masked = _mask_non_category_construction(_mask_category_scope_tokens(_normalize_text(query)))
+    last_position = -1
+    matched_keyword = ""
+    matched_category = ""
+    for keyword, category in CATEGORY_KEYWORDS.items():
+        position = masked.rfind(keyword)
+        if position > last_position:
+            last_position = position
+            matched_keyword = keyword
+            matched_category = category
+    return matched_keyword, matched_category
+
+
 def _category_label(category: str | None) -> str:
     category_code = _normalize_text(str(category or ""))
     return CATEGORY_LABELS.get(category_code, category_code or "-")
@@ -1699,26 +1763,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if has_quarter_bucket and not suppress_implicit_window:
         filters["time_bucket"] = "quarter"
 
-    # 공기업 이름 토큰을 제외한 나머지 문자열에서만 CATEGORY_KEYWORDS 를 찾습니다.
-    category_query = lowered
-    for corp in sorted(
-        set(_extract_public_corporation_tokens(normalized_query)), key=len, reverse=True
-    ):
-        corp_lower = corp.lower()
-        if corp_lower in category_query:
-            category_query = category_query.replace(corp_lower, " " * len(corp_lower))
-
-    # 한국어 명사구 구조상 수식어 뒤에 오는 마지막 카테고리 단어가 핵어(예: "~공사 감리 용역" -> 용역)이므로
-    # 질의에서 가장 뒤에 나타나는 카테고리 키워드를 채택합니다.
-    last_cat_pos = -1
-    matched_category = None
-    for keyword, category in CATEGORY_KEYWORDS.items():
-        pos = category_query.rfind(keyword)
-        if pos > last_cat_pos:
-            last_cat_pos = pos
-            matched_category = category
-
-    if matched_category is not None:
+    # 공기업·기관 이름과 업체명·기관명·사업명에 붙은 건설을 지운 뒤, 한국어
+    # 명사구의 핵어 규칙에 따라 가장 뒤에 나온 분야어를 채택합니다.
+    _, matched_category = extract_category(normalized_query)
+    if matched_category:
         filters["category"] = matched_category
 
     region_fallback_name = ""
