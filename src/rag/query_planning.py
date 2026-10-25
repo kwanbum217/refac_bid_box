@@ -760,6 +760,172 @@ def _extract_public_corporation_tokens(text: str) -> list[str]:
     return found
 
 
+# 업체명은 법인 형태 표지가 앞에 붙거나 업종 접미사로 끝나는 토큰으로 드러납니다.
+# 접미사 자체("건설", "기술")는 업체명이 아니므로 앞부분이 남는 토큰만 인정합니다.
+WINNER_CORPORATE_PREFIX_PATTERN = re.compile(
+    r"(?:주식회사|\(주\)|㈜|유한회사|합자회사)\s*(?P<name>[가-힣A-Za-z0-9]{2,20})"
+)
+WINNER_NAME_SUFFIXES = (
+    "종합건설",
+    "엔지니어링",
+    "건설",
+    "산업",
+    "기술",
+    "개발",
+)
+# "<업체>이/가 ... 낙찰", "<업체>의 ... 낙찰" 구조에서 업체명을 뽑습니다. 업체명과
+# 낙찰 표지 사이에는 기간 표현만 끼도록 제한합니다. 아무 낱말이나 허용하면
+# "...공사의 공고번호, 수요기관, 낙찰업체" 처럼 공고명·지표가 업체명으로 읽힙니다.
+WINNER_WINDOW_FRAGMENT = (
+    r"(?:올해|금년|작년|지난해|전년|재작년|최근|요즘|이번|지난|오늘|어제|"
+    r"\d{1,4}\s*년|\d{1,2}\s*월|\d{1,2}\s*일|\d{1,2}\s*개월|\d{1,2}\s*분기|"
+    r"개월|동안|기준|사이|이후|이전|분기)"
+    r"(?:에는|에|부터|까지)?"
+)
+WINNER_ACTIVITY_WINDOW = rf"(?:{WINNER_WINDOW_FRAGMENT}\s+){{0,3}}"
+# "낙찰률" 은 지표 질의이지 업체의 낙찰 활동이 아닙니다.
+WINNER_ACTIVITY_PATTERN = r"(?:낙찰(?!률)|수주)"
+WINNER_SUBJECT_PATTERN = re.compile(
+    r"(?<![가-힣A-Za-z0-9])(?P<name>[가-힣A-Za-z0-9]{2,20})(?:이|가)\s+"
+    + WINNER_ACTIVITY_WINDOW
+    + WINNER_ACTIVITY_PATTERN
+)
+WINNER_POSSESSIVE_PATTERN = re.compile(
+    r"(?<![가-힣A-Za-z0-9])(?P<name>[가-힣A-Za-z0-9]{2,20})의\s*"
+    + WINNER_ACTIVITY_WINDOW
+    + WINNER_ACTIVITY_PATTERN
+)
+# 업체명이 아니라 사업명·공고명 조각입니다. 사업명은 "...공사의 낙찰업체" 처럼
+# 속성 지목 구조에 자주 등장합니다.
+WINNER_NAME_REJECTED_SUFFIXES = ("공사", "공고", "사업", "용역", "물품", "공정", "시설")
+# 지표·기간·분류 낱말은 업체명 자리에 와도 업체가 아닙니다.
+WINNER_NAME_EXCLUDED_TERMS = frozenset(
+    {
+        "낙찰",
+        "수주",
+        "공고",
+        "입찰",
+        "개찰",
+        "결과",
+        "내역",
+        "이력",
+        "목록",
+        "리스트",
+        "건수",
+        "통계",
+        "평균",
+        "낙찰률",
+        "업체",
+        "기업",
+        "회사",
+        "분야",
+        "전체",
+        "모든",
+        "최근",
+        "요즘",
+        "오늘",
+        "어제",
+        "이번",
+        "지난",
+        "올해",
+        "작년",
+        "재작년",
+        "금년",
+        "전년",
+        "동안",
+        "관련",
+        "진행",
+        "참여",
+        "계약",
+        "정보",
+        "자료",
+        "현황",
+        "순위",
+        "상위",
+        "최다",
+        "최고",
+        "사업",
+        "임의",
+        "이전",
+        "구매",
+        "용역",
+    }
+)
+
+
+WINNER_TRAILING_PARTICLES = ("이", "가", "은", "는", "을", "를", "의")
+
+
+def _strip_winner_particle(name: str) -> str:
+    """토큰 끝에 붙은 조사를 뗍니다. 조사를 뗀 뒤 두 글자 이상이 남을 때만 뗍니다."""
+    for particle in WINNER_TRAILING_PARTICLES:
+        if name.endswith(particle) and len(name) > len(particle) + 1:
+            return name[: -len(particle)]
+    return name
+
+
+def _winner_candidate_allowed(
+    name: str, institution_name: str, institution_names: frozenset[str]
+) -> bool:
+    """뽑은 문자열을 업체명으로 인정할지 판정합니다."""
+    if len(name) < 2:
+        return False
+    if name in WINNER_NAME_EXCLUDED_TERMS:
+        return False
+    if name in CATEGORY_KEYWORDS or name in REGION_KEYWORDS:
+        return False
+    if COUNT_PATTERN.fullmatch(name):
+        return False
+    if name in NON_INSTITUTION_TERMS or name.endswith(NON_INSTITUTION_SUFFIXES):
+        return False
+    if name.endswith(WINNER_NAME_REJECTED_SUFFIXES):
+        return False
+    if name in institution_names:
+        return False
+    return not (institution_name and (name in institution_name or institution_name in name))
+
+
+def extract_winner_name(query: str) -> str:
+    """질의가 지목한 낙찰 업체명을 뽑습니다.
+
+    업체 순위 질의("가장 많이 낙찰받은 업체", "업체별")는 특정 업체를 지목한
+    조회가 아니므로 업체명을 뽑지 않습니다. 공공기관·행정 구역으로 판정되는
+    토큰은 업체가 아니므로 기관으로 남깁니다("한국농어촌공사" 는 업체가 아닙니다).
+    """
+    normalized = _normalize_text(query)
+    lowered = normalized.lower()
+    if any(marker in lowered for marker in AGGREGATE_AXIS_MARKERS["winner"]):
+        return ""
+    if WINNER_AXIS_PATTERN.search(lowered):
+        return ""
+
+    institution_name = _normalize_text(
+        str(extract_institution_scope(normalized).get("institution_name") or "")
+    )
+    institution_names = frozenset(
+        _normalize_text(name) for name in _extract_institution_list(normalized)
+    )
+
+    candidates: list[str] = []
+    for pattern in (
+        WINNER_CORPORATE_PREFIX_PATTERN,
+        WINNER_SUBJECT_PATTERN,
+        WINNER_POSSESSIVE_PATTERN,
+    ):
+        candidates.extend(match.group("name") for match in pattern.finditer(normalized))
+    for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized):
+        for suffix in WINNER_NAME_SUFFIXES:
+            if token.endswith(suffix) and len(token) > len(suffix):
+                candidates.append(token)
+                break
+
+    for raw in candidates:
+        candidate = _strip_winner_particle(raw)
+        if _winner_candidate_allowed(candidate, institution_name, institution_names):
+            return candidate
+    return ""
+
+
 INSTITUTION_CANDIDATE_PATTERN = re.compile(r"^[가-힣a-zA-Z0-9]{2,20}$")
 FIRST_NOUN_PHRASE_OF_PATTERN = re.compile(r"^(.*?)(?<!\s)의(?:\s|[,\.?!]|$)")
 INSTITUTION_LIST_SPLIT_PATTERN = re.compile(
@@ -1686,6 +1852,13 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["date_from"] = date_from
     if date_to:
         filters["date_to"] = date_to
+
+    # 특정 업체를 지목한 낙찰 이력 질문은 그 업체 조건을 SQL 로 넘깁니다. 조건을
+    # 빼면 전체 최신 목록이 그 업체 실적처럼 답해집니다(조용한 범위 확대).
+    # 아직 낙찰 전인 공고 목록에는 업체 조건을 걸지 않습니다.
+    winner_name = extract_winner_name(normalized_query)
+    if winner_name and (result_list_query or "낙찰" in lowered or "수주" in lowered):
+        filters["winner_name"] = winner_name
 
     # 분기 비교 및 time_bucket 판정: 분기가 둘 이상이거나 "분기별"이 포함된 경우 quarter 버킷 활성화
     quarter_matches = re.findall(r"[1-4]\s*분기", lowered)
