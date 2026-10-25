@@ -14,6 +14,7 @@ from src.app.services.action_catalog import ACTION_CATALOG
 from src.rag.query_planning import (
     extract_institution_scope,
     is_announcement_list_query,
+    is_multi_institution_announcement_list_query,
     is_multi_institution_result_list_query,
     is_result_list_query,
 )
@@ -229,6 +230,7 @@ def _is_institution_list_message(message: str) -> bool:
     return (
         is_announcement_list_query(message)
         or is_result_list_query(message)
+        or is_multi_institution_announcement_list_query(message)
         or is_multi_institution_result_list_query(message)
     )
 

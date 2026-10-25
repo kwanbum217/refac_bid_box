@@ -64,6 +64,85 @@ def test_extract_multi_institution_scope_keeps_single_or_empty(query: str):
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
+        ("공주시 및 서산시 및 천안시 공고", ["공주시", "서산시", "천안시"]),
+        ("공주시, 서산시, 천안시 공고", ["공주시", "서산시", "천안시"]),
+        ("공주시, 서산시, 천안시 공고 5개", ["공주시", "서산시", "천안시"]),
+        (
+            "공주시와 서산시랑 천안시, 당진시 공고 5개",
+            ["공주시", "서산시", "천안시", "당진시"],
+        ),
+        (
+            "한국전력공사, 한국농어촌공사 및 한국수자원공사 낙찰 결과 5건",
+            ["한국전력공사", "한국농어촌공사", "한국수자원공사"],
+        ),
+    ],
+)
+def test_extract_three_or_more_institution_enumeration(query: str, expected: list[str]):
+    assert extract_institution_scope(query, multiple=True) == {"institution_names": expected}
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("공주시 및 서산시 및 천안시 공고", ["공주시", "서산시", "천안시"]),
+        ("공주시, 서산시, 천안시 공고", ["공주시", "서산시", "천안시"]),
+        ("공주시, 서산시, 천안시 공고 5개", ["공주시", "서산시", "천안시"]),
+    ],
+)
+def test_both_planners_carry_all_three_enumerated_institutions(query: str, expected: list[str]):
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.filters.get("institution_names") == expected
+    assert "institution_name" not in plan.filters
+    assert execution_plan.requested_capabilities == ["bid_query_tool"]
+    assert execution_plan.filters.get("institution_names") == expected
+    assert execution_plan.parameters.get("institution_names") == expected
+    assert "institution_name" not in execution_plan.filters
+    assert "institution_name" not in execution_plan.parameters
+
+
+def test_both_planners_carry_mixed_connector_corporations():
+    query = "한국전력공사, 한국농어촌공사 및 한국수자원공사 낙찰 결과 5건"
+    expected = ["한국전력공사", "한국농어촌공사", "한국수자원공사"]
+
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.filters.get("institution_names") == expected
+    assert plan.filters.get("result_limit") == 5
+    assert execution_plan.requested_capabilities == ["bid_query_tool"]
+    assert execution_plan.parameters.get("institution_names") == expected
+    assert execution_plan.parameters.get("limit") == 5
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "공사 및 용역 공고 5개",
+        "물품 및 용역 공고 5개",
+    ],
+)
+def test_field_words_are_not_enumerated_institutions(query: str):
+    assert "institution_names" not in extract_institution_scope(query, multiple=True)
+    assert "institution_names" not in build_retrieval_plan(query).filters
+
+
+def test_region_comparison_is_not_treated_as_institution_list():
+    query = "부산이랑 대구 공고 건수 비교해줘"
+
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.filters.get("region_names") == ["부산", "대구"]
+    assert "institution_names" not in plan.filters
+    assert "institution_names" not in execution_plan.filters
+    assert "institution_names" not in execution_plan.parameters
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
         ("공주시와 서산시의 공고 최근 5개 보여줘", ["공주시", "서산시"]),
         ("공주시랑 서산시 공고 5개", ["공주시", "서산시"]),
     ],
@@ -226,6 +305,42 @@ def test_multi_institution_announcement_list_returns_only_requested_rows(
     assert result["filters"].get("institution_names") == ["공주시", "서산시"]
     assert "ANN-004" not in returned
     assert "ANN-005" not in returned
+
+
+@pytest.fixture
+def three_institution_db(isolated_db):
+    isolated_db.add_all(
+        [
+            _announcement("ANN-101", "충청남도 공주시", 0),
+            _announcement("ANN-102", "충청남도 서산시", 1),
+            _announcement("ANN-103", "충청남도 천안시", 2),
+            _announcement("ANN-104", "서울특별시", 3),
+            _announcement("ANN-105", "한국전력공사", 4),
+        ]
+    )
+    isolated_db.commit()
+    return isolated_db
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "공주시 및 서산시 및 천안시 공고",
+        "공주시, 서산시, 천안시 공고 5개",
+    ],
+)
+def test_three_institution_announcement_list_returns_only_requested_rows(
+    three_institution_db, query: str
+):
+    plan = build_retrieval_plan(query)
+    result = retrieve_structured_data(three_institution_db, plan)
+    samples = result["summary"]["sample_announcements"]
+    returned = {sample["bid_ntce_no"] for sample in samples}
+
+    assert returned == {"ANN-101", "ANN-102", "ANN-103"}
+    assert result["filters"].get("institution_names") == ["공주시", "서산시", "천안시"]
+    assert "ANN-104" not in returned
+    assert "ANN-105" not in returned
 
 
 def test_multi_institution_result_list_returns_only_requested_rows(multi_institution_db):

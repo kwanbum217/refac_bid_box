@@ -1130,6 +1130,31 @@ def is_multi_institution_result_list_query(query: str) -> bool:
     return any(marker in lowered for marker in RESULT_LIST_MARKERS)
 
 
+def is_multi_institution_announcement_list_query(query: str) -> bool:
+    """기관 둘 이상을 나열한 공고 목록 질의인지 판정합니다.
+
+    "공주시 및 서산시 및 천안시 공고", "공주시, 서산시, 천안시 공고" 처럼 개수나
+    목록 표지가 없어 기존 공고 목록 판정이 거짓이 되는 질의를 목록 경로에
+    보냅니다. 기존 판정을 바꾸지 않고 기관 나열이 확인될 때만 참을 돌려줍니다.
+    지역 비교("부산이랑 대구 공고 건수 비교")와 통계·설명 질의, 낙찰 결과 질의는
+    각자의 기존 경로가 맡도록 거짓입니다.
+    """
+    normalized = _normalize_text(query)
+    lowered = _query_lower(query)
+    if len(_extract_enumerated_institution_names(normalized)) < 2:
+        return False
+    if not any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS):
+        return False
+    comparison_regions, comparison_institutions = _extract_comparison_targets(normalized)
+    if comparison_regions or comparison_institutions:
+        return False
+    if _has_excluded_list_marker(lowered):
+        return False
+    if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
+        return False
+    return not any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS)
+
+
 # 요청 어미는 어절마다 나열하지 않고 한 번에 뗍니다. 띄어 쓴 "줄 수 있어" 처럼
 # 여러 어절로 갈라지는 꼬리는 어절 분리 전에 문자열 단위로 지웁니다.
 RESULT_LIST_REQUEST_TAIL_PATTERN = re.compile(
@@ -1748,7 +1773,9 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     is_entity = is_entity_specific_query(normalized_query)
     result_list_query = is_result_list_query(normalized_query)
-    announcement_list_query = is_announcement_list_query(normalized_query)
+    announcement_list_query = is_announcement_list_query(
+        normalized_query
+    ) or is_multi_institution_announcement_list_query(normalized_query)
     has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS) or (
         _is_count_statistics_query(normalized_query)
     )

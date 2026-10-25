@@ -48,6 +48,7 @@ from src.rag.engine import (
 )
 from src.rag.query_planning import (
     extract_institution_scope,
+    is_multi_institution_announcement_list_query,
     is_multi_institution_result_list_query,
 )
 from src.rag.scope_guard import is_out_of_scope_request
@@ -267,6 +268,19 @@ def interpret_request(
         )
         execution_plan.parameters["announcement_limit"] = extract_result_limit(normalized)
         execution_plan.reasoning = "recent announcement list request"
+        return execution_plan
+
+    # 개수 표지가 없어 기존 공고 목록 판정이 거짓이 되는 복수 기관 나열
+    # ("공주시 및 서산시 및 천안시 공고")도 목록 도구로 보내 모든 기관 조건을
+    # 겁니다. 기존 판정은 그대로 둡니다.
+    if is_multi_institution_announcement_list_query(normalized):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = ["bid_query_tool"]
+        execution_plan.parameters.update(
+            _extract_bid_query_params(execution_plan.effective_query, execution_plan.filters)
+        )
+        execution_plan.parameters["announcement_limit"] = extract_result_limit(normalized)
+        execution_plan.reasoning = "multi institution announcement list request"
         return execution_plan
 
     # 기관 둘 이상을 지목한 낙찰 결과 목록은 기관 접미사 때문에 기존 목록
