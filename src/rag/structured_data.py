@@ -329,14 +329,70 @@ def _normalize_winner_name_value(value: str) -> str:
     return normalized
 
 
-def _winner_name_condition(winner_name: str):
-    """업체명을 컬럼 쪽도 같은 규칙으로 정규화한 뒤 등호로 비교합니다."""
+# 두 글자 이하 상호는 흔한 낱말과 겹쳐 부분 일치가 다른 업체를 대량으로
+# 끌어옵니다. 안내를 붙이지 않는 하한입니다.
+WINNER_VARIANT_MIN_NAME_LENGTH = 3
+
+
+def _normalized_winner_name_column():
+    """업체명 컬럼을 파이썬과 같은 규칙(법인 표지·공백·괄호 제거)으로 정규화합니다."""
     column: Any = BidResult.bidwinnr_nm
     for marker in WINNER_NAME_NOISE_MARKERS:
         column = func.replace(column, marker, "")
     for character in WINNER_NAME_NOISE_CHARACTERS:
         column = func.replace(column, character, "")
-    return column == _normalize_winner_name_value(winner_name)
+    return column
+
+
+def _winner_name_condition(winner_name: str):
+    """업체명을 컬럼 쪽도 같은 규칙으로 정규화한 뒤 등호로 비교합니다."""
+    return _normalized_winner_name_column() == _normalize_winner_name_value(winner_name)
+
+
+def _winner_name_variant_conditions(winner_name: str):
+    """정규화한 상호를 포함하되 정확 일치가 아닌 행을 고르는 조건을 만듭니다."""
+    normalized = _normalize_winner_name_value(winner_name)
+    escaped = normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    column = _normalized_winner_name_column()
+    return column.like(f"%{escaped}%", escape="\\"), column != normalized
+
+
+def _winner_variant_notice(name: str, other_count: int, total_count: int) -> str:
+    """정확 일치 밖 상호의 건수와 합계를 한 문장으로 만듭니다."""
+    last = name[-1] if name else ""
+    has_final_consonant = "\uac00" <= last <= "\ud7a3" and (ord(last) - 0xAC00) % 28 != 0
+    particle = "이" if has_final_consonant or not last else "가"
+    return (
+        f"상호에 {name}{particle} 들어간 다른 업체(지점 등) 낙찰은 같은 기간 "
+        f"{other_count:,}건이며, 합치면 {total_count:,}건입니다."
+    )
+
+
+def _count_other_winner_variants(
+    db: Session,
+    plan: RetrievalPlan,
+    winner_name: str,
+    *,
+    institution_names: list[str] | None = None,
+) -> int:
+    """같은 기간·분류·지역 조건에서 정확 일치 밖 상호의 낙찰 건수를 셉니다."""
+    normalized = _normalize_winner_name_value(winner_name)
+    if len(normalized) < WINNER_VARIANT_MIN_NAME_LENGTH:
+        return 0
+    filters = dict(plan.filters or {})
+    filters.pop("winner_name", None)
+    scope_plan = plan.model_copy(update={"filters": filters})
+    contains_condition, not_exact_condition = _winner_name_variant_conditions(winner_name)
+    (count,) = _cached_aggregate(
+        db,
+        select(func.count(BidResult.id)).where(
+            *_result_conditions(scope_plan, institution_names=institution_names),
+            contains_condition,
+            not_exact_condition,
+            exclude_corrupted(BidResult.bidwinnr_nm),
+        ),
+    )
+    return int(count or 0)
 
 
 def _result_conditions(
@@ -2581,6 +2637,27 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         announcement_count=announcement_count,
         dropped_total=dropped_total,
     )
+
+    # 상호가 같은 업체만 세는 기본값은 유지하되, 지점·가맹점처럼 상호에 그
+    # 이름이 들어간 다른 사업자가 몇 건인지 밝혀 사용자가 수치 범위를 알게
+    # 합니다. 정확 일치 값은 건드리지 않습니다.
+    winner_filter_name = _normalize_text(str((plan.filters or {}).get("winner_name") or ""))
+    winner_variant: dict[str, Any] | None = None
+    if winner_filter_name:
+        other_variant_count = _count_other_winner_variants(
+            db, plan, winner_filter_name, institution_names=result_names
+        )
+        if other_variant_count:
+            variant_total = int(total_count or 0) + other_variant_count
+            winner_variant = {
+                "name": winner_filter_name,
+                "other_count": other_variant_count,
+                "total_count": variant_total,
+                "notice": _winner_variant_notice(
+                    winner_filter_name, other_variant_count, variant_total
+                ),
+            }
+            insufficiency.append(winner_variant["notice"])
     if group_by == "region":
         insufficiency.append(
             "지역 구분은 기관명 부분 일치 기준이라 지역 합계가 전체 건수와 일치하지 않을 수 있습니다."
@@ -2634,6 +2711,8 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         "summary": summary,
         "insufficiency_hints": insufficiency,
     }
+    if winner_variant:
+        result["winner_variant"] = winner_variant
     _record_segment("result_assembly_ms", (time.perf_counter() - assembly_started) * 1000.0)
     return result
 

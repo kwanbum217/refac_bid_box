@@ -102,6 +102,23 @@ def _format_result_rate(value: Any) -> str:
         return "-"
 
 
+def _winner_variant_notice(structured_data: dict | None) -> str:
+    """업체 조건 응답에 덧붙일 다른 상호(지점 등) 건수 안내를 꺼냅니다."""
+    if not isinstance(structured_data, dict):
+        return ""
+    variant = structured_data.get("winner_variant")
+    if not isinstance(variant, dict):
+        return ""
+    return str(variant.get("notice") or "").strip()
+
+
+def _append_winner_variant_notice(answer: str, structured_data: dict | None) -> str:
+    notice = _winner_variant_notice(structured_data)
+    if not answer or not notice or notice in answer:
+        return answer
+    return f"{answer}\n\n{notice}"
+
+
 def _build_result_list_answer(
     plan: RetrievalPlan,
     structured_data: dict | None,
@@ -119,7 +136,7 @@ def _build_result_list_answer(
         answer = f"요청하신 기간에 조건에 맞는 최근 {category_label} 낙찰 결과는 0건입니다."
         if latest:
             answer += f"\n현재 DB에서 확인 가능한 해당 분야의 최신 개찰일은 {latest}입니다."
-        return answer
+        return _append_winner_variant_notice(answer, structured_data)
 
     lines = [
         f"최근 {category_label} 낙찰 결과 {len(results)}건입니다.",
@@ -137,7 +154,7 @@ def _build_result_list_answer(
             f"{_format_result_rate(item.get('sucsf_bid_rate'))} | "
             f"{_markdown_result_cell(item.get('rl_openg_dt'))} |"
         )
-    return "\n".join(lines)
+    return _append_winner_variant_notice("\n".join(lines), structured_data)
 
 
 def _build_announcement_list_answer(
@@ -590,7 +607,8 @@ def _build_single_metric_answer(
         if category_label and category_label != "-":
             subject.append(category_label)
 
-    return f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
+    answer = f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
+    return _append_winner_variant_notice(answer, structured_data)
 
 
 def _compose_context_text(
