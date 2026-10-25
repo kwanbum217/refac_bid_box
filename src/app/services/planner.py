@@ -215,9 +215,12 @@ def compile_plan(execution_plan: ChatExecutionPlan) -> ChatPlan:
 
     # 3. Answer 처리
     if execution_plan.query_type == "answer":
-        llm_plan = _attempt_llm_plan_draft(original_message, [])
-        if llm_plan:
-            return llm_plan
+        # 범위 밖 판정은 해석기가 이미 내렸습니다. 여기서 LLM 초안을 시도하면
+        # 후속 구분어 때문에 고정 거절 대신 도메인 계획이 되살아납니다.
+        if not execution_plan.parameters.get("out_of_scope"):
+            llm_plan = _attempt_llm_plan_draft(original_message, [])
+            if llm_plan:
+                return llm_plan
 
         # 185행 steps 와는 상호 배타 분기입니다(위쪽은 return). 이름을 바꾸면
         # 두 분기의 참조가 갈라져 런타임 오류 위험이 크므로 재정의 검사만 끕니다.

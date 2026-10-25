@@ -45,6 +45,7 @@ from src.rag.engine import (
     is_result_list_query,
 )
 from src.rag.query_planning import extract_institution_scope
+from src.rag.scope_guard import is_out_of_scope_request
 
 
 def _load_last_plan(context_state: dict[str, Any] | None) -> ChatPlan | None:
@@ -101,6 +102,15 @@ def interpret_request(
     if not normalized:
         execution_plan.query_type = "answer"
         execution_plan.reasoning = "empty request"
+        return execution_plan
+
+    # 범위 밖 질문은 후속 질문 병합보다 앞에서 막는다. 병합하면 이전 입찰
+    # 질문의 도메인 표지를 상속해 범위 밖 질문이 구제될 수 있다.
+    if is_out_of_scope_request(normalized):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = []
+        execution_plan.parameters["out_of_scope"] = True
+        execution_plan.reasoning = "out_of_scope request"
         return execution_plan
 
     # 1. 후속 질문 여부 판단 및 메시지 병합
