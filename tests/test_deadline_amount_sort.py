@@ -458,3 +458,60 @@ def _sample_row() -> dict:
         "bid_ntce_dt": "2026-10-10 09:00:00",
         "bid_clse_dt": "2026-10-25 18:00:00",
     }
+
+
+@pytest.mark.parametrize(
+    "query,scope,limit_key",
+    [
+        ("10억 넘는 낙찰 결과 보여줘", "result", "result_limit"),
+        ("5억 이상 용역 공고 보여줘", "announcement", "announcement_limit"),
+        ("마감 임박순 공고 보여줘", "announcement", "announcement_limit"),
+    ],
+)
+def test_parsed_condition_is_a_list_scope_marker(frozen_today, query, scope, limit_key):
+    plan = build_retrieval_plan(query)
+
+    assert query_planning.is_result_list_query(query) is (scope == "result")
+    assert query_planning.is_announcement_list_query(query) is (scope == "announcement")
+    assert plan.use_sql is True
+    assert plan.filters.get(limit_key) == 5
+
+
+def test_condition_only_result_list_uses_winning_amount():
+    plan = build_retrieval_plan("10억 넘는 낙찰 결과 보여줘")
+
+    assert plan.filters.get("min_amount") == 1_000_000_001
+    assert plan.filters.get("amount_field") == "sucsf_bid_amt"
+    assert plan.filters.get("result_limit") == 5
+
+
+def test_condition_only_result_list_excludes_rows_below_bound(isolated_db, result_rows):
+    isolated_db.add(_result(4, sucsf_bid_amt=1_500_000_000, rl_openg_dt=datetime(2026, 10, 23)))
+    isolated_db.commit()
+
+    plan = build_retrieval_plan("10억 넘는 낙찰 결과 보여줘")
+    recent = retrieve_structured_data(isolated_db, plan)["summary"]["recent_results"]
+
+    assert [row["bid_ntce_no"] for row in recent] == ["RES-004"]
+    for row in recent:
+        assert row["sucsf_bid_amt"] > 1_000_000_000
+
+
+def test_condition_with_statistics_marker_stays_statistics():
+    query = "3억 넘는 낙찰 건수 알려줘"
+    plan = build_retrieval_plan(query)
+
+    assert query_planning.is_result_list_query(query) is False
+    assert query_planning.is_announcement_list_query(query) is False
+    assert "result_limit" not in plan.filters
+    assert "announcement_limit" not in plan.filters
+    assert plan.route_reason == "정형 통계 질의"
+
+
+def test_list_without_conditions_keeps_main_judgment():
+    assert query_planning.is_result_list_query("낙찰 결과 보여줘") is True
+    assert build_retrieval_plan("낙찰 결과 보여줘").filters == {"result_limit": 5}
+
+    assert query_planning.is_announcement_list_query("공고 보여줘") is False
+    assert build_retrieval_plan("공고 보여줘").filters == {}
+    assert build_retrieval_plan("공고 보여줘").use_sql is False

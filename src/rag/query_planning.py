@@ -1110,6 +1110,48 @@ def _has_excluded_list_marker(lowered: str) -> bool:
     )
 
 
+# 마감일 창·금액 조건·정렬 표지는 목록의 범위를 좁히는 표지입니다. 개수나
+# 목록·리스트 같은 목록 신호가 없어도 조건이 대상을 한정하므로, 결과·공고를
+# 요청하는 표현과 요청 동사가 함께 있으면 목록 요청으로 봅니다. 통계 표현
+# (몇 건·건수·평균)이 있으면 목록이 아니라 통계로 남깁니다.
+LIST_SCOPE_RESULT_MARKERS = ("낙찰 결과", "낙찰결과", "낙찰 내역", "낙찰내역")
+LIST_SCOPE_ANNOUNCEMENT_MARKER = "공고"
+LIST_SCOPE_STATISTICS_PATTERN = re.compile(r"몇\s*(?:건|개)|건수|평균")
+CONDITION_LIST_SCOPE_RESULT = "result"
+CONDITION_LIST_SCOPE_ANNOUNCEMENT = "announcement"
+
+
+def _has_parsed_list_scope_conditions(query: str) -> bool:
+    """이 브랜치가 파싱한 마감일 창·금액 조건·정렬 표지가 있는지 판정합니다."""
+    if _parse_close_window(query) is not None:
+        return True
+    amount_filters = extract_amount_filters(query)
+    if amount_filters.get("min_amount") is not None or amount_filters.get("max_amount") is not None:
+        return True
+    return bool(extract_sort_filters(query))
+
+
+def _condition_list_scope(query: str) -> str:
+    """조건 표지가 붙은 목록 요청의 도메인을 돌려줍니다.
+
+    "낙찰 결과"·"낙찰 내역" 을 요청하면 낙찰 결과 목록, "공고" 를 요청하면 공고
+    목록입니다. 요청 동사가 없거나 파싱된 조건이 없으면 빈 문자열입니다. 통계
+    표현(몇 건·건수·평균)이 함께 있으면 목록이 아니라 통계 질의로 남깁니다.
+    """
+    lowered = _query_lower(query)
+    if LIST_SCOPE_STATISTICS_PATTERN.search(lowered):
+        return ""
+    if not RESULT_LIST_REQUEST_VERB_PATTERN.search(lowered):
+        return ""
+    if not _has_parsed_list_scope_conditions(query):
+        return ""
+    if any(marker in lowered for marker in LIST_SCOPE_RESULT_MARKERS):
+        return CONDITION_LIST_SCOPE_RESULT
+    if LIST_SCOPE_ANNOUNCEMENT_MARKER in lowered:
+        return CONDITION_LIST_SCOPE_ANNOUNCEMENT
+    return ""
+
+
 def is_result_list_query(query: str) -> bool:
     """낙찰 결과를 개별 목록으로 요청하는 질의인지 판정합니다.
 
@@ -1120,7 +1162,9 @@ def is_result_list_query(query: str) -> bool:
     업체명·기관명·지역명이 섞인 질의가 전체 최신 목록으로 새지 않게 합니다.
     통계 표지, 공고번호 단건, 설명형 질의는 각자의 경로가 맡도록 거짓을
     반환하고, 개체를 지목한 질의도 기존 개체 조회 경로를 그대로 쓰도록
-    거짓을 반환합니다.
+    거짓을 반환합니다. 마감일 창·금액 조건·정렬 표지가 파싱됐고 "낙찰 결과"·
+    "낙찰 내역" 과 요청 동사가 함께 있으면 그 조건을 목록의 범위 표지로 인정해
+    참을 반환합니다. 조건이 없는 "낙찰 결과 보여줘" 의 판정은 그대로입니다.
     """
     lowered = _query_lower(query)
     has_result_marker = any(marker in lowered for marker in RESULT_QUERY_MARKERS)
@@ -1137,6 +1181,7 @@ def is_result_list_query(query: str) -> bool:
         (has_result_marker and has_list_marker)
         or has_vocabulary_only
         or ("낙찰" in lowered and has_count)
+        or _condition_list_scope(query) == CONDITION_LIST_SCOPE_RESULT
     )
     if not matched:
         return False
@@ -1209,7 +1254,9 @@ def is_announcement_list_query(query: str) -> bool:
     설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
     개수나 '목록'·'리스트' 표지가 있으면 참이고, 요청 동사만 있으면 신선도
     표지(올라온·등록된·게시된·신규·최신)를 함께 요구해 범위 없는 "공고 알려줘" 가
-    전체 최신 목록으로 새지 않게 합니다.
+    전체 최신 목록으로 새지 않게 합니다. 마감일 창·금액 조건·정렬 표지가
+    파싱됐고 요청 동사가 함께 있으면 그 조건을 목록의 범위 표지로 인정해
+    참을 반환합니다. 조건이 없는 "공고 보여줘" 의 판정은 그대로입니다.
     """
     lowered = _query_lower(query)
     if ANNOUNCEMENT_FIELD_MARKER_PATTERN.search(lowered):
@@ -1223,7 +1270,10 @@ def is_announcement_list_query(query: str) -> bool:
         return False
     if any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS):
         return False
-    if not ANNOUNCEMENT_LIST_PATTERN.search(lowered):
+    if (
+        not ANNOUNCEMENT_LIST_PATTERN.search(lowered)
+        and _condition_list_scope(query) != CONDITION_LIST_SCOPE_ANNOUNCEMENT
+    ):
         return False
     if is_result_list_query(query):
         return False
@@ -1231,6 +1281,8 @@ def is_announcement_list_query(query: str) -> bool:
         return True
     if any(marker in lowered for marker in RESULT_LIST_MARKERS):
         return True
+    if _condition_list_scope(query) == CONDITION_LIST_SCOPE_ANNOUNCEMENT:
+        return not is_entity_specific_query(query)
     if not _has_announcement_list_scope(lowered):
         return False
     # 신선도 표지만 있는 경로는 범위가 없는 전체 최신 목록입니다. 기관명을
