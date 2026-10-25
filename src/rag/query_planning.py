@@ -385,7 +385,24 @@ BID_NTCE_NO_PATTERN = re.compile(
     r"(?P<bid_ntce_no>[A-Z]\d{2}[A-Z]{2}\d{8})(?!\d)(?!-\d)",
     re.IGNORECASE,
 )
-BID_NTCE_NO_EXPLANATION_MARKERS = ("방법", "계산", "설명", "어떻게", "의미", "절차", "규정", "뭐야")
+BID_NTCE_NO_EXPLANATION_MARKERS = (
+    "방법",
+    "설명",
+    "어떻게",
+    "의미",
+    "절차",
+    "규정",
+    "의미가 뭐야",
+    "뜻이 뭐야",
+    "차이가 뭐야",
+    "이 뭐야",
+    "가 뭐야",
+    "란 뭐야",
+    "이란 뭐야",
+    "계산 방법",
+    "어떻게 계산",
+    "계산법",
+)
 
 ENTITY_ORG_SUFFIXES = (
     "주식회사",
