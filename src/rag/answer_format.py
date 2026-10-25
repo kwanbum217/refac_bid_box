@@ -14,6 +14,7 @@ from src.rag.query_planning import (
     _category_label,
     _normalize_text,
     _single_metric,
+    unapplied_result_condition_notice,
 )
 from src.rag.schemas import (
     EvidenceItem,
@@ -114,19 +115,32 @@ def _build_result_list_answer(
     summary = structured_data.get("summary") or {}
     results = summary.get("recent_results") or []
     category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
+    # 낙찰 결과 테이블에 없는 축(추정가격·기초금액·마감일)의 조건은 조회에서
+    # 빠집니다. 표만 보여주면 조건이 적용된 줄 오해하므로 한 줄로 밝힙니다.
+    unapplied_notice = unapplied_result_condition_notice(
+        structured_data.get("unapplied_conditions") or []
+    )
     if not results:
         latest = summary.get("latest_available_result_at")
         answer = f"요청하신 기간에 조건에 맞는 최근 {category_label} 낙찰 결과는 0건입니다."
         if latest:
             answer += f"\n현재 DB에서 확인 가능한 해당 분야의 최신 개찰일은 {latest}입니다."
+        if unapplied_notice:
+            answer += f"\n{unapplied_notice}"
         return answer
 
     lines = [
         f"최근 {category_label} 낙찰 결과 {len(results)}건입니다.",
         "",
-        "| # | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 | 개찰일 |",
-        "| ---: | --- | --- | --- | ---: | ---: | --- |",
     ]
+    if unapplied_notice:
+        lines.extend([unapplied_notice, ""])
+    lines.extend(
+        [
+            "| # | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 | 개찰일 |",
+            "| ---: | --- | --- | --- | ---: | ---: | --- |",
+        ]
+    )
     for index, item in enumerate(results, start=1):
         lines.append(
             f"| {index} | {_markdown_result_cell(item.get('bid_ntce_nm'))} "

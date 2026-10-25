@@ -49,6 +49,8 @@ from src.rag.query_planning import (
     MAX_GROUP_LIMIT,
     REGION_ALIASES,
     RESULT_AMOUNT_FIELD,
+    collect_unapplied_result_conditions,
+    unapplied_result_condition_notice,
 )
 from src.rag.schemas import RetrievalPlan
 
@@ -2450,6 +2452,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     snapshot_scope = _snapshot_scope(plan)
     result_limit = _result_limit(plan)
     announcement_limit = _announcement_limit(plan)
+    # 낙찰 결과 테이블이 지원하지 않는 축의 조건은 조회에서 빠집니다. 조용히 빼지
+    # 않고 남겨, 사용자가 조건이 적용된 줄 오해하지 않게 합니다.
+    unapplied_conditions = collect_unapplied_result_conditions(plan.filters) if result_limit else []
     latest_available_result_at = None
     if result_limit:
         latest_available_result_at = db.scalar(
@@ -2666,6 +2671,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         insufficiency.append(
             "지역 구분은 기관명 부분 일치 기준이라 지역 합계가 전체 건수와 일치하지 않을 수 있습니다."
         )
+    unapplied_notice = unapplied_result_condition_notice(unapplied_conditions)
+    if unapplied_notice:
+        insufficiency.append(unapplied_notice)
 
     assembly_started = time.perf_counter()
     response_filters = dict(plan.filters or {})
@@ -2705,6 +2713,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         "filters": response_filters,
         "summary": summary,
         "insufficiency_hints": insufficiency,
+        "unapplied_conditions": unapplied_conditions,
     }
     _record_segment("result_assembly_ms", (time.perf_counter() - assembly_started) * 1000.0)
     return result

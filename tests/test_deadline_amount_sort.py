@@ -11,7 +11,7 @@ import pytest
 
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.rag import query_planning
-from src.rag.answer_format import _build_announcement_list_answer
+from src.rag.answer_format import _build_announcement_list_answer, _build_result_list_answer
 from src.rag.query_planning import build_retrieval_plan, extract_result_limit
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
@@ -362,6 +362,62 @@ def test_result_amount_condition_excludes_rows_below_bound(isolated_db, result_r
     assert [row["bid_ntce_no"] for row in recent] == ["RES-001"]
     for row in recent:
         assert row["sucsf_bid_amt"] > 300_000_000
+
+
+UNAPPLIED_NOTICE = "그 조건 없이 조회했습니다"
+
+
+def test_unapplied_estimated_price_condition_is_reported(isolated_db, result_rows):
+    plan = build_retrieval_plan("추정가격 5억 이상 낙찰 결과 5건")
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert plan.filters.get("amount_field") == "presmpt_prce"
+    assert structured_data["unapplied_conditions"] == [{"kind": "amount", "field": "presmpt_prce"}]
+    assert any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
+    answer = _build_result_list_answer(plan, structured_data)
+    assert "추정가격 정보가 없어" in answer
+    assert UNAPPLIED_NOTICE in answer
+
+
+def test_unapplied_deadline_sort_is_reported(isolated_db, result_rows):
+    plan = build_retrieval_plan("마감 임박순 낙찰 결과 5건")
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert plan.filters.get("order_by") == "bid_clse_dt"
+    assert structured_data["unapplied_conditions"] == [{"kind": "order", "field": "bid_clse_dt"}]
+    assert any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
+    answer = _build_result_list_answer(plan, structured_data)
+    assert "마감일 정보가 없어" in answer
+    assert UNAPPLIED_NOTICE in answer
+
+
+def test_unapplied_amount_and_sort_conditions_are_combined(isolated_db, result_rows):
+    plan = build_retrieval_plan("추정가격 5억 이상 마감 임박순 낙찰 결과 5건")
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert structured_data["unapplied_conditions"] == [
+        {"kind": "amount", "field": "presmpt_prce"},
+        {"kind": "order", "field": "bid_clse_dt"},
+    ]
+    assert "추정가격·마감일 정보가 없어" in _build_result_list_answer(plan, structured_data)
+
+
+def test_supported_result_amount_condition_has_no_notice(isolated_db, result_rows):
+    plan = build_retrieval_plan("낙찰금액 10억 이상 낙찰 결과 5건")
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert plan.filters.get("amount_field") == "sucsf_bid_amt"
+    assert structured_data["unapplied_conditions"] == []
+    assert not any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
+    assert UNAPPLIED_NOTICE not in _build_result_list_answer(plan, structured_data)
+
+
+def test_announcement_conditions_are_not_reported_as_unapplied(isolated_db, announcement_rows):
+    plan = build_retrieval_plan("추정가격 5억 이상 용역 공고 5개 보여줘")
+    structured_data = retrieve_structured_data(isolated_db, plan)
+
+    assert structured_data["unapplied_conditions"] == []
+    assert not any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
 
 
 def test_announcement_list_answer_shows_applied_conditions():

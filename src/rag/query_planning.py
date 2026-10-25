@@ -1320,6 +1320,57 @@ DEFAULT_AMOUNT_FIELD = "presmpt_prce"
 # 낙찰 결과 조회에 걸 금액 축의 기본 컬럼입니다. 공고 조회는 추정가격이
 # 기본이지만 낙찰 테이블에는 추정가격 컬럼이 없으므로 낙찰금액을 씁니다.
 RESULT_AMOUNT_FIELD = "sucsf_bid_amt"
+# 낙찰 결과 테이블(bid_results)에는 추정가격·기초금액·마감일 열이 없습니다. 조건이
+# 걸렸는데 조회 계층이 조용히 빼면 사용자는 조건이 적용된 줄 압니다. 적용하지 못한
+# 조건을 응답에 밝힐 수 있도록 지원 여부를 한 곳에서 판정합니다.
+RESULT_UNSUPPORTED_AMOUNT_FIELDS = ("presmpt_prce", "base_amount")
+RESULT_UNSUPPORTED_SORT_FIELDS = ("bid_clse_dt", "presmpt_prce", "base_amount")
+UNSUPPORTED_CONDITION_LABELS = {
+    "presmpt_prce": "추정가격",
+    "base_amount": "기초금액",
+    "bid_clse_dt": "마감일",
+}
+
+
+def collect_unapplied_result_conditions(
+    filters: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    """낙찰 결과 조회가 적용하지 못한 금액·정렬 조건을 모읍니다.
+
+    낙찰 결과 테이블에는 추정가격·기초금액·마감일 열이 없습니다. 금액 조건이나
+    정렬 표지가 그 축을 가리키면 조건을 버리지 않고 목록으로 남겨 응답 단계가
+    "그 조건 없이 조회했다"고 밝히게 합니다. 낙찰금액 조건과 개찰일 정렬처럼
+    지원되는 축은 담지 않습니다.
+    """
+    if not filters:
+        return []
+    conditions: list[dict[str, str]] = []
+    has_amount_bound = (
+        filters.get("min_amount") is not None or filters.get("max_amount") is not None
+    )
+    amount_field = _normalize_text(str(filters.get("amount_field") or ""))
+    if has_amount_bound and amount_field in RESULT_UNSUPPORTED_AMOUNT_FIELDS:
+        conditions.append({"kind": "amount", "field": amount_field})
+    order_by = _normalize_text(str(filters.get("order_by") or ""))
+    if order_by in RESULT_UNSUPPORTED_SORT_FIELDS:
+        conditions.append({"kind": "order", "field": order_by})
+    return conditions
+
+
+def unapplied_result_condition_notice(conditions: list[dict[str, str]] | None) -> str:
+    """적용하지 못한 조건을 한 줄 안내 문장으로 만듭니다."""
+    labels: list[str] = []
+    for condition in conditions or []:
+        label = UNSUPPORTED_CONDITION_LABELS.get(str(condition.get("field") or ""))
+        if label and label not in labels:
+            labels.append(label)
+    if not labels:
+        return ""
+    return (
+        f"낙찰 결과에는 {'·'.join(labels)} 정보가 없어 그 조건 없이 조회했습니다. "
+        "낙찰금액 기준 조건이나 개찰일 순 정렬은 적용할 수 있습니다."
+    )
+
 
 SORT_AMOUNT_DESC_MARKERS = (
     "높은순",
