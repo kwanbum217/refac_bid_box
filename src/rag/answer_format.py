@@ -439,6 +439,17 @@ def _format_comparison_difference(rows: list[dict], metric: str, dimension: str)
     return f"{second_label}이(가) {first_label}보다 {abs(diff):,}건 {direction}."
 
 
+def _format_comparison_scope(meta: dict) -> str:
+    """비교 대상 전체에 걸린 기관·지역 조건을 한 줄로 밝힙니다."""
+    scope = meta.get("scope")
+    if not isinstance(scope, dict):
+        return ""
+    institution_name = _normalize_text(str(scope.get("institution_name") or ""))
+    if not institution_name:
+        return ""
+    return f"{institution_name} 범위에서 두 대상을 같은 지표로 집계했습니다."
+
+
 def _format_period_length_note(meta: dict) -> str:
     """기간 비교에서 한쪽이 진행 중이거나 길이가 다르면 그 사실을 밝힙니다."""
     if str(meta.get("dimension") or "") != "time":
@@ -481,12 +492,17 @@ def _build_comparison_answer(
 
     dimension_label = COMPARISON_DIMENSION_LABELS[dimension]
     metric_label = METRIC_LABELS[metric]
-    lines = [
-        f"{dimension_label}별 {metric_label} 비교입니다.",
-        "",
-        f"| {dimension_label} | {metric_label} |",
-        "| --- | ---: |",
-    ]
+    lines = [f"{dimension_label}별 {metric_label} 비교입니다."]
+    scope_note = _format_comparison_scope(meta)
+    if scope_note:
+        lines.append(scope_note)
+    lines.extend(
+        [
+            "",
+            f"| {dimension_label} | {metric_label} |",
+            "| --- | ---: |",
+        ]
+    )
     for item in rows:
         lines.append(
             f"| {_markdown_result_cell(item.get('label'))} | "

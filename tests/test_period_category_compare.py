@@ -43,6 +43,7 @@ def _seed_announcement(
     row_id: int,
     ntce_dt: datetime,
     category: str,
+    institution: str = "가나기관",
 ) -> None:
     session.add(
         BidAnnouncement(
@@ -50,7 +51,7 @@ def _seed_announcement(
             bid_ntce_no=f"ANN-{row_id}",
             bid_ntce_ord="000",
             bid_ntce_nm=f"공고 {row_id}",
-            dminstt_nm="가나기관",
+            dminstt_nm=institution,
             bid_ntce_dt=ntce_dt,
             category=category,
             raw_data=None,
@@ -65,6 +66,7 @@ def _seed_result(
     opened_at: datetime,
     category: str,
     rate: float,
+    institution: str = "가나기관",
 ) -> None:
     session.add(
         BidResult(
@@ -72,7 +74,7 @@ def _seed_result(
             bid_ntce_no=f"RES-{row_id}",
             bid_ntce_ord="00",
             bid_ntce_nm=f"공고 {row_id}",
-            dminstt_nm="가나기관",
+            dminstt_nm=institution,
             bidwinnr_nm=f"업체{row_id}",
             sucsf_bid_amt=1_000_000,
             sucsf_bid_rate=rate,
@@ -157,6 +159,49 @@ def _seed_comparison_extra_rows(session) -> None:
             opened_at=opened_at,
             category=category,
             rate=rate,
+        )
+    session.commit()
+
+
+def _seed_scoped_comparison_rows(session) -> None:
+    """기관·지역 하나와 기간 비교가 섞인 질의의 공통 범위를 검증할 행입니다.
+
+    기관별 값과 전체 값이 우연히 같아지지 않도록 다른 기관 행을 함께 둡니다.
+    """
+    announcements = [
+        (30, datetime(2025, 4, 2, 9), "Servc", "한국전력공사"),
+        (31, datetime(2026, 2, 2, 9), "Servc", "한국전력공사"),
+        (32, datetime(2026, 9, 2, 9), "Servc", "한국전력공사"),
+        (33, datetime(2025, 5, 2, 9), "Thng", "부산광역시청"),
+        (34, datetime(2026, 3, 2, 9), "Thng", "부산광역시청"),
+        (35, datetime(2026, 8, 2, 9), "Thng", "부산광역시청"),
+        (36, datetime(2025, 6, 2, 9), "Thng", "공주시청"),
+        (37, datetime(2026, 6, 2, 9), "Thng", "공주시청"),
+    ]
+    for row_id, ntce_dt, category, institution in announcements:
+        _seed_announcement(
+            session,
+            row_id=row_id,
+            ntce_dt=ntce_dt,
+            category=category,
+            institution=institution,
+        )
+
+    results = [
+        (500, datetime(2026, 9, 10, 9), "Servc", 80.0, "공주시청"),
+        (501, datetime(2026, 9, 20, 9), "Servc", 90.0, "공주시청"),
+        (502, datetime(2026, 10, 2, 9), "Servc", 70.0, "공주시청"),
+        (503, datetime(2026, 10, 5, 9), "Servc", 60.0, "다른기관"),
+        (504, datetime(2026, 9, 15, 9), "Servc", 50.0, "다른기관"),
+    ]
+    for row_id, opened_at, category, rate, institution in results:
+        _seed_result(
+            session,
+            row_id=row_id,
+            opened_at=opened_at,
+            category=category,
+            rate=rate,
+            institution=institution,
         )
     session.commit()
 
@@ -442,6 +487,92 @@ def test_region_and_institution_comparison_unchanged():
         "한국농어촌공사",
     ]
     assert "comparison_dimension" not in institution_filters
+
+
+@pytest.mark.parametrize(
+    ("query", "institution", "metric"),
+    [
+        ("한국전력공사 작년 대비 올해 공고 건수", "한국전력공사", "announcement_count"),
+        ("공주시 이번 달 지난달 낙찰 건수 비교", "공주시", "bid_count"),
+        ("부산 작년 대비 올해 공고 건수", "부산", "announcement_count"),
+    ],
+)
+def test_institution_or_region_and_period_comparison_keeps_scope(query, institution, metric):
+    """기관·지역 하나와 기간 비교가 섞여도 그 범위가 공통 조건으로 남습니다."""
+    filters = build_retrieval_plan(query).filters
+
+    assert filters.get("comparison_dimension") == "time"
+    assert filters.get("institution_name") == institution
+    assert filters.get("metric") == metric
+    assert "institution_names" not in filters
+    assert "region_names" not in filters
+
+
+def test_institution_and_period_comparison_counts_only_that_institution(isolated_db):
+    """한국전력공사 작년·올해 공고 건수가 그 기관 행만 센 값과 같습니다."""
+    _seed_scoped_comparison_rows(isolated_db)
+
+    plan = build_retrieval_plan("한국전력공사 작년 대비 올해 공고 건수")
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    # 전체 2025년 3건, 2026년 5건 중 한국전력공사 행은 1건, 2건입니다.
+    assert entries["2025"]["announcement_count"] == 1
+    assert entries["2026"]["announcement_count"] == 2
+    assert result["summary"]["comparison_meta"]["scope"] == {"institution_name": "한국전력공사"}
+
+    answer = _build_comparison_answer(plan, result)
+    assert "한국전력공사 범위에서 두 대상을 같은 지표로 집계했습니다." in answer
+    assert "| 2025년(1년 전체) | 1 |" in answer
+    assert "| 2026년(1월 1일~10월 25일) | 2 |" in answer
+    assert "1건 많습니다" in answer
+
+
+def test_institution_and_month_comparison_counts_only_that_institution(isolated_db):
+    """공주시 이번 달·지난달 낙찰 건수가 그 기관 행만 센 값과 같습니다."""
+    _seed_scoped_comparison_rows(isolated_db)
+
+    plan = build_retrieval_plan("공주시 이번 달 지난달 낙찰 건수 비교")
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    # 전체 2026-09 3건, 2026-10 2건 중 공주시청 행은 2건, 1건입니다.
+    assert entries["2026-09"]["bid_count"] == 2
+    assert entries["2026-10"]["bid_count"] == 1
+
+    answer = _build_comparison_answer(plan, result)
+    assert "공주시 범위에서 두 대상을 같은 지표로 집계했습니다." in answer
+    assert "| 2026년 9월(1개월 전체) | 2 |" in answer
+    assert "| 2026년 10월(10월 1일~10월 25일) | 1 |" in answer
+    assert "1건 많습니다" in answer
+
+
+def test_region_and_period_comparison_counts_only_that_region(isolated_db):
+    """부산 작년·올해 공고 건수가 부산 기관 행만 센 값과 같습니다."""
+    _seed_scoped_comparison_rows(isolated_db)
+
+    plan = build_retrieval_plan("부산 작년 대비 올해 공고 건수")
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    # 전체 2025년 3건, 2026년 5건 중 부산광역시청 행은 1건, 2건입니다.
+    assert entries["2025"]["announcement_count"] == 1
+    assert entries["2026"]["announcement_count"] == 2
+
+    answer = _build_comparison_answer(plan, result)
+    assert "부산 범위에서 두 대상을 같은 지표로 집계했습니다." in answer
+
+
+def test_unresolved_institution_comparison_does_not_widen_to_all(isolated_db):
+    """해석되지 않은 기관은 전체로 넓히지 않고 기존 안내를 냅니다."""
+    _seed_scoped_comparison_rows(isolated_db)
+
+    plan = build_retrieval_plan("없는시 작년 대비 올해 공고 건수")
+    result = retrieve_structured_data(isolated_db, plan)
+
+    assert result["query_skipped"] is True
+    assert result["summary"]["announcement_count"] is None
+    assert any("확정하지 못했습니다" in hint for hint in result["insufficiency_hints"])
 
 
 class _RecordingBackend:

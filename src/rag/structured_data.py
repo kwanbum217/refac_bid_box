@@ -1468,6 +1468,40 @@ def _period_category_comparison_breakdown(
     filters = plan.filters or {}
     shared_category = _normalize_text(str(filters.get("category") or ""))
     shared_from, shared_to = _resolve_window(filters)
+    # "한국전력공사 작년 대비 올해", "부산 작년 대비 올해" 처럼 기관·지역 하나가
+    # 기간 비교와 섞이면 그 범위를 두 대상 모두에 공통으로 겁니다. 이 조건을
+    # 빠뜨리면 대상별 값이 전체 기관 기준으로 조용히 넓어집니다.
+    shared_institution = _normalize_text(str(filters.get("institution_name") or ""))
+    shared_aliases = _institution_aliases(filters)
+    shared_scope = bool(shared_institution or shared_aliases)
+    announcement_scope_names = (
+        _resolve_institution_scope_names(
+            db, BidAnnouncement.dminstt_nm, shared_institution, shared_aliases
+        )
+        if shared_scope
+        else None
+    )
+    result_scope_names = (
+        _resolve_institution_scope_names(
+            db, BidResult.dminstt_nm, shared_institution, shared_aliases
+        )
+        if shared_scope
+        else None
+    )
+
+    def _shared_scope_condition(column, names: list[str] | None):
+        """공통 기관·지역 조건을 만듭니다. 해석 결과가 없으면 0건으로 좁힙니다."""
+        if not shared_scope:
+            return None
+        if names is None:
+            terms = [term for term in (shared_institution, *shared_aliases) if term]
+            return or_(*[column.contains(term) for term in terms])
+        return column.in_(names)
+
+    announcement_scope_condition = _shared_scope_condition(
+        BidAnnouncement.dminstt_nm, announcement_scope_names
+    )
+    result_scope_condition = _shared_scope_condition(BidResult.dminstt_nm, result_scope_names)
 
     specs: list[dict[str, Any]] = []
     for item in targets:
@@ -1490,12 +1524,14 @@ def _period_category_comparison_breakdown(
                 )
             if shared_category:
                 conditions.append(BidAnnouncement.category == shared_category)
-            return conditions
-        conditions.append(BidAnnouncement.category == spec["key"])
-        if shared_from:
-            conditions.append(BidAnnouncement.bid_ntce_dt >= shared_from)
-        if shared_to:
-            conditions.append(BidAnnouncement.bid_ntce_dt <= shared_to + timedelta(days=1))
+        else:
+            conditions.append(BidAnnouncement.category == spec["key"])
+            if shared_from:
+                conditions.append(BidAnnouncement.bid_ntce_dt >= shared_from)
+            if shared_to:
+                conditions.append(BidAnnouncement.bid_ntce_dt <= shared_to + timedelta(days=1))
+        if announcement_scope_condition is not None:
+            conditions.append(announcement_scope_condition)
         return conditions
 
     def _result_conditions_for(spec: dict[str, Any]) -> list:
@@ -1507,12 +1543,14 @@ def _period_category_comparison_breakdown(
                 conditions.append(BidResult.rl_openg_dt <= spec["date_to"] + timedelta(days=1))
             if shared_category:
                 conditions.append(BidResult.category == shared_category)
-            return conditions
-        conditions.append(BidResult.category == spec["key"])
-        if shared_from:
-            conditions.append(BidResult.rl_openg_dt >= shared_from)
-        if shared_to:
-            conditions.append(BidResult.rl_openg_dt <= shared_to + timedelta(days=1))
+        else:
+            conditions.append(BidResult.category == spec["key"])
+            if shared_from:
+                conditions.append(BidResult.rl_openg_dt >= shared_from)
+            if shared_to:
+                conditions.append(BidResult.rl_openg_dt <= shared_to + timedelta(days=1))
+        if result_scope_condition is not None:
+            conditions.append(result_scope_condition)
         return conditions
 
     announcement_conditions = [_announcement_conditions_for(spec) for spec in specs]
@@ -1581,11 +1619,28 @@ def _period_category_comparison_result(
     dimension: str,
 ) -> dict[str, Any]:
     """기간·분류 비교 응답을 기존 comparison 키 모양으로 만듭니다."""
+    filters = dict(plan.filters or {})
+    shared_institution = _normalize_text(str(filters.get("institution_name") or ""))
+    shared_aliases = _institution_aliases(filters)
+    if shared_institution or shared_aliases:
+        # 기관명을 하나도 확정하지 못하면 전체 기관 통계로 넓히지 않고
+        # 기존 미해석 기관 안내를 그대로 냅니다.
+        announcement_names = _resolve_institution_scope_names(
+            db, BidAnnouncement.dminstt_nm, shared_institution, shared_aliases
+        )
+        result_names = _resolve_institution_scope_names(
+            db, BidResult.dminstt_nm, shared_institution, shared_aliases
+        )
+        if announcement_names == [] and result_names == []:
+            return _empty_result(
+                plan,
+                "요청한 기관명을 데이터에서 확인하지 못해 비교 대상을 확정하지 못했습니다. "
+                "기관명을 다시 확인해 주세요.",
+            )
     comparison_plan = plan
     if dimension == "category" and (plan.filters or {}).get("category"):
         # bid_query_tool 은 플래너가 고른 분야 하나를 파라미터로 다시 더합니다.
         # 분류 비교에서는 두 분야가 대상이므로 그 단일 조건을 응답 필터에서 뺍니다.
-        filters = dict(plan.filters or {})
         filters.pop("category", None)
         comparison_plan = plan.model_copy(update={"filters": filters})
     result = _comparison_result(
@@ -1610,6 +1665,12 @@ def _period_category_comparison_result(
                 }
             )
         result["summary"]["comparison_meta"]["periods"] = periods
+    comparison_meta = result["summary"]["comparison_meta"]
+    if shared_institution:
+        comparison_meta["scope"] = {"institution_name": shared_institution}
+    shared_category = _normalize_text(str(filters.get("category") or ""))
+    if shared_category:
+        comparison_meta.setdefault("scope", {})["category"] = shared_category
     return result
 
 

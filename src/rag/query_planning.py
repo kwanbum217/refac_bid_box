@@ -993,7 +993,13 @@ def _comparison_period_targets(query: str) -> list[dict[str, Any]]:
     matches = list(COMPARISON_PERIOD_PATTERN.finditer(prefix))
     if len(matches) != 2:
         return []
-    if not _comparison_targets_are_connected(prefix[matches[0].end() : matches[1].start()]):
+    between = prefix[matches[0].end() : matches[1].start()]
+    # "공주시 이번 달 지난달 낙찰 건수 비교" 처럼 연결어 없이 두 기간이 나란히
+    # 오는 표현도 비교 표지가 있으면 기간 비교로 봅니다. 사이에 다른 낱말이
+    # 끼면 비교 대상이 아니므로 그대로 둡니다.
+    if not _comparison_targets_are_connected(between) and (
+        between.strip() or not any(marker in lowered for marker in COMPARISON_MARKERS)
+    ):
         return []
     targets = [_comparison_period_target(match) for match in matches]
     if targets[0]["key"] == targets[1]["key"]:
@@ -1949,6 +1955,17 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if comparison_dimension:
         filters["comparison_dimension"] = comparison_dimension
         filters["comparison_targets"] = comparison_targets
+        # "한국전력공사 작년 대비 올해 공고 건수" 처럼 기관·지역 하나가 기간
+        # 비교와 섞이면 그 범위를 두 대상 모두의 공통 조건으로 남깁니다.
+        # 이 값을 버리면 비교가 전체 기관 기준 값으로 조용히 넓어집니다.
+        if comparison_dimension == "time":
+            shared_scope = extract_institution_scope(normalized_query)
+            shared_name = _normalize_text(str(shared_scope.get("institution_name") or ""))
+            if shared_name:
+                filters["institution_name"] = shared_name
+                shared_aliases = shared_scope.get("institution_aliases")
+                if shared_aliases:
+                    filters["institution_aliases"] = list(shared_aliases)
     elif comparison_regions:
         filters["region_names"] = comparison_regions
     elif comparison_institutions:
