@@ -125,6 +125,42 @@ def _seed_period_category_rows(session) -> None:
     session.commit()
 
 
+def _seed_comparison_extra_rows(session) -> None:
+    """분기·연도·분류 비교의 대상 값을 서로 다르게 만드는 추가 행입니다.
+
+    기존 픽스처는 두 대상 값이 우연히 같아지므로, 비교 표가 대상별 창과 분류를
+    실제로 구분했는지 확인할 수 있도록 값을 벌려 둡니다.
+    """
+    announcements = [
+        (20, datetime(2026, 8, 3, 9), "Servc"),
+        (21, datetime(2026, 9, 20, 9), "Servc"),
+        (22, datetime(2026, 10, 5, 9), "Servc"),
+        (23, datetime(2026, 9, 5, 9), "Cnstwk"),
+        (24, datetime(2026, 10, 12, 9), "Thng"),
+        (25, datetime(2026, 3, 10, 9), "Frgcpt"),
+    ]
+    for row_id, ntce_dt, category in announcements:
+        _seed_announcement(session, row_id=row_id, ntce_dt=ntce_dt, category=category)
+
+    results = [
+        (401, datetime(2026, 8, 14, 9), "Servc", 80.0),
+        (402, datetime(2026, 9, 30, 9), "Servc", 90.0),
+        (403, datetime(2026, 10, 24, 9), "Servc", 70.0),
+        (404, datetime(2024, 3, 1, 9), "Thng", 60.0),
+        (405, datetime(2024, 7, 15, 9), "Servc", 75.0),
+        (406, datetime(2024, 11, 20, 9), "Cnstwk", 85.0),
+    ]
+    for row_id, opened_at, category, rate in results:
+        _seed_result(
+            session,
+            row_id=row_id,
+            opened_at=opened_at,
+            category=category,
+            rate=rate,
+        )
+    session.commit()
+
+
 def _comparison_map(summary: dict) -> dict[str, dict]:
     return {item["key"]: item for item in summary.get("comparison") or []}
 
@@ -147,6 +183,29 @@ def _comparison_map(summary: dict) -> dict[str, dict]:
             "Cnstwk",
         ),
         ("공사랑 용역 낙찰 건수 비교해줘", "category", ["Cnstwk", "Servc"], "bid_count", None),
+        (
+            "이번 분기 대비 지난 분기 용역 낙찰 건수",
+            "time",
+            ["2026-Q4", "2026-Q3"],
+            "bid_count",
+            "Servc",
+        ),
+        ("용역 대비 공사 평균 낙찰률", "category", ["Servc", "Cnstwk"], "avg_rate", None),
+        (
+            "지난달 대비 이번 달 공고 건수",
+            "time",
+            ["2026-09", "2026-10"],
+            "announcement_count",
+            None,
+        ),
+        ("2024년과 2025년 낙찰 건수 비교", "time", ["2024", "2025"], "bid_count", None),
+        (
+            "물품이랑 외자 공고 건수 비교",
+            "category",
+            ["Thng", "Frgcpt"],
+            "announcement_count",
+            None,
+        ),
     ],
 )
 def test_comparison_plan_classifies_period_and_category(query, dimension, keys, metric, category):
@@ -226,6 +285,122 @@ def test_category_comparison_bid_counts(isolated_db):
     assert "| 용역 | 5 |" in answer
     assert "2건 많습니다" in answer
     assert "공고 건수" not in answer
+
+
+def test_quarter_comparison_counts_each_quarter_window(isolated_db):
+    """이번 분기·지난 분기 창을 _parse_time_window 와 같은 산식으로 나눠 셉니다."""
+    _seed_period_category_rows(isolated_db)
+    _seed_comparison_extra_rows(isolated_db)
+
+    plan = build_retrieval_plan("이번 분기 대비 지난 분기 용역 낙찰 건수")
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    # 이번 분기(2026-10-01~10-25) 용역 낙찰 2건, 지난 분기(2026-07-01~09-30) 3건
+    assert entries["2026-Q4"]["bid_count"] == 2
+    assert entries["2026-Q3"]["bid_count"] == 3
+    assert plan.filters.get("category") == "Servc"
+    assert "institution_names" not in plan.filters
+
+    meta = result["summary"]["comparison_meta"]
+    assert meta["dimension"] == "time"
+    assert meta["metric"] == "bid_count"
+    periods = {item["key"]: item for item in meta["periods"]}
+    assert periods["2026-Q4"]["date_from"] == "2026-10-01"
+    assert periods["2026-Q4"]["date_to"] == "2026-10-25"
+    assert periods["2026-Q4"]["ongoing"] is True
+    assert periods["2026-Q3"]["date_from"] == "2026-07-01"
+    assert periods["2026-Q3"]["date_to"] == "2026-09-30"
+    assert periods["2026-Q3"]["ongoing"] is False
+
+    answer = _build_comparison_answer(plan, result)
+    assert "| 2026년 4분기(10월 1일~10월 25일) | 2 |" in answer
+    assert "| 2026년 3분기(3개월 전체) | 3 |" in answer
+    assert "1건 많습니다" in answer
+    assert "2026년 10월 25일까지 집계된 진행 중 기간" in answer
+
+
+def test_category_comparison_average_rate_with_marker_between(isolated_db):
+    """대비 표지가 분야어 사이에 있어도 두 분류의 평균 낙찰률을 나란히 냅니다."""
+    _seed_period_category_rows(isolated_db)
+
+    plan = build_retrieval_plan("용역 대비 공사 평균 낙찰률")
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    # 용역 (90+80+95+85+75)/5 = 85.0, 공사 (70+72+88)/3 = 76.6667
+    assert entries["Servc"]["avg_rate"] == pytest.approx(85.0)
+    assert entries["Servc"]["sample_count"] == 5
+    assert entries["Cnstwk"]["avg_rate"] == pytest.approx(76.6667, abs=1e-4)
+    assert entries["Cnstwk"]["sample_count"] == 3
+    assert "category" not in plan.filters
+    assert result["summary"]["comparison_meta"]["dimension"] == "category"
+    assert result["summary"]["comparison_meta"]["metric"] == "avg_rate"
+
+    answer = _build_comparison_answer(plan, result)
+    assert "분류별 평균 낙찰률 비교입니다." in answer
+    assert "| 용역 | 85.0000% |" in answer
+    assert "| 건설 | 76.6667% |" in answer
+    assert "8.33%p 낮습니다" in answer
+
+
+def test_month_comparison_announcement_counts(isolated_db):
+    """지난달·이번 달 공고 건수를 각자의 월 창에서 직접 센 값과 같게 냅니다."""
+    _seed_period_category_rows(isolated_db)
+    _seed_comparison_extra_rows(isolated_db)
+
+    plan = build_retrieval_plan("지난달 대비 이번 달 공고 건수")
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    # 지난달(2026-09) 2건, 이번 달(2026-10-01~10-25) 3건. 10월 26일 공고는 창 밖입니다.
+    assert entries["2026-09"]["announcement_count"] == 2
+    assert entries["2026-10"]["announcement_count"] == 3
+    assert "category" not in plan.filters
+
+    answer = _build_comparison_answer(plan, result)
+    assert "| 2026년 9월(1개월 전체) | 2 |" in answer
+    assert "| 2026년 10월(10월 1일~10월 25일) | 3 |" in answer
+    assert "1건 많습니다" in answer
+
+
+def test_year_comparison_bid_counts(isolated_db):
+    """연도 두 개의 낙찰 건수를 각자의 연 창에서 직접 센 값과 같게 냅니다."""
+    _seed_period_category_rows(isolated_db)
+    _seed_comparison_extra_rows(isolated_db)
+
+    plan = build_retrieval_plan("2024년과 2025년 낙찰 건수 비교")
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    assert entries["2024"]["bid_count"] == 3
+    assert entries["2025"]["bid_count"] == 5
+
+    answer = _build_comparison_answer(plan, result)
+    assert "| 2024년(1년 전체) | 3 |" in answer
+    assert "| 2025년(1년 전체) | 5 |" in answer
+    assert "2건 많습니다" in answer
+
+
+def test_category_comparison_announcement_counts(isolated_db):
+    """물품·외자 공고 건수를 분류별로 직접 센 값과 같게 냅니다."""
+    _seed_period_category_rows(isolated_db)
+    _seed_comparison_extra_rows(isolated_db)
+
+    plan = build_retrieval_plan("물품이랑 외자 공고 건수 비교")
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    # 물품 (2025-05, 2026-05, 2026-10-12) 3건, 외자 (2026-03-10) 1건
+    assert entries["Thng"]["announcement_count"] == 3
+    assert entries["Frgcpt"]["announcement_count"] == 1
+    assert "category" not in plan.filters
+
+    answer = _build_comparison_answer(plan, result)
+    assert "분류별 공고 건수 비교입니다." in answer
+    assert "| 물품 | 3 |" in answer
+    assert "| 외자 | 1 |" in answer
+    assert "2건 적습니다" in answer
 
 
 def test_bid_query_tool_category_comparison_keeps_both_categories(isolated_db):

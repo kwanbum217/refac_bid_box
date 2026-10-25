@@ -830,9 +830,10 @@ COMPARISON_CATEGORY_PATTERN = re.compile(
     r"(?<![가-힣A-Za-z0-9])(?P<word>공사|건설|용역|물품|외자)"
     r"(?=\s|랑|이랑|하고|와|과|,|낙찰|평균|공고|건수|수|를|을|의|$)"
 )
-# 기간 대상 구간은 지표·도메인 표지 앞까지만 봅니다. "대비"·"비교" 는 두 기간을
-# 잇는 표지이므로 절단 위치가 아닙니다.
-COMPARISON_PERIOD_STOP_PATTERN = re.compile(
+# 기간·분류 대상 구간은 지표·도메인 표지 앞까지만 봅니다. "대비"·"비교" 는 두
+# 대상을 잇는 표지이므로 절단 위치가 아닙니다. 이 표지를 절단 위치로 쓰면
+# "용역 대비 공사" 처럼 표지가 두 분야어 사이에 있을 때 두 번째 분야어가 잘립니다.
+COMPARISON_METRIC_STOP_PATTERN = re.compile(
     r"공고\s*건수|낙찰\s*결과|낙찰\s*건수|낙찰\s*공고|낙찰률|평균|건수|결과|통계|순위|"
     r"공고|낙찰|입찰|개찰|유찰",
     re.IGNORECASE,
@@ -987,7 +988,7 @@ def _comparison_period_targets(query: str) -> list[dict[str, Any]]:
     lowered = _query_lower(query)
     if not any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
         return []
-    stop = COMPARISON_PERIOD_STOP_PATTERN.search(lowered)
+    stop = COMPARISON_METRIC_STOP_PATTERN.search(lowered)
     prefix = lowered[: stop.start()] if stop else lowered
     matches = list(COMPARISON_PERIOD_PATTERN.finditer(prefix))
     if len(matches) != 2:
@@ -1009,7 +1010,7 @@ def _comparison_category_targets(query: str) -> list[dict[str, Any]]:
     lowered = _query_lower(query)
     if not any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
         return []
-    stop = COMPARISON_TARGET_STOP_PATTERN.search(lowered)
+    stop = COMPARISON_METRIC_STOP_PATTERN.search(lowered)
     prefix = lowered[: stop.start()] if stop else lowered
     matches = list(COMPARISON_CATEGORY_PATTERN.finditer(prefix))
     if len(matches) != 2:
@@ -1054,6 +1055,12 @@ def _extract_comparison_targets(query: str) -> tuple[list[str], list[str]]:
     if not any(marker in lowered for marker in COMPARISON_MARKERS):
         return [], []
     if not any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
+        return [], []
+
+    # 기간·분류 비교의 두 대상은 기관명 후보가 아닙니다. "이번 분기 대비 지난 분기"
+    # 를 어절 단위로 나누면 [이번, 분기] 가 기관명으로 승격되어 기관 비교 경로가
+    # 빈 표를 내므로, 전용 판정이 성립하면 여기서 끝냅니다.
+    if _comparison_period_targets(normalized) or _comparison_category_targets(normalized):
         return [], []
 
     stop = COMPARISON_TARGET_STOP_PATTERN.search(lowered)
