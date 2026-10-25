@@ -404,6 +404,7 @@ def _announcement_conditions(
     date_from, date_to = _resolve_window(filters)
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
+    notice_kind = _normalize_text(str(filters.get("notice_kind") or ""))
 
     conditions = []
     if (
@@ -424,6 +425,8 @@ def _announcement_conditions(
         )
     if category:
         conditions.append(BidAnnouncement.category == category)
+    if notice_kind:
+        conditions.append(BidAnnouncement.ntce_kind_nm == notice_kind)
     if bid_ntce_no:
         conditions.append(BidAnnouncement.bid_ntce_no == bid_ntce_no)
     return conditions
@@ -464,6 +467,8 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     # 사전 집계 스냅샷은 업체 축 전체 순위입니다. 특정 업체를 지목한 조회에
     # 쓰면 그 업체 조건이 사라진 전체 순위가 함께 나옵니다.
     if filters.get("winner_name"):
+        return None
+    if _normalize_text(str(filters.get("notice_kind") or "")):
         return None
     if _normalize_text(str(filters.get("institution_name") or "")):
         return None
@@ -2585,6 +2590,15 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     response_filters = dict(plan.filters or {})
     if response_filters.get("category"):
         response_filters["category_label"] = _category_label(str(response_filters["category"]))
+    # 공고 목록 머리 문장은 category_label 을 그대로 씁니다. 공고 종류 조건이
+    # 걸린 질의는 종류를 라벨 앞에 붙여 "최근 재공고 용역 공고 5건입니다." 처럼
+    # 어떤 종류를 조회했는지 밝힙니다.
+    notice_kind_label = _normalize_text(str(response_filters.get("notice_kind") or ""))
+    if notice_kind_label:
+        category_label = _normalize_text(str(response_filters.get("category_label") or ""))
+        response_filters["category_label"] = (
+            f"{notice_kind_label} {category_label}".strip() if category_label else notice_kind_label
+        )
 
     summary: dict[str, Any] = {
         "total_bids": int(total_count or 0),
