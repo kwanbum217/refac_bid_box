@@ -38,6 +38,7 @@ from src.app.services.planner_intent_signals import (
     _is_model_validation_request,
     _select_action,
 )
+from src.rag.data_gap_guard import detect_data_gap
 from src.rag.engine import (
     extract_bid_ntce_no,
     extract_result_limit,
@@ -112,6 +113,18 @@ def interpret_request(
         execution_plan.requested_capabilities = []
         execution_plan.parameters["out_of_scope"] = True
         execution_plan.reasoning = "out_of_scope request"
+        return execution_plan
+
+    # 수집 스키마에 없는 항목은 후속 병합이나 필터 추출보다 앞에서 막는다.
+    # 지역 제한을 수요기관 지역으로, 참가업체 수를 목록 개수로 바꾸는
+    # 대체 해석을 원문 단계에서 차단하기 위해서다.
+    data_gap_item = detect_data_gap(normalized)
+    if data_gap_item:
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = []
+        execution_plan.parameters["data_gap"] = data_gap_item
+        execution_plan.parameters["out_of_scope"] = True
+        execution_plan.reasoning = "data_gap request"
         return execution_plan
 
     # 1. 후속 질문 여부 판단 및 메시지 병합
