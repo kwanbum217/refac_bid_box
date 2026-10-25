@@ -90,6 +90,7 @@ def test_lookup_requests_stay_on_single_lookup(query):
 
 _MAIN_PRICE_QUERY_TYPE = "answer"
 _MAIN_BID_QUERY_CAPABILITIES = ["bid_query_tool"]
+_MAIN_PREDICTION_CAPABILITIES = ["bid_prediction_tool"]
 _MAIN_SEMANTIC_CAPABILITIES = ["semantic_search_tool"]
 
 
@@ -107,6 +108,32 @@ def test_price_keywords_without_bid_number_match_main(query, capabilities):
 
     assert plan.query_type == _MAIN_PRICE_QUERY_TYPE
     assert plan.requested_capabilities == capabilities
+
+
+@pytest.mark.parametrize(
+    ("query", "capabilities"),
+    [
+        (f"{_BID_NO} 예상금액 얼마야?", _MAIN_BID_QUERY_CAPABILITIES),
+        (f"{_BID_NO} 낙찰 예상금액 얼마야?", _MAIN_PREDICTION_CAPABILITIES),
+        (f"{_BID_NO} 사정률이 뭐야?", _MAIN_SEMANTIC_CAPABILITIES),
+        (f"{_BID_NO} 공고 뭐야?", _MAIN_BID_QUERY_CAPABILITIES),
+        (f"{_BID_NO} 낙찰 하한가 계산해줘", _MAIN_BID_QUERY_CAPABILITIES),
+        (f"{_BID_NO} 추정가격 얼마야?", _MAIN_BID_QUERY_CAPABILITIES),
+        (f"{_BID_NO} 기초금액 알려줘", _MAIN_BID_QUERY_CAPABILITIES),
+    ],
+)
+def test_bid_number_price_vocabulary_routing(query, capabilities):
+    """맨 예상금액·추정가격·기초금액은 조회, 낙찰 예측 표지는 예측 도구입니다."""
+    plan = interpret_request(query)
+
+    assert plan.query_type == _MAIN_PRICE_QUERY_TYPE
+    assert plan.requested_capabilities == capabilities
+
+
+def test_explanation_marker_after_bid_number():
+    """조사 결합형 설명 표지는 단건 조회를 끄고, 공고 뭐야 는 단건 조회를 유지합니다."""
+    assert is_bid_number_query(f"{_BID_NO} 사정률이 뭐야?") is False
+    assert is_bid_number_query(f"{_BID_NO} 공고 뭐야?") is True
 
 
 def test_public_announcement_question_is_single_lookup():
