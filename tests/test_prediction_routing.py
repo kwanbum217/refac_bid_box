@@ -88,6 +88,27 @@ def test_lookup_requests_stay_on_single_lookup(query):
     assert interpret_request(query).requested_capabilities == ["bid_query_tool"]
 
 
+_MAIN_PRICE_QUERY_TYPE = "answer"
+_MAIN_BID_QUERY_CAPABILITIES = ["bid_query_tool"]
+_MAIN_SEMANTIC_CAPABILITIES = ["semantic_search_tool"]
+
+
+@pytest.mark.parametrize(
+    ("query", "capabilities"),
+    [
+        ("예상금액 통계 보여줘", _MAIN_BID_QUERY_CAPABILITIES),
+        ("예상 낙찰금액 평균 알려줘", _MAIN_BID_QUERY_CAPABILITIES),
+        ("낙찰 하한가 기준 알려줘", _MAIN_SEMANTIC_CAPABILITIES),
+    ],
+)
+def test_price_keywords_without_bid_number_match_main(query, capabilities):
+    """공고번호 없는 예상금액 계열 판정은 main 과 같습니다."""
+    plan = interpret_request(query)
+
+    assert plan.query_type == _MAIN_PRICE_QUERY_TYPE
+    assert plan.requested_capabilities == capabilities
+
+
 def test_public_announcement_question_is_single_lookup():
     """공고번호 단건 판정은 맨 뭐야 에 꺼지지 않습니다."""
     query = f"{_BID_NO} 공고 뭐야?"

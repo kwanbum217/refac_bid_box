@@ -135,7 +135,6 @@ AUTOMATION_STATUS_KEYWORDS = (
 )
 PREDICTION_CONTEXT_KEYWORDS = (
     "예측",
-    "예상",
     "투찰가",
     "투찰 금액",
     "입찰가",
@@ -151,15 +150,8 @@ PREDICTION_ACTION_KEYWORDS = (
     "예측 해",
     "예측 실행",
     "예측 돌려",
-    "예측 모델 돌려",
     "예측 다시",
     "예측 재실행",
-    "예측 부탁",
-    "예측해 줘",
-    "얼마 써",
-    "얼마에 넣",
-    "얼마로 넣",
-    "얼마로 써",
     "투찰가",
     "투찰 금액",
     "입찰가",
@@ -182,6 +174,18 @@ BID_PRICE_PREDICTION_KEYWORDS = (
     "투찰금액",
     "입찰가",
     "낙찰가",
+)
+BID_NTCE_NO_PREDICTION_CONTEXT_KEYWORDS = ("예상",)
+BID_NTCE_NO_PREDICTION_ACTION_KEYWORDS = (
+    "예측 모델 돌려",
+    "예측 부탁",
+    "예측해 줘",
+    "얼마 써",
+    "얼마에 넣",
+    "얼마로 넣",
+    "얼마로 써",
+)
+BID_NTCE_NO_PREDICTION_PRICE_KEYWORDS = (
     "예상 낙찰금액",
     "낙찰 예상금액",
     "예상 낙찰가",
@@ -273,12 +277,18 @@ def _is_model_validation_request(message: str) -> bool:
 def _is_bid_price_prediction_request(message: str, bid_ntce_no: str = "") -> bool:
     if _is_model_validation_request(message):
         return False
-    has_price_target = any(keyword in message for keyword in BID_PRICE_PREDICTION_KEYWORDS)
-    has_prediction_signal = any(keyword in message for keyword in PREDICTION_CONTEXT_KEYWORDS)
+    price_keywords: tuple[str, ...] = BID_PRICE_PREDICTION_KEYWORDS
+    context_keywords: tuple[str, ...] = PREDICTION_CONTEXT_KEYWORDS
+    if bid_ntce_no:
+        price_keywords = price_keywords + BID_NTCE_NO_PREDICTION_PRICE_KEYWORDS
+        context_keywords = context_keywords + BID_NTCE_NO_PREDICTION_CONTEXT_KEYWORDS
+    has_price_target = any(keyword in message for keyword in price_keywords)
+    has_prediction_signal = any(keyword in message for keyword in context_keywords)
     if has_price_target and has_prediction_signal:
         return True
     if bid_ntce_no:
-        return any(keyword in message for keyword in PREDICTION_ACTION_KEYWORDS)
+        action_keywords = PREDICTION_ACTION_KEYWORDS + BID_NTCE_NO_PREDICTION_ACTION_KEYWORDS
+        return any(keyword in message for keyword in action_keywords)
     return False
 
 
