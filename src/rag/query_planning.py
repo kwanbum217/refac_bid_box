@@ -2589,9 +2589,8 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
         start, end = _to_iso(yesterday, yesterday)
         return start, end, "recent", True
 
-    if "이번 주" in lowered:
-        week_start = today - timedelta(days=today.weekday())
-        start, end = _to_iso(week_start, today)
+    if "이번 주" in lowered or "이번주" in lowered:
+        start, end = _to_iso(today - timedelta(days=6), today)
         return start, end, "recent", True
 
     if "이번 달" in lowered or "이번 월" in lowered or "이번달" in lowered:
