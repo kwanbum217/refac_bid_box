@@ -377,6 +377,103 @@ def test_build_latest_truth_tie_rule_end_to_end() -> None:
     assert dropped["detail"]["missing_definite"] == [ALLOWED[0]]
 
 
+# 정정 공고처럼 같은 공고번호의 행이 둘 있는 상위 목록이다. 정렬 상위 5행을
+# 그대로 세면 고유 공고가 4건뿐이고 504 가 6번째로 밀린다.
+LATEST_ROWS_WITH_DUPLICATE = [
+    ("R26BK01789500", "2026-10-23 10:00:00"),
+    ("R26BK01789501", "2026-10-23 10:00:00"),
+    ("R26BK01789502", "2026-10-23 10:00:00"),
+    ("R26BK01789503", "2026-10-23 09:59:00"),
+    ("R26BK01789500", "2026-10-23 09:00:00"),
+    ("R26BK01789504", "2026-10-23 08:00:00"),
+]
+
+
+def _dedupe_latest_rows(rows: list[tuple[Any, ...]], limit: int) -> list[tuple[Any, ...]]:
+    """GROUP BY bid_ntce_no 와 같은 규칙으로 공고번호 첫 등장 행만 남긴다."""
+    seen: set[str] = set()
+    picked: list[tuple[Any, ...]] = []
+    for row in rows:
+        number = str(row[0])
+        if number in seen:
+            continue
+        seen.add(number)
+        picked.append(row)
+        if len(picked) >= limit:
+            break
+    return picked
+
+
+@pytest.mark.parametrize("kind", sorted(measure.LATEST_CHECKS))
+def test_latest_truth_counts_unique_bid_numbers_before_limit(kind: str) -> None:
+    # 중복 행이 상위 5행 한 자리를 차지해도 정답은 고유 공고 5건이다.
+    statements: list[str] = []
+
+    def fake_query(sql: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        statements.append(sql)
+        if "GROUP BY bid_ntce_no" not in sql:
+            return ["bid_ntce_no", "bid_ntce_dt"], LATEST_ROWS_WITH_DUPLICATE[:limit]
+        return ["bid_ntce_no", "bid_ntce_dt"], _dedupe_latest_rows(
+            LATEST_ROWS_WITH_DUPLICATE, limit
+        )
+
+    item = _announcement_item()
+    item["check"]["type"] = kind
+    truth = measure.build_truth(item, {}, query_fn=fake_query)
+
+    assert "GROUP BY bid_ntce_no" in statements[0]
+    assert truth["window_fallback"] is False
+    assert truth["expected_count"] == 5
+    assert truth["allowed"] == set(ALLOWED)
+
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+    assert result["passed"] is True
+    assert result["detail"]["detected_count"] == 5
+
+
+def test_latest_truth_fallback_counts_unique_bid_numbers() -> None:
+    statements: list[str] = []
+
+    def fake_query(sql: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        statements.append(sql)
+        if "CURDATE() - INTERVAL" in sql:
+            return ["bid_ntce_no", "bid_ntce_dt"], []
+        return ["bid_ntce_no", "bid_ntce_dt"], _dedupe_latest_rows(
+            LATEST_ROWS_WITH_DUPLICATE, limit
+        )
+
+    truth = measure.build_truth(_announcement_item(), {}, query_fn=fake_query)
+
+    assert "GROUP BY bid_ntce_no" in statements[0]
+    assert "GROUP BY bid_ntce_no" in statements[1]
+    assert truth["window_fallback"] is True
+    assert truth["expected_count"] == 5
+    assert truth["allowed"] == set(ALLOWED)
+
+
+def test_latest_truth_without_duplicates_keeps_previous_rule() -> None:
+    rows = [(bid_no, f"2026-10-23 09:{54 - index}:00") for index, bid_no in enumerate(ALLOWED)]
+
+    def fake_query(sql: str, limit: int) -> tuple[list[str], list[tuple[Any, ...]]]:
+        if "GROUP BY bid_ntce_no" not in sql:
+            return ["bid_ntce_no"], []
+        return ["bid_ntce_no", "bid_ntce_dt"], _dedupe_latest_rows(rows, limit)
+
+    truth = measure.build_truth(_announcement_item(), {}, query_fn=fake_query)
+
+    assert truth["expected_count"] == 5
+    assert truth["definite"] == set(ALLOWED[:4])
+    assert truth["ties"] == {ALLOWED[4]}
+    assert truth["allowed"] == set(ALLOWED)
+
+    passed = measure.grade_attempt(_announcement_item(), truth, _payload(", ".join(ALLOWED)))
+    assert passed["passed"] is True
+
+    dropped = measure.grade_attempt(_announcement_item(), truth, _payload(", ".join(ALLOWED[:4])))
+    assert dropped["passed"] is False
+    assert dropped["detail"]["detected_count"] == 4
+
+
 def test_repeats_three_passes_with_two_successes() -> None:
     summary = measure.summarize_item(
         _announcement_item(repeats=3),

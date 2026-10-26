@@ -614,6 +614,13 @@ def _latest_rows(
     check: dict[str, Any],
     query: QueryFn,
 ) -> tuple[list[tuple[Any, ...]], bool]:
+    """최신 목록 정답 행을 고유 공고번호 기준으로 limit 개 고른다.
+
+    같은 공고번호의 정정·차수 행이 있으면 정렬 상위 limit 행을 그대로 세는
+    방식은 중복 행이 자리를 차지해 고유 공고가 limit 보다 적어진다. 앱의 목록
+    규칙(공고일 내림차순에서 공고번호 첫 등장)과 같게, 공고번호마다 가장 최신
+    행 하나만 남긴 뒤 limit 개를 고른다.
+    """
     conditions: list[str] = [f"{date_column} IS NOT NULL"]
     category = check.get("category")
     if category:
@@ -629,17 +636,17 @@ def _latest_rows(
     # 보간값은 fixture 상수와 이 모듈의 상수뿐이다. 정답 SQL 은 읽기 전용
     # 실행기(run_query)만 거치며 외부 입력을 받지 않는다.
     statement = (
-        f"SELECT bid_ntce_no, {date_column} FROM {dataset} "  # noqa: S608  # nosec B608 - 보간값은 상수다
+        f"SELECT bid_ntce_no, MAX({date_column}) AS latest_value FROM {dataset} "  # noqa: S608  # nosec B608 - 보간값은 상수다
         f"WHERE {where} AND {date_column} >= CURDATE() - INTERVAL {days} DAY "
-        f"ORDER BY {date_column} DESC, id DESC LIMIT {limit}"
+        f"GROUP BY bid_ntce_no ORDER BY latest_value DESC LIMIT {limit}"
     )
     _, rows = _run_read_only(statement, limit, query)
     if rows:
         return rows, False
     # 수집 공백으로 최근 창에 행이 없으면 날짜 조건만 풀고 같은 조건으로 다시 본다.
     fallback = (
-        f"SELECT bid_ntce_no, {date_column} FROM {dataset} "  # noqa: S608  # nosec B608 - 보간값은 상수다
-        f"WHERE {where} ORDER BY {date_column} DESC, id DESC LIMIT {limit}"
+        f"SELECT bid_ntce_no, MAX({date_column}) AS latest_value FROM {dataset} "  # noqa: S608  # nosec B608 - 보간값은 상수다
+        f"WHERE {where} GROUP BY bid_ntce_no ORDER BY latest_value DESC LIMIT {limit}"
     )
     _, fallback_rows = _run_read_only(fallback, limit, query)
     return fallback_rows, True
@@ -670,10 +677,10 @@ def build_latest_truth(
 ) -> dict[str, Any]:
     """공고/낙찰 최신 목록의 정답 집합을 만든다.
 
-    상위 limit 행을 정렬값 기준으로 확정 집합 D(경계값보다 큼)와 동점 집합
-    T(경계값과 같음)로 나눈다. 절단 지점과 같은 일시의 행은 limit 밖에 더
-    있어도 T 에 넣는다. 판정은 D 를 모두 포함하고 D 와 T 의 합집합을 벗어나지
-    않으며 답변 번호가 limit 개 이상일 때만 통과다.
+    고유 공고번호 기준 상위 limit 건을 정렬값 기준으로 확정 집합 D(경계값보다
+    큼)와 동점 집합 T(경계값과 같음)로 나눈다. 절단 지점과 같은 일시의 행은
+    limit 밖에 더 있어도 T 에 넣는다. 판정은 D 를 모두 포함하고 D 와 T 의
+    합집합을 벗어나지 않으며 답변 번호가 limit 개 이상일 때만 통과다.
     """
     query = query_fn or run_query
     dataset, date_column = LATEST_CHECKS[kind]
