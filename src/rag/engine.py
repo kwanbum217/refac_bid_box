@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
 from src.rag.answer_format import (
+    _build_amount_extreme_answer,
     _build_announcement_list_answer,
     _build_axis_answer,
     _build_bid_detail_answer,
@@ -212,7 +213,7 @@ def _apply_entry_default_statistics_window(plan: RetrievalPlan) -> RetrievalPlan
     filters = plan.filters or {}
     if plan.use_lexical or filters.get("bid_ntce_no"):
         return plan
-    windowed = apply_default_statistics_window(filters)
+    windowed = apply_default_statistics_window(filters, query=plan.semantic_query)
     return plan.model_copy(
         update={
             "filters": windowed,
@@ -1275,6 +1276,8 @@ class HybridRAGEngine:
         t_direct_start = _safe_perf_counter()
         direct_result_list_answer = _build_result_list_answer(plan, structured_data)
         if not direct_result_list_answer:
+            direct_result_list_answer = _build_amount_extreme_answer(plan, structured_data)
+        if not direct_result_list_answer:
             direct_result_list_answer = _build_announcement_list_answer(plan, structured_data)
         if not direct_result_list_answer:
             direct_result_list_answer = _build_bid_detail_answer(plan, structured_data)
@@ -1584,6 +1587,8 @@ class HybridRAGEngine:
         yield {"type": "docs", "docs": vector_docs}
 
         direct_result_list_answer = _build_result_list_answer(plan, structured_data)
+        if not direct_result_list_answer:
+            direct_result_list_answer = _build_amount_extreme_answer(plan, structured_data)
         if not direct_result_list_answer:
             direct_result_list_answer = _build_announcement_list_answer(plan, structured_data)
         if not direct_result_list_answer:

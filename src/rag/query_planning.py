@@ -1123,7 +1123,7 @@ COMPARISON_MARKERS = ("비교", "대비", "차이", "vs")
 # 비교 질의라도 입찰 지표를 묻지 않으면 지역·기관 비교가 아닙니다.
 # "부산이랑 대구 여행 코스 비교" 같은 질의를 통계 비교로 오인하지 않습니다.
 COMPARISON_DOMAIN_MARKERS = ("공고", "낙찰", "입찰", "개찰", "유찰")
-COMPARISON_TARGET_CONNECTOR_PATTERN = re.compile(r"\s*(?:이랑|랑|하고|와|과|,)\s*")
+COMPARISON_TARGET_CONNECTOR_PATTERN = re.compile(r"\s*(?:이랑|랑|하고|와|과|및|,)\s*")
 # 대상 구간은 지표·도메인 표지 앞까지만 봅니다. leftmost 일치가 곧 절단 위치입니다.
 COMPARISON_TARGET_STOP_PATTERN = re.compile(
     r"공고\s*건수|낙찰\s*결과|낙찰\s*건수|낙찰\s*공고|낙찰률|평균|건수|결과|통계|순위|"
@@ -1132,6 +1132,47 @@ COMPARISON_TARGET_STOP_PATTERN = re.compile(
 )
 REGION_ADMIN_SUFFIXES = ("특별자치시", "특별자치도", "특별시", "광역시", "시", "도")
 COMPARISON_TARGET_TRAILING_PARTICLES = ("의", "은", "는", "이", "가", "을", "를", "만")
+
+# 기간·분류 비교는 두 대상을 같은 지표로 집계합니다. 기간 표현과 분야어를
+# 기관명 후보로 넘기면 기관 비교 경로가 이름을 해석하지 못해 빈 결과가 됩니다.
+COMPARISON_PERIOD_PATTERN = re.compile(
+    r"(?P<jaeyear>재작년)|"
+    r"(?P<lastyear>작년|지난해|지난\s*해|전년)|"
+    r"(?P<thisyear>올해|금년|이번\s*해)|"
+    r"(?P<lastmonth>지난\s*달)|"
+    r"(?P<thismonth>이번\s*달|이번달|이번\s*월)|"
+    r"(?P<lastquarter>지난\s*분기)|"
+    r"(?P<thisquarter>이번\s*분기)|"
+    r"(?P<year>\d{4})\s*년"
+)
+COMPARISON_PERIOD_TOKEN_PATTERN = re.compile(
+    r"^(?:재작년|작년|지난해|지난\s*해|전년|올해|금년|이번\s*해|"
+    r"이번\s*달|이번달|이번\s*월|지난\s*달|지난\s*분기|이번\s*분기|\d{4}\s*년)$"
+)
+# "공사" 는 공기업 이름(한국전력공사)의 일부로도 흔히 나옵니다. 낱말 경계와
+# 뒤따르는 조사·연결어를 함께 요구해 이름 속 글자를 분야어로 읽지 않습니다.
+COMPARISON_CATEGORY_TOKENS = {
+    "공사": "Cnstwk",
+    "건설": "Cnstwk",
+    "용역": "Servc",
+    "물품": "Thng",
+    "외자": "Frgcpt",
+}
+COMPARISON_CATEGORY_PATTERN = re.compile(
+    r"(?<![가-힣A-Za-z0-9])(?P<word>공사|건설|용역|물품|외자)"
+    r"(?=\s|랑|이랑|하고|와|과|,|낙찰|평균|공고|건수|수|를|을|의|$)"
+)
+# 기간·분류 대상 구간은 지표·도메인 표지 앞까지만 봅니다. "대비"·"비교" 는 두
+# 대상을 잇는 표지이므로 절단 위치가 아닙니다. 이 표지를 절단 위치로 쓰면
+# "용역 대비 공사" 처럼 표지가 두 분야어 사이에 있을 때 두 번째 분야어가 잘립니다.
+COMPARISON_METRIC_STOP_PATTERN = re.compile(
+    r"공고\s*건수|낙찰\s*결과|낙찰\s*건수|낙찰\s*공고|낙찰률|평균|건수|결과|통계|순위|"
+    r"공고|낙찰|입찰|개찰|유찰",
+    re.IGNORECASE,
+)
+COMPARISON_BETWEEN_TARGETS_PATTERN = re.compile(
+    r"^[\s,/·]*(?:이랑|랑|하고|와|과|대비|비교|차이|vs)[\s,/·]*$", re.IGNORECASE
+)
 
 
 def _strip_comparison_particle(text: str) -> str:
@@ -1159,9 +1200,216 @@ def _match_comparison_region(text: str) -> str:
     return ""
 
 
+def _comparison_period_label(
+    *,
+    kind: str,
+    year: int,
+    start: date,
+    end: date,
+    ongoing: bool,
+    month: int = 0,
+    quarter: int = 0,
+) -> str:
+    if kind == "year":
+        if ongoing:
+            return f"{year}년({start.month}월 {start.day}일~{end.month}월 {end.day}일)"
+        return f"{year}년(1년 전체)"
+    if kind == "month":
+        if ongoing:
+            return f"{year}년 {month}월({month}월 1일~{month}월 {end.day}일)"
+        return f"{year}년 {month}월(1개월 전체)"
+    if ongoing:
+        return f"{year}년 {quarter}분기({start.month}월 1일~{end.month}월 {end.day}일)"
+    return f"{year}년 {quarter}분기(3개월 전체)"
+
+
+def _comparison_period_target(match: re.Match[str]) -> dict[str, Any]:
+    """기간 표현 하나를 같은 산식의 창과 표시 라벨로 바꿉니다.
+
+    _parse_time_window 와 같은 달력 산식을 쓰되, 비교에는 두 창이 필요하므로
+    각 표현을 따로 해석합니다.
+    """
+    today = date.today()
+    group = match.lastgroup
+    kind = "year"
+    month = 0
+    quarter = 0
+    ongoing = False
+
+    if group == "jaeyear":
+        year = today.year - 2
+        start, end = date(year, 1, 1), date(year, 12, 31)
+        key = str(year)
+    elif group == "lastyear":
+        year = today.year - 1
+        start, end = date(year, 1, 1), date(year, 12, 31)
+        key = str(year)
+    elif group == "thisyear":
+        year = today.year
+        start, end = date(year, 1, 1), today
+        ongoing = True
+        key = str(year)
+    elif group == "lastmonth":
+        last_prev_day = today.replace(day=1) - timedelta(days=1)
+        year, month = last_prev_day.year, last_prev_day.month
+        start = date(year, month, 1)
+        end = last_prev_day
+        kind = "month"
+        key = f"{year}-{month:02d}"
+    elif group == "thismonth":
+        year, month = today.year, today.month
+        start, end = date(year, month, 1), today
+        kind = "month"
+        ongoing = True
+        key = f"{year}-{month:02d}"
+    elif group == "lastquarter":
+        quarter = (today.month - 1) // 3 + 1
+        quarter -= 1
+        year = today.year
+        if quarter == 0:
+            quarter = 4
+            year -= 1
+        start = date(year, QUARTER_MONTHS[quarter][0], 1)
+        end = _month_end(year, QUARTER_MONTHS[quarter][1])
+        kind = "quarter"
+        key = f"{year}-Q{quarter}"
+    elif group == "thisquarter":
+        quarter = (today.month - 1) // 3 + 1
+        year = today.year
+        start = date(year, QUARTER_MONTHS[quarter][0], 1)
+        end = today
+        kind = "quarter"
+        ongoing = True
+        key = f"{year}-Q{quarter}"
+    else:
+        year_match = re.search(r"\d{4}", match.group())
+        year = int(year_match.group()) if year_match else today.year
+        start, end = date(year, 1, 1), date(year, 12, 31)
+        key = str(year)
+
+    label = _comparison_period_label(
+        kind=kind,
+        year=year,
+        start=start,
+        end=end,
+        ongoing=ongoing,
+        month=month,
+        quarter=quarter,
+    )
+    return {
+        "key": key,
+        "label": label,
+        "date_from": start.isoformat(),
+        "date_to": end.isoformat(),
+        "ongoing": ongoing,
+    }
+
+
+def _comparison_targets_are_connected(between: str) -> bool:
+    """두 대상 사이가 연결어·비교 표지뿐인지 확인합니다."""
+    return bool(COMPARISON_BETWEEN_TARGETS_PATTERN.match(between))
+
+
+def _comparison_period_targets(query: str) -> list[dict[str, Any]]:
+    """기간 표현 두 개가 연결어로 묶이면 기간 비교 대상으로 돌려줍니다.
+
+    지표·도메인 표지 앞 구간만 보므로 "작년 대비 올해 용역 공고 건수" 처럼
+    분야어가 섞여도 기간 두 개를 찾습니다. 두 기간의 산식은 _parse_time_window
+    와 같습니다.
+    """
+    lowered = _query_lower(query)
+    if not any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
+        return []
+    stop = COMPARISON_METRIC_STOP_PATTERN.search(lowered)
+    prefix = lowered[: stop.start()] if stop else lowered
+    matches = list(COMPARISON_PERIOD_PATTERN.finditer(prefix))
+    if len(matches) != 2:
+        return []
+    between = prefix[matches[0].end() : matches[1].start()]
+    # "공주시 이번 달 지난달 낙찰 건수 비교" 처럼 연결어 없이 두 기간이 나란히
+    # 오는 표현도 비교 표지가 있으면 기간 비교로 봅니다. 사이에 다른 낱말이
+    # 끼면 비교 대상이 아니므로 그대로 둡니다.
+    if not _comparison_targets_are_connected(between) and (
+        between.strip() or not any(marker in lowered for marker in COMPARISON_MARKERS)
+    ):
+        return []
+    targets = [_comparison_period_target(match) for match in matches]
+    if targets[0]["key"] == targets[1]["key"]:
+        return []
+    return targets
+
+
+def _comparison_category_targets(query: str) -> list[dict[str, Any]]:
+    """분야어 두 개가 연결어로 묶이면 분류 비교 대상으로 돌려줍니다.
+
+    "한국전력공사와 한국농어촌공사" 처럼 기관명 속 글자는 낱말 경계 조건에서
+    걸러지므로 기관 비교 판정을 빼앗지 않습니다.
+    """
+    lowered = _query_lower(query)
+    if not any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
+        return []
+    stop = COMPARISON_METRIC_STOP_PATTERN.search(lowered)
+    prefix = lowered[: stop.start()] if stop else lowered
+    matches = list(COMPARISON_CATEGORY_PATTERN.finditer(prefix))
+    if len(matches) != 2:
+        return []
+    if not _comparison_targets_are_connected(prefix[matches[0].end() : matches[1].start()]):
+        return []
+    keys = [COMPARISON_CATEGORY_TOKENS[match.group("word")] for match in matches]
+    if len(set(keys)) != 2:
+        return []
+    return [{"key": key, "label": _category_label(key)} for key in keys]
+
+
+COMPARISON_INSTITUTION_UNRESOLVED_SUFFIXES = ("공사", "공단")
+
+
+def _comparison_unresolved_institution_candidate(query: str) -> str:
+    """기간 비교에서 해석되지 않은 기관 후보 낱말을 찾습니다.
+
+    기간 표현·분야어·지표어는 기관 후보가 아니며, "공사" 한 낱말도 분야어이므로
+    제외합니다. 공기업·공단 이름 모양의 낱말이 남으면 그 이름을 공통 기관 조건으로
+    써서 전체 기관 값으로 조용히 넓어지지 않게 합니다.
+    """
+    normalized = _normalize_text(query)
+    for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized):
+        cleaned = _strip_institution_particle(token)
+        if len(cleaned) <= 2:
+            continue
+        if COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(cleaned):
+            continue
+        if cleaned in COMPARISON_CATEGORY_TOKENS:
+            continue
+        if cleaned in NON_INSTITUTION_TERMS or cleaned.endswith(NON_INSTITUTION_SUFFIXES):
+            continue
+        if cleaned.endswith(COMPARISON_INSTITUTION_UNRESOLVED_SUFFIXES):
+            return cleaned
+    return ""
+
+
+def _normalize_enumerated_regions(names: list[str]) -> list[str]:
+    """나열된 이름이 모두 광역 지역이면 대표 지역명을 질의 순서대로 돌려줍니다.
+
+    "부산 및 대구", "서울시와 경기도" 처럼 비교 표지 없이 지역명만 나열한
+    질의를 기관명 등호 조건이 아니라 지역 합집합 조건으로 다루기 위한 정규화
+    입니다. 지역이 아닌 이름이 하나라도 섞이면 빈 목록을 돌려 기존 기관 경로를
+    그대로 쓰게 합니다.
+    """
+    regions: list[str] = []
+    for name in names:
+        region = _match_comparison_region(name)
+        if not region:
+            return []
+        if region not in regions:
+            regions.append(region)
+    return regions if len(regions) >= 2 else []
+
+
 def _normalize_comparison_target(text: str) -> tuple[str, str] | None:
     cleaned = _strip_comparison_particle(text)
     if not cleaned:
+        return None
+    if COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(cleaned) or cleaned in COMPARISON_CATEGORY_TOKENS:
         return None
     region = _match_comparison_region(cleaned)
     if region:
@@ -1189,6 +1437,12 @@ def _extract_comparison_targets(query: str) -> tuple[list[str], list[str]]:
     if not any(marker in lowered for marker in COMPARISON_MARKERS):
         return [], []
     if not any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
+        return [], []
+
+    # 기간·분류 비교의 두 대상은 기관명 후보가 아닙니다. "이번 분기 대비 지난 분기"
+    # 를 어절 단위로 나누면 [이번, 분기] 가 기관명으로 승격되어 기관 비교 경로가
+    # 빈 표를 내므로, 전용 판정이 성립하면 여기서 끝냅니다.
+    if _comparison_period_targets(normalized) or _comparison_category_targets(normalized):
         return [], []
 
     stop = COMPARISON_TARGET_STOP_PATTERN.search(lowered)
@@ -1799,6 +2053,16 @@ def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int
 CLOSE_MARKER_PATTERN = re.compile(r"마감")
 CLOSE_IMMINENT_PATTERN = re.compile(r"마감\s*임박")
 CLOSE_WINDOW_DAYS = 3
+CLOSE_THIS_WEEK_DAYS = 7
+# 이번 달·지난달 마감 표지와 함께 쓰인 지난 마감 표지입니다. "이번 달 마감되는"
+# 처럼 앞으로의 마감을 가리키는 표현과 "이번 달 마감된" 을 가릅니다.
+CLOSE_PAST_MARKER_PATTERN = re.compile(r"지난|지났|마감된|마감한")
+# 기간을 말하지 않은 공고 건수와 금액 정렬 공고 목록의 기본 창입니다. 오늘을
+# 포함해 30일이므로 시작일은 오늘 - 29일입니다.
+RECENT_ANNOUNCEMENT_WINDOW_DAYS = 30
+# 금액 정렬 기본 창을 적용할 공고 금액 축입니다. 낙찰금액 정렬은 낙찰 결과
+# 테이블의 기존 5년 기본 창을 그대로 씁니다.
+ANNOUNCEMENT_AMOUNT_SORT_FIELDS = ("presmpt_prce", "base_amount")
 # 정렬을 뜻하는 표지(순·순서·순으로·정렬)가 마감 표지에 붙으면 그 표현은 기간
 # 창이 아니라 정렬 요청입니다. 창을 판정하기 전에 이 표현을 걷어냅니다.
 CLOSE_SORT_PATTERN = re.compile(
@@ -1914,6 +2178,25 @@ SORT_AMOUNT_DESC_MARKERS = (
     "가장 높은",
 )
 SORT_AMOUNT_ASC_MARKERS = ("낮은순", "낮은 순", "적은순", "적은 순")
+# 공고 금액 최댓값·최솟값 질문은 정렬 목록이 아니라 값 하나를 묻는 질의입니다.
+# 금액 축을 낱말로 지목한 질의에서만 이 표지를 인정해, "가장 큰 기관" 같은
+# 금액 축 없는 순위 질의를 SQL 단건 경로로 끌어오지 않습니다.
+ANNOUNCEMENT_AMOUNT_EXTREME_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"가장\s*큰|가장\s*비싼|가장\s*높은"), "max"),
+    (re.compile(r"가장\s*작은|가장\s*싼|가장\s*낮은"), "min"),
+    (re.compile(r"최댓값|최대값"), "max"),
+    (re.compile(r"최솟값|최소값"), "min"),
+    (re.compile(r"최대|최고"), "max"),
+    (re.compile(r"최소|최저"), "min"),
+)
+ANNOUNCEMENT_EXTREME_AMOUNT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("기초금액", "base_amount"),
+    ("추정가격", "presmpt_prce"),
+    ("추정금액", "presmpt_prce"),
+    ("금액", "presmpt_prce"),
+)
+BARE_EXTREME_MARKERS = ("최대", "최소", "최고", "최저")
+EXTREME_LIST_LIMIT_PATTERN = re.compile(r"\d+\s*(?:개|건)")
 
 
 def _compact_text(value: str) -> str:
@@ -1923,7 +2206,7 @@ def _compact_text(value: str) -> str:
 def _parse_close_window(query: str) -> tuple[str, str] | None:
     """마감 표지와 상대 기간 표현으로 마감일 창을 계산합니다.
 
-    마감 표지가 있어도 함께 쓰인 상대 기간 표현이 아래 네 가지일 때만 창을
+    마감 표지가 있어도 함께 쓰인 상대 기간 표현이 아래 일곱 가지일 때만 창을
     확정합니다. 확정하지 못하면 기존 기간 해석(공고일 창)을 그대로 둡니다.
 
     | 표현 | 마감일 창 |
@@ -1931,7 +2214,15 @@ def _parse_close_window(query: str) -> tuple[str, str] | None:
     | `마감 임박` | 오늘 ~ 오늘+3일 |
     | `오늘 마감` | 오늘 |
     | `내일 마감` | 내일 |
-    | `이번 주 마감` | 이번 주 월요일 ~ 일요일 |
+    | `이번 주 마감` | 오늘 ~ 오늘+6일 |
+    | `이번 달 마감일이 지난` | 이번 달 1일 ~ 어제 |
+    | `이번 달 마감된` | 이번 달 1일 ~ 어제 |
+    | `이번 달에 마감한` | 이번 달 1일 ~ 어제 |
+    | `지난달 마감` | 지난달 1일 ~ 지난달 말일 |
+
+    `이번 주` 는 달력 주(월~일)가 아니라 오늘부터 7일 창입니다. 일요일에
+    "이번 주 마감" 을 물으면 달력 주는 이미 지난 마감만 남으므로, 앞으로의
+    마감을 답하려면 오늘부터 세어야 합니다.
 
     `마감 임박순`, `마감 빠른 순`, `마감일 순` 처럼 정렬 표지가 붙은 마감
     표현은 창을 만들지 않습니다. 그 표현은 정렬 요청이므로 창으로 읽으면
@@ -1942,6 +2233,13 @@ def _parse_close_window(query: str) -> tuple[str, str] | None:
     if not CLOSE_MARKER_PATTERN.search(scope):
         return None
     today = date.today()
+    if "지난달" in scope or "지난 달" in scope:
+        last_prev_month = today.replace(day=1) - timedelta(days=1)
+        return last_prev_month.replace(day=1).isoformat(), last_prev_month.isoformat()
+    if (
+        "이번 달" in scope or "이번달" in scope or "이번 월" in scope
+    ) and CLOSE_PAST_MARKER_PATTERN.search(scope):
+        return today.replace(day=1).isoformat(), (today - timedelta(days=1)).isoformat()
     if CLOSE_IMMINENT_PATTERN.search(scope):
         return today.isoformat(), (today + timedelta(days=CLOSE_WINDOW_DAYS)).isoformat()
     if "오늘" in scope:
@@ -1950,9 +2248,7 @@ def _parse_close_window(query: str) -> tuple[str, str] | None:
         tomorrow = today + timedelta(days=1)
         return tomorrow.isoformat(), tomorrow.isoformat()
     if "이번 주" in scope or "이번주" in scope:
-        week_start = today - timedelta(days=today.weekday())
-        week_end = week_start + timedelta(days=6)
-        return week_start.isoformat(), week_end.isoformat()
+        return today.isoformat(), (today + timedelta(days=CLOSE_THIS_WEEK_DAYS - 1)).isoformat()
     return None
 
 
@@ -2057,6 +2353,54 @@ def extract_sort_filters(query: str) -> dict[str, str]:
     if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_DESC_MARKERS):
         return {"order_by": amount_field, "order_dir": "desc"}
     return {}
+
+
+def extract_amount_extreme(query: str) -> dict[str, Any]:
+    """공고 금액 최댓값·최솟값 질문을 단건 정렬 조회 조건으로 바꿉니다.
+
+    금액 축을 낱말로 지목하고 공고를 묻는 질의에서만 최댓값·최솟값 표지를
+    인정합니다. "가장 큰 기관" 처럼 금액 축이 없는 순위 질의와 "최대 5개" 처럼
+    개수를 가리키는 표지는 제외합니다. 기간을 말하지 않은 질의의 30일 기본 창은
+    order_by 를 보는 기존 apply_default_statistics_window 가 채웁니다.
+    """
+    lowered = _query_lower(query)
+    if "공고" not in lowered:
+        return {}
+    if any(marker in lowered for marker in LIST_REQUEST_MARKERS):
+        return {}
+    if EXTREME_LIST_LIMIT_PATTERN.search(lowered):
+        return {}
+
+    compact = _compact_text(lowered)
+    amount_field = ""
+    for marker, field in ANNOUNCEMENT_EXTREME_AMOUNT_FIELDS:
+        if marker in compact:
+            amount_field = field
+            break
+    if not amount_field:
+        return {}
+
+    direction = ""
+    for pattern, candidate in ANNOUNCEMENT_AMOUNT_EXTREME_PATTERNS:
+        match = pattern.search(lowered)
+        if match is None:
+            continue
+        if match.group(0) in BARE_EXTREME_MARKERS and re.match(
+            r"(?:최대|최소|최고|최저)\s*\d", lowered[match.start() :]
+        ):
+            continue
+        direction = candidate
+        break
+    if not direction:
+        return {}
+
+    return {
+        "amount_extreme": direction,
+        "order_by": amount_field,
+        "order_dir": "desc" if direction == "max" else "asc",
+        "amount_field": amount_field,
+        "announcement_limit": 1,
+    }
 
 
 def _month_end(year: int, month: int) -> date:
@@ -2476,9 +2820,28 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     inst_candidates = _extract_institution_list(normalized_query)
     enumerated_names = _extract_enumerated_institution_names(normalized_query)
+    enumerated_regions = _normalize_enumerated_regions(enumerated_names)
     multi_result_list = is_multi_institution_result_list_query(normalized_query)
     comparison_regions, comparison_institutions = _extract_comparison_targets(normalized_query)
-    if inst_candidates or enumerated_names or comparison_regions or comparison_institutions:
+    comparison_dimension = ""
+    comparison_targets: list[dict[str, Any]] = []
+    if not comparison_regions and not comparison_institutions:
+        period_targets = _comparison_period_targets(normalized_query)
+        if period_targets:
+            comparison_dimension = "time"
+            comparison_targets = period_targets
+        else:
+            category_targets = _comparison_category_targets(normalized_query)
+            if category_targets:
+                comparison_dimension = "category"
+                comparison_targets = category_targets
+    if (
+        inst_candidates
+        or enumerated_names
+        or comparison_regions
+        or comparison_institutions
+        or comparison_dimension
+    ):
         use_sql = True
 
     date_from, date_to, time_bias, explicit_range = _parse_time_window(normalized_query)
@@ -2499,8 +2862,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         date_from, date_to = "", ""
     # 마감 표지와 상대 기간 표현이 함께 있으면 같은 기간을 공고일이 아니라
     # 마감일 창으로 읽습니다. 확정된 마감 창이 있을 때만 공고일 필터를 비웁니다.
+    # 기간 비교는 대상마다 다른 창을 씁니다. 질의 전체에 한 창을 걸면 두 번째
+    # 기간이 사라지므로 공통 기간 필터를 두지 않습니다.
     close_scope_applicable = close_window is not None and not is_entity
-    if close_scope_applicable:
+    if close_scope_applicable or comparison_dimension == "time":
         date_from, date_to = "", ""
 
     filters: dict[str, Any] = {}
@@ -2552,6 +2917,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     _, matched_category = extract_category(normalized_query)
     if matched_category:
         filters["category"] = matched_category
+    # 분류 비교는 두 분야를 대상으로 삼으므로 마지막 분야 하나를 공통 조건으로
+    # 남기지 않습니다.
+    if comparison_dimension == "category":
+        filters.pop("category", None)
 
     # 공고 종류 조건은 공고 목록·건수 질의에만 겁니다. 낙찰 결과 질의에 걸면
     # 결과 테이블에 없는 조건이 되어 답이 비거나, 결과와 무관한 종류로 범위를
@@ -2575,10 +2944,40 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         or multi_result_list
         or (has_stat_keywords and any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS))
     )
-    if comparison_regions:
+    if comparison_dimension:
+        filters["comparison_dimension"] = comparison_dimension
+        filters["comparison_targets"] = comparison_targets
+        # "한국전력공사 작년 대비 올해 공고 건수" 처럼 기관·지역 하나가 기간
+        # 비교와 섞이면 그 범위를 두 대상 모두의 공통 조건으로 남깁니다.
+        # 이 값을 버리면 비교가 전체 기관 기준 값으로 조용히 넓어집니다.
+        if comparison_dimension == "time":
+            shared_scope = extract_institution_scope(normalized_query)
+            shared_name = _normalize_text(str(shared_scope.get("institution_name") or ""))
+            if not shared_name:
+                # 기관명을 해석하지 못했다고 전체 기관 값으로 넓히지 않습니다. 기관
+                # 후보 낱말을 공통 조건으로 남겨 비교 아닌 같은 질문과 같은 결과를 냅니다.
+                shared_name = _comparison_unresolved_institution_candidate(normalized_query)
+            if shared_name:
+                filters["institution_name"] = shared_name
+                shared_aliases = shared_scope.get("institution_aliases")
+                # 광역 지역명은 비교 아닌 질문과 같은 이름·별칭 조건을 씁니다.
+                if (
+                    not shared_aliases
+                    and _is_broad_region_name(shared_name)
+                    and shared_name not in OFFICIAL_PROVINCE_NAMES
+                ):
+                    shared_aliases = REGION_ALIASES.get(_match_comparison_region(shared_name), ())
+                if shared_aliases:
+                    filters["institution_aliases"] = list(shared_aliases)
+    elif comparison_regions:
         filters["region_names"] = comparison_regions
     elif comparison_institutions:
         filters["institution_names"] = comparison_institutions
+    elif enumerated_regions and any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
+        # 비교 표지 없이 광역 지역명만 나열한 목록·건수·통계 질의는 기관명 등호
+        # 조건이 아니라 나열 지역 전체의 합집합 지역 조건으로 다룹니다. 지역이
+        # 아닌 이름이 섞이면 위 정규화가 빈 목록을 돌려 기존 기관 경로를 씁니다.
+        filters["region_scope_names"] = enumerated_regions
     elif inst_candidates:
         filters["institution_names"] = inst_candidates
     elif enumerated_names and enumerated_scope:
@@ -2604,6 +3003,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         and not scope_explanatory
         and not filters.get("institution_names")
         and not filters.get("region_names")
+        and not filters.get("region_scope_names")
     ):
         scope = extract_institution_scope(
             normalized_query,
@@ -2639,12 +3039,23 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     # 비교 대상이 확정되면 목록 제한은 의미가 없습니다. "부산이랑 대구 공고 5건
     # 비교" 처럼 개수가 붙은 비교 질의가 공고 목록 응답으로 새는 것을 막습니다.
     # 공고번호 단건도 같은 이유로 목록 제한을 두지 않습니다.
-    has_comparison = bool(comparison_regions or comparison_institutions)
+    has_comparison = bool(comparison_regions or comparison_institutions or comparison_dimension)
     if (result_list_query or multi_result_list) and not has_comparison and not is_bid_number:
         filters["result_limit"] = extract_result_limit(normalized_query)
 
     if announcement_list_query and not has_comparison and not is_bid_number:
         filters["announcement_limit"] = extract_result_limit(normalized_query)
+
+    # 금액 최댓값·최솟값 질문은 목록이 아니라 값 하나를 묻습니다. 정렬 조건만
+    # 싣고 벡터 경로로 보내면 LLM 이 검색 문맥의 다른 금액을 답할 수 있으므로,
+    # SQL 단건 조회로 보내고 결정론적 문장이 답하게 합니다.
+    amount_extreme: dict[str, Any] = {}
+    if not result_list_query and not is_result_amount_scope(normalized_query):
+        amount_extreme = extract_amount_extreme(normalized_query)
+    if amount_extreme:
+        filters.update(amount_extreme)
+        use_sql = True
+        use_vector = False
 
     if any(keyword in lowered for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
@@ -2667,6 +3078,12 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         route_reason_parts.append("낙찰 결과 목록 질의")
     if announcement_list_query:
         route_reason_parts.append("공고 목록 질의")
+    if amount_extreme:
+        route_reason_parts.append(
+            "공고 금액 최댓값 질의"
+            if amount_extreme.get("amount_extreme") == "max"
+            else "공고 금액 최솟값 질의"
+        )
     if has_stat_keywords:
         route_reason_parts.append("정형 통계 질의")
     if has_semantic_keywords:
@@ -2712,21 +3129,69 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 WHOLE_PERIOD_HINT_MARKER = "전체 기준"
 
 
-def apply_default_statistics_window(
-    filters: dict[str, Any], *, time_bucket_aware: bool = True
-) -> dict[str, Any]:
-    """기간을 말하지 않은 통계 질의에 기본 창(최근 5년)을 채웁니다.
+def uses_recent_announcement_window(filters: dict[str, Any] | None, query: str) -> bool:
+    """기간 없는 질의가 공고 30일 기본 창 대상인지 판정합니다.
 
+    대상은 공고 건수 단일 지표와 추정가격·기초금액 정렬 공고 목록입니다.
+    낙찰 통계·추이·축 집계·비교는 기존 5년 기본 창을 유지하므로 제외합니다.
+    마감 창이 걸린 질의도 공고일 기본 창을 만들지 않습니다.
+    """
+    lowered = _query_lower(query)
+    if not lowered:
+        return False
+    current = filters or {}
+    if current.get("date_from") or current.get("date_to"):
+        return False
+    if current.get("close_from") or current.get("close_to"):
+        return False
+    if str(current.get("time_bucket") or "") == "quarter":
+        return False
+    if current.get("group_by") or current.get("analysis_mode") == "trend":
+        return False
+    # 비교 질의는 축 없이 metric 만 남습니다. 비교 판정은 기존 5년 창을 씁니다.
+    if current.get("metric"):
+        return False
+
+    order_by = _normalize_text(str(current.get("order_by") or ""))
+    if order_by in ANNOUNCEMENT_AMOUNT_SORT_FIELDS:
+        if current.get("result_limit") or is_result_query(lowered):
+            return False
+        return not is_result_amount_scope(lowered)
+
+    if current.get("result_limit") or current.get("announcement_limit"):
+        return False
+    if is_result_query(lowered):
+        return False
+    return _single_metric(lowered) == "announcement_count"
+
+
+def apply_default_statistics_window(
+    filters: dict[str, Any], *, time_bucket_aware: bool = True, query: str = ""
+) -> dict[str, Any]:
+    """기간을 말하지 않은 통계 질의에 기본 창을 채웁니다.
+
+    공고 건수와 금액 정렬 공고 목록은 최근 30일, 그 밖의 통계는 최근 5년입니다.
     명시 기간이 항상 이기고, 분기 버킷의 연도 미지정 기본값과 명시적 전체
     기간(`relative_years` 가 이미 있는 경우, 예: years=0)은 그대로 둡니다.
+    마감 창이 걸린 질의에는 공고일 기본 창을 겹쳐 걸지 않습니다.
     원본 dict 는 바꾸지 않고 사본을 돌려줍니다.
     """
     windowed = dict(filters)
     if windowed.get("date_from") or windowed.get("date_to"):
         return windowed
+    if windowed.get("close_from") or windowed.get("close_to"):
+        return windowed
     if "relative_years" in windowed:
         return windowed
     if time_bucket_aware and str(windowed.get("time_bucket") or "") == "quarter":
+        return windowed
+    if uses_recent_announcement_window(windowed, query):
+        today = date.today()
+        windowed["recent_days"] = RECENT_ANNOUNCEMENT_WINDOW_DAYS
+        windowed["date_from"] = (
+            today - timedelta(days=RECENT_ANNOUNCEMENT_WINDOW_DAYS - 1)
+        ).isoformat()
+        windowed["date_to"] = today.isoformat()
         return windowed
     windowed["relative_years"] = DEFAULT_STATISTICS_WINDOW_YEARS
     return windowed
@@ -2736,8 +3201,13 @@ def replace_whole_period_insufficiency_hint(hints: list[str], filters: dict[str,
     """창이 걸린 계획의 '전체 기준' 안내를 실제 기간 안내로 바꿉니다.
 
     명시 기간은 원래 안내가 붙지 않고, `relative_years` 가 없거나 0 이면
-    전체 기간 질의이므로 안내를 유지합니다.
+    전체 기간 질의이므로 안내를 유지합니다. 30일 기본 창은 날짜 범위로
+    해석되므로 `recent_days` 를 먼저 봅니다.
     """
+    recent_days = int(filters.get("recent_days") or 0)
+    if recent_days:
+        replacement = f"기간을 지정하지 않아 최근 {recent_days}일 기준으로 집계했습니다."
+        return [replacement if WHOLE_PERIOD_HINT_MARKER in str(hint) else hint for hint in hints]
     if filters.get("date_from") or filters.get("date_to"):
         return list(hints)
     years = int(filters.get("relative_years") or 0)

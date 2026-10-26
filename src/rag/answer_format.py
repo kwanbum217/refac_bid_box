@@ -7,6 +7,7 @@ RAG 응답 포매팅, Markdown 테이블 조립, Source 인용 생성, Evidence 
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Any
 
 from src.rag.query_planning import (
@@ -42,9 +43,11 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "institution_name": "기관/지역",
         "institution_names": "대상 기관",
         "region_names": "대상 지역",
+        "region_scope_names": "대상 지역",
         "date_from": "시작일",
         "date_to": "종료일",
         "relative_years": "최근 연수",
+        "recent_days": "최근 일수",
         "analysis_mode": "분석 모드",
         "result_limit": "요청 목록 수",
         "bid_ntce_no": "공고번호",
@@ -59,7 +62,9 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         if key == "category":
             lines.append(f"- 분야: {_category_label(str(value))}")
             continue
-        if key in ("institution_names", "region_names") and isinstance(value, list):
+        if key in ("institution_names", "region_names", "region_scope_names") and isinstance(
+            value, list
+        ):
             lines.append(f"- {labels[key]}: {', '.join(str(v) for v in value)}")
             continue
         lines.append(f"- {labels.get(key, key)}: {value}")
@@ -103,6 +108,23 @@ def _format_result_rate(value: Any) -> str:
         return "-"
 
 
+def _winner_variant_notice(structured_data: dict | None) -> str:
+    """업체 조건 응답에 덧붙일 다른 상호(지점 등) 건수 안내를 꺼냅니다."""
+    if not isinstance(structured_data, dict):
+        return ""
+    variant = structured_data.get("winner_variant")
+    if not isinstance(variant, dict):
+        return ""
+    return str(variant.get("notice") or "").strip()
+
+
+def _append_winner_variant_notice(answer: str, structured_data: dict | None) -> str:
+    notice = _winner_variant_notice(structured_data)
+    if not answer or not notice or notice in answer:
+        return answer
+    return f"{answer}\n\n{notice}"
+
+
 def _build_result_list_answer(
     plan: RetrievalPlan,
     structured_data: dict | None,
@@ -127,7 +149,7 @@ def _build_result_list_answer(
             answer += f"\n현재 DB에서 확인 가능한 해당 분야의 최신 개찰일은 {latest}입니다."
         if unapplied_notice:
             answer += f"\n{unapplied_notice}"
-        return answer
+        return _append_winner_variant_notice(answer, structured_data)
 
     lines = [
         f"최근 {category_label} 낙찰 결과 {len(results)}건입니다.",
@@ -151,7 +173,7 @@ def _build_result_list_answer(
             f"{_format_result_rate(item.get('sucsf_bid_rate'))} | "
             f"{_markdown_result_cell(item.get('rl_openg_dt'))} |"
         )
-    return "\n".join(lines)
+    return _append_winner_variant_notice("\n".join(lines), structured_data)
 
 
 AMOUNT_FIELD_LABELS = {
@@ -178,6 +200,9 @@ def _announcement_condition_line(filters: dict | None) -> str:
     if not filters:
         return ""
     parts: list[str] = []
+    recent_days = int(filters.get("recent_days") or 0)
+    if recent_days:
+        parts.append(f"최근 {recent_days}일")
     close_from = filters.get("close_from")
     close_to = filters.get("close_to")
     if close_from and close_to and close_from == close_to:
@@ -259,6 +284,75 @@ def _build_announcement_list_answer(
             f"{_markdown_result_cell(item.get('bid_clse_dt'))} |"
         )
     return "\n".join(lines)
+
+
+def _format_amount_extreme_period(filters: dict) -> str:
+    recent_days = int(filters.get("recent_days") or 0)
+    if recent_days:
+        return f"최근 {recent_days}일"
+    date_from = _normalize_text(str(filters.get("date_from") or ""))
+    date_to = _normalize_text(str(filters.get("date_to") or ""))
+    if date_from and date_to:
+        return f"{date_from} ~ {date_to} 기간"
+    if date_from:
+        return f"{date_from} 이후"
+    if date_to:
+        return f"{date_to} 이전"
+    return "전체 기간"
+
+
+def _build_amount_extreme_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """공고 금액 최댓값·최솟값 질문은 SQL 1건 결과를 문장 하나로 답합니다.
+
+    벡터 검색 문맥의 다른 금액을 LLM 이 고르지 않도록, 정렬 조회 1위와 그 금액을
+    그대로 읽어 결정론적 문장으로 만듭니다. 금액이 NULL 인 행은 조회 계층이
+    제외하므로 여기서는 값이 없는 경우만 빈 문자열로 돌려 LLM 경로에 맡깁니다.
+    """
+    filters = plan.filters or {}
+    direction = _normalize_text(str(filters.get("amount_extreme") or ""))
+    if (
+        not plan.use_sql
+        or direction not in ("max", "min")
+        or not isinstance(structured_data, dict)
+        or structured_data.get("query_skipped")
+    ):
+        return ""
+
+    summary = structured_data.get("summary") or {}
+    samples = summary.get("sample_announcements") or []
+    response_filters = structured_data.get("filters") or {}
+    amount_field = _normalize_text(
+        str(filters.get("amount_field") or response_filters.get("amount_field") or "presmpt_prce")
+    )
+    amount_label = AMOUNT_FIELD_LABELS.get(amount_field, "금액")
+    period = _format_amount_extreme_period({**response_filters, **filters})
+    category_label = _normalize_text(str(response_filters.get("category_label") or ""))
+    if not category_label:
+        category = _normalize_text(str(filters.get("category") or ""))
+        category_label = _category_label(category) if category else ""
+    if category_label == "-":
+        category_label = ""
+    subject = f"{period} {category_label} 공고 중" if category_label else f"{period} 공고 중"
+
+    if not samples:
+        return f"{subject} {amount_label} 정보가 있는 공고가 없습니다."
+
+    sample = samples[0]
+    value = sample.get(amount_field)
+    if value is None:
+        return ""
+
+    direction_label = "가장 큰" if direction == "max" else "가장 작은"
+    return (
+        f"{subject} {amount_label}이 {direction_label} 공고는 "
+        f"{_normalize_text(str(sample.get('bid_ntce_nm') or '-'))}"
+        f"({_normalize_text(str(sample.get('bid_ntce_no') or '-'))}, "
+        f"{_normalize_text(str(sample.get('dminstt_nm') or '-'))})이며 "
+        f"{amount_label}은 {_format_result_amount(value)}입니다."
+    )
 
 
 def _format_bid_rate_comparison(result: dict, comparison: Any) -> str:
@@ -380,14 +474,21 @@ def _winner_axis_caption(
     window = meta.get("window") or {}
     date_from = str(window.get("date_from") or "")
     date_to = str(window.get("date_to") or "")
-    relative_years = int((plan.filters or {}).get("relative_years") or 0)
+    plan_filters = plan.filters or {}
+    if not date_from and not date_to:
+        date_from = str(plan_filters.get("date_from") or "")
+        date_to = str(plan_filters.get("date_to") or "")
+    recent_days = int(plan_filters.get("recent_days") or 0)
+    relative_years = int(plan_filters.get("relative_years") or 0)
     filters = structured_data.get("filters") or {}
     category = str(filters.get("category_label") or "").strip()
     if not category:
         category_code = str((plan.filters or {}).get("category") or "")
         category = _category_label(category_code) if category_code else ""
     category = category or "전체 분야"
-    if date_from and date_to:
+    if recent_days:
+        period = f"최근 {recent_days}일 기준"
+    elif date_from and date_to:
         period = f"{date_from} ~ {date_to}"
     elif date_from:
         period = f"{date_from} 이후"
@@ -442,33 +543,78 @@ def _build_axis_answer(
     return "\n".join(lines)
 
 
-def _build_series_answer(
-    plan: RetrievalPlan,
-    structured_data: dict | None,
-) -> str:
-    """공고 건수 시계열은 공고 건수 열만 냅니다.
+SERIES_PERIOD_LABELS = {
+    "quarter": ("분기별", "분기"),
+    "month": ("월별", "월"),
+    "day": ("일별", "일자"),
+}
+IN_PROGRESS_SUFFIX = "(진행 중)"
 
-    시계열 딕셔너리에는 bid_count 와 announcement_count 가 함께 있습니다. 키를
-    지우지 않고 렌더링에서만 골라, 기존 추세 응답 계약을 바꾸지 않습니다.
+
+def _series_period_labels(period: str) -> tuple[str, str]:
+    return SERIES_PERIOD_LABELS.get(period, SERIES_PERIOD_LABELS["month"])
+
+
+def _is_current_series_bucket(label: str, period: str) -> bool:
+    """오늘이 속한 분기·월·일 구간인지 판정합니다.
+
+    마지막 구간은 아직 채워지는 중입니다. 완결된 구간과 같은 무게로 읽히지
+    않도록 라벨에 표시합니다.
     """
-    if not structured_data:
-        return ""
-    summary = structured_data.get("summary") or {}
-    meta = summary.get("aggregate_meta") or {}
-    if meta.get("metric") != "announcement_count":
-        return ""
-    series = summary.get("time_series") or []
-    if not series:
-        return ""
-
-    period = str(series[0].get("period") or "quarter")
+    today = date.today()
+    text = _normalize_text(str(label or ""))
     if period == "quarter":
-        period_label, unit_label = "분기별", "분기"
-    elif period == "day":
-        period_label, unit_label = "일별", "일자"
-    else:
-        period_label, unit_label = "월별", "월"
+        matched = re.fullmatch(r"(\d{4})\s*년\s*([1-4])\s*분기", text)
+        if not matched:
+            return False
+        return int(matched.group(1)) == today.year and int(matched.group(2)) == (
+            (today.month - 1) // 3 + 1
+        )
+    if period == "day":
+        return text == today.isoformat()
+    matched = re.fullmatch(r"(\d{4})-(\d{2})", text)
+    if not matched:
+        return False
+    return (int(matched.group(1)), int(matched.group(2))) == (today.year, today.month)
 
+
+def _series_label_cell(item: dict, period: str) -> str:
+    label = str(item.get("label") or "")
+    if _is_current_series_bucket(label, period):
+        return _markdown_result_cell(f"{label} {IN_PROGRESS_SUFFIX}")
+    return _markdown_result_cell(label)
+
+
+def _format_series_cell(metric: str, value: Any) -> str:
+    if value is None:
+        return "-"
+    try:
+        if metric == "avg_rate":
+            return f"{float(value):.2f}%"
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _resolve_series_metric(plan: RetrievalPlan, meta: dict) -> str:
+    """요청 지표를 정합니다. 지표 기록이 없으면 빈 문자열로 기존 경로에 맡깁니다."""
+    metric = str(meta.get("metric") or (plan.filters or {}).get("metric") or "")
+    return metric if metric in ("avg_rate", "bid_count") else ""
+
+
+def _series_period_text(plan: RetrievalPlan, structured_data: dict) -> str:
+    filters = dict(structured_data.get("filters") or {})
+    for key, value in (plan.filters or {}).items():
+        if value not in (None, ""):
+            filters[key] = value
+    period_text = _format_single_metric_period(filters)
+    return "" if period_text == "전체 기간" else period_text
+
+
+def _build_announcement_series_answer(series: list[dict]) -> str:
+    """공고 건수 시계열은 기존 계약대로 공고 건수 열만 냅니다."""
+    period = str(series[0].get("period") or "quarter")
+    period_label, unit_label = _series_period_labels(period)
     lines = [
         f"{period_label} 공고 건수입니다.",
         "",
@@ -485,10 +631,133 @@ def _build_series_answer(
     return "\n".join(lines)
 
 
+def _build_series_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """낙찰 지표 시계열은 LLM 없이 DB 시계열 표로 직접 답합니다.
+
+    시계열 딕셔너리에는 avg_rate, bid_count, announcement_count 가 함께
+    있습니다. 요청 지표의 열만 골라 렌더링하고 원시 키 이름은 답에 쓰지
+    않습니다. 값이 모두 없으면 빈 문자열을 돌려 기존 경로로 넘깁니다.
+    """
+    if not structured_data:
+        return ""
+    summary = structured_data.get("summary") or {}
+    meta = summary.get("aggregate_meta") or {}
+    series = summary.get("time_series") or []
+    if not series:
+        return ""
+
+    if str(meta.get("metric") or "") == "announcement_count":
+        return _build_announcement_series_answer(series)
+    metric = _resolve_series_metric(plan, meta)
+    if not metric:
+        return ""
+    if all(item.get(metric) is None for item in series):
+        return ""
+
+    period = str(series[0].get("period") or "quarter")
+    period_label, unit_label = _series_period_labels(period)
+    metric_label = METRIC_LABELS[metric]
+    lines = [f"{period_label} {metric_label} 추이입니다."]
+    period_text = _series_period_text(plan, structured_data)
+    if period_text:
+        lines.append(f"기간: {period_text}")
+    lines.append("")
+    if metric == "avg_rate":
+        lines.extend([f"| {unit_label} | 평균 낙찰률 | 낙찰 건수 |", "| --- | ---: | ---: |"])
+        for item in series:
+            lines.append(
+                f"| {_series_label_cell(item, period)} "
+                f"| {_format_series_cell('avg_rate', item.get('avg_rate'))} "
+                f"| {_format_series_cell('bid_count', item.get('bid_count'))} |"
+            )
+    else:
+        lines.extend([f"| {unit_label} | 낙찰 건수 |", "| --- | ---: |"])
+        for item in series:
+            lines.append(
+                f"| {_series_label_cell(item, period)} "
+                f"| {_format_series_cell('bid_count', item.get('bid_count'))} |"
+            )
+    return "\n".join(lines)
+
+
 COMPARISON_DIMENSION_LABELS = {
     "region": "지역",
     "institution": "기관",
+    "time": "기간",
+    "category": "분류",
 }
+
+
+def _format_period_date(iso: str) -> str:
+    match = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", str(iso or ""))
+    if not match:
+        return str(iso or "")
+    return f"{int(match.group(1))}년 {int(match.group(2))}월 {int(match.group(3))}일"
+
+
+def _format_comparison_difference(rows: list[dict], metric: str, dimension: str) -> str:
+    """기간·분류 비교의 두 대상 차이를 한 줄로 만듭니다.
+
+    지역·기관 비교 출력은 기존 계약을 바꾸지 않도록 건드리지 않습니다.
+    """
+    if dimension not in ("time", "category") or len(rows) < 2:
+        return ""
+    first, second = rows[0], rows[1]
+    first_label = _markdown_result_cell(first.get("label"))
+    second_label = _markdown_result_cell(second.get("label"))
+    first_value = first.get(metric)
+    second_value = second.get(metric)
+    if first_value is None or second_value is None:
+        return ""
+    try:
+        if metric == "avg_rate":
+            diff = float(second_value) - float(first_value)
+            if abs(diff) < 0.005:
+                return f"{second_label}와 {first_label}의 평균 낙찰률은 같습니다."
+            direction = "높습니다" if diff > 0 else "낮습니다"
+            return f"{second_label}이(가) {first_label}보다 {abs(diff):.2f}%p {direction}."
+        diff = int(second_value) - int(first_value)
+    except (TypeError, ValueError):
+        return ""
+    if diff == 0:
+        return f"{second_label}와 {first_label}의 값은 같습니다."
+    direction = "많습니다" if diff > 0 else "적습니다"
+    return f"{second_label}이(가) {first_label}보다 {abs(diff):,}건 {direction}."
+
+
+def _format_comparison_scope(meta: dict) -> str:
+    """비교 대상 전체에 걸린 기관·지역 조건을 한 줄로 밝힙니다."""
+    scope = meta.get("scope")
+    if not isinstance(scope, dict):
+        return ""
+    institution_name = _normalize_text(str(scope.get("institution_name") or ""))
+    if not institution_name:
+        return ""
+    return f"{institution_name} 범위에서 두 대상을 같은 지표로 집계했습니다."
+
+
+def _format_period_length_note(meta: dict) -> str:
+    """기간 비교에서 한쪽이 진행 중이거나 길이가 다르면 그 사실을 밝힙니다."""
+    if str(meta.get("dimension") or "") != "time":
+        return ""
+    periods = meta.get("periods") or []
+    if len(periods) != 2:
+        return ""
+    ongoing = [period for period in periods if period.get("ongoing")]
+    if ongoing:
+        labels = ", ".join(str(period.get("label") or "") for period in ongoing)
+        ends = sorted(_format_period_date(str(period.get("date_to") or "")) for period in ongoing)
+        return f"{labels}은(는) {ends[-1]}까지 집계된 진행 중 기간이라 상대 기간과 길이가 다릅니다."
+    days = {int(period.get("days") or 0) for period in periods}
+    if len(days) > 1:
+        detail = ", ".join(
+            f"{period.get('label')} {int(period.get('days') or 0)}일" for period in periods
+        )
+        return f"두 기간의 길이가 다릅니다({detail})."
+    return ""
 
 
 def _build_comparison_answer(
@@ -512,17 +781,28 @@ def _build_comparison_answer(
 
     dimension_label = COMPARISON_DIMENSION_LABELS[dimension]
     metric_label = METRIC_LABELS[metric]
-    lines = [
-        f"{dimension_label}별 {metric_label} 비교입니다.",
-        "",
-        f"| {dimension_label} | {metric_label} |",
-        "| --- | ---: |",
-    ]
+    lines = [f"{dimension_label}별 {metric_label} 비교입니다."]
+    scope_note = _format_comparison_scope(meta)
+    if scope_note:
+        lines.append(scope_note)
+    lines.extend(
+        [
+            "",
+            f"| {dimension_label} | {metric_label} |",
+            "| --- | ---: |",
+        ]
+    )
     for item in rows:
         lines.append(
             f"| {_markdown_result_cell(item.get('label'))} | "
             f"{_format_axis_value(metric, item.get(metric))} |"
         )
+    difference = _format_comparison_difference(rows, metric, dimension)
+    if difference:
+        lines.extend(["", difference])
+    period_note = _format_period_length_note(meta)
+    if period_note:
+        lines.extend(["", period_note])
     return "\n".join(lines)
 
 
@@ -583,6 +863,9 @@ SINGLE_METRIC_EXCLUDED_MARKERS = (
 
 
 def _format_single_metric_period(filters: dict) -> str:
+    recent_days = int(filters.get("recent_days") or 0)
+    if recent_days:
+        return f"최근 {recent_days}일"
     date_from = _normalize_text(str(filters.get("date_from") or ""))
     date_to = _normalize_text(str(filters.get("date_to") or ""))
     if date_from and date_to:
@@ -663,10 +946,13 @@ def _build_single_metric_answer(
 
     subject = [_format_single_metric_period(filters)]
     region_names = filters.get("region_names")
+    region_scope_names = filters.get("region_scope_names")
     institution_names = filters.get("institution_names")
     institution_name = str(filters.get("institution_name") or "")
     if isinstance(region_names, list) and region_names:
         subject.append(", ".join(str(name) for name in region_names))
+    elif isinstance(region_scope_names, list) and region_scope_names:
+        subject.append(", ".join(str(name) for name in region_scope_names))
     elif isinstance(institution_names, list) and institution_names:
         subject.append(", ".join(str(name) for name in institution_names))
     elif institution_name:
@@ -684,7 +970,7 @@ def _build_single_metric_answer(
     )
     if unapplied_notice:
         answer += f"\n{unapplied_notice}"
-    return answer
+    return _append_winner_variant_notice(answer, structured_data)
 
 
 def _compose_context_text(

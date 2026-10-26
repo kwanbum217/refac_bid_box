@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Integer, case, event, func, or_, select
+from sqlalchemy import Integer, and_, case, event, func, or_, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -301,8 +301,13 @@ def _parse_date(value: str | date | datetime | None, field: str = "date") -> dat
 def _resolve_window(filters: dict[str, Any]) -> tuple[datetime | None, datetime | None]:
     date_from = _parse_date(filters.get("date_from"), "date_from")
     date_to = _parse_date(filters.get("date_to"), "date_to")
+    relative_days = int(filters.get("recent_days") or 0)
     relative_years = int(filters.get("relative_years") or 0)
 
+    if relative_days and not date_from:
+        today = date.today()
+        date_from = _parse_date((today - timedelta(days=relative_days - 1)).isoformat())
+        date_to = date_to or _parse_date(today.isoformat())
     if relative_years and not date_from:
         today = date.today()
         date_from = _parse_date((today - timedelta(days=(365 * relative_years) - 1)).isoformat())
@@ -315,6 +320,32 @@ def _institution_condition(column, institution_name: str, institution_names: lis
     if institution_names is not None:
         return column.in_(institution_names)
     return column.contains(institution_name)
+
+
+def _region_condition(column, aliases: tuple[str, ...]) -> Any:
+    """지역 별칭 목록을 기관명 부분 일치 OR 묶음 조건으로 만듭니다."""
+    return or_(*[column.contains(alias) for alias in aliases])
+
+
+def _region_scope_names(filters: dict[str, Any]) -> list[str]:
+    """나열 지역 합집합 조건의 정규화된 지역명을 질의 순서대로 돌려줍니다."""
+    raw_names = filters.get("region_scope_names")
+    if not isinstance(raw_names, (list, tuple)):
+        return []
+    names: list[str] = []
+    for item in raw_names:
+        name = _normalize_text(str(item))
+        if name in REGION_ALIASES and name not in names:
+            names.append(name)
+    return names
+
+
+def _region_scope_condition(column, filters: dict[str, Any]) -> Any:
+    """나열 지역 전체를 지역 별칭 부분 일치 OR 하나로 묶습니다."""
+    names = _region_scope_names(filters)
+    if not names:
+        return None
+    return or_(*[column.contains(alias) for name in names for alias in REGION_ALIASES[name]])
 
 
 # 업체명 표기는 "주식회사 한백", "(주)한백", "한백" 처럼 법인 표지와 공백·괄호가
@@ -334,14 +365,70 @@ def _normalize_winner_name_value(value: str) -> str:
     return normalized
 
 
-def _winner_name_condition(winner_name: str):
-    """업체명을 컬럼 쪽도 같은 규칙으로 정규화한 뒤 등호로 비교합니다."""
+# 두 글자 이하 상호는 흔한 낱말과 겹쳐 부분 일치가 다른 업체를 대량으로
+# 끌어옵니다. 안내를 붙이지 않는 하한입니다.
+WINNER_VARIANT_MIN_NAME_LENGTH = 3
+
+
+def _normalized_winner_name_column():
+    """업체명 컬럼을 파이썬과 같은 규칙(법인 표지·공백·괄호 제거)으로 정규화합니다."""
     column: Any = BidResult.bidwinnr_nm
     for marker in WINNER_NAME_NOISE_MARKERS:
         column = func.replace(column, marker, "")
     for character in WINNER_NAME_NOISE_CHARACTERS:
         column = func.replace(column, character, "")
-    return column == _normalize_winner_name_value(winner_name)
+    return column
+
+
+def _winner_name_condition(winner_name: str):
+    """업체명을 컬럼 쪽도 같은 규칙으로 정규화한 뒤 등호로 비교합니다."""
+    return _normalized_winner_name_column() == _normalize_winner_name_value(winner_name)
+
+
+def _winner_name_variant_conditions(winner_name: str):
+    """정규화한 상호를 포함하되 정확 일치가 아닌 행을 고르는 조건을 만듭니다."""
+    normalized = _normalize_winner_name_value(winner_name)
+    escaped = normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    column = _normalized_winner_name_column()
+    return column.like(f"%{escaped}%", escape="\\"), column != normalized
+
+
+def _winner_variant_notice(name: str, other_count: int, total_count: int) -> str:
+    """정확 일치 밖 상호의 건수와 합계를 한 문장으로 만듭니다."""
+    last = name[-1] if name else ""
+    has_final_consonant = "\uac00" <= last <= "\ud7a3" and (ord(last) - 0xAC00) % 28 != 0
+    particle = "이" if has_final_consonant or not last else "가"
+    return (
+        f"상호에 {name}{particle} 들어간 다른 업체(지점 등) 낙찰은 같은 기간 "
+        f"{other_count:,}건이며, 합치면 {total_count:,}건입니다."
+    )
+
+
+def _count_other_winner_variants(
+    db: Session,
+    plan: RetrievalPlan,
+    winner_name: str,
+    *,
+    institution_names: list[str] | None = None,
+) -> int:
+    """같은 기간·분류·지역 조건에서 정확 일치 밖 상호의 낙찰 건수를 셉니다."""
+    normalized = _normalize_winner_name_value(winner_name)
+    if len(normalized) < WINNER_VARIANT_MIN_NAME_LENGTH:
+        return 0
+    filters = dict(plan.filters or {})
+    filters.pop("winner_name", None)
+    scope_plan = plan.model_copy(update={"filters": filters})
+    contains_condition, not_exact_condition = _winner_name_variant_conditions(winner_name)
+    (count,) = _cached_aggregate(
+        db,
+        select(func.count(BidResult.id)).where(
+            *_result_conditions(scope_plan, institution_names=institution_names),
+            contains_condition,
+            not_exact_condition,
+            exclude_corrupted(BidResult.bidwinnr_nm),
+        ),
+    )
+    return int(count or 0)
 
 
 # 금액 조건과 정렬에 쓰는 컬럼입니다. 계획기는 컬럼 이름 문자열을 넘기고,
@@ -475,6 +562,9 @@ def _result_conditions(
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
         )
+    region_scope_condition = _region_scope_condition(BidResult.dminstt_nm, filters)
+    if region_scope_condition is not None:
+        conditions.append(region_scope_condition)
     if category:
         conditions.append(BidResult.category == category)
     # 업체 조건은 낙찰 결과 테이블에만 있습니다. 업체를 지목한 질의에서 이 조건을
@@ -528,12 +618,21 @@ def _announcement_conditions(
         conditions.append(
             _institution_condition(BidAnnouncement.dminstt_nm, institution_name, institution_names)
         )
+    region_scope_condition = _region_scope_condition(BidAnnouncement.dminstt_nm, filters)
+    if region_scope_condition is not None:
+        conditions.append(region_scope_condition)
     if category:
         conditions.append(BidAnnouncement.category == category)
     if notice_kind:
         conditions.append(BidAnnouncement.ntce_kind_nm == notice_kind)
     conditions.extend(_close_conditions(filters))
     conditions.extend(_amount_conditions(filters, ANNOUNCEMENT_AMOUNT_COLUMNS))
+    # 최댓값·최솟값 질문은 금액이 NULL 인 행을 순위에서 제외합니다. 정렬만으로는
+    # NULL 이 섞일 수 있고, 값 하나를 묻는 답에 빈 금액이 1위가 되면 안 됩니다.
+    if _normalize_text(str(filters.get("amount_extreme") or "")):
+        amount_column = ANNOUNCEMENT_AMOUNT_COLUMNS.get(_amount_field_filter(filters))
+        if amount_column is not None:
+            conditions.append(amount_column.is_not(None))
     if bid_ntce_no:
         conditions.append(BidAnnouncement.bid_ntce_no == bid_ntce_no)
     return conditions
@@ -563,8 +662,11 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     date_from, date_to = _resolve_window(filters)
     if date_from or date_to:
         return None
+    if filters.get("recent_days"):
+        return None
     if (
         filters.get("region_names")
+        or filters.get("region_scope_names")
         or filters.get("institution_names")
         or filters.get("institution_aliases")
     ):
@@ -762,6 +864,9 @@ def _result_availability_conditions(
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
         )
+    region_scope_condition = _region_scope_condition(BidResult.dminstt_nm, filters)
+    if region_scope_condition is not None:
+        conditions.append(region_scope_condition)
     if category:
         conditions.append(BidResult.category == category)
     # 업체 조건이 걸린 질의는 전체 최신 개찰일이 아니라 그 업체의 최신 개찰일을
@@ -1509,7 +1614,7 @@ def _comparison_condition(column, spec: dict[str, Any]) -> Any:
     후보를 버리지 않고 부분 일치로 폴백합니다.
     """
     if spec["kind"] == "region":
-        return or_(*[column.contains(alias) for alias in spec["aliases"]])
+        return _region_condition(column, spec["aliases"])
     matched_names = spec.get("names")
     if matched_names:
         return column.in_(matched_names)
@@ -1649,6 +1754,228 @@ def _comparison_result(
         "summary": summary,
         "insufficiency_hints": hints,
     }
+
+
+def _period_category_comparison_breakdown(
+    db: Session,
+    plan: RetrievalPlan,
+    targets: list[dict[str, Any]],
+    *,
+    dimension: str,
+) -> list[dict[str, Any]]:
+    """기간·분류 비교의 대상별 지표를 실시간으로 집계합니다.
+
+    기간 비교는 대상마다 다른 공고일·개찰일 창을 쓰고, 분류 비교는 대상마다
+    분야 코드를 씁니다. 스냅샷은 기간·분류 조합을 미리 갖고 있지 않으므로
+    쓰지 않습니다.
+    """
+    filters = plan.filters or {}
+    shared_category = _normalize_text(str(filters.get("category") or ""))
+    shared_from, shared_to = _resolve_window(filters)
+    # "한국전력공사 작년 대비 올해", "부산 작년 대비 올해" 처럼 기관·지역 하나가
+    # 기간 비교와 섞이면 그 범위를 두 대상 모두에 공통으로 겁니다. 이 조건을
+    # 빠뜨리면 대상별 값이 전체 기관 기준으로 조용히 넓어집니다.
+    shared_institution = _normalize_text(str(filters.get("institution_name") or ""))
+    shared_aliases = _institution_aliases(filters)
+    shared_scope = bool(shared_institution or shared_aliases)
+    announcement_scope_names = (
+        _resolve_institution_scope_names(
+            db, BidAnnouncement.dminstt_nm, shared_institution, shared_aliases
+        )
+        if shared_scope
+        else None
+    )
+    result_scope_names = (
+        _resolve_institution_scope_names(
+            db, BidResult.dminstt_nm, shared_institution, shared_aliases
+        )
+        if shared_scope
+        else None
+    )
+
+    def _shared_scope_condition(column, names: list[str] | None):
+        """공통 기관·지역 조건을 만듭니다. 해석 결과가 없으면 0건으로 좁힙니다."""
+        if not shared_scope:
+            return None
+        if names is None:
+            terms = [term for term in (shared_institution, *shared_aliases) if term]
+            return or_(*[column.contains(term) for term in terms])
+        return column.in_(names)
+
+    announcement_scope_condition = _shared_scope_condition(
+        BidAnnouncement.dminstt_nm, announcement_scope_names
+    )
+    result_scope_condition = _shared_scope_condition(BidResult.dminstt_nm, result_scope_names)
+
+    specs: list[dict[str, Any]] = []
+    for item in targets:
+        key = _normalize_text(str(item.get("key") or ""))
+        label = _normalize_text(str(item.get("label") or "")) or key
+        spec: dict[str, Any] = {"key": key, "label": label}
+        if dimension == "time":
+            spec["date_from"] = _parse_date(str(item.get("date_from") or ""), "date_from")
+            spec["date_to"] = _parse_date(str(item.get("date_to") or ""), "date_to")
+        specs.append(spec)
+
+    def _announcement_conditions_for(spec: dict[str, Any]) -> list:
+        conditions = []
+        if dimension == "time":
+            if spec.get("date_from"):
+                conditions.append(BidAnnouncement.bid_ntce_dt >= spec["date_from"])
+            if spec.get("date_to"):
+                conditions.append(
+                    BidAnnouncement.bid_ntce_dt <= spec["date_to"] + timedelta(days=1)
+                )
+            if shared_category:
+                conditions.append(BidAnnouncement.category == shared_category)
+        else:
+            conditions.append(BidAnnouncement.category == spec["key"])
+            if shared_from:
+                conditions.append(BidAnnouncement.bid_ntce_dt >= shared_from)
+            if shared_to:
+                conditions.append(BidAnnouncement.bid_ntce_dt <= shared_to + timedelta(days=1))
+        if announcement_scope_condition is not None:
+            conditions.append(announcement_scope_condition)
+        return conditions
+
+    def _result_conditions_for(spec: dict[str, Any]) -> list:
+        conditions = []
+        if dimension == "time":
+            if spec.get("date_from"):
+                conditions.append(BidResult.rl_openg_dt >= spec["date_from"])
+            if spec.get("date_to"):
+                conditions.append(BidResult.rl_openg_dt <= spec["date_to"] + timedelta(days=1))
+            if shared_category:
+                conditions.append(BidResult.category == shared_category)
+        else:
+            conditions.append(BidResult.category == spec["key"])
+            if shared_from:
+                conditions.append(BidResult.rl_openg_dt >= shared_from)
+            if shared_to:
+                conditions.append(BidResult.rl_openg_dt <= shared_to + timedelta(days=1))
+        if result_scope_condition is not None:
+            conditions.append(result_scope_condition)
+        return conditions
+
+    announcement_conditions = [_announcement_conditions_for(spec) for spec in specs]
+    announcement_expr = case(
+        *[
+            (and_(*conditions), spec["key"])
+            for spec, conditions in zip(specs, announcement_conditions, strict=True)
+        ],
+        else_=None,
+    )
+    announcement_stmt = (
+        select(announcement_expr, func.count())
+        .where(or_(*[and_(*conditions) for conditions in announcement_conditions]))
+        .group_by(announcement_expr)
+    )
+    announcement_counts: dict[str, int] = {}
+    for key, count in _cached_rows(db, announcement_stmt):
+        if key:
+            announcement_counts[str(key)] = int(count or 0)
+
+    result_conditions = [_result_conditions_for(spec) for spec in specs]
+    result_expr = case(
+        *[
+            (and_(*conditions), spec["key"])
+            for spec, conditions in zip(specs, result_conditions, strict=True)
+        ],
+        else_=None,
+    )
+    result_stmt = (
+        select(
+            result_expr,
+            func.count(),
+            func.avg(BidResult.sucsf_bid_rate),
+            func.count(BidResult.sucsf_bid_rate),
+        )
+        .where(or_(*[and_(*conditions) for conditions in result_conditions]))
+        .group_by(result_expr)
+    )
+    result_stats: dict[str, tuple[int, Any, int]] = {}
+    for key, count, rate_value, sample_count in _cached_rows(db, result_stmt):
+        if key:
+            result_stats[str(key)] = (int(count or 0), rate_value, int(sample_count or 0))
+
+    entries: list[dict[str, Any]] = []
+    for spec in specs:
+        key = str(spec["key"])
+        bid_count, rate_value, sample_count = result_stats.get(key, (0, None, 0))
+        entries.append(
+            _axis_entry(
+                str(spec["label"]),
+                key,
+                announcement_count=announcement_counts.get(key, 0),
+                bid_count=bid_count,
+                avg_rate=_axis_rate(rate_value, sample_count),
+                sample_count=sample_count,
+            )
+        )
+    return entries
+
+
+def _period_category_comparison_result(
+    db: Session,
+    plan: RetrievalPlan,
+    targets: list[dict[str, Any]],
+    *,
+    dimension: str,
+) -> dict[str, Any]:
+    """기간·분류 비교 응답을 기존 comparison 키 모양으로 만듭니다."""
+    filters = dict(plan.filters or {})
+    shared_institution = _normalize_text(str(filters.get("institution_name") or ""))
+    shared_aliases = _institution_aliases(filters)
+    if shared_institution or shared_aliases:
+        # 기관명을 하나도 확정하지 못하면 전체 기관 통계로 넓히지 않고
+        # 기존 미해석 기관 안내를 그대로 냅니다.
+        announcement_names = _resolve_institution_scope_names(
+            db, BidAnnouncement.dminstt_nm, shared_institution, shared_aliases
+        )
+        result_names = _resolve_institution_scope_names(
+            db, BidResult.dminstt_nm, shared_institution, shared_aliases
+        )
+        if announcement_names == [] and result_names == []:
+            return _empty_result(
+                plan,
+                "요청한 기관명을 데이터에서 확인하지 못해 비교 대상을 확정하지 못했습니다. "
+                "기관명을 다시 확인해 주세요.",
+            )
+    comparison_plan = plan
+    if dimension == "category" and (plan.filters or {}).get("category"):
+        # bid_query_tool 은 플래너가 고른 분야 하나를 파라미터로 다시 더합니다.
+        # 분류 비교에서는 두 분야가 대상이므로 그 단일 조건을 응답 필터에서 뺍니다.
+        filters.pop("category", None)
+        comparison_plan = plan.model_copy(update={"filters": filters})
+    result = _comparison_result(
+        comparison_plan,
+        _period_category_comparison_breakdown(db, comparison_plan, targets, dimension=dimension),
+        dimension=dimension,
+    )
+    if dimension == "time":
+        periods: list[dict[str, Any]] = []
+        for item in targets:
+            start = _parse_date(str(item.get("date_from") or ""), "date_from")
+            end = _parse_date(str(item.get("date_to") or ""), "date_to")
+            days = (end.date() - start.date()).days + 1 if start and end else 0
+            periods.append(
+                {
+                    "key": str(item.get("key") or ""),
+                    "label": str(item.get("label") or ""),
+                    "date_from": str(item.get("date_from") or ""),
+                    "date_to": str(item.get("date_to") or ""),
+                    "ongoing": bool(item.get("ongoing")),
+                    "days": days,
+                }
+            )
+        result["summary"]["comparison_meta"]["periods"] = periods
+    comparison_meta = result["summary"]["comparison_meta"]
+    if shared_institution:
+        comparison_meta["scope"] = {"institution_name": shared_institution}
+    shared_category = _normalize_text(str(filters.get("category") or ""))
+    if shared_category:
+        comparison_meta.setdefault("scope", {})["category"] = shared_category
+    return result
 
 
 # 서로 기다리지 않는 집계 다섯 개를 순차로 돌면 q08 콜드에서 SQL 합계 약 4.9초였고 가장 긴 문장은 1.9초였습니다
@@ -1893,6 +2220,7 @@ def _fetch_sample_announcements(
                 BidAnnouncement.category,
                 BidAnnouncement.presmpt_prce,
                 BidAnnouncement.bid_clse_dt,
+                BidAnnouncement.base_amount,
             ]
         )
     rows = db.execute(
@@ -1917,6 +2245,7 @@ def _fetch_sample_announcements(
                     "category_label": _category_label(row[4]),
                     "presmpt_prce": int(row[5]) if row[5] is not None else None,
                     "bid_clse_dt": row[6].isoformat(sep=" ") if row[6] is not None else None,
+                    "base_amount": int(row[7]) if row[7] is not None else None,
                 }
             )
         samples.append(sample)
@@ -2318,6 +2647,20 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             plan,
             _comparison_breakdown(db, plan, region_specs, dimension="region"),
             dimension="region",
+        )
+
+    period_category_dimension = _normalize_text(str(filters.get("comparison_dimension") or ""))
+    period_category_targets = filters.get("comparison_targets")
+    if (
+        period_category_dimension in ("time", "category")
+        and isinstance(period_category_targets, list)
+        and len(period_category_targets) == 2
+    ):
+        return _period_category_comparison_result(
+            db,
+            plan,
+            period_category_targets,
+            dimension=period_category_dimension,
         )
 
     comparison_metric = _normalize_text(str(filters.get("metric") or ""))
@@ -2819,6 +3162,27 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         announcement_count=announcement_count,
         dropped_total=dropped_total,
     )
+
+    # 상호가 같은 업체만 세는 기본값은 유지하되, 지점·가맹점처럼 상호에 그
+    # 이름이 들어간 다른 사업자가 몇 건인지 밝혀 사용자가 수치 범위를 알게
+    # 합니다. 정확 일치 값은 건드리지 않습니다.
+    winner_filter_name = _normalize_text(str((plan.filters or {}).get("winner_name") or ""))
+    winner_variant: dict[str, Any] | None = None
+    if winner_filter_name:
+        other_variant_count = _count_other_winner_variants(
+            db, plan, winner_filter_name, institution_names=result_names
+        )
+        if other_variant_count:
+            variant_total = int(total_count or 0) + other_variant_count
+            winner_variant = {
+                "name": winner_filter_name,
+                "other_count": other_variant_count,
+                "total_count": variant_total,
+                "notice": _winner_variant_notice(
+                    winner_filter_name, other_variant_count, variant_total
+                ),
+            }
+            insufficiency.append(winner_variant["notice"])
     if group_by == "region":
         insufficiency.append(
             "지역 구분은 기관명 부분 일치 기준이라 지역 합계가 전체 건수와 일치하지 않을 수 있습니다."
@@ -2876,6 +3240,8 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         "insufficiency_hints": insufficiency,
         "unapplied_conditions": unapplied_conditions,
     }
+    if winner_variant:
+        result["winner_variant"] = winner_variant
     _record_segment("result_assembly_ms", (time.perf_counter() - assembly_started) * 1000.0)
     return result
 
