@@ -13,6 +13,7 @@ from src.app.services.action_catalog import ACTION_CATALOG
 from src.rag.query_planning import (
     _is_count_statistics_query,
     extract_aggregate_filters,
+    extract_amount_extreme,
     extract_category,
     extract_institution_scope,
     is_announcement_list_query,
@@ -376,6 +377,16 @@ def _has_kb_refresh_intent(message: str) -> bool:
     has_target = any(keyword in normalized for keyword in KB_REFRESH_TARGET_KEYWORDS)
     has_command = any(keyword in normalized for keyword in KB_REFRESH_COMMAND_KEYWORDS)
     return has_target and has_command
+
+
+def _has_amount_extreme_intent(message: str) -> bool:
+    """공고 금액 최댓값·최솟값 단건 질의를 정형 조회 의도로 판정합니다.
+
+    RAG 플래너의 extract_amount_extreme 을 그대로 재사용합니다. 금액 축을 낱말로
+    지목하고 공고를 묻는 질의에서만 참이므로, 금액 축이 없는 순위 질의("낙찰 많이 한
+    업체 순위")와 설명형 질의("추정가격이 뭐야")는 기존 도구 선택을 유지합니다.
+    """
+    return bool(extract_amount_extreme(message or ""))
 
 
 def _has_count_statistics_intent(message: str) -> bool:
