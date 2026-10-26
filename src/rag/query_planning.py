@@ -2086,6 +2086,126 @@ ANNOUNCEMENT_EXPLANATION_MARKERS = (
     "란",
 )
 ANNOUNCEMENT_RESULT_STATUS_MARKERS = ("낙찰", "유찰", "개찰")
+# 기관·지역 범위와 요청 동사가 함께 있는 공고 질의는 개수·목록·신선도 표지가
+# 없어도 목록 요청입니다. 다만 설명형(절차·방법·기준·이유 등)과 통계형
+# (몇 건·건수·평균·비율) 표지가 있으면 목록이 아닙니다.
+ANNOUNCEMENT_SCOPED_LIST_EXPLANATION_MARKERS = (
+    *ANNOUNCEMENT_EXPLANATION_MARKERS,
+    "이유",
+    "뜻",
+    "기준",
+    "왜",
+)
+ANNOUNCEMENT_SCOPED_LIST_STATISTICS_PATTERN = re.compile(r"몇\s*(?:건|개)|건수|평균|비율")
+# 부정·대조 표현이 있는 질의는 특정 범위의 목록 요청이 아니라 앞선 대상을
+# 배제하라는 교정 요청입니다. 기관 이름이 섞여 있어도 목록으로 바꾸지 않습니다.
+ANNOUNCEMENT_SCOPED_LIST_NEGATION_MARKERS = (
+    "안 돼",
+    "안돼",
+    "말고",
+    "아니라",
+    "대신",
+    "하지 마",
+    "하지마",
+)
+# 연도·월·일을 직접 지목한 질의는 기간이 한정된 지목형 조회입니다. 기존 요청
+# 동사 단독 경로가 신선도 표지를 요구하는 이유와 같으므로 이 분기에서도 목록으로
+# 바꾸지 않습니다.
+ANNOUNCEMENT_SCOPED_LIST_EXPLICIT_PERIOD_PATTERN = re.compile(
+    r"\d{4}\s*년|\d{1,2}\s*월|\d{1,2}\s*일|\d{1,2}\s*분기"
+)
+# 기관 접미사 사전에 없는 중앙행정기관 이름(조달청 등)은 분야어 바로 앞 낱말을
+# 후보로 남겨 응답 단계의 기관 카탈로그 정확 일치에 맡깁니다. 일반 수식어가
+# 기관 조건으로 승격되지 않도록 기관 표지 접미사가 있는 낱말만 인정합니다.
+SCOPED_LIST_INSTITUTION_SUFFIXES = (
+    "위원회",
+    "연구원",
+    "진흥원",
+    "공단",
+    "공사",
+    "재단",
+    "협회",
+    "조합",
+    "은행",
+    "본부",
+    "센터",
+    "청",
+    "부",
+    "처",
+)
+
+
+def _scoped_list_institution_candidate(query: str) -> str:
+    """범위 추출기가 놓친 중앙행정기관 후보를 분야어 앞에서 찾습니다.
+
+    "조달청 용역 공고" 처럼 접미사 사전에 없는 기관 이름을 버리면 기관 조건이
+    사라진 전체 목록으로 조용히 넓어집니다. 분야어 바로 앞 낱말이 기관 표지
+    접미사로 끝날 때만 후보로 남기고, 실제 이름 일치는 응답 단계의 기관
+    카탈로그에 맡깁니다.
+    """
+    normalized = _normalize_text(query)
+    masked = _mask_non_category_construction(_mask_category_scope_tokens(normalized))
+    category_position = -1
+    for keyword in CATEGORY_KEYWORDS:
+        position = masked.rfind(keyword)
+        if position > category_position:
+            category_position = position
+    if category_position <= 0:
+        return ""
+    tokens = [
+        token
+        for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized[:category_position])
+        if token
+    ]
+    if not tokens:
+        return ""
+    candidate = _strip_institution_particle(tokens[-1])
+    if len(candidate) < 3 or candidate in INSTITUTION_SCOPE_EXCLUDED_TERMS:
+        return ""
+    if (
+        candidate in COMPARISON_INSTITUTION_UNRESOLVED_EXCLUDED_TERMS
+        or candidate in REGION_ALIASES
+        or _match_comparison_region(candidate)
+    ):
+        return ""
+    if not any(
+        candidate.endswith(suffix) and len(candidate) > len(suffix) + 1
+        for suffix in SCOPED_LIST_INSTITUTION_SUFFIXES
+    ):
+        return ""
+    return candidate
+
+
+def _is_scoped_announcement_list_request(query: str) -> bool:
+    """기관·지역 범위와 요청 동사만 있는 공고 목록 질의인지 판정합니다.
+
+    개수·목록·신선도 표지가 없어도 대상이 기관·지역으로 한정되고 공고 뒤에
+    요청 동사가 있으면 목록입니다. 설명형·통계형 표지가 있으면 목록이 아니며,
+    신선도 표지가 있는 질의는 기존 신선도 분기가 그대로 맡습니다.
+    """
+    normalized = _normalize_text(query)
+    lowered = normalized.lower()
+    if any(marker in lowered for marker in ANNOUNCEMENT_FRESHNESS_MARKERS):
+        return False
+    if _has_excluded_list_marker(lowered):
+        return False
+    if ANNOUNCEMENT_SCOPED_LIST_STATISTICS_PATTERN.search(lowered):
+        return False
+    if any(marker in lowered for marker in ANNOUNCEMENT_SCOPED_LIST_NEGATION_MARKERS):
+        return False
+    if ANNOUNCEMENT_SCOPED_LIST_EXPLICIT_PERIOD_PATTERN.search(lowered):
+        return False
+    if any(marker in lowered for marker in ANNOUNCEMENT_SCOPED_LIST_EXPLANATION_MARKERS):
+        return False
+    if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
+        return False
+    if not ANNOUNCEMENT_LIST_PATTERN.search(lowered):
+        return False
+    if extract_institution_scope(normalized, include_entity_org_tokens=True).get(
+        "institution_name"
+    ):
+        return True
+    return bool(_scoped_list_institution_candidate(normalized))
 
 
 def _has_announcement_list_scope(lowered: str) -> bool:
@@ -2113,6 +2233,9 @@ def is_announcement_list_query(query: str) -> bool:
     전체 최신 목록으로 새지 않게 합니다. 마감일 창·금액 조건·정렬 표지가
     파싱됐고 요청 동사가 함께 있으면 그 조건을 목록의 범위 표지로 인정해
     참을 반환합니다. 조건이 없는 "공고 보여줘" 의 판정은 그대로입니다.
+    기관·지역 범위와 요청 동사가 함께 있고 개수·신선도 표지가 없으면
+    그 범위 자체를 목록 근거로 인정합니다. 이 분기에서만 기관 상세 조회의
+    개체 차단을 풀어 기관 조건을 유지합니다.
     """
     lowered = _query_lower(query)
     if ANNOUNCEMENT_FIELD_MARKER_PATTERN.search(lowered):
@@ -2133,6 +2256,8 @@ def is_announcement_list_query(query: str) -> bool:
         return False
     if is_result_list_query(query):
         return False
+    if _is_scoped_announcement_list_request(query):
+        return True
     if ANNOUNCEMENT_QUERY_COUNT_PATTERN.search(lowered):
         return True
     if any(marker in lowered for marker in RESULT_LIST_MARKERS):
@@ -3183,6 +3308,18 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
             # 안내를 냅니다. 이름 일부에 지역명이 있어도 후보가 이깁니다.
             candidate = _stats_single_metric_institution_candidate(normalized_query)
             if candidate and not _stats_institution_candidate_is_domain_phrase(candidate):
+                scope_name = candidate
+                replace_region_fallback = True
+        if (
+            not scope_name
+            and announcement_list_query
+            and _is_scoped_announcement_list_request(normalized_query)
+        ):
+            # 조달청처럼 접미사 사전에 없는 기관 이름은 분야어 앞 후보를 남겨
+            # 카탈로그 정확 일치에 맡깁니다. 후보를 버리면 기관 조건이 사라진
+            # 전체 공고 목록으로 조용히 넓어집니다.
+            candidate = _scoped_list_institution_candidate(normalized_query)
+            if candidate:
                 scope_name = candidate
                 replace_region_fallback = True
         if scope_name and (not existing_name or replace_region_fallback):
