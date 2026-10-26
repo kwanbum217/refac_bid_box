@@ -264,7 +264,7 @@ def test_monthly_trend_uses_five_year_default(monkeypatch):
 
 
 def test_single_metric_answer_shows_default_window(monkeypatch):
-    """단일 지표 직접 응답과 적용 조건 줄에 실제 기본 창이 드러납니다."""
+    """기간 없는 공고 건수는 30일 기본 창을 응답과 적용 조건 줄에 드러냅니다."""
     _, tool_plan = _run_tool(
         monkeypatch, _SINGLE_METRIC_QUERY, summary={"announcement_count": 10165}
     )
@@ -272,11 +272,11 @@ def test_single_metric_answer_shows_default_window(monkeypatch):
 
     answer = _build_single_metric_answer(tool_plan, structured)
     assert "전체 기간" not in answer
-    assert "최근 5년" in answer
+    assert "최근 30일" in answer
     assert "10,165건" in answer
 
     snapshot = _extract_statistical_snapshot(structured)
-    assert "- 적용 조건: 기간 최근 5년, 분류 전체" in snapshot
+    assert "- 적용 조건: 기간 2026-09-25 ~ 2026-10-24, 분류 전체" in snapshot
 
     caption = _winner_axis_caption(
         tool_plan,
@@ -285,4 +285,4 @@ def test_single_metric_answer_shows_default_window(monkeypatch):
         {"window": {"date_from": None, "date_to": None}},
     )
     assert "전체 기간" not in caption
-    assert "최근 5년 기준" in caption
+    assert "최근 30일 기준" in caption

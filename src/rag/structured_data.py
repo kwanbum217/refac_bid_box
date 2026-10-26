@@ -301,8 +301,13 @@ def _parse_date(value: str | date | datetime | None, field: str = "date") -> dat
 def _resolve_window(filters: dict[str, Any]) -> tuple[datetime | None, datetime | None]:
     date_from = _parse_date(filters.get("date_from"), "date_from")
     date_to = _parse_date(filters.get("date_to"), "date_to")
+    relative_days = int(filters.get("recent_days") or 0)
     relative_years = int(filters.get("relative_years") or 0)
 
+    if relative_days and not date_from:
+        today = date.today()
+        date_from = _parse_date((today - timedelta(days=relative_days - 1)).isoformat())
+        date_to = date_to or _parse_date(today.isoformat())
     if relative_years and not date_from:
         today = date.today()
         date_from = _parse_date((today - timedelta(days=(365 * relative_years) - 1)).isoformat())
@@ -562,6 +567,8 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
     if date_from or date_to:
+        return None
+    if filters.get("recent_days"):
         return None
     if (
         filters.get("region_names")

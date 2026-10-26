@@ -1799,6 +1799,16 @@ def extract_result_limit(query: str, default: int = 5, maximum: int = 20) -> int
 CLOSE_MARKER_PATTERN = re.compile(r"마감")
 CLOSE_IMMINENT_PATTERN = re.compile(r"마감\s*임박")
 CLOSE_WINDOW_DAYS = 3
+CLOSE_THIS_WEEK_DAYS = 7
+# 이번 달·지난달 마감 표지와 함께 쓰인 지난 마감 표지입니다. "이번 달 마감되는"
+# 처럼 앞으로의 마감을 가리키는 표현과 "이번 달 마감된" 을 가릅니다.
+CLOSE_PAST_MARKER_PATTERN = re.compile(r"지난|지났|마감된|마감한")
+# 기간을 말하지 않은 공고 건수와 금액 정렬 공고 목록의 기본 창입니다. 오늘을
+# 포함해 30일이므로 시작일은 오늘 - 29일입니다.
+RECENT_ANNOUNCEMENT_WINDOW_DAYS = 30
+# 금액 정렬 기본 창을 적용할 공고 금액 축입니다. 낙찰금액 정렬은 낙찰 결과
+# 테이블의 기존 5년 기본 창을 그대로 씁니다.
+ANNOUNCEMENT_AMOUNT_SORT_FIELDS = ("presmpt_prce", "base_amount")
 # 정렬을 뜻하는 표지(순·순서·순으로·정렬)가 마감 표지에 붙으면 그 표현은 기간
 # 창이 아니라 정렬 요청입니다. 창을 판정하기 전에 이 표현을 걷어냅니다.
 CLOSE_SORT_PATTERN = re.compile(
@@ -1923,7 +1933,7 @@ def _compact_text(value: str) -> str:
 def _parse_close_window(query: str) -> tuple[str, str] | None:
     """마감 표지와 상대 기간 표현으로 마감일 창을 계산합니다.
 
-    마감 표지가 있어도 함께 쓰인 상대 기간 표현이 아래 네 가지일 때만 창을
+    마감 표지가 있어도 함께 쓰인 상대 기간 표현이 아래 일곱 가지일 때만 창을
     확정합니다. 확정하지 못하면 기존 기간 해석(공고일 창)을 그대로 둡니다.
 
     | 표현 | 마감일 창 |
@@ -1931,7 +1941,15 @@ def _parse_close_window(query: str) -> tuple[str, str] | None:
     | `마감 임박` | 오늘 ~ 오늘+3일 |
     | `오늘 마감` | 오늘 |
     | `내일 마감` | 내일 |
-    | `이번 주 마감` | 이번 주 월요일 ~ 일요일 |
+    | `이번 주 마감` | 오늘 ~ 오늘+6일 |
+    | `이번 달 마감일이 지난` | 이번 달 1일 ~ 어제 |
+    | `이번 달 마감된` | 이번 달 1일 ~ 어제 |
+    | `이번 달에 마감한` | 이번 달 1일 ~ 어제 |
+    | `지난달 마감` | 지난달 1일 ~ 지난달 말일 |
+
+    `이번 주` 는 달력 주(월~일)가 아니라 오늘부터 7일 창입니다. 일요일에
+    "이번 주 마감" 을 물으면 달력 주는 이미 지난 마감만 남으므로, 앞으로의
+    마감을 답하려면 오늘부터 세어야 합니다.
 
     `마감 임박순`, `마감 빠른 순`, `마감일 순` 처럼 정렬 표지가 붙은 마감
     표현은 창을 만들지 않습니다. 그 표현은 정렬 요청이므로 창으로 읽으면
@@ -1942,6 +1960,13 @@ def _parse_close_window(query: str) -> tuple[str, str] | None:
     if not CLOSE_MARKER_PATTERN.search(scope):
         return None
     today = date.today()
+    if "지난달" in scope or "지난 달" in scope:
+        last_prev_month = today.replace(day=1) - timedelta(days=1)
+        return last_prev_month.replace(day=1).isoformat(), last_prev_month.isoformat()
+    if (
+        "이번 달" in scope or "이번달" in scope or "이번 월" in scope
+    ) and CLOSE_PAST_MARKER_PATTERN.search(scope):
+        return today.replace(day=1).isoformat(), (today - timedelta(days=1)).isoformat()
     if CLOSE_IMMINENT_PATTERN.search(scope):
         return today.isoformat(), (today + timedelta(days=CLOSE_WINDOW_DAYS)).isoformat()
     if "오늘" in scope:
@@ -1950,9 +1975,7 @@ def _parse_close_window(query: str) -> tuple[str, str] | None:
         tomorrow = today + timedelta(days=1)
         return tomorrow.isoformat(), tomorrow.isoformat()
     if "이번 주" in scope or "이번주" in scope:
-        week_start = today - timedelta(days=today.weekday())
-        week_end = week_start + timedelta(days=6)
-        return week_start.isoformat(), week_end.isoformat()
+        return today.isoformat(), (today + timedelta(days=CLOSE_THIS_WEEK_DAYS - 1)).isoformat()
     return None
 
 
@@ -2712,21 +2735,69 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 WHOLE_PERIOD_HINT_MARKER = "전체 기준"
 
 
-def apply_default_statistics_window(
-    filters: dict[str, Any], *, time_bucket_aware: bool = True
-) -> dict[str, Any]:
-    """기간을 말하지 않은 통계 질의에 기본 창(최근 5년)을 채웁니다.
+def uses_recent_announcement_window(filters: dict[str, Any] | None, query: str) -> bool:
+    """기간 없는 질의가 공고 30일 기본 창 대상인지 판정합니다.
 
+    대상은 공고 건수 단일 지표와 추정가격·기초금액 정렬 공고 목록입니다.
+    낙찰 통계·추이·축 집계·비교는 기존 5년 기본 창을 유지하므로 제외합니다.
+    마감 창이 걸린 질의도 공고일 기본 창을 만들지 않습니다.
+    """
+    lowered = _query_lower(query)
+    if not lowered:
+        return False
+    current = filters or {}
+    if current.get("date_from") or current.get("date_to"):
+        return False
+    if current.get("close_from") or current.get("close_to"):
+        return False
+    if str(current.get("time_bucket") or "") == "quarter":
+        return False
+    if current.get("group_by") or current.get("analysis_mode") == "trend":
+        return False
+    # 비교 질의는 축 없이 metric 만 남습니다. 비교 판정은 기존 5년 창을 씁니다.
+    if current.get("metric"):
+        return False
+
+    order_by = _normalize_text(str(current.get("order_by") or ""))
+    if order_by in ANNOUNCEMENT_AMOUNT_SORT_FIELDS:
+        if current.get("result_limit") or is_result_query(lowered):
+            return False
+        return not is_result_amount_scope(lowered)
+
+    if current.get("result_limit") or current.get("announcement_limit"):
+        return False
+    if is_result_query(lowered):
+        return False
+    return _single_metric(lowered) == "announcement_count"
+
+
+def apply_default_statistics_window(
+    filters: dict[str, Any], *, time_bucket_aware: bool = True, query: str = ""
+) -> dict[str, Any]:
+    """기간을 말하지 않은 통계 질의에 기본 창을 채웁니다.
+
+    공고 건수와 금액 정렬 공고 목록은 최근 30일, 그 밖의 통계는 최근 5년입니다.
     명시 기간이 항상 이기고, 분기 버킷의 연도 미지정 기본값과 명시적 전체
     기간(`relative_years` 가 이미 있는 경우, 예: years=0)은 그대로 둡니다.
+    마감 창이 걸린 질의에는 공고일 기본 창을 겹쳐 걸지 않습니다.
     원본 dict 는 바꾸지 않고 사본을 돌려줍니다.
     """
     windowed = dict(filters)
     if windowed.get("date_from") or windowed.get("date_to"):
         return windowed
+    if windowed.get("close_from") or windowed.get("close_to"):
+        return windowed
     if "relative_years" in windowed:
         return windowed
     if time_bucket_aware and str(windowed.get("time_bucket") or "") == "quarter":
+        return windowed
+    if uses_recent_announcement_window(windowed, query):
+        today = date.today()
+        windowed["recent_days"] = RECENT_ANNOUNCEMENT_WINDOW_DAYS
+        windowed["date_from"] = (
+            today - timedelta(days=RECENT_ANNOUNCEMENT_WINDOW_DAYS - 1)
+        ).isoformat()
+        windowed["date_to"] = today.isoformat()
         return windowed
     windowed["relative_years"] = DEFAULT_STATISTICS_WINDOW_YEARS
     return windowed
@@ -2736,8 +2807,13 @@ def replace_whole_period_insufficiency_hint(hints: list[str], filters: dict[str,
     """창이 걸린 계획의 '전체 기준' 안내를 실제 기간 안내로 바꿉니다.
 
     명시 기간은 원래 안내가 붙지 않고, `relative_years` 가 없거나 0 이면
-    전체 기간 질의이므로 안내를 유지합니다.
+    전체 기간 질의이므로 안내를 유지합니다. 30일 기본 창은 날짜 범위로
+    해석되므로 `recent_days` 를 먼저 봅니다.
     """
+    recent_days = int(filters.get("recent_days") or 0)
+    if recent_days:
+        replacement = f"기간을 지정하지 않아 최근 {recent_days}일 기준으로 집계했습니다."
+        return [replacement if WHOLE_PERIOD_HINT_MARKER in str(hint) else hint for hint in hints]
     if filters.get("date_from") or filters.get("date_to"):
         return list(hints)
     years = int(filters.get("relative_years") or 0)

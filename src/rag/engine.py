@@ -212,7 +212,7 @@ def _apply_entry_default_statistics_window(plan: RetrievalPlan) -> RetrievalPlan
     filters = plan.filters or {}
     if plan.use_lexical or filters.get("bid_ntce_no"):
         return plan
-    windowed = apply_default_statistics_window(filters)
+    windowed = apply_default_statistics_window(filters, query=plan.semantic_query)
     return plan.model_copy(
         update={
             "filters": windowed,
