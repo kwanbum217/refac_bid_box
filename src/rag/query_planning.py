@@ -178,6 +178,10 @@ OFFICIAL_PROVINCE_NAMES = frozenset(
     }
 )
 TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별", "동향")
+# "동향" 은 공고명 낱말로도 쓰입니다. 목록 요청 표지가 있거나 "동향" 바로 뒤에
+# 표제어가 이어지면 추이 질의가 아니라 목록·의미 검색 질의로 남깁니다.
+TREND_LIST_MARKERS = ("보여줘", "목록", "리스트", "찾아줘", "뽑아줘")
+TREND_TITLE_FOLLOWER_PATTERN = re.compile(r"동향\s*(?:보고서|분석|조사|연구|파악|모니터링|용역)")
 
 AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
     "category": ("분류별", "분야별", "업무구분별", "종류별", "카테고리별"),
@@ -3245,9 +3249,19 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     trend_marker = next((keyword for keyword in TREND_KEYWORDS if keyword in lowered), "")
     # "동향" 은 입찰 도메인 표지가 함께 있을 때만 추이 질의입니다. "동향이 무슨
-    # 뜻이야" 같은 설명형 질의는 기존 의미 검색 경로에 남깁니다.
+    # 뜻이야" 같은 설명형 질의는 기존 의미 검색 경로에 남깁니다. 같은 낱말이
+    # 공고명에 쓰인 목록 질의("시장 동향 보고서 공고", "동향 분석 용역 공고
+    # 보여줘")도 목록·의미 검색 경로에 남깁니다.
+    trend_title_word = trend_marker == "동향" and (
+        bool(TREND_TITLE_FOLLOWER_PATTERN.search(lowered))
+        or any(marker in lowered for marker in TREND_LIST_MARKERS)
+        or bool(COUNT_PATTERN.search(lowered))
+    )
     trend_applicable = bool(trend_marker) and (
-        trend_marker != "동향" or any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS)
+        trend_marker != "동향"
+        or (
+            any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS) and not trend_title_word
+        )
     )
     if trend_applicable:
         filters["analysis_mode"] = "trend"

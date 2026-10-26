@@ -237,3 +237,47 @@ def test_explanatory_trend_word_is_not_trend_query():
 
     assert plan.use_sql is False
     assert "analysis_mode" not in plan.filters
+
+
+@pytest.mark.parametrize(
+    ("query", "use_sql", "use_vector"),
+    [
+        ("시장 동향 보고서 공고", False, True),
+        ("동향 분석 용역 공고 보여줘", False, True),
+        ("동향 분석 용역 공고 목록", True, False),
+    ],
+)
+def test_trend_word_in_announcement_title_stays_off_trend_path(query, use_sql, use_vector):
+    """공고명 낱말로 쓰인 동향은 목록·의미 검색 경로에 머뭅니다."""
+    plan = build_retrieval_plan(query)
+
+    assert plan.use_sql is use_sql
+    assert plan.use_vector is use_vector
+    assert "analysis_mode" not in plan.filters
+    assert "metric" not in plan.filters
+
+
+def test_trend_word_over_result_list_is_not_trend_query():
+    """낙찰 결과 목록을 요청한 동향 질의는 추이 대신 목록 경로로 갑니다."""
+    plan = build_retrieval_plan("동향 분석 용역 낙찰 결과 5개")
+
+    assert plan.filters.get("category") == "Servc"
+    assert plan.filters.get("result_limit") == 5
+    assert "analysis_mode" not in plan.filters
+    assert "metric" not in plan.filters
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "공사 부문 최근 낙찰 동향 알려줘",
+        "용역 낙찰률 동향",
+        "최근 공고 동향 어때",
+    ],
+)
+def test_market_trend_queries_keep_trend_path(query):
+    """낙찰·공고 자체의 동향을 묻는 질의는 추이 경로를 유지합니다."""
+    plan = build_retrieval_plan(query)
+
+    assert plan.use_sql is True
+    assert plan.filters.get("analysis_mode") == "trend"
