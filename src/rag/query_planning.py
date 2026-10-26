@@ -177,7 +177,11 @@ OFFICIAL_PROVINCE_NAMES = frozenset(
         "제주특별자치도",
     }
 )
-TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별")
+TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별", "동향")
+# "동향" 은 공고명 낱말로도 쓰입니다. 목록 요청 표지가 있거나 "동향" 바로 뒤에
+# 표제어가 이어지면 추이 질의가 아니라 목록·의미 검색 질의로 남깁니다.
+TREND_LIST_MARKERS = ("보여줘", "목록", "리스트", "찾아줘", "뽑아줘")
+TREND_TITLE_FOLLOWER_PATTERN = re.compile(r"동향\s*(?:보고서|분석|조사|연구|파악|모니터링|용역)")
 
 AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
     "category": ("분류별", "분야별", "업무구분별", "종류별", "카테고리별"),
@@ -234,7 +238,25 @@ AGGREGATE_BID_MARKERS = (
     "낙찰 중",
     "낙찰 수",
 )
+# 낙찰 금액은 낙찰 결과 테이블의 sucsf_bid_amt 합계로만 집계합니다. 공고
+# 테이블에는 낙찰 금액 컬럼이 없으므로 공고 건수와 섞지 않습니다. "낙찰률"
+# 표지가 함께 있으면 기존 규칙대로 평균 낙찰률이 이깁니다.
+AGGREGATE_AWARD_AMOUNT_MARKERS = (
+    "낙찰 금액",
+    "낙찰금액",
+    "계약 금액",
+    "계약금액",
+    "금액 상위",
+    "금액상위",
+    "금액 순위",
+    "금액순위",
+    "금액 많은",
+    "금액이 많은",
+)
 AGGREGATE_ANNOUNCEMENT_MARKERS = ("공고 건수", "공고건수", "공고 수", "공고수", "공고")
+# 축이 정해지고 공고·낙찰 도메인 표지가 있는 순위 질의는 정형 집계 대상입니다.
+# 축만 지목된 목록·설명 질의는 기존 경로를 유지합니다.
+AXIS_RANKING_MARKERS = ("상위", "순위", "어디야", "많은 곳")
 DEFAULT_GROUP_LIMIT = 20
 MAX_GROUP_LIMIT = 50
 
@@ -2910,6 +2932,8 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     metric = ""
     if any(marker in lowered for marker in AGGREGATE_RATE_MARKERS):
         metric = "avg_rate"
+    elif any(marker in lowered for marker in AGGREGATE_AWARD_AMOUNT_MARKERS):
+        metric = "award_amount"
     elif (
         any(marker in lowered for marker in AGGREGATE_BID_MARKERS)
         and "낙찰률" not in lowered
@@ -2935,7 +2959,7 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     if not group_by:
         return {}
 
-    if group_by == "winner" and metric != "avg_rate":
+    if group_by == "winner" and metric not in ("avg_rate", "award_amount"):
         metric = "bid_count"
 
     aggregate: dict[str, Any] = {
@@ -2970,11 +2994,14 @@ def _requested_metric(lowered: str) -> str:
 def _single_metric(lowered: str) -> str:
     """단일 지표 질의의 지표를 축별 집계와 같은 우선순위로 정합니다.
 
-    extract_aggregate_filters 의 지표 결정 규칙(낙찰률 > 낙찰 > 공고)을 따르되,
-    도메인 표지가 전혀 없으면 지표를 정하지 않고 빈 문자열을 돌려줍니다.
+    extract_aggregate_filters 의 지표 결정 규칙(낙찰률 > 낙찰 금액 > 낙찰 >
+    공고)을 따르되, 도메인 표지가 전혀 없으면 지표를 정하지 않고 빈 문자열을
+    돌려줍니다.
     """
     if any(marker in lowered for marker in AGGREGATE_RATE_MARKERS):
         return "avg_rate"
+    if any(marker in lowered for marker in AGGREGATE_AWARD_AMOUNT_MARKERS):
+        return "award_amount"
     if (
         any(marker in lowered for marker in AGGREGATE_BID_MARKERS)
         and "낙찰률" not in lowered
@@ -2998,7 +3025,7 @@ def is_result_amount_scope(query: str) -> bool:
     """
     if is_result_query(query):
         return True
-    return _single_metric(_query_lower(query)) in ("bid_count", "avg_rate")
+    return _single_metric(_query_lower(query)) in ("bid_count", "avg_rate", "award_amount")
 
 
 def build_retrieval_plan(query: str) -> RetrievalPlan:
@@ -3313,8 +3340,32 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_sql = True
         use_vector = False
 
-    if any(keyword in lowered for keyword in TREND_KEYWORDS):
+    trend_marker = next((keyword for keyword in TREND_KEYWORDS if keyword in lowered), "")
+    # "동향" 은 입찰 도메인 표지가 함께 있을 때만 추이 질의입니다. "동향이 무슨
+    # 뜻이야" 같은 설명형 질의는 기존 의미 검색 경로에 남깁니다. 같은 낱말이
+    # 공고명에 쓰인 목록 질의("시장 동향 보고서 공고", "동향 분석 용역 공고
+    # 보여줘")도 목록·의미 검색 경로에 남깁니다.
+    trend_title_word = trend_marker == "동향" and (
+        bool(TREND_TITLE_FOLLOWER_PATTERN.search(lowered))
+        or any(marker in lowered for marker in TREND_LIST_MARKERS)
+        or bool(COUNT_PATTERN.search(lowered))
+    )
+    trend_applicable = bool(trend_marker) and (
+        trend_marker != "동향"
+        or (
+            any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS) and not trend_title_word
+        )
+    )
+    if trend_applicable:
         filters["analysis_mode"] = "trend"
+        if trend_marker == "동향":
+            # 추이 응답은 지표 하나만 냅니다. 기존 지표 판정과 같은 순서로 지표를
+            # 정하고, 시계열 조회가 SQL 로 실행되도록 라우팅합니다.
+            use_sql = True
+            if not has_semantic_keywords and not is_entity:
+                use_vector = False
+            if not filters.get("metric"):
+                filters["metric"] = _requested_metric(lowered)
 
     aggregate_filters = extract_aggregate_filters(normalized_query, filters)
     # 특정 업체명을 지목한 질의는 그 업체의 실적 조회이지 순위 집계가 아닙니다.
@@ -3322,6 +3373,18 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if is_entity and aggregate_filters.get("group_by") == "winner":
         aggregate_filters = {}
     filters.update(aggregate_filters)
+    # 축이 정해진 금액 순위와, 공고·낙찰 도메인 표지가 있는 순위 질의는 정형
+    # 집계로 답합니다. 지표 표지가 없어도 축과 순위 표지만으로 SQL 경로를 켭니다.
+    if filters.get("group_by") and (
+        filters.get("metric") == "award_amount"
+        or (
+            any(marker in lowered for marker in AXIS_RANKING_MARKERS)
+            and any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS)
+        )
+    ):
+        use_sql = True
+        if not has_semantic_keywords and not is_entity:
+            use_vector = False
     if has_comparison and not filters.get("group_by"):
         filters["metric"] = _requested_metric(lowered)
 
