@@ -1123,7 +1123,7 @@ COMPARISON_MARKERS = ("비교", "대비", "차이", "vs")
 # 비교 질의라도 입찰 지표를 묻지 않으면 지역·기관 비교가 아닙니다.
 # "부산이랑 대구 여행 코스 비교" 같은 질의를 통계 비교로 오인하지 않습니다.
 COMPARISON_DOMAIN_MARKERS = ("공고", "낙찰", "입찰", "개찰", "유찰")
-COMPARISON_TARGET_CONNECTOR_PATTERN = re.compile(r"\s*(?:이랑|랑|하고|와|과|,)\s*")
+COMPARISON_TARGET_CONNECTOR_PATTERN = re.compile(r"\s*(?:이랑|랑|하고|와|과|및|,)\s*")
 # 대상 구간은 지표·도메인 표지 앞까지만 봅니다. leftmost 일치가 곧 절단 위치입니다.
 COMPARISON_TARGET_STOP_PATTERN = re.compile(
     r"공고\s*건수|낙찰\s*결과|낙찰\s*건수|낙찰\s*공고|낙찰률|평균|건수|결과|통계|순위|"
@@ -1157,6 +1157,24 @@ def _match_comparison_region(text: str) -> str:
             if not remainder or remainder in REGION_ADMIN_SUFFIXES:
                 return label
     return ""
+
+
+def _normalize_enumerated_regions(names: list[str]) -> list[str]:
+    """나열된 이름이 모두 광역 지역이면 대표 지역명을 질의 순서대로 돌려줍니다.
+
+    "부산 및 대구", "서울시와 경기도" 처럼 비교 표지 없이 지역명만 나열한
+    질의를 기관명 등호 조건이 아니라 지역 합집합 조건으로 다루기 위한 정규화
+    입니다. 지역이 아닌 이름이 하나라도 섞이면 빈 목록을 돌려 기존 기관 경로를
+    그대로 쓰게 합니다.
+    """
+    regions: list[str] = []
+    for name in names:
+        region = _match_comparison_region(name)
+        if not region:
+            return []
+        if region not in regions:
+            regions.append(region)
+    return regions if len(regions) >= 2 else []
 
 
 def _normalize_comparison_target(text: str) -> tuple[str, str] | None:
@@ -2476,6 +2494,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     inst_candidates = _extract_institution_list(normalized_query)
     enumerated_names = _extract_enumerated_institution_names(normalized_query)
+    enumerated_regions = _normalize_enumerated_regions(enumerated_names)
     multi_result_list = is_multi_institution_result_list_query(normalized_query)
     comparison_regions, comparison_institutions = _extract_comparison_targets(normalized_query)
     if inst_candidates or enumerated_names or comparison_regions or comparison_institutions:
@@ -2579,6 +2598,11 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         filters["region_names"] = comparison_regions
     elif comparison_institutions:
         filters["institution_names"] = comparison_institutions
+    elif enumerated_regions and any(marker in lowered for marker in COMPARISON_DOMAIN_MARKERS):
+        # 비교 표지 없이 광역 지역명만 나열한 목록·건수·통계 질의는 기관명 등호
+        # 조건이 아니라 나열 지역 전체의 합집합 지역 조건으로 다룹니다. 지역이
+        # 아닌 이름이 섞이면 위 정규화가 빈 목록을 돌려 기존 기관 경로를 씁니다.
+        filters["region_scope_names"] = enumerated_regions
     elif inst_candidates:
         filters["institution_names"] = inst_candidates
     elif enumerated_names and enumerated_scope:
@@ -2604,6 +2628,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         and not scope_explanatory
         and not filters.get("institution_names")
         and not filters.get("region_names")
+        and not filters.get("region_scope_names")
     ):
         scope = extract_institution_scope(
             normalized_query,
