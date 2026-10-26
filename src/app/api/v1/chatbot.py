@@ -91,13 +91,22 @@ class _PendingRagAnswer:
     user_id: int | None
 
 
+KB_STATUS_BLOCK_MARKER = "KB 색인 상태"
+
+
+def _should_attach_kb_status_block(plan: Any, answer_text: str) -> bool:
+    """전체 블록은 KB 상태를 명시로 물은 요청에만, 엔진의 KB 한 줄과 겹치지 않게 붙입니다."""
+    tools = {getattr(step, "tool", "") for step in getattr(plan, "steps", None) or []}
+    return "kb_status_tool" in tools and KB_STATUS_BLOCK_MARKER not in answer_text
+
+
 def _automation_staff_denied(kb_status: dict[str, Any] | None, session_key: str) -> ChatResponse:
     """자동화 실행·확인이 관리자 전용임을 알리는 거부 응답입니다."""
     return ChatResponse(
         status="error",
         mode="error",
         message=AUTOMATION_STAFF_REQUIRED_MESSAGE,
-        answer=_append_kb_status(AUTOMATION_STAFF_REQUIRED_MESSAGE, kb_status),
+        answer=AUTOMATION_STAFF_REQUIRED_MESSAGE,
         kb_status=kb_status,
         session_key=session_key,
     )
@@ -134,11 +143,10 @@ def _prepare_chat(
 
     compact = message.replace(" ", "")
     if any(keyword in compact or keyword in message for keyword in RESTRICTED_KEYWORDS):
-        answer_text = _append_kb_status(SECURITY_BLOCK_ANSWER, kb_status)
         return ChatResponse(
             mode="answer",
             intent="security_block",
-            answer=answer_text,
+            answer=SECURITY_BLOCK_ANSWER,
             kb_status=kb_status,
             suggestions=["최근 공고 보여줘", "투찰가 예측해줘"],
             session_key=session_key,
@@ -169,11 +177,10 @@ def _prepare_chat(
 
     if plan.mode == "advisory":
         suggestions, advisory_signals = _build_advisory_bundle(db, plan.suggestions)
-        answer_text = _append_kb_status(
+        answer_text = (
             "자동화 구독 설정으로 전환할 수 있는 요청으로 보입니다.\n"
             "원하는 주기/조건을 알려주시면 등록 가능한 정책으로 정리해드리겠습니다.\n\n"
-            "추천 항목:\n- " + "\n- ".join(suggestions),
-            kb_status,
+            "추천 항목:\n- " + "\n- ".join(suggestions)
         )
         remember_chat_interaction(
             db, session_key, user_id=user_id, message=message, plan=plan, answer_text=answer_text
@@ -193,10 +200,7 @@ def _prepare_chat(
     # 자동화 실행 요청은 자동화 요청 레코드를 만들고 실행 카드를 반환합니다 (원본 동일).
     if plan.mode == "action":
         if user_id is None:
-            answer_text = _append_kb_status(
-                "자동화 실행은 로그인 후 이용할 수 있습니다. 로그인 뒤 다시 요청해주세요.",
-                kb_status,
-            )
+            answer_text = "자동화 실행은 로그인 후 이용할 수 있습니다. 로그인 뒤 다시 요청해주세요."
             return ChatResponse(
                 status="error",
                 mode="error",
@@ -222,7 +226,7 @@ def _prepare_chat(
         suggestions, advisory_signals = _build_advisory_bundle(
             db, action_payload.get("suggestions"), user_id=user_id, request_obj=request_obj
         )
-        answer_text = _append_kb_status(action_payload["answer"], kb_status)
+        answer_text = action_payload["answer"]
         remember_chat_interaction(
             db,
             session_key,
@@ -262,13 +266,10 @@ def _prepare_chat(
     # 자동화 상태 질의는 도구 결과를 그대로 응답 계약에 실어 보냅니다 (원본 동일).
     automation_status_payload = _build_automation_status_payload(tool_context)
     if automation_status_payload:
-        answer_text = _append_kb_status(
-            str(
-                automation_status_payload.get("answer")
-                or automation_status_payload.get("message")
-                or "자동화 상태를 확인했습니다."
-            ),
-            kb_status,
+        answer_text = str(
+            automation_status_payload.get("answer")
+            or automation_status_payload.get("message")
+            or "자동화 상태를 확인했습니다."
         )
         base_suggestions = automation_status_payload.get("suggestions") or []
         suggestions, advisory_signals = _build_advisory_bundle(
@@ -343,7 +344,8 @@ def _finalize_rag_answer(
     """
     kb_status = pending.kb_status
     plan = pending.plan
-    answer_text = _append_kb_status(answer_text, kb_status)
+    if _should_attach_kb_status_block(plan, answer_text):
+        answer_text = _append_kb_status(answer_text, kb_status)
     visualizations = list((pending.tool_context or {}).get("visualizations") or [])
 
     remember_chat_interaction(

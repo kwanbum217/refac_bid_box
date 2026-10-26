@@ -11,7 +11,7 @@ from datetime import timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.app.api.v1.chatbot_format import _append_kb_status, _build_advisory_bundle
+from src.app.api.v1.chatbot_format import _build_advisory_bundle
 from src.app.core.timeutil import utcnow
 from src.app.models.chatbot import AutomationRequest
 from src.app.schemas.chatbot import ChatResponse
@@ -76,7 +76,7 @@ def _build_confirmed_automation_response(
     suggestions, advisory_signals = _build_advisory_bundle(
         db, action_payload.get("suggestions"), user_id=user_id, request_obj=request_obj
     )
-    answer_text = _append_kb_status(action_payload["answer"], kb_status)
+    answer_text = action_payload["answer"]
     # 승인 완료 대화 상호작용을 소유자 대조 하에 영속화합니다.
     remember_chat_interaction(
         db,
@@ -108,9 +108,9 @@ def _build_missing_confirmation_response(
     message: str, kb_status: dict | None, session_key: str
 ) -> ChatResponse:
     """원본 _build_missing_confirmation_response 대응."""
-    answer_text = _append_kb_status(
-        "현재 승인 대기 중인 자동화 요청이 없습니다. 먼저 '전체 점검해줘'처럼 실행할 점검을 요청한 뒤 승인해 주세요.",
-        kb_status,
+    answer_text = (
+        "현재 승인 대기 중인 자동화 요청이 없습니다. "
+        "먼저 '전체 점검해줘'처럼 실행할 점검을 요청한 뒤 승인해 주세요."
     )
     return ChatResponse(
         mode="answer",

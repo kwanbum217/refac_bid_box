@@ -41,19 +41,11 @@ from src.app.services.automation_orchestrator import (
     verify_callback_token,
 )
 from src.app.services.automation_tokens import consume_confirmation_token
-from src.app.services.tools.kb_status_tool import (
-    build_kb_status_summary,
-    get_latest_kb_status_payload,
-)
+from src.app.services.tools.kb_status_tool import get_latest_kb_status_payload
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/automation", tags=["Automation"])
-
-
-def _append_kb_status(answer_text: str, kb_status: dict | None) -> str:
-    summary = build_kb_status_summary(kb_status)
-    return f"{answer_text}\n\n{summary}" if summary else answer_text
 
 
 def _require_request(db: Session, job_id: str, user: CustomUser | None = None) -> AutomationRequest:
@@ -73,7 +65,7 @@ def _envelope(db: Session, request_obj: AutomationRequest) -> dict[str, Any]:
         "status": "success",
         "mode": action_payload["mode"],
         "intent": action_payload["intent"],
-        "answer": _append_kb_status(action_payload["answer"], kb_status),
+        "answer": action_payload["answer"],
         "message": action_payload["message"],
         "job": action_payload["job"],
         "suggestions": action_payload["suggestions"],
