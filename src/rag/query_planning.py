@@ -177,6 +177,21 @@ OFFICIAL_PROVINCE_NAMES = frozenset(
         "제주특별자치도",
     }
 )
+# 정식 광역 명칭 바로 뒤 시·군·구를 좁힐 때 쓰는 목록입니다. 특별시·광역시·
+# 특별자치시는 OFFICIAL_PROVINCE_NAMES 에 없으므로 함께 둡니다.
+OFFICIAL_BROAD_REGION_NAMES = frozenset(
+    {
+        "서울특별시",
+        "부산광역시",
+        "대구광역시",
+        "인천광역시",
+        "광주광역시",
+        "대전광역시",
+        "울산광역시",
+        "세종특별자치시",
+        *OFFICIAL_PROVINCE_NAMES,
+    }
+)
 TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별", "동향")
 # "동향" 은 공고명 낱말로도 쓰입니다. 목록 요청 표지가 있거나 "동향" 바로 뒤에
 # 표제어가 이어지면 추이 질의가 아니라 목록·의미 검색 질의로 남깁니다.
@@ -510,6 +525,12 @@ ADMIN_REGION_PATTERN = re.compile(
 # 광역 단축명보다 좁은 범위는 시·군·구 행정 구역입니다. "도시" 처럼 기저가 한 글자인
 # 낱말은 제외되도록 기저를 두 글자 이상 요구합니다.
 ADMIN_DISTRICT_PATTERN = re.compile(r"^[가-힣]{2,8}(?:시|군|구)$")
+# 정식 광역 명칭 오른쪽에 오는 시·군·구 어절입니다. "중구"·"동구" 처럼 기저가
+# 한 글자인 구를 포함해야 하므로 ADMIN_DISTRICT_PATTERN 보다 기저 길이를 넓힙니다.
+OFFICIAL_DISTRICT_PATTERN = re.compile(r"^[가-힣]{1,8}(?:시|군|구)$")
+# 시·군·구를 둘 이상 나열·비교할 때 쓰는 연결어입니다. 이 경우 첫 구역으로
+# 좁히면 나머지 구역이 유실되므로 축소하지 않고 기존 지역 경로로 넘깁니다.
+OFFICIAL_DISTRICT_ENUM_CONNECTORS = ("이랑", "랑", "하고", "와", "과", "및", "대비", "비교", "vs")
 ADMIN_REGION_OFFICE_SUFFIX = "청"
 INSTITUTION_SUBUNIT_SUFFIXES = ("지역본부", "본부", "지사", "지부", "지점", "출장소", "사업단")
 INSTITUTION_SCOPE_EXPLANATORY_MARKERS = (
@@ -666,6 +687,105 @@ def _admin_region_name(token: str) -> str:
     return ""
 
 
+def _official_district_name(token: str) -> str:
+    """정식 광역 명칭 뒤에 오는 시·군·구 어절을 지명으로 정규화합니다."""
+    if token in OFFICIAL_BROAD_REGION_NAMES:
+        return ""
+    value = _strip_institution_particle(token)
+    if value.endswith(ADMIN_REGION_OFFICE_SUFFIX) and len(value) > 2:
+        value = value[: -len(ADMIN_REGION_OFFICE_SUFFIX)]
+    if not value or value in INSTITUTION_SCOPE_EXCLUDED_TERMS:
+        return ""
+    if value.endswith(INSTITUTION_SCOPE_EXCLUDED_SUFFIXES):
+        return ""
+    if not OFFICIAL_DISTRICT_PATTERN.fullmatch(value):
+        return ""
+    return value
+
+
+def _strip_official_district_connector(token: str) -> str:
+    """어절 끝에 붙은 나열·비교 연결어를 떼어 냅니다."""
+    for connector in OFFICIAL_DISTRICT_ENUM_CONNECTORS:
+        if len(token) > len(connector) and token.endswith(connector):
+            return token[: -len(connector)]
+    return token
+
+
+def _official_district_enum_name(token: str) -> str:
+    """나열·비교 연결어를 떼어 낸 어절의 시·군·구 지명을 돌려줍니다."""
+    return _official_district_name(_strip_official_district_connector(token))
+
+
+def _official_region_name(token: str) -> str:
+    """어절이 가리키는 광역 명칭이나 시·군·구 지명을 돌려줍니다."""
+    value = _strip_official_district_connector(token)
+    for name in (value, _strip_institution_particle(value)):
+        if name in OFFICIAL_BROAD_REGION_NAMES:
+            return name
+    return _official_district_name(value)
+
+
+def _official_province_district_enumerated(pairs: list[tuple[str, str]]) -> bool:
+    """시·군·구가 둘 이상 나열·비교됐는지 판정합니다.
+
+    지명이 둘 이상이면 첫 구역만 남기면 나머지 구역이 유실됩니다. 지명 하나가
+    연결어나 쉼표로 다른 행정 구역과 이어지는 경우("중구와 부산광역시")도
+    비교·나열로 봅니다. 기간 비교("중구 작년 대비 올해")는 연결어가 지명 바로
+    뒤에 오지 않으므로 해당하지 않습니다.
+    """
+    if len({_official_district_enum_name(token) for token, _ in pairs} - {""}) >= 2:
+        return True
+    for index, (token, _separator) in enumerate(pairs):
+        if not _official_district_enum_name(token) or index + 1 >= len(pairs):
+            continue
+        following, separator = pairs[index + 1]
+        attached = _strip_official_district_connector(token) != token
+        separated = any(marker in separator for marker in INSTITUTION_ENUM_SEPARATORS)
+        if (attached or separated) and _official_region_name(following):
+            return True
+        if (
+            following in OFFICIAL_DISTRICT_ENUM_CONNECTORS
+            and index + 2 < len(pairs)
+            and _official_region_name(pairs[index + 2][0])
+        ):
+            return True
+    return False
+
+
+def _official_province_district_scope(query: str) -> str:
+    """정식 광역 명칭 바로 뒤 시·군·구를 '<광역> <시·군·구>' 범위로 돌려줍니다.
+
+    "서울특별시 중구", "부산광역시 해운대구", "경기도 수원시" 처럼 정식 광역
+    명칭과 시·군·구가 이어지면 광역 전체가 아니라 그 구역 기관 범위입니다.
+    띄어 쓴 형태와 붙여 쓴 형태를 모두 받고, 정식 명칭만 있는 질의는 빈
+    문자열을 돌려 기존 광역 동작을 유지합니다. 시·군·구가 둘 이상 나열·비교된
+    질의도 첫 구역만 남기지 않도록 빈 문자열을 돌려 기존 지역 경로를 씁니다.
+    """
+    tokens = [
+        token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(_normalize_text(query)) if token
+    ]
+    if _official_province_district_enumerated(_institution_enumeration_token_pairs(query)):
+        return ""
+    for index, token in enumerate(tokens):
+        province = token
+        if province not in OFFICIAL_BROAD_REGION_NAMES:
+            province = _strip_institution_particle(token)
+        if province not in OFFICIAL_BROAD_REGION_NAMES:
+            continue
+        if index + 1 < len(tokens):
+            district = _official_district_name(tokens[index + 1])
+            if district:
+                return f"{province} {district}"
+    for token in tokens:
+        for province in sorted(OFFICIAL_BROAD_REGION_NAMES, key=len, reverse=True):
+            if token == province or not token.startswith(province):
+                continue
+            district = _official_district_name(token[len(province) :])
+            if district:
+                return f"{province} {district}"
+    return ""
+
+
 def _institution_token_candidates(token: str, *, include_entity_org_tokens: bool) -> list[str]:
     """토큰 하나에서 기관 범위 후보를 뽑습니다. 원형을 먼저 보고 조사를 뗀 형태를 봅니다."""
     candidates: list[str] = []
@@ -807,6 +927,9 @@ def extract_institution_scope(
         )
         if enumerated:
             return {"institution_names": enumerated}
+    official_district = _official_province_district_scope(normalized)
+    if official_district:
+        return {"institution_name": official_district}
     tokens = [token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized) if token]
 
     best_name = ""
@@ -875,6 +998,8 @@ def _is_specific_institution_scope(name: str) -> bool:
     if not normalized:
         return False
     if normalized in OFFICIAL_PROVINCE_NAMES:
+        return True
+    if _official_province_district_scope(normalized):
         return True
     if _is_broad_region_name(normalized):
         return False
@@ -3247,7 +3372,15 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     # 기관 상세 조회에는 학교·병원 같은 개체 접미사 토큰을 기관 조건으로 승격하지
     # 않습니다. 그 토큰은 공고명의 일부인 경우가 많습니다.
     list_intent = announcement_list_query or result_list_query
-    scope_applicable = bool(list_intent or has_stat_keywords or multi_result_list)
+    # 정식 광역 명칭 뒤 시·군·구는 목록·집계 표지가 없어도 그 구역 기관 범위입니다.
+    # 공고·사업명을 지목한 개체 질의는 이름 속 행정 구역이 범위 지목이 아니므로
+    # 기존 기관 동작을 그대로 둡니다.
+    official_district_scope = (
+        "" if is_entity else _official_province_district_scope(normalized_query)
+    )
+    scope_applicable = bool(
+        list_intent or has_stat_keywords or multi_result_list or official_district_scope
+    )
     scope_explanatory = any(marker in lowered for marker in INSTITUTION_SCOPE_EXPLANATORY_MARKERS)
     # 공고·낙찰 도메인 표지가 있는 통계 질의는 기관 하나를 지목한 경우가 많습니다.
     # "서울대학교병원 올해 공고 건수" 의 병원처럼 개체 접미사를 기관 조건으로
