@@ -16,8 +16,8 @@
 | main | `1f8f2331` 묶음 4(6개 브랜치) 병합, 원격 반영, CI success |
 | v1 점검 세트 | 70/70(일요일 `62650ad0`) -> 62/70(월요일 `1f8f2331`). 코드 회귀 아님, 2.2 절 |
 | v2 점검 세트 | 12/20 -> **17/20** |
-| 검증 완료 미병합 | 5개 브랜치(3 절). 묶음 5 대상 |
-| 진행 중 워커 | 3대(4 절). 이 세션은 회수하지 않고 종료한다 |
+| 검증 완료 미병합 | 6개 브랜치(3 절). 묶음 5 대상 |
+| 진행 중 워커 | 빌더 2대(4 절). 이 세션은 회수하지 않고 종료한다 |
 | 사용자 결정 | 5건(5 절). 모두 반영 또는 반영 중 |
 | 사고 | 운영 Redis 집계 캐시 오염(6 절). 캐시 197키 삭제, 근본 수정 빌더 진행 중 |
 | 다음 착수 | 4 절 워커 회수·리뷰 -> 묶음 5 -> 측정 직전 rag:* 캐시 삭제 -> v1·v2 재측정 |
@@ -72,18 +72,18 @@
 | chat-measure-mask | `5b351bc8` | main | 측정기 수치 후보 오염 구간 마스킹(기존 판정 변경 0) | `task_6ccbf38cb482` / `task_45c7bc6ab6a6` |
 | chat-unresolved-failclosed | `f88c48fe` | `48eee5a8`(main 조상) | 기간 비교 미해석 기관 카탈로그 대조, fail-closed | `task_a4f1fe35126b` / `task_741fb5e653c9` |
 | chat-this-week-window | `7deaea3e` | main | 이번 주 창 오늘 포함 7일, v1 N일 SQL 9건 N-1 | `task_8427f41d275b` / `task_c96cd4c048c9` |
+| chat-single-metric-inst | `81408c3c` | `f88c48fe` | 단일 지표 질문의 기관명 속 지역명 오인 수정(서울대학교병원·경기도교육청·기술보증기금) | `task_5575ca5f9b75` / `task_952b6ab685a2` |
 
 `chat-this-week-window` 의 개별 Level 1 게이트는 코디네이터가 결과 확인 전에 워크트리를 지워 끊겼다. 묶음 5 strict 게이트로 대신 검증할 것. `chat-kb-block-confirm` 은 `chat-kb-block-scope` 를 포함하므로 묶음에는 confirm 하나만 병합해도 된다.
 
 ---
 
-## 4. 진행 중 워커 3대 (회수 안 됨)
+## 4. 진행 중 워커 2대 (회수 안 됨)
 
-세션 종료 시점에 작업 중이었다. **다음 세션 시작 시 `orca orchestration check --run run_89eeda0fdf77` 로 소진하고 type 을 확인한 뒤 회수할 것**(4.1 절 교훈, question 이면 회수 금지).
+세션 종료 시점에 작업 중이었다. **다음 세션 시작 시 `orca orchestration check --run run_89eeda0fdf77` 로 소진하고 type 을 확인한 뒤 회수할 것**(4.1 절 교훈, question 이면 회수 금지). 단일 지표 리뷰어 `task_952b6ab685a2` 는 인수인계 작성 직후 pass 를 받아 회수했고 그 브랜치는 3 절로 옮겼다.
 
 | Task | 역할 | 워크트리 | 터미널 | 대상 |
 | --- | --- | --- | --- | --- |
-| `task_952b6ab685a2` | 리뷰어 GLM | chat-single-metric-inst | `term_f04f66c6-6bfd-4571-9c3f-757ed459459e` | 빌더 `task_5575ca5f9b75` 커밋 `81408c3c`(기준 `f88c48fe`) 단일 지표 기관명 속 지역명 오인 수정 |
 | `task_3f815302b315` | 빌더 deepseek max | chat-cache-key-dataset | `term_768f819c-32ac-4f08-9e71-8183b6b6a2b6` | 집계 캐시 키에 데이터셋 신원, 기간 비교 상한 반개 구간 |
 | `task_e3f96ac32535` | 빌더 deepseek max | chat-list-dedupe-route | `term_94f93219-5c38-4450-a0db-b90108679816` | 공고 목록 공고번호 중복 제거, 최댓값 질문 bid_query_tool 라우팅 |
 
@@ -119,8 +119,8 @@
 ## 7. 다음 세션 절차
 
 1. `docker compose ps`(5개 running 확인, 이 세션은 Docker 를 내리지 않았다), `gh run list --branch main --limit 1`.
-2. 4 절 워커 3대: 메시지 소진, type 확인, worker_done 이면 다이제스트(`summarize_worker_done.py`)·Level 1 게이트·회수. 빌더 둘은 리뷰어(GLM)를 띄운다.
-3. 3 절 5개 + 4 절 통과분으로 묶음 5 통합 브랜치를 만든다. 순서 제안: kb-block-confirm(scope 포함) -> measure-mask -> this-week-window -> unresolved-failclosed -> single-metric-inst(`f88c48fe` 기반) -> cache-key-dataset -> list-dedupe-route. 매 병합 결과 전량 시험을 종료 코드로 막는다. coordinator-capsule 범위는 합집합으로 새 slug.
+2. 4 절 빌더 2대: 메시지 소진, type 확인, worker_done 이면 다이제스트(`summarize_worker_done.py`)·Level 1 게이트·회수. 각각 리뷰어(GLM)를 띄운다.
+3. 3 절 6개 + 4 절 통과분으로 묶음 5 통합 브랜치를 만든다. 순서 제안: kb-block-confirm(scope 포함) -> measure-mask -> this-week-window -> unresolved-failclosed -> single-metric-inst(`f88c48fe` 기반) -> cache-key-dataset -> list-dedupe-route. 매 병합 결과 전량 시험을 종료 코드로 막는다. coordinator-capsule 범위는 합집합으로 새 slug.
 4. strict 게이트 `--record-evidence`, 통합 워크트리에서 `premerge_full_suite_gate.py --record`, main 병합 커밋 안에서 source_commit 갱신, push, CI 확인, `docker compose restart app`.
 5. 측정 직전 rag:* 캐시 삭제(6 절) 후 v1·v2 재측정. 측정 중 main 동결. 기대: v1 70/70 근접, v2 20/20 근접.
 
