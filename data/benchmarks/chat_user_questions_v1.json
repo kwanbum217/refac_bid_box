@@ -730,7 +730,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 60 DAY AND sucsf_bid_rate IS NOT NULL AND dminstt_nm LIKE '%{latest_servc_result_institution}%'",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 59 DAY AND sucsf_bid_rate IS NOT NULL AND dminstt_nm LIKE '%{latest_servc_result_institution}%'",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -772,7 +772,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 14 DAY AND sucsf_bid_rate IS NOT NULL",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Cnstwk' AND rl_openg_dt >= CURDATE() - INTERVAL 13 DAY AND sucsf_bid_rate IS NOT NULL",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -793,7 +793,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 14 DAY AND sucsf_bid_rate IS NOT NULL",
+        "sql": "SELECT ROUND(AVG(sucsf_bid_rate), 2) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 13 DAY AND sucsf_bid_rate IS NOT NULL",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -935,7 +935,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE category = 'Cnstwk' AND bid_ntce_dt >= CURDATE() - INTERVAL 7 DAY",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE category = 'Cnstwk' AND bid_ntce_dt >= CURDATE() - INTERVAL 6 DAY",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -977,7 +977,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE bid_ntce_dt >= CURDATE() - INTERVAL 7 DAY",
+        "sql": "SELECT COUNT(*) FROM bid_announcements WHERE bid_ntce_dt >= CURDATE() - INTERVAL 6 DAY",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -998,7 +998,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 14 DAY",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 13 DAY",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [

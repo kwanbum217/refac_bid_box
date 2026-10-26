@@ -49,6 +49,7 @@ from src.rag.query_planning import (
     MAX_GROUP_LIMIT,
     REGION_ALIASES,
     RESULT_AMOUNT_FIELD,
+    _single_metric,
     collect_unapplied_result_conditions,
     is_result_amount_scope,
     unapplied_result_condition_notice,
@@ -977,7 +978,7 @@ def _resolve_institution_names(db: Session, column, institution_name: str) -> li
         .distinct()
         .limit(INSTITUTION_NAME_RESOLVE_LIMIT + 1)
     )
-    key = _stmt_cache_key("rag:inst:", stmt)
+    key = _stmt_cache_key("rag:inst:", stmt, db)
     cached = _timed_cache_get(key)
     if cached is None:
         with _flight_lock(key):
@@ -1090,14 +1091,48 @@ LIVE_OVERFETCH_FACTOR = 3
 AGGREGATE_CACHE_TTL = 60 * 60
 
 
-def _stmt_cache_key(prefix: str, stmt) -> str:
-    """리터럴을 채운 SQL 문자열의 해시를 키로 씁니다.
+def _dataset_identity(db: Session | Engine | None) -> str:
+    """캐시 키에 넣을 데이터셋 신원입니다.
+
+    같은 SQL 이라도 다른 DB 에서 계산한 값이 섞이지 않도록 방언, 호스트, 포트,
+    데이터베이스 이름을 넣습니다. 비밀번호와 사용자 이름은 넣지 않습니다.
+    세션이나 엔진이 아닌 대역(시험용 가짜 세션)은 구분할 신원이 없으므로 빈
+    문자열을 돌려줍니다.
+    """
+    if isinstance(db, Session):
+        try:
+            bind = db.get_bind()
+        except Exception:
+            return ""
+    elif isinstance(db, Engine):
+        bind = db
+    else:
+        return ""
+    url = getattr(bind, "url", None)
+    if url is None:
+        url = getattr(getattr(bind, "engine", None), "url", None)
+    if url is None:
+        return ""
+    return "|".join(
+        (
+            str(url.drivername),
+            str(url.host or ""),
+            "" if url.port is None else str(url.port),
+            str(url.database or ""),
+        )
+    )
+
+
+def _stmt_cache_key(prefix: str, stmt, db: Session | Engine | None = None) -> str:
+    """리터럴을 채운 SQL 문자열과 데이터셋 신원의 해시를 키로 씁니다.
 
     조건이 하나라도 다르면 다른 키가 되므로, 필터가 다른 질의가 서로의 값을
-    물려받는 사고가 없습니다.
+    물려받는 사고가 없습니다. 데이터셋 신원을 함께 넣어 시험·시드 DB 의 집계가
+    운영 Redis 의 같은 키를 채우지 않게 합니다.
     """
     compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-    return prefix + hashlib.sha256(compiled.encode("utf-8")).hexdigest()
+    identity = _dataset_identity(db)
+    return prefix + hashlib.sha256(f"{identity}\x00{compiled}".encode()).hexdigest()
 
 
 def _drop_corrupted(rows, limit: int) -> tuple[list, int]:
@@ -1183,7 +1218,7 @@ def _top_rows(
     # 없이는 매번 46~97초를 씁니다(2026-08-30 실측). 같은 창을 다시 묻는 일이
     # 잦으므로 캐시합니다.
     stmt = live_stmt.limit(limit * LIVE_OVERFETCH_FACTOR)
-    key = _stmt_cache_key("rag:top:", stmt)
+    key = _stmt_cache_key("rag:top:", stmt, db)
     cached_live = _timed_cache_get(key)
     if cached_live is not None:
         rows, dropped = cached_live
@@ -1240,7 +1275,7 @@ def _cached_aggregate(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list
     같습니다. 값이 없으면 그냥 DB 를 칩니다.
     키별 single-flight 로 동시 cold miss 가 같은 대규모 집계를 중복 실행하지 않게 합니다.
     """
-    key = _stmt_cache_key("rag:agg:", stmt)
+    key = _stmt_cache_key("rag:agg:", stmt, db)
 
     cached = _timed_cache_get(key)
     if cached is not None:
@@ -1269,7 +1304,7 @@ def _cached_rows(db: Session, stmt, ttl: int = AGGREGATE_CACHE_TTL) -> list[tupl
     한 번에 집계하는 경로는 이 함수로 같은 캐시 계층과 single-flight 를 씁니다.
     키 접두어가 달라 단일 행 캐시와 값이 섞이지 않습니다.
     """
-    key = _stmt_cache_key("rag:rows:", stmt)
+    key = _stmt_cache_key("rag:rows:", stmt, db)
 
     cached = _timed_cache_get(key)
     if cached is not None:
@@ -1823,9 +1858,7 @@ def _period_category_comparison_breakdown(
             if spec.get("date_from"):
                 conditions.append(BidAnnouncement.bid_ntce_dt >= spec["date_from"])
             if spec.get("date_to"):
-                conditions.append(
-                    BidAnnouncement.bid_ntce_dt <= spec["date_to"] + timedelta(days=1)
-                )
+                conditions.append(BidAnnouncement.bid_ntce_dt < spec["date_to"] + timedelta(days=1))
             if shared_category:
                 conditions.append(BidAnnouncement.category == shared_category)
         else:
@@ -1844,7 +1877,7 @@ def _period_category_comparison_breakdown(
             if spec.get("date_from"):
                 conditions.append(BidResult.rl_openg_dt >= spec["date_from"])
             if spec.get("date_to"):
-                conditions.append(BidResult.rl_openg_dt <= spec["date_to"] + timedelta(days=1))
+                conditions.append(BidResult.rl_openg_dt < spec["date_to"] + timedelta(days=1))
             if shared_category:
                 conditions.append(BidResult.category == shared_category)
         else:
@@ -2194,6 +2227,9 @@ def _select_recent_results(candidates: list[BidResult], limit: int) -> list[dict
     return recent
 
 
+SAMPLE_ANNOUNCEMENT_OVERFETCH_LIMIT = 60
+
+
 def _fetch_sample_announcements(
     db: Session,
     conditions: list,
@@ -2207,6 +2243,11 @@ def _fetch_sample_announcements(
     공고 목록 질의는 detailed 로 불러 공고일·마감일 같은 표 열을 함께 담습니다.
     detailed 가 아니면 기존 표본 3건과 키 구성이 그대로 유지됩니다.
     정렬 표지가 없으면 기존 공고일 내림차순을 유지합니다.
+
+    같은 공고번호의 정정·안내 행이 목록 개수를 잡아먹지 않도록 공고번호마다
+    첫 등장 행만 남깁니다. 정렬 순서를 그대로 따르므로 기본 공고일 내림차순에서는
+    가장 최신 행이 남습니다. 중복 행을 건너뛸 여유를 두려고 limit 보다 넉넉히
+    조회하되 상한을 두고, 그래도 모자라면 있는 만큼만 돌려줍니다.
     """
     columns: list[Any] = [
         BidAnnouncement.bid_ntce_no,
@@ -2227,10 +2268,16 @@ def _fetch_sample_announcements(
         select(*columns)
         .where(*conditions)
         .order_by(*_announcement_order_by(filters or {}))
-        .limit(limit)
+        .limit(min(limit * LIVE_OVERFETCH_FACTOR, SAMPLE_ANNOUNCEMENT_OVERFETCH_LIMIT))
     ).all()
     samples: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for row in rows:
+        if len(samples) >= limit:
+            break
+        if row[0] in seen:
+            continue
+        seen.add(row[0])
         sample: dict[str, Any] = {
             "bid_ntce_no": row[0],
             # 표본은 순위와 달리 건너뛸 수 없으므로 화면과 같은 안내 문구로 대체합니다.
@@ -2919,6 +2966,23 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         announcement_names = _resolve_institution_scope_names(
             db, BidAnnouncement.dminstt_nm, institution_name, institution_aliases
         )
+        if (
+            institution_name
+            and result_names == []
+            and announcement_names == []
+            and _single_metric(_normalize_text(plan.semantic_query).lower())
+            and not _result_limit(plan)
+            and not _announcement_limit(plan)
+            and not _normalize_text(str(filters.get("group_by") or ""))
+            and filters.get("analysis_mode") != "trend"
+        ):
+            # 카탈로그에서 확인하지 못한 기관명을 0건이라는 측정값처럼 내지
+            # 않습니다. 전체 값으로 넓히지도 않고 기존 미해석 안내를 냅니다.
+            return _empty_result(
+                plan,
+                "요청한 기관명을 데이터에서 확인하지 못해 조회 대상을 확정하지 못했습니다. "
+                "기관명을 다시 확인해 주세요.",
+            )
     # 해석 상한 초과(None)는 이름 목록 대신 부분 일치 OR 조건으로 넘깁니다.
     result_names_arg = None if result_name_fallbacks else result_names
     announcement_names_arg = None if announcement_name_fallbacks else announcement_names

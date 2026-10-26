@@ -45,6 +45,7 @@ from src.app.services.planner_intent_signals import (
     _extract_followup_region,
     _extract_prediction_limit,
     _extract_prediction_model_id,
+    _has_amount_extreme_intent,
     _has_collection_command,
     _has_collection_context_only,
     _has_kb_refresh_intent,
@@ -326,12 +327,36 @@ def compile_plan(execution_plan: ChatExecutionPlan) -> ChatPlan:
     return _default_answer_plan("knowledge_query", "fallback interpretation")
 
 
+def _route_amount_extreme_request(
+    execution_plan: ChatExecutionPlan,
+) -> ChatExecutionPlan:
+    """공고 금액 최댓값·최솟값 질의를 기본 의미 검색 대신 정형 조회로 보냅니다.
+
+    해석기가 기본 의미 검색만 고른 경우에만 도구를 바꿉니다. 범위 밖 거절, 데이터
+    공백, 예측·상태·목록처럼 이미 다른 도구를 고른 계획은 그대로 둡니다. 실제 SQL
+    조건은 bid_query_tool 이 질의를 다시 계획하면서 채웁니다.
+    """
+    if execution_plan.query_type != "answer":
+        return execution_plan
+    if execution_plan.requested_capabilities != ["semantic_search_tool"]:
+        return execution_plan
+    if not _has_amount_extreme_intent(execution_plan.effective_query):
+        return execution_plan
+    execution_plan.requested_capabilities = ["bid_query_tool"]
+    execution_plan.parameters.update(
+        _extract_bid_query_params(execution_plan.effective_query, execution_plan.filters)
+    )
+    execution_plan.reasoning = "announcement amount extreme request"
+    return execution_plan
+
+
 def plan_chat_request(message: str, context_state: dict[str, Any] | None = None) -> ChatPlan:
     """
     외부에서 호출하는 메인 엔트리 포인트.
     1단계(해석)와 2단계(컴파일)를 거쳐 실행 계획을 반환한다.
     """
     execution_plan = interpret_request(message, context_state)
+    execution_plan = _route_amount_extreme_request(execution_plan)
     return compile_plan(execution_plan)
 
 
@@ -371,6 +396,7 @@ __all__ = [
     "_extract_followup_region",
     "_extract_prediction_limit",
     "_extract_prediction_model_id",
+    "_has_amount_extreme_intent",
     "_has_collection_command",
     "_has_collection_context_only",
     "_has_kb_refresh_intent",
@@ -382,6 +408,7 @@ __all__ = [
     "_load_last_plan",
     "_load_last_tool_results",
     "_request_llm_plan_draft",
+    "_route_amount_extreme_request",
     "_select_action",
     "_should_try_llm_plan_draft",
     "_step",

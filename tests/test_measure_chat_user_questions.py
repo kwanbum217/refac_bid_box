@@ -947,6 +947,70 @@ def test_numeric_fact_question_numbers_are_still_subtracted() -> None:
     assert result["detail"]["candidate_numbers"] == [3405.0]
 
 
+def test_answer_numbers_exclude_kb_status_block() -> None:
+    # KB 색인 블록의 문서 수·임베딩 소수부·파이프라인 ID 는 집계 값이 아니다.
+    answer = (
+        "집계 결과가 없습니다.\n\n"
+        "KB 색인 상태:\n"
+        "- 색인된 원본 문서 수: `550847`건\n"
+        "- 마지막 임베딩: `2026-10-24T22:51:51.156789`\n"
+        "- 마지막 파이프라인 실행 ID: `development_data_refresh-39244d2b0bbc`"
+    )
+    assert measure.extract_answer_numbers(answer) == []
+
+
+def test_kb_status_block_does_not_hide_body_value() -> None:
+    # KB 블록을 지워도 그 앞의 정상 집계값은 후보에 남아야 한다.
+    answer = "낙찰은 42건입니다.\n\nKB 색인 상태:\n- 색인된 원본 문서 수: `550847`건"
+    assert measure.extract_answer_numbers(answer) == [42.0]
+
+
+def test_answer_numbers_exclude_table_row_numbers_but_keep_amounts() -> None:
+    # 마크다운 표의 첫 셀이 순수 숫자이면 행 번호다. 같은 행의 금액은 남는다.
+    answer = (
+        "| 순번 | 공고명 | 금액 |\n"
+        "| ---: | --- | --- |\n"
+        "| 1 | 공고 A | 136,912,000원 |\n"
+        "| 2 | 공고 B | 273,271,059원 |\n"
+    )
+    assert measure.extract_answer_numbers(answer) == [136912000.0, 273271059.0]
+
+
+def test_answer_numbers_exclude_citation_marker() -> None:
+    assert measure.extract_answer_numbers("정답은 540,909,091원입니다 [4].") == [540909091.0]
+
+
+def test_answer_numbers_exclude_legacy_bid_number_in_parentheses() -> None:
+    # 문자 접두가 없는 구 형식 공고ID 는 괄호 안 순수 숫자로 가린다.
+    # 기존 공고번호 가림은 그대로다.
+    assert measure.extract_answer_numbers("공고 (20221244574) 낙찰은 42건입니다.") == [42.0]
+    assert measure.extract_answer_numbers("공고 (R26BK01788962) 낙찰은 42건입니다.") == [42.0]
+
+
+def test_answer_numbers_exclude_academic_year_label() -> None:
+    assert measure.extract_answer_numbers("2023학년도 입학생은 1,200명입니다.") == [1200.0]
+    assert measure.extract_answer_numbers("2023년도 예산은 5,000원입니다.") == [5000.0]
+
+
+def test_question_numbers_use_same_contamination_mask() -> None:
+    # 질문 쪽에도 같은 마스킹을 적용한다. 학년도/년도 라벨만 가리고
+    # "2023년" 처럼 학년도·년도가 아닌 연도는 기존 규칙대로 남긴다.
+    assert measure.extract_question_numbers("최근 30일 용역 낙찰 몇 건이야?") == [30.0]
+    assert measure.extract_question_numbers("2023학년도 입학생 알려줘") == []
+    assert measure.extract_question_numbers("2023년 공고 알려줘") == [2023.0]
+
+
+def test_numeric_fact_no_longer_passes_on_table_row_number() -> None:
+    # 행 번호만 있는 표 답변이 DB 값 1 과 우연히 같아 통과하던 가짜 통과를 막는다.
+    result = measure.grade_attempt(
+        _numeric_item("이번 달 용역 낙찰 몇 건이야?"),
+        _numeric_truth(1.0),
+        _payload("| 1 | 공고 A |\n| 2 | 공고 B |"),
+    )
+    assert result["passed"] is False
+    assert result["detail"]["candidate_numbers"] == []
+
+
 def _winner_ranking_item(item_id: str) -> dict[str, Any]:
     item = _fixture_item(item_id)
     assert item["check"]["type"] == "winner_ranking"
