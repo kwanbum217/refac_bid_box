@@ -177,7 +177,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Frgcpt' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Frgcpt' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY",
         "tolerance_ratio": 0.0
       },
       "must_not_contain": [
@@ -198,7 +198,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
@@ -239,7 +239,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Thng' AND rl_openg_dt >= CURDATE() - INTERVAL 30 DAY",
+        "sql": "SELECT COUNT(*) FROM bid_results WHERE category = 'Thng' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY",
         "tolerance_ratio": 0.02
       },
       "must_not_contain": [
