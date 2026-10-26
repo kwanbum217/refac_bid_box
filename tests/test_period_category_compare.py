@@ -409,6 +409,29 @@ def test_month_comparison_announcement_counts(isolated_db):
     assert "1건 많습니다" in answer
 
 
+def test_spaced_last_month_comparison_counts_each_month(isolated_db):
+    """띄어 쓴 지난 달도 기간 비교로 판정하고 각자의 월 창에서 셉니다."""
+    _seed_period_category_rows(isolated_db)
+    _seed_comparison_extra_rows(isolated_db)
+
+    query = "이번 달 대비 지난 달 공사 공고 건수"
+    assert _extract_comparison_targets(query) == ([], [])
+
+    plan = build_retrieval_plan(query)
+    filters = plan.filters
+
+    assert filters.get("comparison_dimension") == "time"
+    assert [target["key"] for target in filters["comparison_targets"]] == ["2026-10", "2026-09"]
+    assert filters.get("category") == "Cnstwk"
+
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    # 이번 달(2026-10-01~10-25) 공사 공고 0건, 지난 달(2026-09) 1건입니다.
+    assert entries["2026-10"]["announcement_count"] == 0
+    assert entries["2026-09"]["announcement_count"] == 1
+
+
 def test_year_comparison_bid_counts(isolated_db):
     """연도 두 개의 낙찰 건수를 각자의 연 창에서 직접 센 값과 같게 냅니다."""
     _seed_period_category_rows(isolated_db)
@@ -563,6 +586,25 @@ def test_region_and_period_comparison_counts_only_that_region(isolated_db):
     assert "부산 범위에서 두 대상을 같은 지표로 집계했습니다." in answer
 
 
+def test_region_and_period_comparison_matches_single_period_counts(isolated_db):
+    """부산 기간 비교의 각 대상 값이 같은 범위의 단일 기간 질문 값과 같습니다."""
+    _seed_scoped_comparison_rows(isolated_db)
+
+    plan = build_retrieval_plan("부산 작년 대비 올해 공고 건수")
+    assert plan.filters.get("institution_name") == "부산"
+    assert plan.filters.get("institution_aliases") == ["부산"]
+
+    result = retrieve_structured_data(isolated_db, plan)
+    entries = _comparison_map(result["summary"])
+
+    for key, single_query in (
+        ("2025", "부산 2025년 공고 건수"),
+        ("2026", "부산 2026년 공고 건수"),
+    ):
+        single_result = retrieve_structured_data(isolated_db, build_retrieval_plan(single_query))
+        assert entries[key]["announcement_count"] == single_result["summary"]["announcement_count"]
+
+
 def test_unresolved_institution_comparison_does_not_widen_to_all(isolated_db):
     """해석되지 않은 기관은 전체로 넓히지 않고 기존 안내를 냅니다."""
     _seed_scoped_comparison_rows(isolated_db)
@@ -572,6 +614,20 @@ def test_unresolved_institution_comparison_does_not_widen_to_all(isolated_db):
 
     assert result["query_skipped"] is True
     assert result["summary"]["announcement_count"] is None
+    assert any("확정하지 못했습니다" in hint for hint in result["insufficiency_hints"])
+
+
+def test_unresolved_corporation_comparison_does_not_widen_to_all(isolated_db):
+    """기관명을 해석하지 못한 공기업 모양 후보도 전체 기관 값으로 넓히지 않습니다."""
+    _seed_scoped_comparison_rows(isolated_db)
+
+    plan = build_retrieval_plan("없는기관공사 작년 대비 올해 공고 건수")
+    result = retrieve_structured_data(isolated_db, plan)
+
+    assert plan.filters.get("institution_name") == "없는기관공사"
+    assert result["query_skipped"] is True
+    assert result["summary"]["announcement_count"] is None
+    assert "comparison" not in result["summary"]
     assert any("확정하지 못했습니다" in hint for hint in result["insufficiency_hints"])
 
 

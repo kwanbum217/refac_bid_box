@@ -807,7 +807,7 @@ COMPARISON_PERIOD_PATTERN = re.compile(
     r"(?P<jaeyear>재작년)|"
     r"(?P<lastyear>작년|지난해|지난\s*해|전년)|"
     r"(?P<thisyear>올해|금년|이번\s*해)|"
-    r"(?P<lastmonth>지난달)|"
+    r"(?P<lastmonth>지난\s*달)|"
     r"(?P<thismonth>이번\s*달|이번달|이번\s*월)|"
     r"(?P<lastquarter>지난\s*분기)|"
     r"(?P<thisquarter>이번\s*분기)|"
@@ -815,7 +815,7 @@ COMPARISON_PERIOD_PATTERN = re.compile(
 )
 COMPARISON_PERIOD_TOKEN_PATTERN = re.compile(
     r"^(?:재작년|작년|지난해|지난\s*해|전년|올해|금년|이번\s*해|"
-    r"이번\s*달|이번달|이번\s*월|지난달|지난\s*분기|이번\s*분기|\d{4}\s*년)$"
+    r"이번\s*달|이번달|이번\s*월|지난\s*달|지난\s*분기|이번\s*분기|\d{4}\s*년)$"
 )
 # "공사" 는 공기업 이름(한국전력공사)의 일부로도 흔히 나옵니다. 낱말 경계와
 # 뒤따르는 조사·연결어를 함께 요구해 이름 속 글자를 분야어로 읽지 않습니다.
@@ -1027,6 +1027,32 @@ def _comparison_category_targets(query: str) -> list[dict[str, Any]]:
     if len(set(keys)) != 2:
         return []
     return [{"key": key, "label": _category_label(key)} for key in keys]
+
+
+COMPARISON_INSTITUTION_UNRESOLVED_SUFFIXES = ("공사", "공단")
+
+
+def _comparison_unresolved_institution_candidate(query: str) -> str:
+    """기간 비교에서 해석되지 않은 기관 후보 낱말을 찾습니다.
+
+    기간 표현·분야어·지표어는 기관 후보가 아니며, "공사" 한 낱말도 분야어이므로
+    제외합니다. 공기업·공단 이름 모양의 낱말이 남으면 그 이름을 공통 기관 조건으로
+    써서 전체 기관 값으로 조용히 넓어지지 않게 합니다.
+    """
+    normalized = _normalize_text(query)
+    for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized):
+        cleaned = _strip_institution_particle(token)
+        if len(cleaned) <= 2:
+            continue
+        if COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(cleaned):
+            continue
+        if cleaned in COMPARISON_CATEGORY_TOKENS:
+            continue
+        if cleaned in NON_INSTITUTION_TERMS or cleaned.endswith(NON_INSTITUTION_SUFFIXES):
+            continue
+        if cleaned.endswith(COMPARISON_INSTITUTION_UNRESOLVED_SUFFIXES):
+            return cleaned
+    return ""
 
 
 def _normalize_comparison_target(text: str) -> tuple[str, str] | None:
@@ -1961,9 +1987,20 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         if comparison_dimension == "time":
             shared_scope = extract_institution_scope(normalized_query)
             shared_name = _normalize_text(str(shared_scope.get("institution_name") or ""))
+            if not shared_name:
+                # 기관명을 해석하지 못했다고 전체 기관 값으로 넓히지 않습니다. 기관
+                # 후보 낱말을 공통 조건으로 남겨 비교 아닌 같은 질문과 같은 결과를 냅니다.
+                shared_name = _comparison_unresolved_institution_candidate(normalized_query)
             if shared_name:
                 filters["institution_name"] = shared_name
                 shared_aliases = shared_scope.get("institution_aliases")
+                # 광역 지역명은 비교 아닌 질문과 같은 이름·별칭 조건을 씁니다.
+                if (
+                    not shared_aliases
+                    and _is_broad_region_name(shared_name)
+                    and shared_name not in OFFICIAL_PROVINCE_NAMES
+                ):
+                    shared_aliases = REGION_ALIASES.get(_match_comparison_region(shared_name), ())
                 if shared_aliases:
                     filters["institution_aliases"] = list(shared_aliases)
     elif comparison_regions:
