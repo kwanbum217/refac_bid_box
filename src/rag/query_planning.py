@@ -2108,6 +2108,31 @@ def is_result_list_query(query: str) -> bool:
 
 
 ANNOUNCEMENT_FRESHNESS_MARKERS = ("올라온", "등록된", "게시된", "나온", "들어온", "신규", "최신")
+# af5c9036 에서 더한 신선도 표지입니다. '나온'·'들어온' 은 "공고가 나온 이유" 처럼
+# 사건이나 문맥을 가리키는 설명형 질의에도 등장하므로, 이 표지만으로 목록 판정이
+# 켜질 때는 설명형 표지를 함께 확인합니다. 기존 표지(올라온·등록된·게시된·신규·
+# 최신)의 목록 판정은 건드리지 않습니다.
+ANNOUNCEMENT_ADDED_FRESHNESS_MARKERS = ("나온", "들어온")
+ANNOUNCEMENT_LEGACY_FRESHNESS_MARKERS = tuple(
+    marker
+    for marker in ANNOUNCEMENT_FRESHNESS_MARKERS
+    if marker not in ANNOUNCEMENT_ADDED_FRESHNESS_MARKERS
+)
+ANNOUNCEMENT_EXPLANATORY_FRESHNESS_MARKERS = (
+    "이유",
+    "왜",
+    "정의",
+    "의미",
+    "뜻",
+    "관계",
+    "차이",
+    "원인",
+    "설명",
+    "개념",
+    "무엇",
+    "뭐야",
+    "어떻게",
+)
 # 공고번호·공고명은 필드 이름입니다. 필드 이름이 질의 앞에 오면 '공고' 뒤를 보는
 # 부정 전방 탐색이 거르지 못하므로 목록 판정 전체에서 먼저 배제합니다.
 ANNOUNCEMENT_FIELD_MARKER_PATTERN = re.compile(r"공고\s*(?:번호|명)")
@@ -2156,6 +2181,21 @@ def _has_announcement_list_scope(lowered: str) -> bool:
     return any(marker in lowered for marker in ANNOUNCEMENT_FRESHNESS_MARKERS)
 
 
+def _is_explanatory_added_freshness_query(lowered: str) -> bool:
+    """'나온'·'들어온' 만으로 목록 판정이 켜진 설명형 질의인지 판정합니다.
+
+    "공고가 나온 이유", "나온 공고의 정의를 말해줘", "공고가 나온 것과 기한 사이의
+    관계" 는 공고 목록 요청이 아니라 사건의 배경이나 개념을 묻는 질의입니다.
+    기존 신선도 표지(올라온·등록된·게시된·신규·최신)가 함께 있으면 기존 판정을
+    그대로 두고, af5c9036 에서 더한 표지만 있을 때 설명형 표지를 확인합니다.
+    """
+    if not any(marker in lowered for marker in ANNOUNCEMENT_ADDED_FRESHNESS_MARKERS):
+        return False
+    if any(marker in lowered for marker in ANNOUNCEMENT_LEGACY_FRESHNESS_MARKERS):
+        return False
+    return any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATORY_FRESHNESS_MARKERS)
+
+
 def is_announcement_list_query(query: str) -> bool:
     """낙찰 표지 없이 공고 자체를 개별 목록으로 요청하는 질의인지 판정합니다.
 
@@ -2196,6 +2236,8 @@ def is_announcement_list_query(query: str) -> bool:
         return True
     if _condition_list_scope(query) == CONDITION_LIST_SCOPE_ANNOUNCEMENT:
         return not is_entity_specific_query(query)
+    if _is_explanatory_added_freshness_query(lowered):
+        return False
     if not _has_announcement_list_scope(lowered):
         return False
     # 신선도 표지만 있는 경로는 범위가 없는 전체 최신 목록입니다. 기관명을

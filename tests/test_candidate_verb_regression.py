@@ -12,7 +12,7 @@ from datetime import date
 import pytest
 
 from src.rag import query_planning
-from src.rag.query_planning import build_retrieval_plan
+from src.rag.query_planning import build_retrieval_plan, is_announcement_list_query
 
 # 기간 창과 마감 창이 2026-10-26 에 고정되도록 기준일을 고정합니다.
 _TODAY = date(2026, 10, 26)
@@ -158,3 +158,38 @@ def test_unknown_institution_candidate_still_goes_to_unresolved_path():
     plan = build_retrieval_plan("없는기관진흥원 올해 공고 건수")
 
     assert plan.filters.get("institution_name") == "없는기관진흥원"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "공고가 나온 이유",
+        "공고가 나온 이유는?",
+        "나온 공고의 정의를 말해줘",
+        "공고가 나온 것과 기한 사이의 관계",
+    ],
+)
+def test_explanatory_query_with_added_freshness_marker_stays_on_llm_path(query: str):
+    """'나온'·'들어온' 만으로는 설명형 질의를 목록 경로로 보내지 않습니다."""
+    assert is_announcement_list_query(query) is False
+
+    plan = build_retrieval_plan(query)
+    assert plan.use_sql is False
+    assert "announcement_limit" not in plan.filters
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "오늘 나온 공사 공고 보여줘",
+        "나온 공고 찾아줘",
+        "들어온 공고 알려줘",
+    ],
+)
+def test_added_freshness_marker_list_query_stays_on_list_path(query: str):
+    """'나온'·'들어온' 이 목록 범위를 정하는 질의는 목록 경로를 유지합니다."""
+    assert is_announcement_list_query(query) is True
+
+    plan = build_retrieval_plan(query)
+    assert plan.use_sql is True
+    assert plan.filters.get("announcement_limit") == 5
