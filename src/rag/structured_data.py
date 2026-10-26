@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Integer, case, event, func, or_, select
+from sqlalchemy import Integer, and_, case, event, func, or_, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -1651,6 +1651,228 @@ def _comparison_result(
     }
 
 
+def _period_category_comparison_breakdown(
+    db: Session,
+    plan: RetrievalPlan,
+    targets: list[dict[str, Any]],
+    *,
+    dimension: str,
+) -> list[dict[str, Any]]:
+    """기간·분류 비교의 대상별 지표를 실시간으로 집계합니다.
+
+    기간 비교는 대상마다 다른 공고일·개찰일 창을 쓰고, 분류 비교는 대상마다
+    분야 코드를 씁니다. 스냅샷은 기간·분류 조합을 미리 갖고 있지 않으므로
+    쓰지 않습니다.
+    """
+    filters = plan.filters or {}
+    shared_category = _normalize_text(str(filters.get("category") or ""))
+    shared_from, shared_to = _resolve_window(filters)
+    # "한국전력공사 작년 대비 올해", "부산 작년 대비 올해" 처럼 기관·지역 하나가
+    # 기간 비교와 섞이면 그 범위를 두 대상 모두에 공통으로 겁니다. 이 조건을
+    # 빠뜨리면 대상별 값이 전체 기관 기준으로 조용히 넓어집니다.
+    shared_institution = _normalize_text(str(filters.get("institution_name") or ""))
+    shared_aliases = _institution_aliases(filters)
+    shared_scope = bool(shared_institution or shared_aliases)
+    announcement_scope_names = (
+        _resolve_institution_scope_names(
+            db, BidAnnouncement.dminstt_nm, shared_institution, shared_aliases
+        )
+        if shared_scope
+        else None
+    )
+    result_scope_names = (
+        _resolve_institution_scope_names(
+            db, BidResult.dminstt_nm, shared_institution, shared_aliases
+        )
+        if shared_scope
+        else None
+    )
+
+    def _shared_scope_condition(column, names: list[str] | None):
+        """공통 기관·지역 조건을 만듭니다. 해석 결과가 없으면 0건으로 좁힙니다."""
+        if not shared_scope:
+            return None
+        if names is None:
+            terms = [term for term in (shared_institution, *shared_aliases) if term]
+            return or_(*[column.contains(term) for term in terms])
+        return column.in_(names)
+
+    announcement_scope_condition = _shared_scope_condition(
+        BidAnnouncement.dminstt_nm, announcement_scope_names
+    )
+    result_scope_condition = _shared_scope_condition(BidResult.dminstt_nm, result_scope_names)
+
+    specs: list[dict[str, Any]] = []
+    for item in targets:
+        key = _normalize_text(str(item.get("key") or ""))
+        label = _normalize_text(str(item.get("label") or "")) or key
+        spec: dict[str, Any] = {"key": key, "label": label}
+        if dimension == "time":
+            spec["date_from"] = _parse_date(str(item.get("date_from") or ""), "date_from")
+            spec["date_to"] = _parse_date(str(item.get("date_to") or ""), "date_to")
+        specs.append(spec)
+
+    def _announcement_conditions_for(spec: dict[str, Any]) -> list:
+        conditions = []
+        if dimension == "time":
+            if spec.get("date_from"):
+                conditions.append(BidAnnouncement.bid_ntce_dt >= spec["date_from"])
+            if spec.get("date_to"):
+                conditions.append(
+                    BidAnnouncement.bid_ntce_dt <= spec["date_to"] + timedelta(days=1)
+                )
+            if shared_category:
+                conditions.append(BidAnnouncement.category == shared_category)
+        else:
+            conditions.append(BidAnnouncement.category == spec["key"])
+            if shared_from:
+                conditions.append(BidAnnouncement.bid_ntce_dt >= shared_from)
+            if shared_to:
+                conditions.append(BidAnnouncement.bid_ntce_dt <= shared_to + timedelta(days=1))
+        if announcement_scope_condition is not None:
+            conditions.append(announcement_scope_condition)
+        return conditions
+
+    def _result_conditions_for(spec: dict[str, Any]) -> list:
+        conditions = []
+        if dimension == "time":
+            if spec.get("date_from"):
+                conditions.append(BidResult.rl_openg_dt >= spec["date_from"])
+            if spec.get("date_to"):
+                conditions.append(BidResult.rl_openg_dt <= spec["date_to"] + timedelta(days=1))
+            if shared_category:
+                conditions.append(BidResult.category == shared_category)
+        else:
+            conditions.append(BidResult.category == spec["key"])
+            if shared_from:
+                conditions.append(BidResult.rl_openg_dt >= shared_from)
+            if shared_to:
+                conditions.append(BidResult.rl_openg_dt <= shared_to + timedelta(days=1))
+        if result_scope_condition is not None:
+            conditions.append(result_scope_condition)
+        return conditions
+
+    announcement_conditions = [_announcement_conditions_for(spec) for spec in specs]
+    announcement_expr = case(
+        *[
+            (and_(*conditions), spec["key"])
+            for spec, conditions in zip(specs, announcement_conditions, strict=True)
+        ],
+        else_=None,
+    )
+    announcement_stmt = (
+        select(announcement_expr, func.count())
+        .where(or_(*[and_(*conditions) for conditions in announcement_conditions]))
+        .group_by(announcement_expr)
+    )
+    announcement_counts: dict[str, int] = {}
+    for key, count in _cached_rows(db, announcement_stmt):
+        if key:
+            announcement_counts[str(key)] = int(count or 0)
+
+    result_conditions = [_result_conditions_for(spec) for spec in specs]
+    result_expr = case(
+        *[
+            (and_(*conditions), spec["key"])
+            for spec, conditions in zip(specs, result_conditions, strict=True)
+        ],
+        else_=None,
+    )
+    result_stmt = (
+        select(
+            result_expr,
+            func.count(),
+            func.avg(BidResult.sucsf_bid_rate),
+            func.count(BidResult.sucsf_bid_rate),
+        )
+        .where(or_(*[and_(*conditions) for conditions in result_conditions]))
+        .group_by(result_expr)
+    )
+    result_stats: dict[str, tuple[int, Any, int]] = {}
+    for key, count, rate_value, sample_count in _cached_rows(db, result_stmt):
+        if key:
+            result_stats[str(key)] = (int(count or 0), rate_value, int(sample_count or 0))
+
+    entries: list[dict[str, Any]] = []
+    for spec in specs:
+        key = str(spec["key"])
+        bid_count, rate_value, sample_count = result_stats.get(key, (0, None, 0))
+        entries.append(
+            _axis_entry(
+                str(spec["label"]),
+                key,
+                announcement_count=announcement_counts.get(key, 0),
+                bid_count=bid_count,
+                avg_rate=_axis_rate(rate_value, sample_count),
+                sample_count=sample_count,
+            )
+        )
+    return entries
+
+
+def _period_category_comparison_result(
+    db: Session,
+    plan: RetrievalPlan,
+    targets: list[dict[str, Any]],
+    *,
+    dimension: str,
+) -> dict[str, Any]:
+    """기간·분류 비교 응답을 기존 comparison 키 모양으로 만듭니다."""
+    filters = dict(plan.filters or {})
+    shared_institution = _normalize_text(str(filters.get("institution_name") or ""))
+    shared_aliases = _institution_aliases(filters)
+    if shared_institution or shared_aliases:
+        # 기관명을 하나도 확정하지 못하면 전체 기관 통계로 넓히지 않고
+        # 기존 미해석 기관 안내를 그대로 냅니다.
+        announcement_names = _resolve_institution_scope_names(
+            db, BidAnnouncement.dminstt_nm, shared_institution, shared_aliases
+        )
+        result_names = _resolve_institution_scope_names(
+            db, BidResult.dminstt_nm, shared_institution, shared_aliases
+        )
+        if announcement_names == [] and result_names == []:
+            return _empty_result(
+                plan,
+                "요청한 기관명을 데이터에서 확인하지 못해 비교 대상을 확정하지 못했습니다. "
+                "기관명을 다시 확인해 주세요.",
+            )
+    comparison_plan = plan
+    if dimension == "category" and (plan.filters or {}).get("category"):
+        # bid_query_tool 은 플래너가 고른 분야 하나를 파라미터로 다시 더합니다.
+        # 분류 비교에서는 두 분야가 대상이므로 그 단일 조건을 응답 필터에서 뺍니다.
+        filters.pop("category", None)
+        comparison_plan = plan.model_copy(update={"filters": filters})
+    result = _comparison_result(
+        comparison_plan,
+        _period_category_comparison_breakdown(db, comparison_plan, targets, dimension=dimension),
+        dimension=dimension,
+    )
+    if dimension == "time":
+        periods: list[dict[str, Any]] = []
+        for item in targets:
+            start = _parse_date(str(item.get("date_from") or ""), "date_from")
+            end = _parse_date(str(item.get("date_to") or ""), "date_to")
+            days = (end.date() - start.date()).days + 1 if start and end else 0
+            periods.append(
+                {
+                    "key": str(item.get("key") or ""),
+                    "label": str(item.get("label") or ""),
+                    "date_from": str(item.get("date_from") or ""),
+                    "date_to": str(item.get("date_to") or ""),
+                    "ongoing": bool(item.get("ongoing")),
+                    "days": days,
+                }
+            )
+        result["summary"]["comparison_meta"]["periods"] = periods
+    comparison_meta = result["summary"]["comparison_meta"]
+    if shared_institution:
+        comparison_meta["scope"] = {"institution_name": shared_institution}
+    shared_category = _normalize_text(str(filters.get("category") or ""))
+    if shared_category:
+        comparison_meta.setdefault("scope", {})["category"] = shared_category
+    return result
+
+
 # 서로 기다리지 않는 집계 다섯 개를 순차로 돌면 q08 콜드에서 SQL 합계 약 4.9초였고 가장 긴 문장은 1.9초였습니다
 # (2026-09-13). 프로세스 전체에서 스레드를 넷으로 묶어 추가 연결이 요청 수에 비례해 늘지 않게 합니다
 # (연결 풀 10+20). 붐비면 대기열에서 기다리므로 순차 실행보다 느려지지는 않습니다.
@@ -2318,6 +2540,20 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             plan,
             _comparison_breakdown(db, plan, region_specs, dimension="region"),
             dimension="region",
+        )
+
+    period_category_dimension = _normalize_text(str(filters.get("comparison_dimension") or ""))
+    period_category_targets = filters.get("comparison_targets")
+    if (
+        period_category_dimension in ("time", "category")
+        and isinstance(period_category_targets, list)
+        and len(period_category_targets) == 2
+    ):
+        return _period_category_comparison_result(
+            db,
+            plan,
+            period_category_targets,
+            dimension=period_category_dimension,
         )
 
     comparison_metric = _normalize_text(str(filters.get("metric") or ""))

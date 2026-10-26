@@ -488,7 +488,78 @@ def _build_series_answer(
 COMPARISON_DIMENSION_LABELS = {
     "region": "지역",
     "institution": "기관",
+    "time": "기간",
+    "category": "분류",
 }
+
+
+def _format_period_date(iso: str) -> str:
+    match = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", str(iso or ""))
+    if not match:
+        return str(iso or "")
+    return f"{int(match.group(1))}년 {int(match.group(2))}월 {int(match.group(3))}일"
+
+
+def _format_comparison_difference(rows: list[dict], metric: str, dimension: str) -> str:
+    """기간·분류 비교의 두 대상 차이를 한 줄로 만듭니다.
+
+    지역·기관 비교 출력은 기존 계약을 바꾸지 않도록 건드리지 않습니다.
+    """
+    if dimension not in ("time", "category") or len(rows) < 2:
+        return ""
+    first, second = rows[0], rows[1]
+    first_label = _markdown_result_cell(first.get("label"))
+    second_label = _markdown_result_cell(second.get("label"))
+    first_value = first.get(metric)
+    second_value = second.get(metric)
+    if first_value is None or second_value is None:
+        return ""
+    try:
+        if metric == "avg_rate":
+            diff = float(second_value) - float(first_value)
+            if abs(diff) < 0.005:
+                return f"{second_label}와 {first_label}의 평균 낙찰률은 같습니다."
+            direction = "높습니다" if diff > 0 else "낮습니다"
+            return f"{second_label}이(가) {first_label}보다 {abs(diff):.2f}%p {direction}."
+        diff = int(second_value) - int(first_value)
+    except (TypeError, ValueError):
+        return ""
+    if diff == 0:
+        return f"{second_label}와 {first_label}의 값은 같습니다."
+    direction = "많습니다" if diff > 0 else "적습니다"
+    return f"{second_label}이(가) {first_label}보다 {abs(diff):,}건 {direction}."
+
+
+def _format_comparison_scope(meta: dict) -> str:
+    """비교 대상 전체에 걸린 기관·지역 조건을 한 줄로 밝힙니다."""
+    scope = meta.get("scope")
+    if not isinstance(scope, dict):
+        return ""
+    institution_name = _normalize_text(str(scope.get("institution_name") or ""))
+    if not institution_name:
+        return ""
+    return f"{institution_name} 범위에서 두 대상을 같은 지표로 집계했습니다."
+
+
+def _format_period_length_note(meta: dict) -> str:
+    """기간 비교에서 한쪽이 진행 중이거나 길이가 다르면 그 사실을 밝힙니다."""
+    if str(meta.get("dimension") or "") != "time":
+        return ""
+    periods = meta.get("periods") or []
+    if len(periods) != 2:
+        return ""
+    ongoing = [period for period in periods if period.get("ongoing")]
+    if ongoing:
+        labels = ", ".join(str(period.get("label") or "") for period in ongoing)
+        ends = sorted(_format_period_date(str(period.get("date_to") or "")) for period in ongoing)
+        return f"{labels}은(는) {ends[-1]}까지 집계된 진행 중 기간이라 상대 기간과 길이가 다릅니다."
+    days = {int(period.get("days") or 0) for period in periods}
+    if len(days) > 1:
+        detail = ", ".join(
+            f"{period.get('label')} {int(period.get('days') or 0)}일" for period in periods
+        )
+        return f"두 기간의 길이가 다릅니다({detail})."
+    return ""
 
 
 def _build_comparison_answer(
@@ -512,17 +583,28 @@ def _build_comparison_answer(
 
     dimension_label = COMPARISON_DIMENSION_LABELS[dimension]
     metric_label = METRIC_LABELS[metric]
-    lines = [
-        f"{dimension_label}별 {metric_label} 비교입니다.",
-        "",
-        f"| {dimension_label} | {metric_label} |",
-        "| --- | ---: |",
-    ]
+    lines = [f"{dimension_label}별 {metric_label} 비교입니다."]
+    scope_note = _format_comparison_scope(meta)
+    if scope_note:
+        lines.append(scope_note)
+    lines.extend(
+        [
+            "",
+            f"| {dimension_label} | {metric_label} |",
+            "| --- | ---: |",
+        ]
+    )
     for item in rows:
         lines.append(
             f"| {_markdown_result_cell(item.get('label'))} | "
             f"{_format_axis_value(metric, item.get(metric))} |"
         )
+    difference = _format_comparison_difference(rows, metric, dimension)
+    if difference:
+        lines.extend(["", difference])
+    period_note = _format_period_length_note(meta)
+    if period_note:
+        lines.extend(["", period_note])
     return "\n".join(lines)
 
 
