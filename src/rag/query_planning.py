@@ -1361,29 +1361,93 @@ def _comparison_category_targets(query: str) -> list[dict[str, Any]]:
     return [{"key": key, "label": _category_label(key)} for key in keys]
 
 
-COMPARISON_INSTITUTION_UNRESOLVED_SUFFIXES = ("공사", "공단")
+# 기간 비교의 기관 후보에서 걸러 낼 지표·도메인·비교 표지와 요청 표현입니다.
+# 후보를 "공사"·"공단" 접미사로만 남기면 기금·진흥원·연구원처럼 접미사가 다른
+# 실제 기관이 빠져 전체 기관 값으로 조용히 넓어집니다. 그래서 후보는 접미사와
+# 무관하게 남기고, 이 목록에 드는 낱말만 지웁니다.
+COMPARISON_INSTITUTION_UNRESOLVED_EXCLUDED_TERMS = frozenset(
+    {
+        *COMPARISON_DOMAIN_MARKERS,
+        *COMPARISON_MARKERS,
+        "건수",
+        "결과",
+        "통계",
+        "순위",
+        "평균",
+        "낙찰률",
+        "투찰률",
+        "비율",
+        "분포",
+        "추이",
+        "기간",
+        "분기",
+        "연도",
+        "년도",
+        "월별",
+        "주별",
+        "일별",
+        "알려줘",
+        "보여줘",
+        "뽑아줘",
+        "말해줘",
+        "찾아줘",
+    }
+)
+# 비교 대상 연결어는 조사와 달리 기관 후보에서 떼어 내야 합니다. "공사랑 용역"
+# 처럼 분야어에 붙은 연결어를 남기면 "공사랑" 이 기관 후보가 됩니다.
+COMPARISON_INSTITUTION_UNRESOLVED_CONNECTORS = ("이랑", "랑", "하고")
+
+
+def _strip_comparison_connector(token: str) -> str:
+    for connector in COMPARISON_INSTITUTION_UNRESOLVED_CONNECTORS:
+        if token.endswith(connector) and len(token) > len(connector):
+            return token[: -len(connector)]
+    return token
+
+
+def _comparison_institution_candidate_excluded(token: str) -> bool:
+    """기관 후보로 쓸 수 없는 낱말인지 확인합니다.
+
+    연결어를 뗀 형태까지 함께 보므로 "공사랑" 이 분야어 "공사" 로 걸러집니다.
+    """
+    for value in (token, _strip_comparison_connector(token)):
+        if value in COMPARISON_CATEGORY_TOKENS:
+            return True
+        if value in COMPARISON_INSTITUTION_UNRESOLVED_EXCLUDED_TERMS:
+            return True
+        if value in REGION_ALIASES or _match_comparison_region(value):
+            return True
+        if value in INSTITUTION_SCOPE_EXCLUDED_TERMS or value.endswith(
+            INSTITUTION_SCOPE_EXCLUDED_SUFFIXES
+        ):
+            return True
+        if value in NON_INSTITUTION_TERMS or value.endswith(NON_INSTITUTION_SUFFIXES):
+            return True
+    return False
 
 
 def _comparison_unresolved_institution_candidate(query: str) -> str:
     """기간 비교에서 해석되지 않은 기관 후보 낱말을 찾습니다.
 
-    기간 표현·분야어·지표어는 기관 후보가 아니며, "공사" 한 낱말도 분야어이므로
-    제외합니다. 공기업·공단 이름 모양의 낱말이 남으면 그 이름을 공통 기관 조건으로
-    써서 전체 기관 값으로 조용히 넓어지지 않게 합니다.
+    기관 후보를 공사·공단 접미사로만 남기면 기금·진흥원·연구원처럼 접미사가 다른
+    실제 기관이 후보에서 빠지고, 공통 범위가 비어 전체 기관 값으로 조용히
+    넓어집니다. 기간 표현·분야어·지표어·도메인 표지·비교 표지·지역명을 지운 뒤
+    남는 명사구를 접미사와 무관하게 돌려 카탈로그 해석에 맡깁니다. 해석에
+    실패하면 응답 단계가 전체 값 대신 미해석 안내를 냅니다.
     """
-    normalized = _normalize_text(query)
-    for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized):
+    lowered = _query_lower(query)
+    stop = COMPARISON_METRIC_STOP_PATTERN.search(lowered)
+    prefix = lowered[: stop.start()] if stop else lowered
+    remaining = COMPARISON_PERIOD_PATTERN.sub(" ", prefix)
+    for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(remaining):
         cleaned = _strip_institution_particle(token)
         if len(cleaned) <= 2:
             continue
         if COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(cleaned):
             continue
-        if cleaned in COMPARISON_CATEGORY_TOKENS:
+        if _comparison_institution_candidate_excluded(cleaned):
             continue
-        if cleaned in NON_INSTITUTION_TERMS or cleaned.endswith(NON_INSTITUTION_SUFFIXES):
-            continue
-        if cleaned.endswith(COMPARISON_INSTITUTION_UNRESOLVED_SUFFIXES):
-            return cleaned
+        return cleaned
     return ""
 
 
