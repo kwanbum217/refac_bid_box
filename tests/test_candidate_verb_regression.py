@@ -167,10 +167,17 @@ def test_unknown_institution_candidate_still_goes_to_unresolved_path():
         "공고가 나온 이유는?",
         "나온 공고의 정의를 말해줘",
         "공고가 나온 것과 기한 사이의 관계",
+        "공고가 나온 배경",
+        "공고가 나온 배경 알려줘",
+        "공고가 나온 사정",
+        "들어온 공고 요점 알려줘",
+        "나온 공고가 뭐야",
+        "들어온 공고의 특징",
+        "공고가 들어온 경로 설명",
     ],
 )
 def test_explanatory_query_with_added_freshness_marker_stays_on_llm_path(query: str):
-    """'나온'·'들어온' 만으로는 설명형 질의를 목록 경로로 보내지 않습니다."""
+    """'나온'·'들어온' 은 공고 목록 요청 구조가 아니면 설명형 질의로 남습니다."""
     assert is_announcement_list_query(query) is False
 
     plan = build_retrieval_plan(query)
@@ -184,10 +191,12 @@ def test_explanatory_query_with_added_freshness_marker_stays_on_llm_path(query: 
         "오늘 나온 공사 공고 보여줘",
         "나온 공고 찾아줘",
         "들어온 공고 알려줘",
+        "들어온 용역 공고 5개 보여줘",
+        "새로 나온 입찰 공고 목록",
     ],
 )
 def test_added_freshness_marker_list_query_stays_on_list_path(query: str):
-    """'나온'·'들어온' 이 목록 범위를 정하는 질의는 목록 경로를 유지합니다."""
+    """'나온'·'들어온' 뒤에 공고 목록 요청 구조가 이어지면 목록 경로를 유지합니다."""
     assert is_announcement_list_query(query) is True
 
     plan = build_retrieval_plan(query)

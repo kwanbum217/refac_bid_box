@@ -2107,31 +2107,18 @@ def is_result_list_query(query: str) -> bool:
     return not is_entity_specific_query(query)
 
 
-ANNOUNCEMENT_FRESHNESS_MARKERS = ("올라온", "등록된", "게시된", "나온", "들어온", "신규", "최신")
-# af5c9036 에서 더한 신선도 표지입니다. '나온'·'들어온' 은 "공고가 나온 이유" 처럼
-# 사건이나 문맥을 가리키는 설명형 질의에도 등장하므로, 이 표지만으로 목록 판정이
-# 켜질 때는 설명형 표지를 함께 확인합니다. 기존 표지(올라온·등록된·게시된·신규·
-# 최신)의 목록 판정은 건드리지 않습니다.
-ANNOUNCEMENT_ADDED_FRESHNESS_MARKERS = ("나온", "들어온")
-ANNOUNCEMENT_LEGACY_FRESHNESS_MARKERS = tuple(
-    marker
-    for marker in ANNOUNCEMENT_FRESHNESS_MARKERS
-    if marker not in ANNOUNCEMENT_ADDED_FRESHNESS_MARKERS
-)
-ANNOUNCEMENT_EXPLANATORY_FRESHNESS_MARKERS = (
-    "이유",
-    "왜",
-    "정의",
-    "의미",
-    "뜻",
-    "관계",
-    "차이",
-    "원인",
-    "설명",
-    "개념",
-    "무엇",
-    "뭐야",
-    "어떻게",
+ANNOUNCEMENT_FRESHNESS_MARKERS = ("올라온", "등록된", "게시된", "신규", "최신")
+# '나온'·'들어온' 은 "공고가 나온 배경", "들어온 공고 요점" 처럼 사건이나 문맥을
+# 가리키는 설명형 질의에도 등장합니다. 낱말 하나만으로 목록 판정을 켜면 설명형을
+# 막을 명사 목록을 계속 늘려야 하므로, 이 두 표지는 "나온·들어온 + 분야어 + 공고
+# + 개수 + 목록 요청" 구조가 바로 이어질 때만 공고 목록 신선도 표지로 인정합니다.
+ANNOUNCEMENT_ADDED_FRESHNESS_LIST_PATTERN = re.compile(
+    r"(?<![가-힣])(?:나온|들어온)\s*"
+    r"(?:공사|용역|물품|외자|건설)?\s*"
+    r"(?:입찰\s*)?공고(?:를|을)?\s*"
+    r"(?:\d+\s*(?:건|개)\s*(?:만)?\s*)?"
+    r"(?:좀\s*)?"
+    r"(?:보여|찾아|알려|뽑아|리스트|목록)"
 )
 # 공고번호·공고명은 필드 이름입니다. 필드 이름이 질의 앞에 오면 '공고' 뒤를 보는
 # 부정 전방 탐색이 거르지 못하므로 목록 판정 전체에서 먼저 배제합니다.
@@ -2171,29 +2158,18 @@ ANNOUNCEMENT_RESULT_STATUS_MARKERS = ("낙찰", "유찰", "개찰")
 
 
 def _has_announcement_list_scope(lowered: str) -> bool:
-    """요청 동사만 있는 공고 목록 질의에 신선도 표지가 함께 있는지 봅니다.
+    """요청 동사만 있는 공고 목록 질의에 목록 범위를 정하는 표지가 있는지 봅니다.
 
     분류나 연도만 있는 "서울의 2026년 ... 용역 공고를 알려줘" 는 지목형 조회이지
     최신 목록 요청이 아니고, "최근"·"요즘" 같은 막연한 표현도 범위를 정하지
-    못합니다. 그래서 동사 단독 경로는 올라온·등록된·게시된·나온·들어온·신규·최신 표지를
-    요구하고, 나머지는 기존 최신성 힌트 경로에 남깁니다.
+    못합니다. 그래서 동사 단독 경로는 올라온·등록된·게시된·신규·최신 표지를
+    요구하고, 나머지는 기존 최신성 힌트 경로에 남깁니다. '나온'·'들어온' 은
+    표지 낱말이 아니라 "나온·들어온 + 분야어 + 공고 + 개수 + 목록 요청" 구조가
+    바로 이어질 때만 같은 범위 표지로 봅니다.
     """
-    return any(marker in lowered for marker in ANNOUNCEMENT_FRESHNESS_MARKERS)
-
-
-def _is_explanatory_added_freshness_query(lowered: str) -> bool:
-    """'나온'·'들어온' 만으로 목록 판정이 켜진 설명형 질의인지 판정합니다.
-
-    "공고가 나온 이유", "나온 공고의 정의를 말해줘", "공고가 나온 것과 기한 사이의
-    관계" 는 공고 목록 요청이 아니라 사건의 배경이나 개념을 묻는 질의입니다.
-    기존 신선도 표지(올라온·등록된·게시된·신규·최신)가 함께 있으면 기존 판정을
-    그대로 두고, af5c9036 에서 더한 표지만 있을 때 설명형 표지를 확인합니다.
-    """
-    if not any(marker in lowered for marker in ANNOUNCEMENT_ADDED_FRESHNESS_MARKERS):
-        return False
-    if any(marker in lowered for marker in ANNOUNCEMENT_LEGACY_FRESHNESS_MARKERS):
-        return False
-    return any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATORY_FRESHNESS_MARKERS)
+    if any(marker in lowered for marker in ANNOUNCEMENT_FRESHNESS_MARKERS):
+        return True
+    return bool(ANNOUNCEMENT_ADDED_FRESHNESS_LIST_PATTERN.search(lowered))
 
 
 def is_announcement_list_query(query: str) -> bool:
@@ -2206,10 +2182,13 @@ def is_announcement_list_query(query: str) -> bool:
     그대로 맡도록 거짓을 반환합니다.
     설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
     개수나 '목록'·'리스트' 표지가 있으면 참이고, 요청 동사만 있으면 신선도
-    표지(올라온·등록된·게시된·나온·들어온·신규·최신)를 함께 요구해 범위 없는 "공고 알려줘" 가
-    전체 최신 목록으로 새지 않게 합니다. 마감일 창·금액 조건·정렬 표지가
-    파싱됐고 요청 동사가 함께 있으면 그 조건을 목록의 범위 표지로 인정해
-    참을 반환합니다. 조건이 없는 "공고 보여줘" 의 판정은 그대로입니다.
+    표지(올라온·등록된·게시된·신규·최신)를 함께 요구해 범위 없는 "공고 알려줘" 가
+    전체 최신 목록으로 새지 않게 합니다. '나온'·'들어온' 은 표지 낱말이 아니라
+    "나온·들어온 + 분야어 + 공고 + 개수 + 목록 요청" 구조가 바로 이어질 때만
+    범위 표지로 인정하므로, "공고가 나온 배경" 같은 설명형 질의는 남깁니다.
+    마감일 창·금액 조건·정렬 표지가 파싱됐고 요청 동사가 함께 있으면 그 조건을
+    목록의 범위 표지로 인정해 참을 반환합니다. 조건이 없는 "공고 보여줘" 의
+    판정은 그대로입니다.
     """
     lowered = _query_lower(query)
     if ANNOUNCEMENT_FIELD_MARKER_PATTERN.search(lowered):
@@ -2236,8 +2215,6 @@ def is_announcement_list_query(query: str) -> bool:
         return True
     if _condition_list_scope(query) == CONDITION_LIST_SCOPE_ANNOUNCEMENT:
         return not is_entity_specific_query(query)
-    if _is_explanatory_added_freshness_query(lowered):
-        return False
     if not _has_announcement_list_scope(lowered):
         return False
     # 신선도 표지만 있는 경로는 범위가 없는 전체 최신 목록입니다. 기관명을
