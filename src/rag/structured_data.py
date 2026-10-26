@@ -33,6 +33,7 @@ from src.app.models.bids import (
     BidResult,
     clean_display_text,
     is_corrupted_display_text,
+    normalize_bid_ntce_ord,
 )
 from src.app.services.ranking_snapshots import (
     DATASET_ANNOUNCEMENT,
@@ -529,6 +530,18 @@ def _result_order_by(filters: dict[str, Any]) -> list:
     ]
 
 
+def _bid_ntce_ord_forms(bid_ntce_ord: str) -> tuple[str, ...]:
+    """같은 차수의 저장 표기를 함께 돌려줍니다.
+
+    공고 API 는 3자리(`001`), 낙찰 API 는 2자리(`01`)로 같은 차수를 내려주며
+    과거 낙찰 행은 2자리로 적재되어 있습니다. 어느 표기로 저장됐어도 그 회차를
+    찾도록 두 형태를 조건에 함께 씁니다.
+    """
+    normalized = normalize_bid_ntce_ord(bid_ntce_ord)
+    compact = normalized.lstrip("0").zfill(2)
+    return (normalized,) if compact == normalized else (normalized, compact)
+
+
 def _result_conditions(
     plan: RetrievalPlan,
     *,
@@ -540,7 +553,11 @@ def _result_conditions(
     # 표지나 분류·기관·지역·목록 필터를 함께 걸면 개찰일이 그 창 밖인 행을
     # 놓칩니다. 이 조기 반환이 단건 경로와 집계 경로의 경계입니다.
     if bid_ntce_no:
-        return [BidResult.bid_ntce_no == bid_ntce_no]
+        conditions = [BidResult.bid_ntce_no == bid_ntce_no]
+        bid_ntce_ord = _normalize_text(str((plan.filters or {}).get("bid_ntce_ord") or ""))
+        if bid_ntce_ord:
+            conditions.append(BidResult.bid_ntce_ord.in_(_bid_ntce_ord_forms(bid_ntce_ord)))
+        return conditions
 
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
@@ -594,7 +611,11 @@ def _announcement_conditions(
     # 공고번호 단건 조회는 유일 키 하나만 조건으로 씁니다. 공고일 기준 기간
     # 필터를 함께 걸면 "최근" 표지가 붙은 질의가 그 공고를 놓칩니다.
     if bid_ntce_no:
-        return [BidAnnouncement.bid_ntce_no == bid_ntce_no]
+        conditions = [BidAnnouncement.bid_ntce_no == bid_ntce_no]
+        bid_ntce_ord = _normalize_text(str((plan.filters or {}).get("bid_ntce_ord") or ""))
+        if bid_ntce_ord:
+            conditions.append(BidAnnouncement.bid_ntce_ord.in_(_bid_ntce_ord_forms(bid_ntce_ord)))
+        return conditions
 
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)

@@ -406,11 +406,13 @@ RESULT_LIST_EXPLANATION_MARKERS = ("방법", "규정", "설명", "어떻게", "�
 RESULT_LIST_BID_NUMBER_PATTERN = re.compile(r"[A-Z]\d{2}[A-Z]{2}\d{8}|\d{11,}", re.IGNORECASE)
 # 공고번호는 "R26BK01778156" 처럼 영문 1자, 숫자 2자, 영문 2자, 숫자 8자로 고정됩니다.
 # 접수번호(11자리 숫자)나 금액처럼 숫자만 긴 값을 공고번호로 읽지 않도록 숫자 대안을
-# 두지 않습니다. 차수 접미사("-001")가 붙은 값은 다른 식별자이므로 단건 조회로
+# 두지 않습니다. 뒤에 붙는 차수("-001")는 다른 식별자가 아니라 같은 공고의 회차
+# (bid_ntce_ord)이므로 선택 그룹으로 읽습니다. 차수가 세 자리가 아니면 공고번호로
 # 읽지 않습니다. 값은 대문자로 정규화해 DB 의 표기와 맞춥니다.
 BID_NTCE_NO_PATTERN = re.compile(
     r"(?:공고\s*번호\s*)?(?<![A-Za-z0-9])"
-    r"(?P<bid_ntce_no>[A-Z]\d{2}[A-Z]{2}\d{8})(?!\d)(?!-\d)",
+    r"(?P<bid_ntce_no>[A-Z]\d{2}[A-Z]{2}\d{8})(?:-(?P<bid_ntce_ord>\d{3}))?"
+    r"(?!\d)(?!-\d)",
     re.IGNORECASE,
 )
 BID_NTCE_NO_EXPLANATION_MARKERS = (
@@ -1961,9 +1963,20 @@ def extract_bid_ntce_no(query: str) -> str:
     """질의에 등장한 공고번호를 대문자로 정규화해 돌려줍니다.
 
     엄격형 패턴에 맞는 값만 인정하므로 접수번호나 금액 숫자는 빈 문자열입니다.
+    차수 접미사가 붙어 있어도 공고번호 부분만 돌려줍니다(호출부 호환).
     """
     match = BID_NTCE_NO_PATTERN.search(_normalize_text(query))
     return match.group("bid_ntce_no").upper() if match else ""
+
+
+def extract_bid_ntce_ord(query: str) -> str:
+    """질의의 공고번호에 붙은 차수를 세 자리로 돌려줍니다.
+
+    "R26BK01788962-001" 이면 "001" 입니다. 접미사가 없거나 세 자리가 아니면
+    빈 문자열이며, 그때는 기존처럼 공고번호만으로 단건 조회합니다.
+    """
+    match = BID_NTCE_NO_PATTERN.search(_normalize_text(query))
+    return (match.group("bid_ntce_ord") or "") if match else ""
 
 
 def is_bid_number_query(query: str) -> bool:
@@ -3004,6 +3017,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
     is_bid_number = is_bid_number_query(normalized_query)
     bid_ntce_no = extract_bid_ntce_no(normalized_query) if is_bid_number else ""
+    bid_ntce_ord = extract_bid_ntce_ord(normalized_query) if is_bid_number else ""
 
     if is_bid_number:
         use_sql = True
@@ -3077,9 +3091,12 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     filters: dict[str, Any] = {}
     # 공고번호 단건은 다른 조건과 달리 목록·집계 경로로 새지 않게 전용 필터로
-    # 넘깁니다. 값이 비어 있으면 키를 만들지 않습니다.
+    # 넘깁니다. 값이 비어 있으면 키를 만들지 않습니다. 차수 접미사가 있으면
+    # 같은 공고의 그 회차만 읽도록 차수를 함께 넘깁니다.
     if bid_ntce_no:
         filters["bid_ntce_no"] = bid_ntce_no
+    if bid_ntce_ord:
+        filters["bid_ntce_ord"] = bid_ntce_ord
     if date_from:
         filters["date_from"] = date_from
     if date_to:
