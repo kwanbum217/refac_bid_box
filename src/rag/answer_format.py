@@ -43,6 +43,7 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "institution_name": "기관/지역",
         "institution_names": "대상 기관",
         "region_names": "대상 지역",
+        "region_scope_names": "대상 지역",
         "date_from": "시작일",
         "date_to": "종료일",
         "relative_years": "최근 연수",
@@ -61,7 +62,9 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         if key == "category":
             lines.append(f"- 분야: {_category_label(str(value))}")
             continue
-        if key in ("institution_names", "region_names") and isinstance(value, list):
+        if key in ("institution_names", "region_names", "region_scope_names") and isinstance(
+            value, list
+        ):
             lines.append(f"- {labels[key]}: {', '.join(str(v) for v in value)}")
             continue
         lines.append(f"- {labels.get(key, key)}: {value}")
@@ -874,10 +877,13 @@ def _build_single_metric_answer(
 
     subject = [_format_single_metric_period(filters)]
     region_names = filters.get("region_names")
+    region_scope_names = filters.get("region_scope_names")
     institution_names = filters.get("institution_names")
     institution_name = str(filters.get("institution_name") or "")
     if isinstance(region_names, list) and region_names:
         subject.append(", ".join(str(name) for name in region_names))
+    elif isinstance(region_scope_names, list) and region_scope_names:
+        subject.append(", ".join(str(name) for name in region_scope_names))
     elif isinstance(institution_names, list) and institution_names:
         subject.append(", ".join(str(name) for name in institution_names))
     elif institution_name:

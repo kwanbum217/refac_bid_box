@@ -322,6 +322,32 @@ def _institution_condition(column, institution_name: str, institution_names: lis
     return column.contains(institution_name)
 
 
+def _region_condition(column, aliases: tuple[str, ...]) -> Any:
+    """지역 별칭 목록을 기관명 부분 일치 OR 묶음 조건으로 만듭니다."""
+    return or_(*[column.contains(alias) for alias in aliases])
+
+
+def _region_scope_names(filters: dict[str, Any]) -> list[str]:
+    """나열 지역 합집합 조건의 정규화된 지역명을 질의 순서대로 돌려줍니다."""
+    raw_names = filters.get("region_scope_names")
+    if not isinstance(raw_names, (list, tuple)):
+        return []
+    names: list[str] = []
+    for item in raw_names:
+        name = _normalize_text(str(item))
+        if name in REGION_ALIASES and name not in names:
+            names.append(name)
+    return names
+
+
+def _region_scope_condition(column, filters: dict[str, Any]) -> Any:
+    """나열 지역 전체를 지역 별칭 부분 일치 OR 하나로 묶습니다."""
+    names = _region_scope_names(filters)
+    if not names:
+        return None
+    return or_(*[column.contains(alias) for name in names for alias in REGION_ALIASES[name]])
+
+
 # 업체명 표기는 "주식회사 한백", "(주)한백", "한백" 처럼 법인 표지와 공백·괄호가
 # 섞입니다. 부분 일치로 비교하면 "한백" 질의가 "한백건설" 행까지 반환하므로,
 # 양쪽에서 같은 표지를 떼고 정규화 값이 같은 행만 고릅니다.
@@ -536,6 +562,9 @@ def _result_conditions(
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
         )
+    region_scope_condition = _region_scope_condition(BidResult.dminstt_nm, filters)
+    if region_scope_condition is not None:
+        conditions.append(region_scope_condition)
     if category:
         conditions.append(BidResult.category == category)
     # 업체 조건은 낙찰 결과 테이블에만 있습니다. 업체를 지목한 질의에서 이 조건을
@@ -589,6 +618,9 @@ def _announcement_conditions(
         conditions.append(
             _institution_condition(BidAnnouncement.dminstt_nm, institution_name, institution_names)
         )
+    region_scope_condition = _region_scope_condition(BidAnnouncement.dminstt_nm, filters)
+    if region_scope_condition is not None:
+        conditions.append(region_scope_condition)
     if category:
         conditions.append(BidAnnouncement.category == category)
     if notice_kind:
@@ -628,6 +660,7 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
         return None
     if (
         filters.get("region_names")
+        or filters.get("region_scope_names")
         or filters.get("institution_names")
         or filters.get("institution_aliases")
     ):
@@ -825,6 +858,9 @@ def _result_availability_conditions(
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
         )
+    region_scope_condition = _region_scope_condition(BidResult.dminstt_nm, filters)
+    if region_scope_condition is not None:
+        conditions.append(region_scope_condition)
     if category:
         conditions.append(BidResult.category == category)
     # 업체 조건이 걸린 질의는 전체 최신 개찰일이 아니라 그 업체의 최신 개찰일을
@@ -1572,7 +1608,7 @@ def _comparison_condition(column, spec: dict[str, Any]) -> Any:
     후보를 버리지 않고 부분 일치로 폴백합니다.
     """
     if spec["kind"] == "region":
-        return or_(*[column.contains(alias) for alias in spec["aliases"]])
+        return _region_condition(column, spec["aliases"])
     matched_names = spec.get("names")
     if matched_names:
         return column.in_(matched_names)
