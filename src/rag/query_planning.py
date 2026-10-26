@@ -41,6 +41,9 @@ STATISTICS_KEYWORDS = (
 # 공고·낙찰 도메인 표지가 함께 있을 때만 통계로 봅니다.
 COUNT_QUERY_PATTERN = re.compile(r"몇\s*건|몇\s*개|총\s*몇|얼마나\s*(?:올라|있)")
 COUNT_QUERY_DOMAIN_MARKERS = ("공고", "낙찰")
+# 단일 지표 질의는 지표 낱말 하나만 지목합니다. 투찰률·사정률까지 함께 나오면
+# 지표 정의·구분을 묻는 설명형 질의이므로 기관 후보로 좁히지 않습니다.
+STATS_SINGLE_METRIC_RATE_TERMS = ("낙찰률", "투찰률", "사정률", "경쟁률")
 # 목록·사례·리스트·보여줘 는 개별 항목을 늘어놓으라는 요청입니다. "몇 건" 같은
 # 수량 표현이 함께 있어도 집계가 아니라 목록 요청이므로, 통계 라우팅과 단일
 # 지표 직접 응답에서 제외합니다.
@@ -200,6 +203,19 @@ WINNER_AXIS_PATTERN = re.compile(
     r"(?:가장|제일|최다|최고|1등|1위)[^.!?]{0,10}?(?:낙찰|수주)[^.!?]{0,10}?"
     r"(?:업체|기업|회사)"
     r"|(?:낙찰|수주)[^.!?]{0,6}?(?:많이|많은)[^.!?]{0,6}?(?:업체|기업|회사)"
+)
+# 축 집계·추세 질의는 기관 하나를 지목한 단일 지표 질의가 아닙니다. 축 표지나
+# 시간 축 표지가 있으면 기관 후보 추출을 하지 않습니다.
+STATS_SINGLE_METRIC_EXCLUDED_MARKERS = frozenset(
+    {
+        *(marker for markers in AGGREGATE_AXIS_MARKERS.values() for marker in markers),
+        *TREND_KEYWORDS,
+        "연도별",
+        "년도별",
+        "일별",
+        "주별",
+        "시간별",
+    }
 )
 # 순서가 곧 우선순위입니다. "낙찰 공고" 를 "공고" 보다 먼저 판정하지 않으면
 # 낙찰을 묻는 질문에 공고 건수를 답하는 결함이 재발합니다. "낙찰률" 이 있으면
@@ -1361,30 +1377,146 @@ def _comparison_category_targets(query: str) -> list[dict[str, Any]]:
     return [{"key": key, "label": _category_label(key)} for key in keys]
 
 
-COMPARISON_INSTITUTION_UNRESOLVED_SUFFIXES = ("공사", "공단")
+# 기간 비교의 기관 후보에서 걸러 낼 지표·도메인·비교 표지와 요청 표현입니다.
+# 후보를 "공사"·"공단" 접미사로만 남기면 기금·진흥원·연구원처럼 접미사가 다른
+# 실제 기관이 빠져 전체 기관 값으로 조용히 넓어집니다. 그래서 후보는 접미사와
+# 무관하게 남기고, 이 목록에 드는 낱말만 지웁니다.
+COMPARISON_INSTITUTION_UNRESOLVED_EXCLUDED_TERMS = frozenset(
+    {
+        *COMPARISON_DOMAIN_MARKERS,
+        *COMPARISON_MARKERS,
+        "건수",
+        "결과",
+        "통계",
+        "순위",
+        "평균",
+        "낙찰률",
+        "투찰률",
+        "비율",
+        "분포",
+        "추이",
+        "기간",
+        "분기",
+        "연도",
+        "년도",
+        "월별",
+        "주별",
+        "일별",
+        "알려줘",
+        "보여줘",
+        "뽑아줘",
+        "말해줘",
+        "찾아줘",
+    }
+)
+# 비교 대상 연결어는 조사와 달리 기관 후보에서 떼어 내야 합니다. "공사랑 용역"
+# 처럼 분야어에 붙은 연결어를 남기면 "공사랑" 이 기관 후보가 됩니다.
+COMPARISON_INSTITUTION_UNRESOLVED_CONNECTORS = ("이랑", "랑", "하고")
+
+
+def _strip_comparison_connector(token: str) -> str:
+    for connector in COMPARISON_INSTITUTION_UNRESOLVED_CONNECTORS:
+        if token.endswith(connector) and len(token) > len(connector):
+            return token[: -len(connector)]
+    return token
+
+
+def _comparison_institution_candidate_excluded(token: str) -> bool:
+    """기관 후보로 쓸 수 없는 낱말인지 확인합니다.
+
+    연결어를 뗀 형태까지 함께 보므로 "공사랑" 이 분야어 "공사" 로 걸러집니다.
+    """
+    for value in (token, _strip_comparison_connector(token)):
+        if value in COMPARISON_CATEGORY_TOKENS:
+            return True
+        if value in COMPARISON_INSTITUTION_UNRESOLVED_EXCLUDED_TERMS:
+            return True
+        if value in REGION_ALIASES or _match_comparison_region(value):
+            return True
+        if value in INSTITUTION_SCOPE_EXCLUDED_TERMS or value.endswith(
+            INSTITUTION_SCOPE_EXCLUDED_SUFFIXES
+        ):
+            return True
+        if value in NON_INSTITUTION_TERMS or value.endswith(NON_INSTITUTION_SUFFIXES):
+            return True
+    return False
 
 
 def _comparison_unresolved_institution_candidate(query: str) -> str:
     """기간 비교에서 해석되지 않은 기관 후보 낱말을 찾습니다.
 
-    기간 표현·분야어·지표어는 기관 후보가 아니며, "공사" 한 낱말도 분야어이므로
-    제외합니다. 공기업·공단 이름 모양의 낱말이 남으면 그 이름을 공통 기관 조건으로
-    써서 전체 기관 값으로 조용히 넓어지지 않게 합니다.
+    기관 후보를 공사·공단 접미사로만 남기면 기금·진흥원·연구원처럼 접미사가 다른
+    실제 기관이 후보에서 빠지고, 공통 범위가 비어 전체 기관 값으로 조용히
+    넓어집니다. 기간 표현·분야어·지표어·도메인 표지·비교 표지·지역명을 지운 뒤
+    남는 명사구를 접미사와 무관하게 돌려 카탈로그 해석에 맡깁니다. 해석에
+    실패하면 응답 단계가 전체 값 대신 미해석 안내를 냅니다.
     """
-    normalized = _normalize_text(query)
-    for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized):
+    lowered = _query_lower(query)
+    stop = COMPARISON_METRIC_STOP_PATTERN.search(lowered)
+    prefix = lowered[: stop.start()] if stop else lowered
+    remaining = COMPARISON_PERIOD_PATTERN.sub(" ", prefix)
+    for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(remaining):
         cleaned = _strip_institution_particle(token)
         if len(cleaned) <= 2:
             continue
         if COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(cleaned):
             continue
-        if cleaned in COMPARISON_CATEGORY_TOKENS:
+        if _comparison_institution_candidate_excluded(cleaned):
             continue
-        if cleaned in NON_INSTITUTION_TERMS or cleaned.endswith(NON_INSTITUTION_SUFFIXES):
-            continue
-        if cleaned.endswith(COMPARISON_INSTITUTION_UNRESOLVED_SUFFIXES):
-            return cleaned
+        return cleaned
     return ""
+
+
+def _stats_institution_candidate_is_domain_phrase(name: str) -> bool:
+    """기관 접미사와 같은 글자로 끝나지만 분야어·사업명인 낱말인지 확인합니다.
+
+    "도로공사", "건설공사", "인입철도공사" 는 공사 종류·사업명이지 기관 이름이
+    아닙니다. 공기업 이름으로 확인되는 낱말은 분야어로 보지 않습니다.
+    """
+    if _extract_public_corporation_tokens(name):
+        return False
+    return bool(extract_category(name)[1])
+
+
+STATS_SINGLE_METRIC_PERIOD_NOISE = re.compile(r"^(?:최근|현재|\d+\s*(?:년|개월|달|일|주))$")
+
+
+def _stats_single_metric_institution_candidate(query: str) -> str:
+    """단일 지표 질의에서 기관 이름 하나로 볼 수 있는 후보만 돌려줍니다.
+
+    기간 비교 후보 추출은 접미사와 무관하게 첫 명사구를 돌려주므로, 사업명이
+    길게 이어지는 질의("부산항 신항 ... 인입철도 건설공사")에서는 사업명 일부를
+    기관으로 오인합니다. 단일 지표 질의에서는 기관 이름이 지표 앞의 마지막
+    명사구여야 하므로 그 조건을 만족할 때만 후보를 남깁니다.
+    """
+    candidate = _comparison_unresolved_institution_candidate(query)
+    if not candidate:
+        return ""
+    lowered = _query_lower(query)
+    stop = COMPARISON_METRIC_STOP_PATTERN.search(lowered)
+    prefix = lowered[: stop.start()] if stop else lowered
+    remaining = COMPARISON_PERIOD_PATTERN.sub(" ", prefix)
+    tokens = [
+        token
+        for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(remaining)
+        if token
+        and not COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(token)
+        and not STATS_SINGLE_METRIC_PERIOD_NOISE.fullmatch(token)
+    ]
+    if not tokens:
+        return ""
+    if tokens[-1] in INSTITUTION_SCOPE_EXCLUDED_TERMS:
+        return ""
+    stripped = _strip_institution_particle(tokens[-1])
+    if stripped == tokens[-1] and any(
+        tokens[-1].endswith(particle) and len(tokens[-1]) > len(particle)
+        for particle in INSTITUTION_SCOPE_PARTICLES
+    ):
+        # "공사 쪽에서" 의 "쪽에서" 처럼 조사만 붙은 지시어는 기관 이름이
+        # 아닙니다. _strip_institution_particle 은 기저가 한 글자면 떼지
+        # 않으므로 여기서 따로 걸러 냅니다.
+        return ""
+    return candidate if stripped == candidate else ""
 
 
 def _normalize_enumerated_regions(names: list[str]) -> list[str]:
@@ -2997,6 +3129,19 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     list_intent = announcement_list_query or result_list_query
     scope_applicable = bool(list_intent or has_stat_keywords or multi_result_list)
     scope_explanatory = any(marker in lowered for marker in INSTITUTION_SCOPE_EXPLANATORY_MARKERS)
+    # 공고·낙찰 도메인 표지가 있는 통계 질의는 기관 하나를 지목한 경우가 많습니다.
+    # "서울대학교병원 올해 공고 건수" 의 병원처럼 개체 접미사를 기관 조건으로
+    # 승격해야 이름 속 지역명(서울)으로 범위가 조용히 넓어지지 않습니다.
+    stats_domain_scope = bool(
+        has_stat_keywords
+        and not list_intent
+        and not filters.get("winner_name")
+        and not any(marker in lowered for marker in STATS_SINGLE_METRIC_EXCLUDED_MARKERS)
+        and not RESULT_ATTRIBUTE_PATTERN.search(lowered)
+        and "공고번호" not in lowered
+        and sum(1 for term in STATS_SINGLE_METRIC_RATE_TERMS if term in lowered) <= 1
+        and any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS)
+    )
     if (
         scope_applicable
         and not scope_explanatory
@@ -3006,10 +3151,17 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     ):
         scope = extract_institution_scope(
             normalized_query,
-            include_entity_org_tokens=list_intent,
+            include_entity_org_tokens=bool(list_intent or stats_domain_scope),
             multiple=bool(list_intent or multi_result_list),
         )
         scope_name = str(scope.get("institution_name") or "")
+        if (
+            stats_domain_scope
+            and scope_name
+            and _stats_institution_candidate_is_domain_phrase(scope_name)
+        ):
+            scope_name = ""
+            scope = {}
         existing_name = _normalize_text(str(filters.get("institution_name") or ""))
         # 광역 사전 대체 경로는 "대전 유성구" 에서 먼저 "대전" 을 넣습니다. 추출기가
         # 더 좁은 범위를 돌려주면 그 값으로 바꿔야 채팅 경로와 같은 기관 조건이
@@ -3021,6 +3173,18 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
             and scope_name != existing_name
             and _is_specific_institution_scope(scope_name)
         )
+        if (
+            not scope_name
+            and stats_domain_scope
+            and (not existing_name or existing_name == region_fallback_name)
+        ):
+            # 접미사 목록에 없는 기금·진흥원·연구원 이름도 후보로 남겨 카탈로그
+            # 해석에 맡깁니다. 해석에 실패하면 응답 단계가 전체 값 대신 미해석
+            # 안내를 냅니다. 이름 일부에 지역명이 있어도 후보가 이깁니다.
+            candidate = _stats_single_metric_institution_candidate(normalized_query)
+            if candidate and not _stats_institution_candidate_is_domain_phrase(candidate):
+                scope_name = candidate
+                replace_region_fallback = True
         if scope_name and (not existing_name or replace_region_fallback):
             filters["institution_name"] = scope_name
             existing_name = scope_name
