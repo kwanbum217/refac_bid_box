@@ -74,6 +74,34 @@ def test_plan_keeps_existing_region_scope(query: str, key: str, expected):
         assert "region_scope_names" not in plan.filters
 
 
+@pytest.mark.parametrize(
+    ("query", "plan_expected", "execution_expected"),
+    [
+        ("서울특별시 중구와 강남구 공고 건수 비교", "서울", "서울특별시"),
+        ("서울특별시 중구 및 강남구 공고", "서울", "서울특별시"),
+        ("부산광역시 해운대구랑 수영구 낙찰 건수", "부산", "부산광역시"),
+        ("경기도 수원시, 성남시 공고", "경기", "경기도"),
+    ],
+)
+def test_plan_keeps_broad_region_when_districts_are_enumerated(
+    query: str, plan_expected: str, execution_expected: str
+):
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.filters.get("institution_name") == plan_expected
+    assert execution_plan.filters.get("institution_name") == execution_expected
+
+
+def test_single_district_still_narrows_with_comparison_connector():
+    query = "서울특별시 중구 작년 대비 올해 공고 건수"
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.filters.get("institution_name") == "서울특별시 중구"
+    assert execution_plan.filters.get("institution_name") == "서울특별시 중구"
+
+
 def _announcement(
     bid_ntce_no: str,
     institution: str,
