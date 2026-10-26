@@ -445,6 +445,7 @@ METRIC_LABELS = {
     "announcement_count": "공고 건수",
     "bid_count": "낙찰 건수",
     "avg_rate": "평균 낙찰률",
+    "award_amount": "낙찰 금액 합계",
 }
 
 
