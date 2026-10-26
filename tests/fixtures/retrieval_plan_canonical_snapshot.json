@@ -246,10 +246,11 @@
     "q28": {
       "question": "2026년 11월 20일 개찰 예정인 서울특별시 한강 수상교통 인프라 조성사업(공고번호 R26BK02999999-001)의 1순위 낙찰예정자를 미리 알려줘",
       "use_sql": true,
-      "use_vector": true,
+      "use_vector": false,
       "use_lexical": true,
       "filters": {
-        "institution_name": "서울"
+        "bid_ntce_no": "R26BK02999999",
+        "bid_ntce_ord": "001"
       }
     },
     "q29": {
@@ -273,11 +274,12 @@
     "q31": {
       "question": "2025년 대전광역시 유성구 복합문화센터 신축공사(공고번호 R25BK01999999-001) 공고만 등록되고 낙찰 결과가 미등록된 건의 낙찰업체와 금액을 알려줘",
       "use_sql": true,
-      "use_vector": true,
+      "use_vector": false,
       "use_lexical": true,
       "filters": {
         "category": "Cnstwk",
-        "institution_name": "대전"
+        "bid_ntce_no": "R25BK01999999",
+        "bid_ntce_ord": "001"
       }
     },
     "q32": {
@@ -550,9 +552,12 @@
     "adv_zero_03": {
       "question": "공고번호 'R99ZZ99999999-999'라는 임의의 가상 공고에 대해 낙찰업체와 금액을 알려줘.",
       "use_sql": true,
-      "use_vector": true,
+      "use_vector": false,
       "use_lexical": true,
-      "filters": {}
+      "filters": {
+        "bid_ntce_no": "R99ZZ99999999",
+        "bid_ntce_ord": "999"
+      }
     },
     "adv_zero_04": {
       "question": "1985년 공공조달 전산화 이전의 과거 입찰 낙찰 통계를 알려줘.",
