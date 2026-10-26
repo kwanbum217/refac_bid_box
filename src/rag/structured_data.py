@@ -49,6 +49,7 @@ from src.rag.query_planning import (
     MAX_GROUP_LIMIT,
     REGION_ALIASES,
     RESULT_AMOUNT_FIELD,
+    _single_metric,
     collect_unapplied_result_conditions,
     is_result_amount_scope,
     unapplied_result_condition_notice,
@@ -2911,6 +2912,23 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         announcement_names = _resolve_institution_scope_names(
             db, BidAnnouncement.dminstt_nm, institution_name, institution_aliases
         )
+        if (
+            institution_name
+            and result_names == []
+            and announcement_names == []
+            and _single_metric(_normalize_text(plan.semantic_query).lower())
+            and not _result_limit(plan)
+            and not _announcement_limit(plan)
+            and not _normalize_text(str(filters.get("group_by") or ""))
+            and filters.get("analysis_mode") != "trend"
+        ):
+            # 카탈로그에서 확인하지 못한 기관명을 0건이라는 측정값처럼 내지
+            # 않습니다. 전체 값으로 넓히지도 않고 기존 미해석 안내를 냅니다.
+            return _empty_result(
+                plan,
+                "요청한 기관명을 데이터에서 확인하지 못해 조회 대상을 확정하지 못했습니다. "
+                "기관명을 다시 확인해 주세요.",
+            )
     # 해석 상한 초과(None)는 이름 목록 대신 부분 일치 OR 조건으로 넘깁니다.
     result_names_arg = None if result_name_fallbacks else result_names
     announcement_names_arg = None if announcement_name_fallbacks else announcement_names
