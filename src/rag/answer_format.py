@@ -7,6 +7,7 @@ RAG 응답 포매팅, Markdown 테이블 조립, Source 인용 생성, Evidence 
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Any
 
 from src.rag.query_planning import (
@@ -442,33 +443,78 @@ def _build_axis_answer(
     return "\n".join(lines)
 
 
-def _build_series_answer(
-    plan: RetrievalPlan,
-    structured_data: dict | None,
-) -> str:
-    """공고 건수 시계열은 공고 건수 열만 냅니다.
+SERIES_PERIOD_LABELS = {
+    "quarter": ("분기별", "분기"),
+    "month": ("월별", "월"),
+    "day": ("일별", "일자"),
+}
+IN_PROGRESS_SUFFIX = "(진행 중)"
 
-    시계열 딕셔너리에는 bid_count 와 announcement_count 가 함께 있습니다. 키를
-    지우지 않고 렌더링에서만 골라, 기존 추세 응답 계약을 바꾸지 않습니다.
+
+def _series_period_labels(period: str) -> tuple[str, str]:
+    return SERIES_PERIOD_LABELS.get(period, SERIES_PERIOD_LABELS["month"])
+
+
+def _is_current_series_bucket(label: str, period: str) -> bool:
+    """오늘이 속한 분기·월·일 구간인지 판정합니다.
+
+    마지막 구간은 아직 채워지는 중입니다. 완결된 구간과 같은 무게로 읽히지
+    않도록 라벨에 표시합니다.
     """
-    if not structured_data:
-        return ""
-    summary = structured_data.get("summary") or {}
-    meta = summary.get("aggregate_meta") or {}
-    if meta.get("metric") != "announcement_count":
-        return ""
-    series = summary.get("time_series") or []
-    if not series:
-        return ""
-
-    period = str(series[0].get("period") or "quarter")
+    today = date.today()
+    text = _normalize_text(str(label or ""))
     if period == "quarter":
-        period_label, unit_label = "분기별", "분기"
-    elif period == "day":
-        period_label, unit_label = "일별", "일자"
-    else:
-        period_label, unit_label = "월별", "월"
+        matched = re.fullmatch(r"(\d{4})\s*년\s*([1-4])\s*분기", text)
+        if not matched:
+            return False
+        return int(matched.group(1)) == today.year and int(matched.group(2)) == (
+            (today.month - 1) // 3 + 1
+        )
+    if period == "day":
+        return text == today.isoformat()
+    matched = re.fullmatch(r"(\d{4})-(\d{2})", text)
+    if not matched:
+        return False
+    return (int(matched.group(1)), int(matched.group(2))) == (today.year, today.month)
 
+
+def _series_label_cell(item: dict, period: str) -> str:
+    label = str(item.get("label") or "")
+    if _is_current_series_bucket(label, period):
+        return _markdown_result_cell(f"{label} {IN_PROGRESS_SUFFIX}")
+    return _markdown_result_cell(label)
+
+
+def _format_series_cell(metric: str, value: Any) -> str:
+    if value is None:
+        return "-"
+    try:
+        if metric == "avg_rate":
+            return f"{float(value):.2f}%"
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _resolve_series_metric(plan: RetrievalPlan, meta: dict) -> str:
+    """요청 지표를 정합니다. 지표 기록이 없으면 빈 문자열로 기존 경로에 맡깁니다."""
+    metric = str(meta.get("metric") or (plan.filters or {}).get("metric") or "")
+    return metric if metric in ("avg_rate", "bid_count") else ""
+
+
+def _series_period_text(plan: RetrievalPlan, structured_data: dict) -> str:
+    filters = dict(structured_data.get("filters") or {})
+    for key, value in (plan.filters or {}).items():
+        if value not in (None, ""):
+            filters[key] = value
+    period_text = _format_single_metric_period(filters)
+    return "" if period_text == "전체 기간" else period_text
+
+
+def _build_announcement_series_answer(series: list[dict]) -> str:
+    """공고 건수 시계열은 기존 계약대로 공고 건수 열만 냅니다."""
+    period = str(series[0].get("period") or "quarter")
+    period_label, unit_label = _series_period_labels(period)
     lines = [
         f"{period_label} 공고 건수입니다.",
         "",
@@ -482,6 +528,58 @@ def _build_series_answer(
         except (TypeError, ValueError):
             rendered = "-"
         lines.append(f"| {_markdown_result_cell(item.get('label'))} | {rendered} |")
+    return "\n".join(lines)
+
+
+def _build_series_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """낙찰 지표 시계열은 LLM 없이 DB 시계열 표로 직접 답합니다.
+
+    시계열 딕셔너리에는 avg_rate, bid_count, announcement_count 가 함께
+    있습니다. 요청 지표의 열만 골라 렌더링하고 원시 키 이름은 답에 쓰지
+    않습니다. 값이 모두 없으면 빈 문자열을 돌려 기존 경로로 넘깁니다.
+    """
+    if not structured_data:
+        return ""
+    summary = structured_data.get("summary") or {}
+    meta = summary.get("aggregate_meta") or {}
+    series = summary.get("time_series") or []
+    if not series:
+        return ""
+
+    if str(meta.get("metric") or "") == "announcement_count":
+        return _build_announcement_series_answer(series)
+    metric = _resolve_series_metric(plan, meta)
+    if not metric:
+        return ""
+    if all(item.get(metric) is None for item in series):
+        return ""
+
+    period = str(series[0].get("period") or "quarter")
+    period_label, unit_label = _series_period_labels(period)
+    metric_label = METRIC_LABELS[metric]
+    lines = [f"{period_label} {metric_label} 추이입니다."]
+    period_text = _series_period_text(plan, structured_data)
+    if period_text:
+        lines.append(f"기간: {period_text}")
+    lines.append("")
+    if metric == "avg_rate":
+        lines.extend([f"| {unit_label} | 평균 낙찰률 | 낙찰 건수 |", "| --- | ---: | ---: |"])
+        for item in series:
+            lines.append(
+                f"| {_series_label_cell(item, period)} "
+                f"| {_format_series_cell('avg_rate', item.get('avg_rate'))} "
+                f"| {_format_series_cell('bid_count', item.get('bid_count'))} |"
+            )
+    else:
+        lines.extend([f"| {unit_label} | 낙찰 건수 |", "| --- | ---: |"])
+        for item in series:
+            lines.append(
+                f"| {_series_label_cell(item, period)} "
+                f"| {_format_series_cell('bid_count', item.get('bid_count'))} |"
+            )
     return "\n".join(lines)
 
 
