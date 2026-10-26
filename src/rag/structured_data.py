@@ -2194,6 +2194,9 @@ def _select_recent_results(candidates: list[BidResult], limit: int) -> list[dict
     return recent
 
 
+SAMPLE_ANNOUNCEMENT_OVERFETCH_LIMIT = 60
+
+
 def _fetch_sample_announcements(
     db: Session,
     conditions: list,
@@ -2207,6 +2210,11 @@ def _fetch_sample_announcements(
     공고 목록 질의는 detailed 로 불러 공고일·마감일 같은 표 열을 함께 담습니다.
     detailed 가 아니면 기존 표본 3건과 키 구성이 그대로 유지됩니다.
     정렬 표지가 없으면 기존 공고일 내림차순을 유지합니다.
+
+    같은 공고번호의 정정·안내 행이 목록 개수를 잡아먹지 않도록 공고번호마다
+    첫 등장 행만 남깁니다. 정렬 순서를 그대로 따르므로 기본 공고일 내림차순에서는
+    가장 최신 행이 남습니다. 중복 행을 건너뛸 여유를 두려고 limit 보다 넉넉히
+    조회하되 상한을 두고, 그래도 모자라면 있는 만큼만 돌려줍니다.
     """
     columns: list[Any] = [
         BidAnnouncement.bid_ntce_no,
@@ -2227,10 +2235,16 @@ def _fetch_sample_announcements(
         select(*columns)
         .where(*conditions)
         .order_by(*_announcement_order_by(filters or {}))
-        .limit(limit)
+        .limit(min(limit * LIVE_OVERFETCH_FACTOR, SAMPLE_ANNOUNCEMENT_OVERFETCH_LIMIT))
     ).all()
     samples: list[dict[str, Any]] = []
+    seen: set[str] = set()
     for row in rows:
+        if len(samples) >= limit:
+            break
+        if row[0] in seen:
+            continue
+        seen.add(row[0])
         sample: dict[str, Any] = {
             "bid_ntce_no": row[0],
             # 표본은 순위와 달리 건너뛸 수 없으므로 화면과 같은 안내 문구로 대체합니다.
