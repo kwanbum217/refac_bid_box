@@ -11,10 +11,12 @@ from unittest.mock import patch
 from src.app.models.chatbot import KnowledgeBaseStatus
 from src.app.services.tools.kb_status_tool import build_kb_status_summary
 from src.rag.schemas import AnswerBundle, Provenance
+from tests.test_automation_rbac import _login, _make_staff, _seed_pending_request, _signup
 
 PLAN_EXEC_TARGET = "src.app.api.v1.chatbot.execute_plan_steps"
 RAG_SYNC_TARGET = "src.app.api.v1.chatbot.rag_engine.get_answer_sync"
 RAG_STREAM_TARGET = "src.app.api.v1.chatbot.rag_engine.stream_tokens"
+ENQUEUE_TARGET = "src.app.services.automation_orchestrator._enqueue_arq_job"
 
 BLOCK_HEADER = "KB 색인 상태:"
 BLOCK_BODY = "색인된 원본 문서 수"
@@ -210,3 +212,59 @@ def test_stream_kb_status_question_attaches_block_once(client, isolated_db):
     assert final["answer"].count(BLOCK_HEADER) == 1
     assert final["answer"].count(BLOCK_BODY) == 1
     assert final["kb_status"]["source_bid_count"] == 321
+
+
+# --------------------------------------------------------------------------- #
+# 자동화 응답 경로
+# --------------------------------------------------------------------------- #
+
+
+def _staff_client(client, isolated_db) -> int:
+    signup = _signup(client)
+    _login(client)
+    _make_staff(client, isolated_db)
+    return signup.json()["id"]
+
+
+@patch(ENQUEUE_TARGET, return_value=True)
+def test_missing_confirmation_answer_has_no_kb_block(mock_enqueue, client, isolated_db):
+    """승인 대기 건이 없을 때의 확인 안내 응답에도 전체 블록은 붙지 않습니다."""
+    _staff_client(client, isolated_db)
+    _seed_kb_status(isolated_db)
+
+    payload = _chat(client, "승인 후 실행해줘").json()
+
+    assert payload["intent"] == "automation_confirmation"
+    assert BLOCK_HEADER not in payload["answer"]
+    assert BLOCK_BODY not in payload["answer"]
+    assert BLOCK_HEADER in build_kb_status_summary(payload["kb_status"])
+
+
+@patch(ENQUEUE_TARGET, return_value=True)
+def test_confirmed_automation_answer_has_no_kb_block(mock_enqueue, client, isolated_db):
+    """승인 즉시 실행 응답에도 전체 블록은 붙지 않고 kb_status 필드만 남습니다."""
+    user_id = _staff_client(client, isolated_db)
+    _seed_kb_status(isolated_db)
+    _seed_pending_request(isolated_db, user_id, "job-kb-block-confirm")
+
+    payload = _chat(client, "승인 후 실행해줘").json()
+
+    assert payload["job"]["job_id"] == "job-kb-block-confirm"
+    assert BLOCK_HEADER not in payload["answer"]
+    assert BLOCK_BODY not in payload["answer"]
+    assert BLOCK_HEADER in build_kb_status_summary(payload["kb_status"])
+
+
+@patch(ENQUEUE_TARGET, return_value=True)
+def test_automation_api_answer_has_no_kb_block(mock_enqueue, client, isolated_db):
+    """자동화 API 응답의 답 본문에도 전체 블록은 붙지 않습니다."""
+    _staff_client(client, isolated_db)
+    _seed_kb_status(isolated_db)
+
+    response = client.post("/api/v1/automation/run/collect-bids", json={"reason": "테스트"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert BLOCK_HEADER not in payload["answer"]
+    assert BLOCK_BODY not in payload["answer"]
+    assert BLOCK_HEADER in build_kb_status_summary(payload["kb_status"])
