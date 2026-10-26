@@ -2178,6 +2178,25 @@ SORT_AMOUNT_DESC_MARKERS = (
     "가장 높은",
 )
 SORT_AMOUNT_ASC_MARKERS = ("낮은순", "낮은 순", "적은순", "적은 순")
+# 공고 금액 최댓값·최솟값 질문은 정렬 목록이 아니라 값 하나를 묻는 질의입니다.
+# 금액 축을 낱말로 지목한 질의에서만 이 표지를 인정해, "가장 큰 기관" 같은
+# 금액 축 없는 순위 질의를 SQL 단건 경로로 끌어오지 않습니다.
+ANNOUNCEMENT_AMOUNT_EXTREME_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"가장\s*큰|가장\s*비싼|가장\s*높은"), "max"),
+    (re.compile(r"가장\s*작은|가장\s*싼|가장\s*낮은"), "min"),
+    (re.compile(r"최댓값|최대값"), "max"),
+    (re.compile(r"최솟값|최소값"), "min"),
+    (re.compile(r"최대|최고"), "max"),
+    (re.compile(r"최소|최저"), "min"),
+)
+ANNOUNCEMENT_EXTREME_AMOUNT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("기초금액", "base_amount"),
+    ("추정가격", "presmpt_prce"),
+    ("추정금액", "presmpt_prce"),
+    ("금액", "presmpt_prce"),
+)
+BARE_EXTREME_MARKERS = ("최대", "최소", "최고", "최저")
+EXTREME_LIST_LIMIT_PATTERN = re.compile(r"\d+\s*(?:개|건)")
 
 
 def _compact_text(value: str) -> str:
@@ -2334,6 +2353,54 @@ def extract_sort_filters(query: str) -> dict[str, str]:
     if any(_compact_text(marker) in compact for marker in SORT_AMOUNT_DESC_MARKERS):
         return {"order_by": amount_field, "order_dir": "desc"}
     return {}
+
+
+def extract_amount_extreme(query: str) -> dict[str, Any]:
+    """공고 금액 최댓값·최솟값 질문을 단건 정렬 조회 조건으로 바꿉니다.
+
+    금액 축을 낱말로 지목하고 공고를 묻는 질의에서만 최댓값·최솟값 표지를
+    인정합니다. "가장 큰 기관" 처럼 금액 축이 없는 순위 질의와 "최대 5개" 처럼
+    개수를 가리키는 표지는 제외합니다. 기간을 말하지 않은 질의의 30일 기본 창은
+    order_by 를 보는 기존 apply_default_statistics_window 가 채웁니다.
+    """
+    lowered = _query_lower(query)
+    if "공고" not in lowered:
+        return {}
+    if any(marker in lowered for marker in LIST_REQUEST_MARKERS):
+        return {}
+    if EXTREME_LIST_LIMIT_PATTERN.search(lowered):
+        return {}
+
+    compact = _compact_text(lowered)
+    amount_field = ""
+    for marker, field in ANNOUNCEMENT_EXTREME_AMOUNT_FIELDS:
+        if marker in compact:
+            amount_field = field
+            break
+    if not amount_field:
+        return {}
+
+    direction = ""
+    for pattern, candidate in ANNOUNCEMENT_AMOUNT_EXTREME_PATTERNS:
+        match = pattern.search(lowered)
+        if match is None:
+            continue
+        if match.group(0) in BARE_EXTREME_MARKERS and re.match(
+            r"(?:최대|최소|최고|최저)\s*\d", lowered[match.start() :]
+        ):
+            continue
+        direction = candidate
+        break
+    if not direction:
+        return {}
+
+    return {
+        "amount_extreme": direction,
+        "order_by": amount_field,
+        "order_dir": "desc" if direction == "max" else "asc",
+        "amount_field": amount_field,
+        "announcement_limit": 1,
+    }
 
 
 def _month_end(year: int, month: int) -> date:
@@ -2979,6 +3046,17 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if announcement_list_query and not has_comparison and not is_bid_number:
         filters["announcement_limit"] = extract_result_limit(normalized_query)
 
+    # 금액 최댓값·최솟값 질문은 목록이 아니라 값 하나를 묻습니다. 정렬 조건만
+    # 싣고 벡터 경로로 보내면 LLM 이 검색 문맥의 다른 금액을 답할 수 있으므로,
+    # SQL 단건 조회로 보내고 결정론적 문장이 답하게 합니다.
+    amount_extreme: dict[str, Any] = {}
+    if not result_list_query and not is_result_amount_scope(normalized_query):
+        amount_extreme = extract_amount_extreme(normalized_query)
+    if amount_extreme:
+        filters.update(amount_extreme)
+        use_sql = True
+        use_vector = False
+
     if any(keyword in lowered for keyword in TREND_KEYWORDS):
         filters["analysis_mode"] = "trend"
 
@@ -3000,6 +3078,12 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         route_reason_parts.append("낙찰 결과 목록 질의")
     if announcement_list_query:
         route_reason_parts.append("공고 목록 질의")
+    if amount_extreme:
+        route_reason_parts.append(
+            "공고 금액 최댓값 질의"
+            if amount_extreme.get("amount_extreme") == "max"
+            else "공고 금액 최솟값 질의"
+        )
     if has_stat_keywords:
         route_reason_parts.append("정형 통계 질의")
     if has_semantic_keywords:

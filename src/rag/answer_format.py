@@ -286,6 +286,75 @@ def _build_announcement_list_answer(
     return "\n".join(lines)
 
 
+def _format_amount_extreme_period(filters: dict) -> str:
+    recent_days = int(filters.get("recent_days") or 0)
+    if recent_days:
+        return f"최근 {recent_days}일"
+    date_from = _normalize_text(str(filters.get("date_from") or ""))
+    date_to = _normalize_text(str(filters.get("date_to") or ""))
+    if date_from and date_to:
+        return f"{date_from} ~ {date_to} 기간"
+    if date_from:
+        return f"{date_from} 이후"
+    if date_to:
+        return f"{date_to} 이전"
+    return "전체 기간"
+
+
+def _build_amount_extreme_answer(
+    plan: RetrievalPlan,
+    structured_data: dict | None,
+) -> str:
+    """공고 금액 최댓값·최솟값 질문은 SQL 1건 결과를 문장 하나로 답합니다.
+
+    벡터 검색 문맥의 다른 금액을 LLM 이 고르지 않도록, 정렬 조회 1위와 그 금액을
+    그대로 읽어 결정론적 문장으로 만듭니다. 금액이 NULL 인 행은 조회 계층이
+    제외하므로 여기서는 값이 없는 경우만 빈 문자열로 돌려 LLM 경로에 맡깁니다.
+    """
+    filters = plan.filters or {}
+    direction = _normalize_text(str(filters.get("amount_extreme") or ""))
+    if (
+        not plan.use_sql
+        or direction not in ("max", "min")
+        or not isinstance(structured_data, dict)
+        or structured_data.get("query_skipped")
+    ):
+        return ""
+
+    summary = structured_data.get("summary") or {}
+    samples = summary.get("sample_announcements") or []
+    response_filters = structured_data.get("filters") or {}
+    amount_field = _normalize_text(
+        str(filters.get("amount_field") or response_filters.get("amount_field") or "presmpt_prce")
+    )
+    amount_label = AMOUNT_FIELD_LABELS.get(amount_field, "금액")
+    period = _format_amount_extreme_period({**response_filters, **filters})
+    category_label = _normalize_text(str(response_filters.get("category_label") or ""))
+    if not category_label:
+        category = _normalize_text(str(filters.get("category") or ""))
+        category_label = _category_label(category) if category else ""
+    if category_label == "-":
+        category_label = ""
+    subject = f"{period} {category_label} 공고 중" if category_label else f"{period} 공고 중"
+
+    if not samples:
+        return f"{subject} {amount_label} 정보가 있는 공고가 없습니다."
+
+    sample = samples[0]
+    value = sample.get(amount_field)
+    if value is None:
+        return ""
+
+    direction_label = "가장 큰" if direction == "max" else "가장 작은"
+    return (
+        f"{subject} {amount_label}이 {direction_label} 공고는 "
+        f"{_normalize_text(str(sample.get('bid_ntce_nm') or '-'))}"
+        f"({_normalize_text(str(sample.get('bid_ntce_no') or '-'))}, "
+        f"{_normalize_text(str(sample.get('dminstt_nm') or '-'))})이며 "
+        f"{amount_label}은 {_format_result_amount(value)}입니다."
+    )
+
+
 def _format_bid_rate_comparison(result: dict, comparison: Any) -> str:
     """낙찰률을 같은 분류 평균과 비교한 문장을 만듭니다."""
     if not isinstance(comparison, dict):

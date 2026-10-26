@@ -627,6 +627,12 @@ def _announcement_conditions(
         conditions.append(BidAnnouncement.ntce_kind_nm == notice_kind)
     conditions.extend(_close_conditions(filters))
     conditions.extend(_amount_conditions(filters, ANNOUNCEMENT_AMOUNT_COLUMNS))
+    # 최댓값·최솟값 질문은 금액이 NULL 인 행을 순위에서 제외합니다. 정렬만으로는
+    # NULL 이 섞일 수 있고, 값 하나를 묻는 답에 빈 금액이 1위가 되면 안 됩니다.
+    if _normalize_text(str(filters.get("amount_extreme") or "")):
+        amount_column = ANNOUNCEMENT_AMOUNT_COLUMNS.get(_amount_field_filter(filters))
+        if amount_column is not None:
+            conditions.append(amount_column.is_not(None))
     if bid_ntce_no:
         conditions.append(BidAnnouncement.bid_ntce_no == bid_ntce_no)
     return conditions
@@ -2214,6 +2220,7 @@ def _fetch_sample_announcements(
                 BidAnnouncement.category,
                 BidAnnouncement.presmpt_prce,
                 BidAnnouncement.bid_clse_dt,
+                BidAnnouncement.base_amount,
             ]
         )
     rows = db.execute(
@@ -2238,6 +2245,7 @@ def _fetch_sample_announcements(
                     "category_label": _category_label(row[4]),
                     "presmpt_prce": int(row[5]) if row[5] is not None else None,
                     "bid_clse_dt": row[6].isoformat(sep=" ") if row[6] is not None else None,
+                    "base_amount": int(row[7]) if row[7] is not None else None,
                 }
             )
         samples.append(sample)
