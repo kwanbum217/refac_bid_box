@@ -558,7 +558,7 @@ def _result_conditions(
     if date_from:
         conditions.append(BidResult.rl_openg_dt >= date_from)
     if date_to:
-        conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+        conditions.append(BidResult.rl_openg_dt < date_to + timedelta(days=1))
     if institution_name or institution_names is not None:
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
@@ -614,7 +614,7 @@ def _announcement_conditions(
     if date_from:
         conditions.append(BidAnnouncement.bid_ntce_dt >= date_from)
     if date_to:
-        conditions.append(BidAnnouncement.bid_ntce_dt <= date_to + timedelta(days=1))
+        conditions.append(BidAnnouncement.bid_ntce_dt < date_to + timedelta(days=1))
     if institution_name or institution_names is not None:
         conditions.append(
             _institution_condition(BidAnnouncement.dminstt_nm, institution_name, institution_names)
@@ -1866,7 +1866,7 @@ def _period_category_comparison_breakdown(
             if shared_from:
                 conditions.append(BidAnnouncement.bid_ntce_dt >= shared_from)
             if shared_to:
-                conditions.append(BidAnnouncement.bid_ntce_dt <= shared_to + timedelta(days=1))
+                conditions.append(BidAnnouncement.bid_ntce_dt < shared_to + timedelta(days=1))
         if announcement_scope_condition is not None:
             conditions.append(announcement_scope_condition)
         return conditions
@@ -1885,7 +1885,7 @@ def _period_category_comparison_breakdown(
             if shared_from:
                 conditions.append(BidResult.rl_openg_dt >= shared_from)
             if shared_to:
-                conditions.append(BidResult.rl_openg_dt <= shared_to + timedelta(days=1))
+                conditions.append(BidResult.rl_openg_dt < shared_to + timedelta(days=1))
         if result_scope_condition is not None:
             conditions.append(result_scope_condition)
         return conditions
@@ -2618,7 +2618,7 @@ def _bid_detail_result(db: Session, plan: RetrievalPlan, bid_ntce_no: str) -> di
         if date_from:
             baseline_conditions.append(BidResult.rl_openg_dt >= date_from)
         if date_to:
-            baseline_conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+            baseline_conditions.append(BidResult.rl_openg_dt < date_to + timedelta(days=1))
         if category:
             baseline_conditions.append(BidResult.category == category)
         baseline_count, baseline_rate, baseline_samples = _cached_aggregate(
@@ -2756,7 +2756,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         if date_from:
             common_conditions.append(BidResult.rl_openg_dt >= date_from)
         if date_to:
-            common_conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+            common_conditions.append(BidResult.rl_openg_dt < date_to + timedelta(days=1))
         if category:
             common_conditions.append(BidResult.category == category)
 
