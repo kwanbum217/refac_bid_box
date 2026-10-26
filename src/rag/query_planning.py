@@ -1421,6 +1421,61 @@ def _strip_comparison_connector(token: str) -> str:
     return token
 
 
+# 관형형 어미로 끝나는 활용형은 명사를 수식하는 서술어이지 기관 이름이 아닙니다.
+# "최근 7일 동안 올라온 공고" 의 "올라온" 을 기관 후보로 남기면 카탈로그 해석에
+# 실패해 미해석 안내로 빠집니다. 서술격 조사 "인"(마감인·진행중인)도 같은 이유로
+# 뺍니다.
+INSTITUTION_CANDIDATE_PREDICATE_ENDINGS = frozenset(
+    {"된", "한", "온", "난", "은", "는", "던", "할", "될", "인"}
+)
+# 부사·수량어는 기관 이름이 아닙니다. 짧은 낱말은 후보 길이 검사에서 먼저
+# 걸리지만, "전체"·"모두" 처럼 길이 검사를 넘는 값도 있어 상수 목록으로 함께
+# 뺍니다.
+INSTITUTION_CANDIDATE_ADVERB_TERMS = frozenset(
+    {"총", "전체", "모두", "다", "전부", "대략", "약", "혹시", "좀"}
+)
+# 실제 기관명은 ㄴ·ㄹ 받침으로 끝나기도 합니다. 기관 지정 접미사로 끝나는 이름은
+# 어미 규칙에서 제외해 후보를 잃지 않게 합니다.
+INSTITUTION_CANDIDATE_NAME_ENDINGS = ("원", "단")
+HANGUL_WORD_PATTERN = re.compile(r"^[가-힣]{2,}$")
+KOREAN_FINAL_CONSONANT_N = 4
+KOREAN_FINAL_CONSONANT_L = 8
+
+
+def _korean_final_consonant(syllable: str) -> int:
+    """한글 음절의 종성 인덱스를 돌려줍니다. 한글이 아니면 0 입니다."""
+    if not syllable:
+        return 0
+    code = ord(syllable) - 0xAC00
+    if 0 <= code < 11172:
+        return code % 28
+    return 0
+
+
+def _is_institution_candidate_modifier(token: str) -> bool:
+    """관형형·부사·수량어라서 기관 이름이 될 수 없는 어절인지 판정합니다.
+
+    "올라온", "등록된", "마감인", "새로운" 처럼 명사를 수식하는 활용형은 기관명이
+    아닙니다. 받침 ㄴ·ㄹ 로 끝나는 어절 가운데 앞 음절이 모음으로 끝나면 관형형
+    어미가 붙은 형태로 봅니다. 다만 "진흥원"·"공단" 처럼 기관 지정 접미사로
+    끝나는 이름은 실제 기관일 수 있으므로 남깁니다.
+    """
+    if token in INSTITUTION_CANDIDATE_ADVERB_TERMS:
+        return True
+    if not HANGUL_WORD_PATTERN.fullmatch(token):
+        return False
+    if token.endswith(INSTITUTION_CANDIDATE_NAME_ENDINGS):
+        return False
+    if token[-1] in INSTITUTION_CANDIDATE_PREDICATE_ENDINGS:
+        return True
+    if _korean_final_consonant(token[-1]) not in (
+        KOREAN_FINAL_CONSONANT_N,
+        KOREAN_FINAL_CONSONANT_L,
+    ):
+        return False
+    return _korean_final_consonant(token[-2]) == 0
+
+
 def _comparison_institution_candidate_excluded(token: str) -> bool:
     """기관 후보로 쓸 수 없는 낱말인지 확인합니다.
 
@@ -1457,6 +1512,8 @@ def _comparison_unresolved_institution_candidate(query: str) -> str:
     remaining = COMPARISON_PERIOD_PATTERN.sub(" ", prefix)
     for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(remaining):
         cleaned = _strip_institution_particle(token)
+        if _is_institution_candidate_modifier(cleaned):
+            continue
         if len(cleaned) <= 2:
             continue
         if COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(cleaned):
@@ -2050,7 +2107,7 @@ def is_result_list_query(query: str) -> bool:
     return not is_entity_specific_query(query)
 
 
-ANNOUNCEMENT_FRESHNESS_MARKERS = ("올라온", "등록된", "게시된", "신규", "최신")
+ANNOUNCEMENT_FRESHNESS_MARKERS = ("올라온", "등록된", "게시된", "나온", "들어온", "신규", "최신")
 # 공고번호·공고명은 필드 이름입니다. 필드 이름이 질의 앞에 오면 '공고' 뒤를 보는
 # 부정 전방 탐색이 거르지 못하므로 목록 판정 전체에서 먼저 배제합니다.
 ANNOUNCEMENT_FIELD_MARKER_PATTERN = re.compile(r"공고\s*(?:번호|명)")
@@ -2093,7 +2150,7 @@ def _has_announcement_list_scope(lowered: str) -> bool:
 
     분류나 연도만 있는 "서울의 2026년 ... 용역 공고를 알려줘" 는 지목형 조회이지
     최신 목록 요청이 아니고, "최근"·"요즘" 같은 막연한 표현도 범위를 정하지
-    못합니다. 그래서 동사 단독 경로는 올라온·등록된·게시된·신규·최신 표지를
+    못합니다. 그래서 동사 단독 경로는 올라온·등록된·게시된·나온·들어온·신규·최신 표지를
     요구하고, 나머지는 기존 최신성 힌트 경로에 남깁니다.
     """
     return any(marker in lowered for marker in ANNOUNCEMENT_FRESHNESS_MARKERS)
@@ -2109,7 +2166,7 @@ def is_announcement_list_query(query: str) -> bool:
     그대로 맡도록 거짓을 반환합니다.
     설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
     개수나 '목록'·'리스트' 표지가 있으면 참이고, 요청 동사만 있으면 신선도
-    표지(올라온·등록된·게시된·신규·최신)를 함께 요구해 범위 없는 "공고 알려줘" 가
+    표지(올라온·등록된·게시된·나온·들어온·신규·최신)를 함께 요구해 범위 없는 "공고 알려줘" 가
     전체 최신 목록으로 새지 않게 합니다. 마감일 창·금액 조건·정렬 표지가
     파싱됐고 요청 동사가 함께 있으면 그 조건을 목록의 범위 표지로 인정해
     참을 반환합니다. 조건이 없는 "공고 보여줘" 의 판정은 그대로입니다.
