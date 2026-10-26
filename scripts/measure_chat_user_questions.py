@@ -389,6 +389,22 @@ NUMBER_MASK_PATTERNS = (
 # 이 마스크 없이 한다. "개월" 은 "월" 보다, "분기" 는 "분" 보다 먼저 둔다.
 ANSWER_UNIT_MASK_PATTERN = re.compile(r"\d+(?:\.\d+)?\s*(?:개월|분기|년|월|일|시|분|초|주|차)")
 
+# 수치 후보에서 빼야 할 오염 구간. KB 색인 블록, 표 행 번호, [N] 인용 표시,
+# 괄호 안 구 형식 공고ID, 학년도/년도 연도 라벨은 집계 값이 아니다. 답변과
+# 질문에 같은 규칙을 적용해 무관한 숫자로 판정이 흔들리지 않게 한다.
+KB_STATUS_BLOCK_PATTERN = re.compile(r"KB\s*색인\s*상태\s*:.*\Z", re.DOTALL)
+TABLE_ROW_NUMBER_PATTERN = re.compile(r"(?m)^([ \t]*\|)[ \t]*\d+[ \t]*(?=\|)")
+CITATION_MARKER_PATTERN = re.compile(r"\[\d+\]")
+LEGACY_BID_NO_IN_PARENS_PATTERN = re.compile(r"\(\s*\d{8,}\s*\)")
+YEAR_LABEL_PATTERN = re.compile(r"(?<!\d)\d{4}\s*(?:학년도|년도)")
+CONTAMINATION_MASK_PATTERNS = (
+    KB_STATUS_BLOCK_PATTERN,
+    TABLE_ROW_NUMBER_PATTERN,
+    CITATION_MARKER_PATTERN,
+    LEGACY_BID_NO_IN_PARENS_PATTERN,
+    YEAR_LABEL_PATTERN,
+)
+
 
 def _run_read_only(
     statement: str, limit: int, query: QueryFn
@@ -492,15 +508,32 @@ def extract_numbers(text: str) -> list[float]:
     return numbers
 
 
+def mask_contaminated_spans(text: str) -> str:
+    """수치 후보에서 오염 구간을 공백으로 치환한다.
+
+    KB 색인 상태 블록은 그 줄부터 답변 끝까지, 마크다운 표의 첫 셀이 순수
+    숫자이면 그 셀만, [N] 인용 표시와 괄호 안 8자리 이상 순수 숫자(문자
+    접두가 없는 구 형식 공고ID), YYYY학년도/YYYY년도 연도 라벨도 집계 값이
+    아니다. 답변과 질문에 같은 마스킹을 적용해야 무관한 숫자로 가짜 통과나
+    가짜 실패가 나지 않는다.
+    """
+    masked = text or ""
+    for pattern in CONTAMINATION_MASK_PATTERNS:
+        masked = pattern.sub(lambda match: " " * len(match.group(0)), masked)
+    return masked
+
+
 def extract_answer_numbers(text: str) -> list[float]:
-    """답변 수치를 뽑는다. 기간 표기 수는 대조 후보에서 뺀다.
+    """답변 수치를 뽑는다. 오염 구간과 기간 표기 수는 대조 후보에서 뺀다.
 
     "2026년 10월" 의 2026 과 10, "3분기" 의 3, "12개월" 의 12 처럼 바로 뒤에
     년/월/일/시/분/초/분기/주/개월/차 가 붙은 수는 기간 표기이지 집계 값이 아니다.
     날짜(YYYY-MM-DD, YYYY.MM.DD)와 시각(HH:MM) 안의 수는 extract_numbers 가
-    이미 가린다. 질문 쪽 수치는 원칙 1 대로 extract_numbers 로 뽑는다.
+    이미 가린다. KB 색인 블록·표 행 번호처럼 집계 값이 아닌 수는
+    mask_contaminated_spans 가 먼저 가린다.
     """
-    return extract_numbers(ANSWER_UNIT_MASK_PATTERN.sub(" ", text or ""))
+    masked = mask_contaminated_spans(text)
+    return extract_numbers(ANSWER_UNIT_MASK_PATTERN.sub(" ", masked))
 
 
 def subtract_question_numbers(
@@ -554,6 +587,12 @@ def extract_korean_amounts(text: str) -> list[float]:
             value += float(match.group(2))
         amounts.append(value)
     return amounts
+
+
+def extract_question_numbers(text: str) -> list[float]:
+    """질문 수치를 뽑는다. 답변과 같은 오염 구간 마스킹을 먼저 적용한다."""
+    masked = mask_contaminated_spans(text)
+    return extract_numbers(masked) + extract_korean_amounts(masked)
 
 
 def _sql_literal(value: str) -> str:
@@ -1166,7 +1205,7 @@ def _evaluate_numeric(
     value = truth.get("value")
     # 억/만 표기 금액("1억 2,345만원")은 숫자 추출만으로 DB 값과 만나지 않는다.
     # 질문에 나온 같은 표기도 후보에서 빼야 되풀이한 값을 정답으로 오인하지 않는다.
-    question_numbers = extract_numbers(question) + extract_korean_amounts(question)
+    question_numbers = extract_question_numbers(question)
     answer_numbers = extract_answer_numbers(answer) + extract_korean_amounts(answer)
     candidates = subtract_question_numbers(answer_numbers, question_numbers)
     detail: dict[str, Any] = {
@@ -1425,7 +1464,7 @@ def _evaluate_numeric_set(
 ) -> tuple[bool, dict[str, Any]]:
     """여러 기준 수치가 모두 답변에 있는지 본다."""
     values = [float(value) for value in truth.get("values") or []]
-    question_numbers = extract_numbers(question) + extract_korean_amounts(question)
+    question_numbers = extract_question_numbers(question)
     answer_numbers = extract_answer_numbers(answer) + extract_korean_amounts(answer)
     candidates = subtract_question_numbers(answer_numbers, question_numbers)
     ratio = float(check.get("tolerance_ratio", 0.0))
@@ -1455,7 +1494,7 @@ def _evaluate_time_series(
 ) -> tuple[bool, dict[str, Any]]:
     """버킷 수가 min_buckets 이상이고 버킷 값이 모두 답변에 있는지 본다."""
     buckets = [bucket for bucket in truth.get("buckets") or [] if "value" in bucket]
-    question_numbers = extract_numbers(question) + extract_korean_amounts(question)
+    question_numbers = extract_question_numbers(question)
     answer_numbers = extract_answer_numbers(answer) + extract_korean_amounts(answer)
     candidates = subtract_question_numbers(answer_numbers, question_numbers)
     ratio = float(check.get("tolerance_ratio", 0.0))
@@ -1581,7 +1620,7 @@ def _evaluate_filter_assertion(
     bid_numbers = sorted(extract_bid_numbers(text))
     fabricated = sorted(set(FABRICATED_NUMBER_PATTERN.findall(text)))
     substituted = truth.get("value")
-    question_numbers = extract_numbers(question) + extract_korean_amounts(question)
+    question_numbers = extract_question_numbers(question)
     answer_numbers = extract_answer_numbers(text) + extract_korean_amounts(text)
     candidates = subtract_question_numbers(answer_numbers, question_numbers)
     ratio = float(check.get("tolerance_ratio", 0.0))
