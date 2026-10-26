@@ -209,10 +209,14 @@ def test_chat_predicts_requested_count_of_latest_goods_bids(
 
 @patch(RAG_TARGET, side_effect=_answer_bundle)
 @patch(PLAN_EXEC_TARGET)
-def test_chat_answer_mode_includes_kb_status_and_tool_context(
+def test_chat_answer_mode_keeps_kb_status_field_without_block(
     mocked_plan_steps, mocked_rag, client, isolated_db
 ):
-    """원본 test_chat_api_answer_mode_includes_kb_status_and_tool_context 대응."""
+    """원본 test_chat_api_answer_mode_includes_kb_status_and_tool_context 대응.
+
+    KB 상태는 응답의 kb_status 필드로만 싣고, 묻지 않은 벡터 검색 답변 본문에는
+    운영 수치 블록을 붙이지 않습니다.
+    """
     _login(client)
     _seed_kb_status(isolated_db)
     mocked_plan_steps.return_value = {
@@ -232,7 +236,7 @@ def test_chat_answer_mode_includes_kb_status_and_tool_context(
     assert payload["mode"] == "answer"
     assert payload["kb_status"]["source_bid_count"] == 321
     assert "기본 답변" in payload["answer"]
-    assert "KB" in payload["answer"]
+    assert "KB 색인 상태" not in payload["answer"]
     assert payload["visualizations"]
 
     assert mocked_rag.call_args.args[0] == "최근 공고 특징 알려줘"
