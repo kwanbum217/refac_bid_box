@@ -177,7 +177,26 @@ OFFICIAL_PROVINCE_NAMES = frozenset(
         "제주특별자치도",
     }
 )
-TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별")
+# 정식 광역 명칭 바로 뒤 시·군·구를 좁힐 때 쓰는 목록입니다. 특별시·광역시·
+# 특별자치시는 OFFICIAL_PROVINCE_NAMES 에 없으므로 함께 둡니다.
+OFFICIAL_BROAD_REGION_NAMES = frozenset(
+    {
+        "서울특별시",
+        "부산광역시",
+        "대구광역시",
+        "인천광역시",
+        "광주광역시",
+        "대전광역시",
+        "울산광역시",
+        "세종특별자치시",
+        *OFFICIAL_PROVINCE_NAMES,
+    }
+)
+TREND_KEYWORDS = ("추세", "흐름", "변화", "추이", "월별", "분기별", "동향")
+# "동향" 은 공고명 낱말로도 쓰입니다. 목록 요청 표지가 있거나 "동향" 바로 뒤에
+# 표제어가 이어지면 추이 질의가 아니라 목록·의미 검색 질의로 남깁니다.
+TREND_LIST_MARKERS = ("보여줘", "목록", "리스트", "찾아줘", "뽑아줘")
+TREND_TITLE_FOLLOWER_PATTERN = re.compile(r"동향\s*(?:보고서|분석|조사|연구|파악|모니터링|용역)")
 
 AGGREGATE_AXIS_MARKERS: dict[str, tuple[str, ...]] = {
     "category": ("분류별", "분야별", "업무구분별", "종류별", "카테고리별"),
@@ -234,7 +253,25 @@ AGGREGATE_BID_MARKERS = (
     "낙찰 중",
     "낙찰 수",
 )
+# 낙찰 금액은 낙찰 결과 테이블의 sucsf_bid_amt 합계로만 집계합니다. 공고
+# 테이블에는 낙찰 금액 컬럼이 없으므로 공고 건수와 섞지 않습니다. "낙찰률"
+# 표지가 함께 있으면 기존 규칙대로 평균 낙찰률이 이깁니다.
+AGGREGATE_AWARD_AMOUNT_MARKERS = (
+    "낙찰 금액",
+    "낙찰금액",
+    "계약 금액",
+    "계약금액",
+    "금액 상위",
+    "금액상위",
+    "금액 순위",
+    "금액순위",
+    "금액 많은",
+    "금액이 많은",
+)
 AGGREGATE_ANNOUNCEMENT_MARKERS = ("공고 건수", "공고건수", "공고 수", "공고수", "공고")
+# 축이 정해지고 공고·낙찰 도메인 표지가 있는 순위 질의는 정형 집계 대상입니다.
+# 축만 지목된 목록·설명 질의는 기존 경로를 유지합니다.
+AXIS_RANKING_MARKERS = ("상위", "순위", "어디야", "많은 곳")
 DEFAULT_GROUP_LIMIT = 20
 MAX_GROUP_LIMIT = 50
 
@@ -406,11 +443,13 @@ RESULT_LIST_EXPLANATION_MARKERS = ("방법", "규정", "설명", "어떻게", "�
 RESULT_LIST_BID_NUMBER_PATTERN = re.compile(r"[A-Z]\d{2}[A-Z]{2}\d{8}|\d{11,}", re.IGNORECASE)
 # 공고번호는 "R26BK01778156" 처럼 영문 1자, 숫자 2자, 영문 2자, 숫자 8자로 고정됩니다.
 # 접수번호(11자리 숫자)나 금액처럼 숫자만 긴 값을 공고번호로 읽지 않도록 숫자 대안을
-# 두지 않습니다. 차수 접미사("-001")가 붙은 값은 다른 식별자이므로 단건 조회로
+# 두지 않습니다. 뒤에 붙는 차수("-001")는 다른 식별자가 아니라 같은 공고의 회차
+# (bid_ntce_ord)이므로 선택 그룹으로 읽습니다. 차수가 세 자리가 아니면 공고번호로
 # 읽지 않습니다. 값은 대문자로 정규화해 DB 의 표기와 맞춥니다.
 BID_NTCE_NO_PATTERN = re.compile(
     r"(?:공고\s*번호\s*)?(?<![A-Za-z0-9])"
-    r"(?P<bid_ntce_no>[A-Z]\d{2}[A-Z]{2}\d{8})(?!\d)(?!-\d)",
+    r"(?P<bid_ntce_no>[A-Z]\d{2}[A-Z]{2}\d{8})(?:-(?P<bid_ntce_ord>\d{3}))?"
+    r"(?!\d)(?!-\d)",
     re.IGNORECASE,
 )
 BID_NTCE_NO_EXPLANATION_MARKERS = (
@@ -486,6 +525,12 @@ ADMIN_REGION_PATTERN = re.compile(
 # 광역 단축명보다 좁은 범위는 시·군·구 행정 구역입니다. "도시" 처럼 기저가 한 글자인
 # 낱말은 제외되도록 기저를 두 글자 이상 요구합니다.
 ADMIN_DISTRICT_PATTERN = re.compile(r"^[가-힣]{2,8}(?:시|군|구)$")
+# 정식 광역 명칭 오른쪽에 오는 시·군·구 어절입니다. "중구"·"동구" 처럼 기저가
+# 한 글자인 구를 포함해야 하므로 ADMIN_DISTRICT_PATTERN 보다 기저 길이를 넓힙니다.
+OFFICIAL_DISTRICT_PATTERN = re.compile(r"^[가-힣]{1,8}(?:시|군|구)$")
+# 시·군·구를 둘 이상 나열·비교할 때 쓰는 연결어입니다. 이 경우 첫 구역으로
+# 좁히면 나머지 구역이 유실되므로 축소하지 않고 기존 지역 경로로 넘깁니다.
+OFFICIAL_DISTRICT_ENUM_CONNECTORS = ("이랑", "랑", "하고", "와", "과", "및", "대비", "비교", "vs")
 ADMIN_REGION_OFFICE_SUFFIX = "청"
 INSTITUTION_SUBUNIT_SUFFIXES = ("지역본부", "본부", "지사", "지부", "지점", "출장소", "사업단")
 INSTITUTION_SCOPE_EXPLANATORY_MARKERS = (
@@ -642,6 +687,105 @@ def _admin_region_name(token: str) -> str:
     return ""
 
 
+def _official_district_name(token: str) -> str:
+    """정식 광역 명칭 뒤에 오는 시·군·구 어절을 지명으로 정규화합니다."""
+    if token in OFFICIAL_BROAD_REGION_NAMES:
+        return ""
+    value = _strip_institution_particle(token)
+    if value.endswith(ADMIN_REGION_OFFICE_SUFFIX) and len(value) > 2:
+        value = value[: -len(ADMIN_REGION_OFFICE_SUFFIX)]
+    if not value or value in INSTITUTION_SCOPE_EXCLUDED_TERMS:
+        return ""
+    if value.endswith(INSTITUTION_SCOPE_EXCLUDED_SUFFIXES):
+        return ""
+    if not OFFICIAL_DISTRICT_PATTERN.fullmatch(value):
+        return ""
+    return value
+
+
+def _strip_official_district_connector(token: str) -> str:
+    """어절 끝에 붙은 나열·비교 연결어를 떼어 냅니다."""
+    for connector in OFFICIAL_DISTRICT_ENUM_CONNECTORS:
+        if len(token) > len(connector) and token.endswith(connector):
+            return token[: -len(connector)]
+    return token
+
+
+def _official_district_enum_name(token: str) -> str:
+    """나열·비교 연결어를 떼어 낸 어절의 시·군·구 지명을 돌려줍니다."""
+    return _official_district_name(_strip_official_district_connector(token))
+
+
+def _official_region_name(token: str) -> str:
+    """어절이 가리키는 광역 명칭이나 시·군·구 지명을 돌려줍니다."""
+    value = _strip_official_district_connector(token)
+    for name in (value, _strip_institution_particle(value)):
+        if name in OFFICIAL_BROAD_REGION_NAMES:
+            return name
+    return _official_district_name(value)
+
+
+def _official_province_district_enumerated(pairs: list[tuple[str, str]]) -> bool:
+    """시·군·구가 둘 이상 나열·비교됐는지 판정합니다.
+
+    지명이 둘 이상이면 첫 구역만 남기면 나머지 구역이 유실됩니다. 지명 하나가
+    연결어나 쉼표로 다른 행정 구역과 이어지는 경우("중구와 부산광역시")도
+    비교·나열로 봅니다. 기간 비교("중구 작년 대비 올해")는 연결어가 지명 바로
+    뒤에 오지 않으므로 해당하지 않습니다.
+    """
+    if len({_official_district_enum_name(token) for token, _ in pairs} - {""}) >= 2:
+        return True
+    for index, (token, _separator) in enumerate(pairs):
+        if not _official_district_enum_name(token) or index + 1 >= len(pairs):
+            continue
+        following, separator = pairs[index + 1]
+        attached = _strip_official_district_connector(token) != token
+        separated = any(marker in separator for marker in INSTITUTION_ENUM_SEPARATORS)
+        if (attached or separated) and _official_region_name(following):
+            return True
+        if (
+            following in OFFICIAL_DISTRICT_ENUM_CONNECTORS
+            and index + 2 < len(pairs)
+            and _official_region_name(pairs[index + 2][0])
+        ):
+            return True
+    return False
+
+
+def _official_province_district_scope(query: str) -> str:
+    """정식 광역 명칭 바로 뒤 시·군·구를 '<광역> <시·군·구>' 범위로 돌려줍니다.
+
+    "서울특별시 중구", "부산광역시 해운대구", "경기도 수원시" 처럼 정식 광역
+    명칭과 시·군·구가 이어지면 광역 전체가 아니라 그 구역 기관 범위입니다.
+    띄어 쓴 형태와 붙여 쓴 형태를 모두 받고, 정식 명칭만 있는 질의는 빈
+    문자열을 돌려 기존 광역 동작을 유지합니다. 시·군·구가 둘 이상 나열·비교된
+    질의도 첫 구역만 남기지 않도록 빈 문자열을 돌려 기존 지역 경로를 씁니다.
+    """
+    tokens = [
+        token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(_normalize_text(query)) if token
+    ]
+    if _official_province_district_enumerated(_institution_enumeration_token_pairs(query)):
+        return ""
+    for index, token in enumerate(tokens):
+        province = token
+        if province not in OFFICIAL_BROAD_REGION_NAMES:
+            province = _strip_institution_particle(token)
+        if province not in OFFICIAL_BROAD_REGION_NAMES:
+            continue
+        if index + 1 < len(tokens):
+            district = _official_district_name(tokens[index + 1])
+            if district:
+                return f"{province} {district}"
+    for token in tokens:
+        for province in sorted(OFFICIAL_BROAD_REGION_NAMES, key=len, reverse=True):
+            if token == province or not token.startswith(province):
+                continue
+            district = _official_district_name(token[len(province) :])
+            if district:
+                return f"{province} {district}"
+    return ""
+
+
 def _institution_token_candidates(token: str, *, include_entity_org_tokens: bool) -> list[str]:
     """토큰 하나에서 기관 범위 후보를 뽑습니다. 원형을 먼저 보고 조사를 뗀 형태를 봅니다."""
     candidates: list[str] = []
@@ -783,6 +927,9 @@ def extract_institution_scope(
         )
         if enumerated:
             return {"institution_names": enumerated}
+    official_district = _official_province_district_scope(normalized)
+    if official_district:
+        return {"institution_name": official_district}
     tokens = [token for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(normalized) if token]
 
     best_name = ""
@@ -851,6 +998,8 @@ def _is_specific_institution_scope(name: str) -> bool:
     if not normalized:
         return False
     if normalized in OFFICIAL_PROVINCE_NAMES:
+        return True
+    if _official_province_district_scope(normalized):
         return True
     if _is_broad_region_name(normalized):
         return False
@@ -1421,6 +1570,61 @@ def _strip_comparison_connector(token: str) -> str:
     return token
 
 
+# 관형형 어미로 끝나는 활용형은 명사를 수식하는 서술어이지 기관 이름이 아닙니다.
+# "최근 7일 동안 올라온 공고" 의 "올라온" 을 기관 후보로 남기면 카탈로그 해석에
+# 실패해 미해석 안내로 빠집니다. 서술격 조사 "인"(마감인·진행중인)도 같은 이유로
+# 뺍니다.
+INSTITUTION_CANDIDATE_PREDICATE_ENDINGS = frozenset(
+    {"된", "한", "온", "난", "은", "는", "던", "할", "될", "인"}
+)
+# 부사·수량어는 기관 이름이 아닙니다. 짧은 낱말은 후보 길이 검사에서 먼저
+# 걸리지만, "전체"·"모두" 처럼 길이 검사를 넘는 값도 있어 상수 목록으로 함께
+# 뺍니다.
+INSTITUTION_CANDIDATE_ADVERB_TERMS = frozenset(
+    {"총", "전체", "모두", "다", "전부", "대략", "약", "혹시", "좀"}
+)
+# 실제 기관명은 ㄴ·ㄹ 받침으로 끝나기도 합니다. 기관 지정 접미사로 끝나는 이름은
+# 어미 규칙에서 제외해 후보를 잃지 않게 합니다.
+INSTITUTION_CANDIDATE_NAME_ENDINGS = ("원", "단")
+HANGUL_WORD_PATTERN = re.compile(r"^[가-힣]{2,}$")
+KOREAN_FINAL_CONSONANT_N = 4
+KOREAN_FINAL_CONSONANT_L = 8
+
+
+def _korean_final_consonant(syllable: str) -> int:
+    """한글 음절의 종성 인덱스를 돌려줍니다. 한글이 아니면 0 입니다."""
+    if not syllable:
+        return 0
+    code = ord(syllable) - 0xAC00
+    if 0 <= code < 11172:
+        return code % 28
+    return 0
+
+
+def _is_institution_candidate_modifier(token: str) -> bool:
+    """관형형·부사·수량어라서 기관 이름이 될 수 없는 어절인지 판정합니다.
+
+    "올라온", "등록된", "마감인", "새로운" 처럼 명사를 수식하는 활용형은 기관명이
+    아닙니다. 받침 ㄴ·ㄹ 로 끝나는 어절 가운데 앞 음절이 모음으로 끝나면 관형형
+    어미가 붙은 형태로 봅니다. 다만 "진흥원"·"공단" 처럼 기관 지정 접미사로
+    끝나는 이름은 실제 기관일 수 있으므로 남깁니다.
+    """
+    if token in INSTITUTION_CANDIDATE_ADVERB_TERMS:
+        return True
+    if not HANGUL_WORD_PATTERN.fullmatch(token):
+        return False
+    if token.endswith(INSTITUTION_CANDIDATE_NAME_ENDINGS):
+        return False
+    if token[-1] in INSTITUTION_CANDIDATE_PREDICATE_ENDINGS:
+        return True
+    if _korean_final_consonant(token[-1]) not in (
+        KOREAN_FINAL_CONSONANT_N,
+        KOREAN_FINAL_CONSONANT_L,
+    ):
+        return False
+    return _korean_final_consonant(token[-2]) == 0
+
+
 def _comparison_institution_candidate_excluded(token: str) -> bool:
     """기관 후보로 쓸 수 없는 낱말인지 확인합니다.
 
@@ -1457,6 +1661,8 @@ def _comparison_unresolved_institution_candidate(query: str) -> str:
     remaining = COMPARISON_PERIOD_PATTERN.sub(" ", prefix)
     for token in RESULT_LIST_TOKEN_SPLIT_PATTERN.split(remaining):
         cleaned = _strip_institution_particle(token)
+        if _is_institution_candidate_modifier(cleaned):
+            continue
         if len(cleaned) <= 2:
             continue
         if COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(cleaned):
@@ -1904,9 +2110,20 @@ def extract_bid_ntce_no(query: str) -> str:
     """질의에 등장한 공고번호를 대문자로 정규화해 돌려줍니다.
 
     엄격형 패턴에 맞는 값만 인정하므로 접수번호나 금액 숫자는 빈 문자열입니다.
+    차수 접미사가 붙어 있어도 공고번호 부분만 돌려줍니다(호출부 호환).
     """
     match = BID_NTCE_NO_PATTERN.search(_normalize_text(query))
     return match.group("bid_ntce_no").upper() if match else ""
+
+
+def extract_bid_ntce_ord(query: str) -> str:
+    """질의의 공고번호에 붙은 차수를 세 자리로 돌려줍니다.
+
+    "R26BK01788962-001" 이면 "001" 입니다. 접미사가 없거나 세 자리가 아니면
+    빈 문자열이며, 그때는 기존처럼 공고번호만으로 단건 조회합니다.
+    """
+    match = BID_NTCE_NO_PATTERN.search(_normalize_text(query))
+    return (match.group("bid_ntce_ord") or "") if match else ""
 
 
 def is_bid_number_query(query: str) -> bool:
@@ -2051,6 +2268,18 @@ def is_result_list_query(query: str) -> bool:
 
 
 ANNOUNCEMENT_FRESHNESS_MARKERS = ("올라온", "등록된", "게시된", "신규", "최신")
+# '나온'·'들어온' 은 "공고가 나온 배경", "들어온 공고 요점" 처럼 사건이나 문맥을
+# 가리키는 설명형 질의에도 등장합니다. 낱말 하나만으로 목록 판정을 켜면 설명형을
+# 막을 명사 목록을 계속 늘려야 하므로, 이 두 표지는 "나온·들어온 + 분야어 + 공고
+# + 개수 + 목록 요청" 구조가 바로 이어질 때만 공고 목록 신선도 표지로 인정합니다.
+ANNOUNCEMENT_ADDED_FRESHNESS_LIST_PATTERN = re.compile(
+    r"(?<![가-힣])(?:나온|들어온)\s*"
+    r"(?:공사|용역|물품|외자|건설)?\s*"
+    r"(?:입찰\s*)?공고(?:를|을)?\s*"
+    r"(?:\d+\s*(?:건|개)\s*(?:만)?\s*)?"
+    r"(?:좀\s*)?"
+    r"(?:보여|찾아|알려|뽑아|리스트|목록)"
+)
 # 공고번호·공고명은 필드 이름입니다. 필드 이름이 질의 앞에 오면 '공고' 뒤를 보는
 # 부정 전방 탐색이 거르지 못하므로 목록 판정 전체에서 먼저 배제합니다.
 ANNOUNCEMENT_FIELD_MARKER_PATTERN = re.compile(r"공고\s*(?:번호|명)")
@@ -2089,14 +2318,18 @@ ANNOUNCEMENT_RESULT_STATUS_MARKERS = ("낙찰", "유찰", "개찰")
 
 
 def _has_announcement_list_scope(lowered: str) -> bool:
-    """요청 동사만 있는 공고 목록 질의에 신선도 표지가 함께 있는지 봅니다.
+    """요청 동사만 있는 공고 목록 질의에 목록 범위를 정하는 표지가 있는지 봅니다.
 
     분류나 연도만 있는 "서울의 2026년 ... 용역 공고를 알려줘" 는 지목형 조회이지
     최신 목록 요청이 아니고, "최근"·"요즘" 같은 막연한 표현도 범위를 정하지
     못합니다. 그래서 동사 단독 경로는 올라온·등록된·게시된·신규·최신 표지를
-    요구하고, 나머지는 기존 최신성 힌트 경로에 남깁니다.
+    요구하고, 나머지는 기존 최신성 힌트 경로에 남깁니다. '나온'·'들어온' 은
+    표지 낱말이 아니라 "나온·들어온 + 분야어 + 공고 + 개수 + 목록 요청" 구조가
+    바로 이어질 때만 같은 범위 표지로 봅니다.
     """
-    return any(marker in lowered for marker in ANNOUNCEMENT_FRESHNESS_MARKERS)
+    if any(marker in lowered for marker in ANNOUNCEMENT_FRESHNESS_MARKERS):
+        return True
+    return bool(ANNOUNCEMENT_ADDED_FRESHNESS_LIST_PATTERN.search(lowered))
 
 
 def is_announcement_list_query(query: str) -> bool:
@@ -2110,9 +2343,12 @@ def is_announcement_list_query(query: str) -> bool:
     설명·방법·기능·가능 여부를 묻는 질의는 목록 요청이 아니므로 LLM 경로로 남깁니다.
     개수나 '목록'·'리스트' 표지가 있으면 참이고, 요청 동사만 있으면 신선도
     표지(올라온·등록된·게시된·신규·최신)를 함께 요구해 범위 없는 "공고 알려줘" 가
-    전체 최신 목록으로 새지 않게 합니다. 마감일 창·금액 조건·정렬 표지가
-    파싱됐고 요청 동사가 함께 있으면 그 조건을 목록의 범위 표지로 인정해
-    참을 반환합니다. 조건이 없는 "공고 보여줘" 의 판정은 그대로입니다.
+    전체 최신 목록으로 새지 않게 합니다. '나온'·'들어온' 은 표지 낱말이 아니라
+    "나온·들어온 + 분야어 + 공고 + 개수 + 목록 요청" 구조가 바로 이어질 때만
+    범위 표지로 인정하므로, "공고가 나온 배경" 같은 설명형 질의는 남깁니다.
+    마감일 창·금액 조건·정렬 표지가 파싱됐고 요청 동사가 함께 있으면 그 조건을
+    목록의 범위 표지로 인정해 참을 반환합니다. 조건이 없는 "공고 보여줘" 의
+    판정은 그대로입니다.
     """
     lowered = _query_lower(query)
     if ANNOUNCEMENT_FIELD_MARKER_PATTERN.search(lowered):
@@ -2821,6 +3057,8 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     metric = ""
     if any(marker in lowered for marker in AGGREGATE_RATE_MARKERS):
         metric = "avg_rate"
+    elif any(marker in lowered for marker in AGGREGATE_AWARD_AMOUNT_MARKERS):
+        metric = "award_amount"
     elif (
         any(marker in lowered for marker in AGGREGATE_BID_MARKERS)
         and "낙찰률" not in lowered
@@ -2846,7 +3084,7 @@ def extract_aggregate_filters(query: str, filters: dict[str, Any] | None = None)
     if not group_by:
         return {}
 
-    if group_by == "winner" and metric != "avg_rate":
+    if group_by == "winner" and metric not in ("avg_rate", "award_amount"):
         metric = "bid_count"
 
     aggregate: dict[str, Any] = {
@@ -2881,11 +3119,14 @@ def _requested_metric(lowered: str) -> str:
 def _single_metric(lowered: str) -> str:
     """단일 지표 질의의 지표를 축별 집계와 같은 우선순위로 정합니다.
 
-    extract_aggregate_filters 의 지표 결정 규칙(낙찰률 > 낙찰 > 공고)을 따르되,
-    도메인 표지가 전혀 없으면 지표를 정하지 않고 빈 문자열을 돌려줍니다.
+    extract_aggregate_filters 의 지표 결정 규칙(낙찰률 > 낙찰 금액 > 낙찰 >
+    공고)을 따르되, 도메인 표지가 전혀 없으면 지표를 정하지 않고 빈 문자열을
+    돌려줍니다.
     """
     if any(marker in lowered for marker in AGGREGATE_RATE_MARKERS):
         return "avg_rate"
+    if any(marker in lowered for marker in AGGREGATE_AWARD_AMOUNT_MARKERS):
+        return "award_amount"
     if (
         any(marker in lowered for marker in AGGREGATE_BID_MARKERS)
         and "낙찰률" not in lowered
@@ -2909,7 +3150,7 @@ def is_result_amount_scope(query: str) -> bool:
     """
     if is_result_query(query):
         return True
-    return _single_metric(_query_lower(query)) in ("bid_count", "avg_rate")
+    return _single_metric(_query_lower(query)) in ("bid_count", "avg_rate", "award_amount")
 
 
 def build_retrieval_plan(query: str) -> RetrievalPlan:
@@ -2928,6 +3169,7 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
     is_bid_number = is_bid_number_query(normalized_query)
     bid_ntce_no = extract_bid_ntce_no(normalized_query) if is_bid_number else ""
+    bid_ntce_ord = extract_bid_ntce_ord(normalized_query) if is_bid_number else ""
 
     if is_bid_number:
         use_sql = True
@@ -3001,9 +3243,12 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
 
     filters: dict[str, Any] = {}
     # 공고번호 단건은 다른 조건과 달리 목록·집계 경로로 새지 않게 전용 필터로
-    # 넘깁니다. 값이 비어 있으면 키를 만들지 않습니다.
+    # 넘깁니다. 값이 비어 있으면 키를 만들지 않습니다. 차수 접미사가 있으면
+    # 같은 공고의 그 회차만 읽도록 차수를 함께 넘깁니다.
     if bid_ntce_no:
         filters["bid_ntce_no"] = bid_ntce_no
+    if bid_ntce_ord:
+        filters["bid_ntce_ord"] = bid_ntce_ord
     if date_from:
         filters["date_from"] = date_from
     if date_to:
@@ -3127,7 +3372,15 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     # 기관 상세 조회에는 학교·병원 같은 개체 접미사 토큰을 기관 조건으로 승격하지
     # 않습니다. 그 토큰은 공고명의 일부인 경우가 많습니다.
     list_intent = announcement_list_query or result_list_query
-    scope_applicable = bool(list_intent or has_stat_keywords or multi_result_list)
+    # 정식 광역 명칭 뒤 시·군·구는 목록·집계 표지가 없어도 그 구역 기관 범위입니다.
+    # 공고·사업명을 지목한 개체 질의는 이름 속 행정 구역이 범위 지목이 아니므로
+    # 기존 기관 동작을 그대로 둡니다.
+    official_district_scope = (
+        "" if is_entity else _official_province_district_scope(normalized_query)
+    )
+    scope_applicable = bool(
+        list_intent or has_stat_keywords or multi_result_list or official_district_scope
+    )
     scope_explanatory = any(marker in lowered for marker in INSTITUTION_SCOPE_EXPLANATORY_MARKERS)
     # 공고·낙찰 도메인 표지가 있는 통계 질의는 기관 하나를 지목한 경우가 많습니다.
     # "서울대학교병원 올해 공고 건수" 의 병원처럼 개체 접미사를 기관 조건으로
@@ -3220,8 +3473,32 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_sql = True
         use_vector = False
 
-    if any(keyword in lowered for keyword in TREND_KEYWORDS):
+    trend_marker = next((keyword for keyword in TREND_KEYWORDS if keyword in lowered), "")
+    # "동향" 은 입찰 도메인 표지가 함께 있을 때만 추이 질의입니다. "동향이 무슨
+    # 뜻이야" 같은 설명형 질의는 기존 의미 검색 경로에 남깁니다. 같은 낱말이
+    # 공고명에 쓰인 목록 질의("시장 동향 보고서 공고", "동향 분석 용역 공고
+    # 보여줘")도 목록·의미 검색 경로에 남깁니다.
+    trend_title_word = trend_marker == "동향" and (
+        bool(TREND_TITLE_FOLLOWER_PATTERN.search(lowered))
+        or any(marker in lowered for marker in TREND_LIST_MARKERS)
+        or bool(COUNT_PATTERN.search(lowered))
+    )
+    trend_applicable = bool(trend_marker) and (
+        trend_marker != "동향"
+        or (
+            any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS) and not trend_title_word
+        )
+    )
+    if trend_applicable:
         filters["analysis_mode"] = "trend"
+        if trend_marker == "동향":
+            # 추이 응답은 지표 하나만 냅니다. 기존 지표 판정과 같은 순서로 지표를
+            # 정하고, 시계열 조회가 SQL 로 실행되도록 라우팅합니다.
+            use_sql = True
+            if not has_semantic_keywords and not is_entity:
+                use_vector = False
+            if not filters.get("metric"):
+                filters["metric"] = _requested_metric(lowered)
 
     aggregate_filters = extract_aggregate_filters(normalized_query, filters)
     # 특정 업체명을 지목한 질의는 그 업체의 실적 조회이지 순위 집계가 아닙니다.
@@ -3229,6 +3506,18 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if is_entity and aggregate_filters.get("group_by") == "winner":
         aggregate_filters = {}
     filters.update(aggregate_filters)
+    # 축이 정해진 금액 순위와, 공고·낙찰 도메인 표지가 있는 순위 질의는 정형
+    # 집계로 답합니다. 지표 표지가 없어도 축과 순위 표지만으로 SQL 경로를 켭니다.
+    if filters.get("group_by") and (
+        filters.get("metric") == "award_amount"
+        or (
+            any(marker in lowered for marker in AXIS_RANKING_MARKERS)
+            and any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS)
+        )
+    ):
+        use_sql = True
+        if not has_semantic_keywords and not is_entity:
+            use_vector = False
     if has_comparison and not filters.get("group_by"):
         filters["metric"] = _requested_metric(lowered)
 

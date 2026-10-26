@@ -166,7 +166,13 @@ def test_various_entity_specific_signals(query):
     """다양한 개체 지정 신호(인용구, 공고번호, 기관/학교, 업체명)가 정상 감지되어야 합니다."""
     assert is_entity_specific_query(query) is True
     plan = build_retrieval_plan(query)
-    assert plan.use_vector is True
+    if query == "공고번호 R26BK01659912-001 낙찰 정보 확인해줘":
+        # 차수 접미사 공고번호는 공고번호와 차수 단건 조회로 라우팅되므로 벡터를 끕니다.
+        assert plan.use_vector is False
+        assert plan.filters.get("bid_ntce_no") == "R26BK01659912"
+        assert plan.filters.get("bid_ntce_ord") == "001"
+    else:
+        assert plan.use_vector is True
     assert plan.use_sql is True
 
 

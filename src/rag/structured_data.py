@@ -33,6 +33,7 @@ from src.app.models.bids import (
     BidResult,
     clean_display_text,
     is_corrupted_display_text,
+    normalize_bid_ntce_ord,
 )
 from src.app.services.ranking_snapshots import (
     DATASET_ANNOUNCEMENT,
@@ -529,6 +530,18 @@ def _result_order_by(filters: dict[str, Any]) -> list:
     ]
 
 
+def _bid_ntce_ord_forms(bid_ntce_ord: str) -> tuple[str, ...]:
+    """같은 차수의 저장 표기를 함께 돌려줍니다.
+
+    공고 API 는 3자리(`001`), 낙찰 API 는 2자리(`01`)로 같은 차수를 내려주며
+    과거 낙찰 행은 2자리로 적재되어 있습니다. 어느 표기로 저장됐어도 그 회차를
+    찾도록 두 형태를 조건에 함께 씁니다.
+    """
+    normalized = normalize_bid_ntce_ord(bid_ntce_ord)
+    compact = normalized.lstrip("0").zfill(2)
+    return (normalized,) if compact == normalized else (normalized, compact)
+
+
 def _result_conditions(
     plan: RetrievalPlan,
     *,
@@ -540,7 +553,11 @@ def _result_conditions(
     # 표지나 분류·기관·지역·목록 필터를 함께 걸면 개찰일이 그 창 밖인 행을
     # 놓칩니다. 이 조기 반환이 단건 경로와 집계 경로의 경계입니다.
     if bid_ntce_no:
-        return [BidResult.bid_ntce_no == bid_ntce_no]
+        conditions = [BidResult.bid_ntce_no == bid_ntce_no]
+        bid_ntce_ord = _normalize_text(str((plan.filters or {}).get("bid_ntce_ord") or ""))
+        if bid_ntce_ord:
+            conditions.append(BidResult.bid_ntce_ord.in_(_bid_ntce_ord_forms(bid_ntce_ord)))
+        return conditions
 
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
@@ -558,7 +575,7 @@ def _result_conditions(
     if date_from:
         conditions.append(BidResult.rl_openg_dt >= date_from)
     if date_to:
-        conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+        conditions.append(BidResult.rl_openg_dt < date_to + timedelta(days=1))
     if institution_name or institution_names is not None:
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
@@ -594,7 +611,11 @@ def _announcement_conditions(
     # 공고번호 단건 조회는 유일 키 하나만 조건으로 씁니다. 공고일 기준 기간
     # 필터를 함께 걸면 "최근" 표지가 붙은 질의가 그 공고를 놓칩니다.
     if bid_ntce_no:
-        return [BidAnnouncement.bid_ntce_no == bid_ntce_no]
+        conditions = [BidAnnouncement.bid_ntce_no == bid_ntce_no]
+        bid_ntce_ord = _normalize_text(str((plan.filters or {}).get("bid_ntce_ord") or ""))
+        if bid_ntce_ord:
+            conditions.append(BidAnnouncement.bid_ntce_ord.in_(_bid_ntce_ord_forms(bid_ntce_ord)))
+        return conditions
 
     filters = plan.filters or {}
     date_from, date_to = _resolve_window(filters)
@@ -614,7 +635,7 @@ def _announcement_conditions(
     if date_from:
         conditions.append(BidAnnouncement.bid_ntce_dt >= date_from)
     if date_to:
-        conditions.append(BidAnnouncement.bid_ntce_dt <= date_to + timedelta(days=1))
+        conditions.append(BidAnnouncement.bid_ntce_dt < date_to + timedelta(days=1))
     if institution_name or institution_names is not None:
         conditions.append(
             _institution_condition(BidAnnouncement.dminstt_nm, institution_name, institution_names)
@@ -1340,6 +1361,7 @@ def _axis_entry(
     bid_count: int | None = None,
     avg_rate: float | None = None,
     sample_count: int | None = None,
+    award_amount: int | None = None,
 ) -> dict[str, Any]:
     """축 하나의 집계 결과를 기존 키와 겹치지 않는 모양으로 만듭니다."""
     return {
@@ -1349,6 +1371,7 @@ def _axis_entry(
         "bid_count": bid_count,
         "avg_rate": avg_rate,
         "sample_count": sample_count,
+        "award_amount": award_amount,
     }
 
 
@@ -1381,6 +1404,23 @@ def _category_axis_breakdown(
                 announcement_count=int(row[1] or 0),
             )
             for row in rows
+            if row[0]
+        ]
+    elif metric == "award_amount":
+        amount_expr = func.sum(BidResult.sucsf_bid_amt)
+        amount_stmt = (
+            select(BidResult.category, amount_expr)
+            .where(*result_conditions)
+            .group_by(BidResult.category)
+            .with_hint(BidResult, RESULT_CATEGORY_AXIS_HINT, dialect_name="mysql")
+        )
+        entries = [
+            _axis_entry(
+                _category_label(row[0]),
+                _normalize_text(str(row[0])),
+                award_amount=int(row[1] or 0),
+            )
+            for row in _cached_rows(db, amount_stmt)
             if row[0]
         ]
     else:
@@ -1417,6 +1457,7 @@ def _category_axis_breakdown(
 
 def _institution_result_axis_breakdown(
     db: Session,
+    metric: str,
     result_conditions: list,
     limit: int,
 ) -> tuple[list[dict[str, Any]], bool]:
@@ -1424,7 +1465,31 @@ def _institution_result_axis_breakdown(
 
     한 문장으로 기관별 낙찰률을 집계하면 콜드 12.9~16.8초가 걸립니다. 기관명
     목록을 먼저 좁힌 뒤 그 목록으로 집계하면 같은 조건의 기관만 읽습니다.
+    낙찰 금액 합계는 합계 기준으로 순위를 정해야 하므로 손상·빈 기관명을 먼저
+    제외하고 한 번에 집계합니다.
     """
+    if metric == "award_amount":
+        amount_expr = func.sum(BidResult.sucsf_bid_amt)
+        amount_stmt = (
+            select(BidResult.dminstt_nm, amount_expr)
+            .where(
+                exclude_corrupted(BidResult.dminstt_nm),
+                BidResult.dminstt_nm.is_not(None),
+                BidResult.dminstt_nm != "",
+                *result_conditions,
+            )
+            .group_by(BidResult.dminstt_nm)
+            .order_by(amount_expr.desc(), BidResult.dminstt_nm.asc())
+            .limit(limit)
+        )
+        entries: list[dict[str, Any]] = []
+        for row in _cached_rows(db, amount_stmt):
+            name = _normalize_text(str(row[0] or ""))
+            if not name:
+                continue
+            entries.append(_axis_entry(name, name, award_amount=int(row[1] or 0)))
+        return entries, len(entries) >= limit
+
     count_expr = func.count()
     top_stmt = (
         select(BidResult.dminstt_nm, count_expr)
@@ -1461,7 +1526,7 @@ def _institution_result_axis_breakdown(
             int(row[3] or 0),
         )
 
-    entries: list[dict[str, Any]] = []
+    entries = []
     for name in names:
         bid_count, rate_value, sample_count = stats.get(name, (0, None, 0))
         entries.append(
@@ -1493,18 +1558,23 @@ def _winner_axis_breakdown(
     count_expr = func.count()
     rate_expr = func.avg(BidResult.sucsf_bid_rate)
     sample_expr = func.count(BidResult.sucsf_bid_rate)
+    amount_expr = func.sum(BidResult.sucsf_bid_amt)
     conditions: list[Any] = [
         exclude_corrupted(BidResult.bidwinnr_nm),
         BidResult.bidwinnr_nm != "",
         *result_conditions,
     ]
+    value_columns: list[Any] = [count_expr, rate_expr, sample_expr]
     if metric == "avg_rate":
         conditions.append(BidResult.sucsf_bid_rate.is_not(None))
         order_columns: list[Any] = [rate_expr.desc(), BidResult.bidwinnr_nm.asc()]
+    elif metric == "award_amount":
+        value_columns.append(amount_expr)
+        order_columns = [amount_expr.desc(), BidResult.bidwinnr_nm.asc()]
     else:
         order_columns = [count_expr.desc(), BidResult.bidwinnr_nm.asc()]
     stmt = (
-        select(BidResult.bidwinnr_nm, count_expr, rate_expr, sample_expr)
+        select(BidResult.bidwinnr_nm, *value_columns)
         .where(*conditions)
         .group_by(BidResult.bidwinnr_nm)
         .order_by(*order_columns)
@@ -1523,6 +1593,7 @@ def _winner_axis_breakdown(
                 bid_count=int(row[1] or 0),
                 avg_rate=_axis_rate(row[2], sample_count),
                 sample_count=sample_count,
+                award_amount=int(row[4] or 0) if metric == "award_amount" else None,
             )
         )
     return entries, len(entries) >= limit
@@ -1542,6 +1613,10 @@ def _region_axis_breakdown(
         column = BidAnnouncement.dminstt_nm
         conditions = announcement_conditions
         value_columns: list[Any] = [func.count()]
+    elif metric == "award_amount":
+        column = BidResult.dminstt_nm
+        conditions = result_conditions
+        value_columns = [func.sum(BidResult.sucsf_bid_amt)]
     else:
         column = BidResult.dminstt_nm
         conditions = result_conditions
@@ -1584,6 +1659,15 @@ def _region_axis_breakdown(
                 )
             )
             continue
+        if metric == "award_amount":
+            entries.append(
+                _axis_entry(
+                    str(row[0]),
+                    str(row[0]),
+                    award_amount=int(row[1] or 0),
+                )
+            )
+            continue
         sample_count = int(row[3] or 0)
         entries.append(
             _axis_entry(
@@ -1620,7 +1704,7 @@ def _build_axis_breakdown(
     if group_by == "institution":
         if metric == "announcement_count":
             return None
-        return _institution_result_axis_breakdown(db, result_conditions, limit)
+        return _institution_result_axis_breakdown(db, metric, result_conditions, limit)
     if group_by == "region":
         return _region_axis_breakdown(db, metric, result_conditions, announcement_conditions, limit)
     if group_by == "winner":
@@ -1866,7 +1950,7 @@ def _period_category_comparison_breakdown(
             if shared_from:
                 conditions.append(BidAnnouncement.bid_ntce_dt >= shared_from)
             if shared_to:
-                conditions.append(BidAnnouncement.bid_ntce_dt <= shared_to + timedelta(days=1))
+                conditions.append(BidAnnouncement.bid_ntce_dt < shared_to + timedelta(days=1))
         if announcement_scope_condition is not None:
             conditions.append(announcement_scope_condition)
         return conditions
@@ -1885,7 +1969,7 @@ def _period_category_comparison_breakdown(
             if shared_from:
                 conditions.append(BidResult.rl_openg_dt >= shared_from)
             if shared_to:
-                conditions.append(BidResult.rl_openg_dt <= shared_to + timedelta(days=1))
+                conditions.append(BidResult.rl_openg_dt < shared_to + timedelta(days=1))
         if result_scope_condition is not None:
             conditions.append(result_scope_condition)
         return conditions
@@ -2618,7 +2702,7 @@ def _bid_detail_result(db: Session, plan: RetrievalPlan, bid_ntce_no: str) -> di
         if date_from:
             baseline_conditions.append(BidResult.rl_openg_dt >= date_from)
         if date_to:
-            baseline_conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+            baseline_conditions.append(BidResult.rl_openg_dt < date_to + timedelta(days=1))
         if category:
             baseline_conditions.append(BidResult.category == category)
         baseline_count, baseline_rate, baseline_samples = _cached_aggregate(
@@ -2756,7 +2840,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         if date_from:
             common_conditions.append(BidResult.rl_openg_dt >= date_from)
         if date_to:
-            common_conditions.append(BidResult.rl_openg_dt <= date_to + timedelta(days=1))
+            common_conditions.append(BidResult.rl_openg_dt < date_to + timedelta(days=1))
         if category:
             common_conditions.append(BidResult.category == category)
 
@@ -3026,9 +3110,10 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     group_by = _normalize_text(str((plan.filters or {}).get("group_by") or ""))
     metric = _normalize_text(str((plan.filters or {}).get("metric") or "")) or "announcement_count"
     # 업체 축은 낙찰 결과 테이블에만 있으므로 기본 지표를 낙찰 건수로 두되,
-    # "낙찰률" 표지가 있으면 평균 낙찰률을 그대로 씁니다. 호출부가 hand-built
-    # plan 으로 다른 지표를 넘겨도 표 라벨과 값이 어긋나지 않습니다.
-    if group_by == "winner" and metric != "avg_rate":
+    # "낙찰률" 표지가 있으면 평균 낙찰률을, "낙찰 금액" 표지가 있으면 금액
+    # 합계를 그대로 씁니다. 호출부가 hand-built plan 으로 다른 지표를 넘겨도
+    # 표 라벨과 값이 어긋나지 않습니다.
+    if group_by == "winner" and metric not in ("avg_rate", "award_amount"):
         metric = "bid_count"
     group_limit = _group_limit(plan)
     winner_conditions = _result_conditions(
