@@ -14,8 +14,9 @@ from src.rag.engine import build_retrieval_plan
 from src.rag.query_planning import (
     apply_default_statistics_window,
     replace_whole_period_insufficiency_hint,
+    uses_recent_announcement_window,
 )
-from src.rag.schemas import RetrievalPlan
+from src.rag.schemas import DEFAULT_STATISTICS_WINDOW_YEARS, RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
 
 
@@ -43,9 +44,19 @@ def execute(
         filters["date_to"] = date_to
     explicit_window = bool(filters.get("date_from") or filters.get("date_to"))
     is_quarter_bucket = str(filters.get("time_bucket") or "") == "quarter"
-    if years is not None and not explicit_window and not is_quarter_bucket:
+    # 플래너는 기간을 말하지 않은 질의에도 years=5 를 넘깁니다. 공고 건수와
+    # 금액 정렬 공고 목록은 그 기본값 대신 최근 30일 창을 쓰게 합니다.
+    # years=0 처럼 호출부가 명시한 다른 값은 그대로 존중합니다.
+    inject_years = years is not None and not explicit_window and not is_quarter_bucket
+    if (
+        inject_years
+        and years == DEFAULT_STATISTICS_WINDOW_YEARS
+        and uses_recent_announcement_window(filters, query)
+    ):
+        inject_years = False
+    if inject_years:
         filters["relative_years"] = years
-    filters = apply_default_statistics_window(filters)
+    filters = apply_default_statistics_window(filters, query=query)
     if limit:
         filters["result_limit"] = min(max(int(limit), 1), 20)
 

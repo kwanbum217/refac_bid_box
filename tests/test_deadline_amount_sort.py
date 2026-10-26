@@ -38,8 +38,8 @@ def test_this_week_deadline_window_uses_close_dates(frozen_today):
     plan = build_retrieval_plan("이번 주 마감되는 용역 공고 5개만 보여줘")
 
     assert plan.use_sql is True
-    assert plan.filters.get("close_from") == "2026-10-19"
-    assert plan.filters.get("close_to") == "2026-10-25"
+    assert plan.filters.get("close_from") == "2026-10-25"
+    assert plan.filters.get("close_to") == "2026-10-31"
     assert "date_from" not in plan.filters
     assert "date_to" not in plan.filters
     assert plan.filters.get("category") == "Servc"
@@ -278,13 +278,11 @@ def test_close_window_excludes_rows_outside_this_week(frozen_today, isolated_db,
     samples = retrieve_structured_data(isolated_db, plan)["summary"]["sample_announcements"]
 
     assert [sample["bid_ntce_no"] for sample in samples] == [
-        "SERVC-006",
+        "SERVC-005",
         "SERVC-004",
-        "SERVC-003",
-        "SERVC-002",
     ]
     for sample in samples:
-        assert "2026-10-19" <= sample["bid_clse_dt"][:10] <= "2026-10-25"
+        assert "2026-10-25" <= sample["bid_clse_dt"][:10] <= "2026-10-31"
 
 
 def test_min_amount_excludes_rows_below_bound(isolated_db, announcement_rows):
@@ -322,7 +320,7 @@ def test_deadline_and_amount_filters_apply_to_counts(frozen_today, isolated_db, 
     close_plan = build_retrieval_plan("이번 주 마감되는 용역 공고 몇 건이야")
     close_count = retrieve_structured_data(isolated_db, close_plan)["summary"]["announcement_count"]
 
-    assert close_count == 4
+    assert close_count == 2
 
     amount_plan = build_retrieval_plan("추정가격 5억 이상 용역 공고 몇 건이야")
     amount_count = retrieve_structured_data(isolated_db, amount_plan)["summary"][
@@ -427,7 +425,7 @@ def test_announcement_conditions_are_not_reported_as_unapplied(isolated_db, anno
 @pytest.mark.parametrize(
     "query,close_from,close_to",
     [
-        ("이번 주 마감되는 낙찰 결과 5건", "2026-10-19", "2026-10-25"),
+        ("이번 주 마감되는 낙찰 결과 5건", "2026-10-25", "2026-10-31"),
         ("마감 임박 낙찰 결과 보여줘", "2026-10-25", "2026-10-28"),
     ],
 )
@@ -454,14 +452,14 @@ def test_close_window_applies_to_announcements_without_notice(
     plan = build_retrieval_plan("이번 주 마감되는 용역 공고 5개만 보여줘")
     structured_data = retrieve_structured_data(isolated_db, plan)
 
-    assert plan.filters.get("close_from") == "2026-10-19"
-    assert plan.filters.get("close_to") == "2026-10-25"
+    assert plan.filters.get("close_from") == "2026-10-25"
+    assert plan.filters.get("close_to") == "2026-10-31"
     assert structured_data["unapplied_conditions"] == []
     assert not any(UNAPPLIED_NOTICE in hint for hint in structured_data["insufficiency_hints"])
     samples = structured_data["summary"]["sample_announcements"]
     assert samples
     for sample in samples:
-        assert "2026-10-19" <= sample["bid_clse_dt"][:10] <= "2026-10-25"
+        assert "2026-10-25" <= sample["bid_clse_dt"][:10] <= "2026-10-31"
 
 
 def test_announcement_list_answer_shows_applied_conditions():

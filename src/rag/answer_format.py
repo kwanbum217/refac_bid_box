@@ -46,6 +46,7 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "date_from": "시작일",
         "date_to": "종료일",
         "relative_years": "최근 연수",
+        "recent_days": "최근 일수",
         "analysis_mode": "분석 모드",
         "result_limit": "요청 목록 수",
         "bid_ntce_no": "공고번호",
@@ -196,6 +197,9 @@ def _announcement_condition_line(filters: dict | None) -> str:
     if not filters:
         return ""
     parts: list[str] = []
+    recent_days = int(filters.get("recent_days") or 0)
+    if recent_days:
+        parts.append(f"최근 {recent_days}일")
     close_from = filters.get("close_from")
     close_to = filters.get("close_to")
     if close_from and close_to and close_from == close_to:
@@ -398,14 +402,21 @@ def _winner_axis_caption(
     window = meta.get("window") or {}
     date_from = str(window.get("date_from") or "")
     date_to = str(window.get("date_to") or "")
-    relative_years = int((plan.filters or {}).get("relative_years") or 0)
+    plan_filters = plan.filters or {}
+    if not date_from and not date_to:
+        date_from = str(plan_filters.get("date_from") or "")
+        date_to = str(plan_filters.get("date_to") or "")
+    recent_days = int(plan_filters.get("recent_days") or 0)
+    relative_years = int(plan_filters.get("relative_years") or 0)
     filters = structured_data.get("filters") or {}
     category = str(filters.get("category_label") or "").strip()
     if not category:
         category_code = str((plan.filters or {}).get("category") or "")
         category = _category_label(category_code) if category_code else ""
     category = category or "전체 분야"
-    if date_from and date_to:
+    if recent_days:
+        period = f"최근 {recent_days}일 기준"
+    elif date_from and date_to:
         period = f"{date_from} ~ {date_to}"
     elif date_from:
         period = f"{date_from} 이후"
@@ -780,6 +791,9 @@ SINGLE_METRIC_EXCLUDED_MARKERS = (
 
 
 def _format_single_metric_period(filters: dict) -> str:
+    recent_days = int(filters.get("recent_days") or 0)
+    if recent_days:
+        return f"최근 {recent_days}일"
     date_from = _normalize_text(str(filters.get("date_from") or ""))
     date_to = _normalize_text(str(filters.get("date_to") or ""))
     if date_from and date_to:
