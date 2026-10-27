@@ -13,7 +13,7 @@
 
 1. `docker compose up -d` 후 app, db, meilisearch, redis 가 healthy 이고 worker 가 up 인지 본다. 헬스 경로는 `/api/v1/health/ready` 다. `/health` 는 404 다.
 2. 아래 1번 브랜치부터 엄격 레벨1과 전량 시험 증거를 다시 기록하고 `main` 에 `--no-ff` 병합한다. 이번 세션의 증거 파일은 이 브랜치 것이 아니다.
-3. 2번 브랜치는 리뷰 보고가 없으면 리뷰어를 다시 붙인 뒤 같은 순서로 병합한다.
+3. 2번 브랜치 리뷰는 이미 계약 통과다. 리뷰를 다시 시키지 말고 엄격 증거만 기록한 뒤 병합한다. 보고 파일이 워크트리에 없을 때만 리뷰어를 다시 붙인다.
 4. 3번 진단 문구 수정은 1번이 `main` 에 들어간 뒤에만 `query_planning.py` 를 연다.
 5. 10.5 결정(약칭, 공고명 낱말 건수, 명사구, 빠른 실행, 자격 필터, v3)은 사용자 결정 전이라 착수하지 않는다.
 
@@ -65,13 +65,13 @@ uv run python scripts/premerge_full_suite_gate.py --record
 | 커밋 | `241b5c6e` `fix: 같은 커밋 제목이 최근 이력에서 반복되면 거절한다` |
 | 워크트리 | `/Users/kwanbum/orca/workspaces/refac_bid_box/commit-subject-repeat-20261027` |
 | 빌더 | `task_bd74dfa9abcc`, dispatch `ctx_f77ea272abee`. 계약 검사 통과. 터미널은 회수함 |
-| 리뷰 | `task_311614a7fd69`, dispatch `ctx_048f1941e8c6`, 터미널 `term_17f2350f-5555-4e3e-a8f9-45b0d0d1f7e2`. 보고 파일은 종료 시점에 없었다 |
+| 리뷰 | `task_311614a7fd69`, dispatch `ctx_048f1941e8c6`. 15:44 계약 검사 실효 pass. 보고는 워크트리 `.orca/capsules/task_commit_subject_review_20261027/review_done.json` |
 | 파일 | `scripts/validate_commit_message.py`, `tests/test_validate_commit_message.py` |
 | 레벨1 | 비엄격 전량 시험 중에 세션을 종료했다. 결과는 쓰지 않는다 |
 
 규칙: 최근 HEAD 40개 제목에서 merge 타입을 빼고, 같은 제목이 이미 2번 있으면 거절한다. 1번 이하와 새 제목은 통과한다. 과거 이력은 되돌리지 않았다. 빌더 전량 시험 보고는 9736 passed 이며 코디네이터가 다시 돌리기 전에 종료했다.
 
-리뷰 보고가 생기면 `scripts/validate_review_report.py` 로 계약 검사를 한 뒤, 1번과 같은 엄격 게이트와 전량 시험 기록을 이 워크트리에서 한다. 보고가 없으면 GLM `z-ai/glm-5.3-flash` `--effort high` `--auto` `--role reviewer` 로 리뷰어를 다시 붙인다. 체크리스트 id 는 `history_rewritten`, `unique_subject_blocked`, `merge_subject_blocked`, `scope_exceeded` 다.
+리뷰는 통과했으므로 다시 시키지 않는다. 1번과 같은 엄격 게이트와 전량 시험 기록을 이 워크트리에서 한다. 보고 파일이 없을 때만 GLM `z-ai/glm-5.3-flash` `--effort high` `--auto` `--role reviewer` 로 리뷰어를 다시 붙인다. 체크리스트 id 는 `history_rewritten`, `unique_subject_blocked`, `merge_subject_blocked`, `scope_exceeded` 다.
 
 이 파일은 1번과 겹치지 않으므로 1번 병합을 기다리지 않아도 된다. 증거 파일 `.cache/level1_strict_evidence.json` 과 `.cache/premerge_full_suite_evidence.json` 은 한 브랜치씩만 기록한다.
 
