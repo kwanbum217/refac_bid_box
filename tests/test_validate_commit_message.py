@@ -6,11 +6,13 @@ from pathlib import Path
 
 import pytest
 
+import scripts.validate_commit_message as commit_validator
 from scripts.validate_commit_message import (
     contains_emoji,
     extract_subject,
     validate_commit_message,
     validate_commit_subject,
+    validate_subject_repetition,
 )
 
 
@@ -114,6 +116,94 @@ def test_extract_subject():
     assert extract_subject("feat: 첫 줄\n\n둘째 줄") == "feat: 첫 줄"
     assert extract_subject("# 주석\n\nfeat: 실제 제목") == "feat: 실제 제목"
     assert extract_subject("# 전체 주석\n# 두번째 주석") == ""
+
+
+REPEATED_SUBJECT = "fix: 같은 제목 점검 세트와 측정기를 추가한다"
+
+
+@pytest.mark.parametrize(
+    ("occurrences", "expected_ok"), [(0, True), (1, True), (2, False), (3, False)]
+)
+def test_validate_subject_repetition_threshold(occurrences: int, expected_ok: bool):
+    recent_subjects = [REPEATED_SUBJECT] * occurrences + ["feat: 다른 커밋 제목"]
+    ok, reason = validate_subject_repetition(REPEATED_SUBJECT, recent_subjects)
+    assert ok is expected_ok
+    if expected_ok:
+        assert reason == "정상"
+    else:
+        assert "반복" in reason
+
+
+def test_validate_subject_repetition_allows_new_subject():
+    ok, reason = validate_subject_repetition(
+        "docs: 새 문서 추가",
+        [REPEATED_SUBJECT, REPEATED_SUBJECT],
+    )
+    assert ok is True
+    assert reason == "정상"
+
+
+def test_validate_subject_repetition_ignores_merge_type_subject():
+    merge_subject = "merge: 작업 브랜치 병합"
+    ok, _reason = validate_subject_repetition(merge_subject, [merge_subject] * 3)
+    assert ok is True
+
+
+def test_validate_subject_repetition_excludes_merge_type_from_recent_list():
+    merge_subject = "merge: 작업 브랜치 병합"
+    recent_subjects = [merge_subject] * 3 + [REPEATED_SUBJECT]
+    ok, reason = validate_subject_repetition(REPEATED_SUBJECT, recent_subjects)
+    assert ok is True
+    assert reason == "정상"
+
+
+def test_validate_subject_repetition_strips_whitespace():
+    recent_subjects = [f" {REPEATED_SUBJECT} ", REPEATED_SUBJECT]
+    ok, _reason = validate_subject_repetition(f"  {REPEATED_SUBJECT}", recent_subjects)
+    assert ok is False
+
+
+def test_validate_commit_message_rejects_repeated_recent_subject():
+    raw_message = f"{REPEATED_SUBJECT}\n\n상세 설명\n"
+    ok, reason = validate_commit_message(
+        raw_message,
+        [REPEATED_SUBJECT, REPEATED_SUBJECT],
+    )
+    assert ok is False
+    assert "반복" in reason
+
+
+def test_validate_commit_message_allows_single_recent_occurrence():
+    ok, reason = validate_commit_message(REPEATED_SUBJECT, [REPEATED_SUBJECT])
+    assert ok is True
+    assert reason == "정상"
+
+
+def test_validate_commit_message_without_recent_subjects_skips_repetition():
+    ok, reason = validate_commit_message(REPEATED_SUBJECT)
+    assert ok is True
+    assert reason == "정상"
+
+
+def test_main_rejects_repeated_subject_from_loaded_history(monkeypatch, capsys, tmp_path: Path):
+    msg_file = tmp_path / "COMMIT_EDITMSG"
+    msg_file.write_text(f"{REPEATED_SUBJECT}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        commit_validator,
+        "load_recent_subjects",
+        lambda: [REPEATED_SUBJECT, REPEATED_SUBJECT],
+    )
+
+    assert commit_validator.main([str(msg_file)]) == 1
+    assert "반복" in capsys.readouterr().err
+
+
+def test_main_allows_single_recent_occurrence(monkeypatch, tmp_path: Path):
+    msg_file = tmp_path / "COMMIT_EDITMSG"
+    msg_file.write_text(f"{REPEATED_SUBJECT}\n", encoding="utf-8")
+    monkeypatch.setattr(commit_validator, "load_recent_subjects", lambda: [REPEATED_SUBJECT])
+
+    assert commit_validator.main([str(msg_file)]) == 0
 
 
 def test_cli_message_flag_success():
