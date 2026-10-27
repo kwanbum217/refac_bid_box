@@ -59,7 +59,7 @@ def test_no_base_url_without_shared_db_is_polling(automation_settings):
 
 
 @pytest.mark.parametrize(
-    "base_url",
+    "callback_base_url",
     [
         "http://app:8000",  # 컨테이너 서비스명
         "http://10.0.1.5:8000",  # 사설 대역
@@ -67,24 +67,24 @@ def test_no_base_url_without_shared_db_is_polling(automation_settings):
         "https://bidbox.example.com",  # 공개 도메인
     ],
 )
-def test_private_and_public_hosts_are_accepted(automation_settings, base_url):
+def test_private_and_public_hosts_are_accepted(automation_settings, callback_base_url):
     """원본과 반대로 사설 주소를 허용합니다. 워커가 같은 네트워크에 있기 때문입니다."""
-    automation_settings(base_url=base_url, shares_db=False)
+    automation_settings(base_url=callback_base_url, shares_db=False)
     delivery = resolve_callback_delivery(JOB_ID)
     assert delivery.mode == "callback"
     assert delivery.configured is True
     assert delivery.callback_url == (
-        f"{base_url.rstrip('/')}{CALLBACK_PATH_TEMPLATE.format(job_id=JOB_ID)}"
+        f"{callback_base_url.rstrip('/')}{CALLBACK_PATH_TEMPLATE.format(job_id=JOB_ID)}"
     )
 
 
 @pytest.mark.parametrize(
-    "base_url",
+    "callback_base_url",
     ["http://localhost:8000", "http://127.0.0.1:8000", "http://[::1]:8000", "http://0.0.0.0:8000"],
 )
-def test_loopback_hosts_are_rejected(automation_settings, base_url):
+def test_loopback_hosts_are_rejected(automation_settings, callback_base_url):
     """루프백은 별도 프로세스인 워커에서 앱이 아니라 자기 자신을 가리킵니다."""
-    automation_settings(base_url=base_url, shares_db=False)
+    automation_settings(base_url=callback_base_url, shares_db=False)
     delivery = resolve_callback_delivery(JOB_ID)
     assert delivery.mode == "polling"
     assert delivery.configured is False
@@ -100,9 +100,9 @@ def test_loopback_falls_back_to_direct_when_db_is_shared(automation_settings):
     assert "루프백" in delivery.reason
 
 
-@pytest.mark.parametrize("base_url", ["not-a-url", "ftp://app:8000", "http://"])
-def test_malformed_base_url_is_rejected(automation_settings, base_url):
-    automation_settings(base_url=base_url, shares_db=False)
+@pytest.mark.parametrize("callback_base_url", ["not-a-url", "ftp://app:8000", "http://"])
+def test_malformed_base_url_is_rejected(automation_settings, callback_base_url):
+    automation_settings(base_url=callback_base_url, shares_db=False)
     delivery = resolve_callback_delivery(JOB_ID)
     assert delivery.mode == "polling"
     assert "형식" in delivery.reason

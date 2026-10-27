@@ -20,6 +20,7 @@ import sys
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -168,6 +169,7 @@ def test_coverage_gate_failure_reproduction(tmp_path: Path):
     의존하면 그 파일이 없는 환경에서 coverage 가 'No data to report.' 를 내고
     실패합니다. 격리 워크트리와 CI 신규 체크아웃이 그런 환경입니다.
     """
+    pytest.importorskip("coverage")
     target = tmp_path / "partially_covered.py"
     target.write_text(
         "def covered():\n"
