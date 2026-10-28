@@ -125,4 +125,4 @@
 | `task_route_reason_review_20261028/review_done.json` | 진단 문구 리뷰 pass |
 | `task_chat_bundle6_regression_sweep_20261026/design.md` | 묶음 6 조사 |
 
-이 인수인계를 담은 커밋은 브랜치 `kwanbum217/handoff-20261028-close` 에만 있습니다. `main` 병합은 그 커밋에 대한 엄격 증거와 전량 시험 기록이 따로 필요합니다. 지금 `main` 에 남아 있는 `f70e61ff` 증거로는 병합 훅이 거절합니다.
+이 문서는 `main` 에 병합합니다. 병합 직전 `main` 은 `658350c5` 입니다. 제품 변경이 아니므로 `CURRENT_STATE.md` 의 `source_commit` 은 `ef2b4320` 을 유지합니다. 병합 훅은 이 브랜치 끝 커밋의 엄격 증거와 전량 시험 기록을 요구하며, `f70e61ff` 증거는 쓰지 않습니다.
