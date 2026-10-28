@@ -12,13 +12,17 @@ scripts/validate_commit_message.py
   - 'Revert "' 로 시작하는 되돌리기 커밋
   - 'fixup!' 또는 'squash!' 로 시작하는 커밋
 - 제목 줄만 검사하며 본문/트레일러는 검사 대상에서 제외됩니다.
+- 같은 제목 반복 금지: HEAD 기준 최근 40개 커밋 제목에 같은 제목이 이미 2번 이상이면
+  거절합니다. 과거 커밋은 되돌리지 않으며, 타입이 merge 인 제목은 검사하지 않습니다.
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import subprocess  # nosec B404 - HEAD 커밋 제목 조회용으로만 subprocess 를 가져옵니다
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 ALLOWED_TYPES: set[str] = {
@@ -75,6 +79,9 @@ CORRECT_EXAMPLES: list[str] = [
     "merge: 작업 브랜치 병합",
 ]
 
+RECENT_SUBJECT_LIMIT = 40
+REPEAT_REJECT_THRESHOLD = 2
+
 
 def contains_emoji(text: str) -> bool:
     """텍스트 내 이모지 포함 여부를 확인합니다."""
@@ -90,6 +97,60 @@ def extract_subject(raw_message: str) -> str:
         if stripped:
             return stripped
     return ""
+
+
+def commit_type_of(subject: str) -> str:
+    """제목에서 콜론 앞 타입을 추출합니다. 콜론이 없으면 빈 문자열입니다."""
+    prefix, separator, _rest = subject.strip().partition(":")
+    if not separator:
+        return ""
+    return prefix.strip()
+
+
+def is_merge_subject(subject: str) -> bool:
+    """타입이 merge 인 제목인지 확인합니다."""
+    return commit_type_of(subject) == "merge"
+
+
+def validate_subject_repetition(
+    subject: str,
+    recent_subjects: Sequence[str],
+) -> tuple[bool, str]:
+    """후보 제목이 최근 목록에 이미 두 번 이상 있으면 거절합니다.
+
+    merge 타입 제목은 검사하지 않고 최근 목록에서도 제외합니다.
+    """
+    candidate = subject.strip()
+    if is_merge_subject(candidate):
+        return True, "병합 타입 제목은 반복 검사에서 제외합니다."
+
+    occurrences = sum(
+        1
+        for recent in recent_subjects
+        if not is_merge_subject(recent) and recent.strip() == candidate
+    )
+    if occurrences >= REPEAT_REJECT_THRESHOLD:
+        return False, (
+            f"같은 커밋 제목이 최근 이력에 이미 {occurrences}번 반복되었습니다. "
+            "다른 제목으로 바꿔 주십시오."
+        )
+    return True, "정상"
+
+
+def load_recent_subjects(limit: int = RECENT_SUBJECT_LIMIT) -> list[str]:
+    """HEAD 기준 최근 커밋 제목을 읽습니다. git 이 없거나 실패하면 빈 목록입니다."""
+    try:
+        completed = subprocess.run(  # nosec B603 B607 - 고정 인자 목록으로 git 을 shell 없이 실행합니다
+            ["git", "log", f"-{limit}", "--format=%s", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+    if completed.returncode != 0:
+        return []
+    return [line for line in completed.stdout.splitlines() if line.strip()]
 
 
 def validate_commit_subject(subject: str) -> tuple[bool, str]:
@@ -138,12 +199,25 @@ def validate_commit_subject(subject: str) -> tuple[bool, str]:
     return True, "정상"
 
 
-def validate_commit_message(raw_message: str) -> tuple[bool, str]:
-    """커밋 메시지 전체에서 제목 줄을 추출하여 검증합니다. 본문/트레일러는 무시합니다."""
+def validate_commit_message(
+    raw_message: str,
+    recent_subjects: Sequence[str] | None = None,
+) -> tuple[bool, str]:
+    """커밋 메시지 전체에서 제목 줄을 추출하여 검증합니다. 본문/트레일러는 무시합니다.
+
+    recent_subjects 를 넘기면 최근 제목 반복 여부까지 검사합니다.
+    """
     subject = extract_subject(raw_message)
     if not subject:
         return False, "커밋 메시지 제목이 비어 있습니다."
-    return validate_commit_subject(subject)
+    ok, reason = validate_commit_subject(subject)
+    if not ok:
+        return False, reason
+    if recent_subjects is not None:
+        repetition_ok, repetition_reason = validate_subject_repetition(subject, recent_subjects)
+        if not repetition_ok:
+            return False, repetition_reason
+    return True, reason
 
 
 def format_failure_message(subject: str, reason: str) -> str:
@@ -202,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write("[오류] 검증할 커밋 메시지 파일 경로 또는 --message 옵션이 필요합니다.\n")
         return 1
 
-    ok, reason = validate_commit_message(raw_text)
+    ok, reason = validate_commit_message(raw_text, load_recent_subjects())
     if not ok:
         subject = extract_subject(raw_text)
         sys.stderr.write(format_failure_message(subject, reason))
