@@ -3113,6 +3113,32 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     if use_kb_status:
         route_reason_parts.append("KB 상태 질의")
 
+    # 위 분기 밖에서 SQL 이 켜지는 경로가 있습니다. 추이 질의의 시계열 조회,
+    # 축별 집계의 그룹 조회, 기관·비교 조건 추출이 그렇습니다. 이때 사유가 비면
+    # "기본 벡터 질의" 로 떨어져 진단 문구가 실행 판정과 어긋납니다. 실행 판정을
+    # 바꾸지 않고, 실제로 SQL 을 켠 조건만 사유에 남깁니다.
+    sql_route_reason = any(
+        (
+            is_bid_number,
+            is_entity,
+            result_list_query,
+            announcement_list_query,
+            amount_extreme,
+            has_stat_keywords,
+        )
+    )
+    if use_sql and not sql_route_reason:
+        if filters.get("analysis_mode") == "trend":
+            route_reason_parts.append("추이 질의")
+        elif filters.get("group_by"):
+            route_reason_parts.append("축별 집계 질의")
+        elif has_comparison:
+            route_reason_parts.append("비교 질의")
+        elif filters.get("institution_names") or filters.get("institution_name"):
+            route_reason_parts.append("기관 조건 질의")
+        else:
+            route_reason_parts.append("정형 조회 질의")
+
     route_reason = ", ".join(route_reason_parts)
     if not route_reason:
         route_reason = "기본 벡터 질의"
