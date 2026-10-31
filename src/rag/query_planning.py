@@ -2737,8 +2737,50 @@ def is_result_amount_scope(query: str) -> bool:
     return _single_metric(_query_lower(query)) in ("bid_count", "avg_rate", "award_amount")
 
 
+_ATTACHED_PERIOD_PATTERN = re.compile(
+    r"(?<![가-힣A-Za-z0-9])"
+    r"(?:재작년|작년|지난해|지난\s*해|전년|올해|금년|이번\s*해|"
+    r"이번\s*달|이번달|이번\s*월|지난\s*달|지난달|이번\s*주|이번주|"
+    r"상반기|하반기|"
+    r"최근\s*\d+\s*(?:일|주|개월|달|년)|지난\s*\d+\s*(?:일|주|개월|달|년)|"
+    r"최근\s*한\s*달|지난\s*한\s*달|최근\s*1\s*달|지난\s*1\s*달|최근|요즘|"
+    r"\d{4}\s*년|\d{1,2}\s*월|\d{1,2}\s*분기|(?<!\d)\d{4}(?!\d)(?!\s*년))"
+    r"(?!(?:년도|년간|년에|년은|년이|년의|월에|월은|월이|월의|월말|월초|"
+    r"일자|일에|일은|일이|주에|분기에|개월간|개월에|주년|월간|일간|주간|분기별|반기별))"
+    r"(?=[가-힣])"
+)
+
+
+_ATTACHED_PERIOD_CONTINUATIONS = {
+    "년": ("도", "간", "에", "은", "이", "의"),
+    "월": ("에", "은", "이", "의", "말", "초", "간"),
+    "분기": ("에", "별"),
+    "일": ("자", "에", "은", "이", "간"),
+    "주": ("에", "년", "간"),
+    "개월": ("간", "에"),
+}
+
+
+def _split_attached_period(text: str) -> str:
+    """기간 표지 뒤에 한글이 바로 붙은 경우 공백을 하나 넣습니다.
+
+    "10월서울" 처럼 기간 표지가 기관·지역명과 붙어 있으면 기관 후보 추출기가
+    어절 전체를 이름으로 읽어 조건이 오염되거나 사라집니다. 표지가 단위·조사로
+    이어지는 "2026년도", "3분기별" 같은 형태는 제외해 과분리를 막습니다.
+    """
+
+    def _replace(match: re.Match[str]) -> str:
+        marker = match.group(0)
+        for unit, continuations in _ATTACHED_PERIOD_CONTINUATIONS.items():
+            if marker.endswith(unit) and text.startswith(continuations, match.end()):
+                return marker
+        return marker + " "
+
+    return _ATTACHED_PERIOD_PATTERN.sub(_replace, text)
+
+
 def build_retrieval_plan(query: str) -> RetrievalPlan:
-    normalized_query = _normalize_text(query)
+    normalized_query = _split_attached_period(_normalize_text(query))
     lowered = normalized_query.lower()
 
     is_entity = is_entity_specific_query(normalized_query)
