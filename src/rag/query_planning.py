@@ -714,7 +714,18 @@ NON_INSTITUTION_TERMS = frozenset(
         "공고명",
     }
 )
-NON_INSTITUTION_SUFFIXES = ("금액", "가격", "낙찰률", "투찰률", "사정률", "경쟁률")
+NON_INSTITUTION_SUFFIXES = (
+    "금액",
+    "가격",
+    "낙찰률",
+    "투찰률",
+    "사정률",
+    "경쟁률",
+    "낙찰제",
+    "심사",
+    "계약방식",
+    "입찰방식",
+)
 
 COMPARISON_MARKERS = ("비교", "대비", "차이", "vs")
 # 비교 질의라도 입찰 지표를 묻지 않으면 지역·기관 비교가 아닙니다.
