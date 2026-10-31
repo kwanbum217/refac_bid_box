@@ -2923,7 +2923,9 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
             # 지역 키워드는 어절 시작에서만 일치합니다. "환경기술" 안의 "경기" 처럼
             # 낱말 내부의 부분 문자열을 지역 조건으로 승격하지 않습니다. 뒤쪽은
             # 제한하지 않으므로 "경기도"·"서울시"·"부산에서"·"경기권" 은 그대로 잡습니다.
-            if re.search(rf"(?<![0-9A-Za-z가-힣]){re.escape(region)}", lowered):
+            # 숫자는 어절 시작으로 봅니다. "2026서울"·"2026경기도" 처럼 연도·차수 뒤에
+            # 붙은 지역명은 낱말 내부가 아니므로 계속 잡습니다.
+            if re.search(rf"(?<![A-Za-z가-힣]){re.escape(region)}", lowered):
                 filters["institution_name"] = region
                 region_fallback_name = region
                 break

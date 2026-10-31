@@ -88,3 +88,30 @@ def test_region_at_word_start_is_institution_scope(query: str, expected: str):
 )
 def test_later_word_start_occurrence_still_matches(query: str, expected: str):
     assert build_retrieval_plan(query).filters.get("institution_name") == expected
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("2026서울 공고 보여줘", "서울"),
+        ("2026경기도 공고", "경기"),
+        ("2026부산 공고 최근 5건", "부산"),
+    ],
+)
+def test_region_right_after_number_is_institution_scope(query: str, expected: str):
+    assert build_retrieval_plan(query).filters.get("institution_name") == expected
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "2026년서울 공고",
+        "1차서울 용역 공고",
+        "올해서울 공고",
+    ],
+)
+def test_region_attached_to_korean_word_is_not_institution_scope(query: str):
+    filters = build_retrieval_plan(query).filters
+
+    assert "institution_name" not in filters
+    assert "institution_names" not in filters
