@@ -2356,6 +2356,18 @@ def _month_end(year: int, month: int) -> date:
     return date(year, month, calendar.monthrange(year, month)[1])
 
 
+# 연도를 적지 않은 월·분기 표지는 오늘 기준으로 이미 시작된 가장 최근 기간으로
+# 읽습니다. 2026-10-31 에 "10월" 은 2026-10, "11월" 은 2025-11, "3분기" 는
+# 2026-07~09, "4분기" 는 2026-10~12 입니다.
+#
+# 뒤에 대상월·월의 일부를 가리키는 표지가 붙은 형태는 기간 표지로 읽지 않습니다.
+# "2026년 9월분" 처럼 대상월을 가리키는 "3월분", 월의 일부를 뜻하는 "10월말" 이
+# 여기에 해당합니다.
+_YEARLESS_PERIOD_SUFFIX = r"(?!\s*(?:분|말|초|중|순|째|차|간))"
+_YEARLESS_MONTH_PATTERN = re.compile(rf"(?<![\d.년])(\d{{1,2}})\s*월{_YEARLESS_PERIOD_SUFFIX}")
+_YEARLESS_QUARTER_PATTERN = re.compile(rf"(?<![\d.년])([1-4])\s*분기{_YEARLESS_PERIOD_SUFFIX}")
+
+
 def _parse_year_month_window(lowered: str) -> tuple[date, date, bool] | None:
     """일자 없이 연도와 월만 지정한 표현을 기간으로 바꿉니다.
 
@@ -2372,6 +2384,8 @@ def _parse_year_month_window(lowered: str) -> tuple[date, date, bool] | None:
     | `2024년 11월부터 2025년 2월까지` | 2024-11-01 ~ 2025-02-28 |
     | `2025년 3월` | 2025-03-01 ~ 2025-03-31 |
     | `2025년` | 2025-01-01 ~ 2025-12-31 |
+    | `10월` | 오늘 기준 가장 최근에 시작된 10월 |
+    | `11월` | 오늘 기준 가장 최근에 시작된 11월 |
 
     월을 넘길 때 30일을 더하는 방식은 말일이 어긋나므로 달력 말일을 씁니다.
     """
@@ -2407,6 +2421,18 @@ def _parse_year_month_window(lowered: str) -> tuple[date, date, bool] | None:
         if 1900 <= year <= 2999:
             return date(year, 1, 1), date(year, 12, 31), False
 
+    # 연도를 적지 않은 월입니다. 오늘 기준으로 그 달의 시작일이 이미 지났으면
+    # 올해, 아직 오지 않았으면 전년으로 잡습니다. 월이 둘 이상 나오면 어느 달을
+    # 기간으로 삼을지 알 수 없고 예시로 든 달일 수도 있으므로, 기간을 만들지 않던
+    # 기존 판정을 그대로 둡니다.
+    month_matches = _YEARLESS_MONTH_PATTERN.findall(lowered)
+    if len(month_matches) == 1:
+        month = int(month_matches[0])
+        if 1 <= month <= 12:
+            today = date.today()
+            year = today.year if month <= today.month else today.year - 1
+            return date(year, month, 1), _month_end(year, month), False
+
     return None
 
 
@@ -2430,6 +2456,7 @@ def _parse_quarter_window(lowered: str) -> tuple[date, date, bool] | None:
 
     두 분기를 잇는 범위 표현만 explicit_range=True 이고,
     단독 분기나 상/하반기는 explicit_range=False 입니다.
+    연도를 적지 않은 단독 분기는 오늘 기준 가장 최근에 시작된 분기로 읽습니다.
     """
     # 1. 크로스 연도 분기 범위 (예: 2025년 4분기부터 2026년 1분기)
     cross_quarter = re.search(
@@ -2460,6 +2487,17 @@ def _parse_quarter_window(lowered: str) -> tuple[date, date, bool] | None:
         year, q = (int(g) for g in single_quarter.groups())
         if 1 <= q <= 4:
             return _quarter_window(year, q, q, False)
+
+    # 3-1. 연도를 적지 않은 단독 분기 (예: 3분기). 오늘 기준으로 그 분기의
+    # 시작월이 이미 지났으면 올해, 아직 오지 않았으면 전년으로 잡습니다.
+    # 서로 다른 분기가 둘 이상이면 월과 같은 이유로 기간을 만들지 않습니다.
+    quarter_matches = _YEARLESS_QUARTER_PATTERN.findall(lowered)
+    if len(quarter_matches) == 1:
+        q = int(quarter_matches[0])
+        today = date.today()
+        start_month = QUARTER_MONTHS[q][0]
+        year = today.year if start_month <= today.month else today.year - 1
+        return _quarter_window(year, q, q, False)
 
     # 4. 상반기 / 하반기 (예: 2026년 상반기, 2026년 하반기, 하반기)
     half_with_year = re.search(r"(\d{4})\s*년\s*(상반기|하반기)", lowered)
