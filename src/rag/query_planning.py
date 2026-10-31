@@ -1078,6 +1078,16 @@ def _comparison_institution_candidate_excluded(token: str) -> bool:
     return False
 
 
+def _is_bid_number_form(token: str) -> bool:
+    """낱말이 공고번호 형태인지 확인합니다.
+
+    공고번호를 지목한 단건 질의에서 그 문자열은 기관 이름 자리에 남는 명사구로
+    보이지만 기관 조건이 아닙니다. 기관 등호 조건으로 승격하면 실제 조건과
+    맞지 않아 결과가 비므로 후보에서 걸러 냅니다.
+    """
+    return RESULT_LIST_BID_NUMBER_PATTERN.search(token) is not None
+
+
 def _comparison_unresolved_institution_candidate(query: str) -> str:
     """기간 비교에서 해석되지 않은 기관 후보 낱말을 찾습니다.
 
@@ -1098,6 +1108,8 @@ def _comparison_unresolved_institution_candidate(query: str) -> str:
         if len(cleaned) <= 2:
             continue
         if COMPARISON_PERIOD_TOKEN_PATTERN.fullmatch(cleaned):
+            continue
+        if _is_bid_number_form(cleaned):
             continue
         if _comparison_institution_candidate_excluded(cleaned):
             continue
@@ -2569,7 +2581,10 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
         start, end = _to_iso(today - timedelta(days=(7 * weeks) - 1), today)
         return start, end, "recent", True
 
-    if "최근 한 달" in lowered or "최근 1달" in lowered or "최근 한달" in lowered:
+    # "지난 한 달" 은 숫자가 없어 위 개월 규칙에 걸리지 않고, "지난달" 과도
+    # 띄어쓰기가 달라 아래 달력상 전월 규칙에 걸리지 않습니다. 최근 한 달 과
+    # 같은 오늘 포함 30일 창으로 읽습니다.
+    if re.search(r"(?:최근|지난)\s*(?:한|1)\s*달", lowered):
         start, end = _to_iso(today - timedelta(days=29), today)
         return start, end, "recent", True
 
