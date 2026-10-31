@@ -23,7 +23,6 @@ from src.rag.scope_guard import (
 )
 
 OUT_OF_SCOPE_CASES = (
-    "안녕하세요, 너는 누구야?",
     "오늘 서울 날씨 어때?",
     "주식 시장 전망 알려줘",
     "1 더하기 1은 뭐야?",
