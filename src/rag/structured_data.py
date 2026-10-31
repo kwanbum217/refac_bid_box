@@ -601,6 +601,18 @@ def _result_conditions(
     return conditions
 
 
+def _announcement_award_method_condition(award_method: str) -> Any:
+    """공고 원문 낙찰방법명이 그 값으로 시작하는 공고만 고릅니다.
+
+    sucsfbidMthdNm 은 raw_data JSON 안에만 있습니다. JSON 인덱스 식은 MySQL 에서
+    JSON_UNQUOTE(JSON_EXTRACT(...)), SQLite 에서 json_extract(...) 로 컴파일되며
+    값은 문자열 조립이 아니라 LIKE 패턴 바인딩 파라미터로 전달합니다.
+    """
+    escaped = award_method.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    column = BidAnnouncement.raw_data["sucsfbidMthdNm"].as_string()
+    return column.like(f"{escaped}%", escape="\\")
+
+
 def _announcement_conditions(
     plan: RetrievalPlan,
     *,
@@ -622,6 +634,7 @@ def _announcement_conditions(
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
     notice_kind = _normalize_text(str(filters.get("notice_kind") or ""))
+    award_method = _normalize_text(str(filters.get("award_method") or ""))
 
     conditions = []
     if (
@@ -647,6 +660,8 @@ def _announcement_conditions(
         conditions.append(BidAnnouncement.category == category)
     if notice_kind:
         conditions.append(BidAnnouncement.ntce_kind_nm == notice_kind)
+    if award_method:
+        conditions.append(_announcement_award_method_condition(award_method))
     conditions.extend(_close_conditions(filters))
     conditions.extend(_amount_conditions(filters, ANNOUNCEMENT_AMOUNT_COLUMNS))
     # 최댓값·최솟값 질문은 금액이 NULL 인 행을 순위에서 제외합니다. 정렬만으로는
@@ -700,6 +715,10 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     if filters.get("winner_name"):
         return None
     if _normalize_text(str(filters.get("notice_kind") or "")):
+        return None
+    # 낙찰방법 조건은 사전 집계 스냅샷에 없습니다. 스냅샷을 쓰면 조건이 사라진
+    # 전체 순위가 그 조건의 답처럼 나옵니다.
+    if _normalize_text(str(filters.get("award_method") or "")):
         return None
     if filters.get("close_from") or filters.get("close_to"):
         return None

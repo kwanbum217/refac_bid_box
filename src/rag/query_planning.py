@@ -1411,6 +1411,44 @@ def extract_notice_kind(query: str) -> str:
     return best_kind
 
 
+# 낙찰방법 조건입니다. 공고 원문 raw_data.sucsfbidMthdNm 이 "적격심사" 로
+# 시작하는 공고만 고릅니다. 적격심사는 제도 뜻·기준을 묻는 질문에도 흔히
+# 나오므로, 목록·건수·통계를 요구하는 질의에서만 조회 조건으로 승격합니다.
+AWARD_METHOD_ELIGIBILITY = "적격심사"
+_ELIGIBILITY_MARKER = re.compile(r"적격\s*심사")
+_ELIGIBILITY_DEFINITION = re.compile(
+    r"적격\s*심사[^.!?]{0,20}?(?:뭐야|뭔가요|무엇|뜻|의미|정의|개념|이란|"
+    r"설명|차이|다른\s*점|산식|원리|절차)"
+)
+_ELIGIBILITY_DATA_INTENT_MARKERS = (
+    "공고",
+    "입찰",
+    "낙찰",
+    "목록",
+    "리스트",
+    "통계",
+    "건수",
+    "결과",
+    "대상",
+)
+
+
+def extract_award_method(query: str) -> str:
+    """질의가 지목한 낙찰방법 조건을 돌려줍니다.
+
+    적격심사는 목록·건수·통계를 요구할 때만 조건으로 승격합니다. "적격심사가
+    뭐야" 처럼 뜻·기준·차이를 묻는 정의 질문은 기존 의미 검색 경로에 남깁니다.
+    """
+    lowered = _query_lower(query)
+    if not _ELIGIBILITY_MARKER.search(lowered):
+        return ""
+    if _ELIGIBILITY_DEFINITION.search(lowered):
+        return ""
+    if not any(marker in lowered for marker in _ELIGIBILITY_DATA_INTENT_MARKERS):
+        return ""
+    return AWARD_METHOD_ELIGIBILITY
+
+
 def _is_count_statistics_query(query: str) -> bool:
     """건수 표현만으로 통계 질의인지 판정합니다.
 
@@ -2852,6 +2890,15 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         amount_filters["amount_field"] = RESULT_AMOUNT_FIELD
     filters.update(amount_filters)
     filters.update(extract_sort_filters(normalized_query))
+
+    # 적격심사 조건 목록·건수 질문은 공고 원문 낙찰방법명 조건으로 조회합니다.
+    # 정의 질문은 extract_award_method 가 걸러 기존 의미 검색 경로에 남깁니다.
+    award_method = extract_award_method(normalized_query)
+    if award_method:
+        filters["award_method"] = award_method
+        use_sql = True
+        if not has_semantic_keywords and not is_entity:
+            use_vector = False
 
     # 특정 업체를 지목한 낙찰 이력 질문은 그 업체 조건을 SQL 로 넘깁니다. 조건을
     # 빼면 전체 최신 목록이 그 업체 실적처럼 답해집니다(조용한 범위 확대).

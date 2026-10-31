@@ -54,6 +54,7 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "group_by": "집계 축",
         "metric": "집계 지표",
         "group_limit": "집계 행 상한",
+        "award_method": "낙찰방법",
     }
     lines = []
     for key, value in filters.items():
@@ -142,6 +143,7 @@ def _build_result_list_answer(
     unapplied_notice = unapplied_result_condition_notice(
         structured_data.get("unapplied_conditions") or []
     )
+    award_method_notice = RESULT_AWARD_METHOD_NOTICE if _award_method(plan.filters) else ""
     if not results:
         latest = summary.get("latest_available_result_at")
         answer = f"요청하신 기간에 조건에 맞는 최근 {category_label} 낙찰 결과는 0건입니다."
@@ -149,6 +151,8 @@ def _build_result_list_answer(
             answer += f"\n현재 DB에서 확인 가능한 해당 분야의 최신 개찰일은 {latest}입니다."
         if unapplied_notice:
             answer += f"\n{unapplied_notice}"
+        if award_method_notice:
+            answer += f"\n{award_method_notice}"
         return _append_winner_variant_notice(answer, structured_data)
 
     lines = [
@@ -157,6 +161,8 @@ def _build_result_list_answer(
     ]
     if unapplied_notice:
         lines.extend([unapplied_notice, ""])
+    if award_method_notice:
+        lines.extend([award_method_notice, ""])
     lines.extend(
         [
             "| # | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 | 개찰일 |",
@@ -195,11 +201,36 @@ def _format_condition_amount(value: Any) -> str:
         return str(value)
 
 
+EARLY_AWARD_METHOD_NOTE = (
+    "2024년 이전 공고는 낙찰방법명이 공고서참조로만 남아 있어 일부만 집계되었을 수 있습니다."
+)
+RESULT_AWARD_METHOD_NOTICE = (
+    "낙찰 결과 조회에서는 낙찰방법 조건을 지원하지 않아 해당 조건 없이 조회했습니다."
+)
+
+
+def _award_method(filters: dict | None) -> str:
+    return _normalize_text(str((filters or {}).get("award_method") or ""))
+
+
+def _award_method_window_includes_early_period(filters: dict | None) -> bool:
+    """조회 창이 2024년 이전을 포함하는지 판정합니다.
+
+    적격심사는 2024년 이후 공고에 낙찰방법명이 채워집니다. 2024년 이전 창을
+    함께 조회하면 이름이 공고서참조인 행이 빠져 일부만 집계될 수 있습니다.
+    """
+    date_from = _normalize_text(str((filters or {}).get("date_from") or ""))
+    return not date_from or date_from < "2024-01-01"
+
+
 def _announcement_condition_line(filters: dict | None) -> str:
     """목록 표에 적용된 마감일·금액·정렬 조건을 한 줄로 요약합니다."""
     if not filters:
         return ""
     parts: list[str] = []
+    award_method = _award_method(filters)
+    if award_method:
+        parts.append(f"낙찰방법: {award_method}")
     recent_days = int(filters.get("recent_days") or 0)
     if recent_days:
         parts.append(f"최근 {recent_days}일")
@@ -251,10 +282,17 @@ def _build_announcement_list_answer(
     samples = summary.get("sample_announcements") or []
     category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
     condition_line = _announcement_condition_line(plan.filters)
+    award_method_note = (
+        EARLY_AWARD_METHOD_NOTE
+        if _award_method(plan.filters) and _award_method_window_includes_early_period(plan.filters)
+        else ""
+    )
     if not samples:
         answer = f"요청하신 기간에 조건에 맞는 {category_label} 공고는 0건입니다."
         if condition_line:
             answer += f"\n{condition_line}"
+        if award_method_note:
+            answer += f"\n{award_method_note}"
         return answer
 
     head_sentence = (
@@ -268,6 +306,8 @@ def _build_announcement_list_answer(
     ]
     if condition_line:
         lines.extend([condition_line, ""])
+    if award_method_note:
+        lines.extend([award_method_note, ""])
     lines.extend(
         [
             "| # | 공고명(공고번호) | 수요기관 | 추정가격 | 공고일 | 마감일 |",
@@ -965,12 +1005,20 @@ def _build_single_metric_answer(
         if category_label and category_label != "-":
             subject.append(category_label)
 
+    award_method = _award_method(filters)
+    if award_method and metric == "announcement_count":
+        subject.append(award_method)
+
     answer = f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
     unapplied_notice = unapplied_result_condition_notice(
         structured_data.get("unapplied_conditions") or []
     )
     if unapplied_notice:
         answer += f"\n{unapplied_notice}"
+    if award_method and metric != "announcement_count":
+        answer += f"\n{RESULT_AWARD_METHOD_NOTICE}"
+    elif award_method and _award_method_window_includes_early_period(filters):
+        answer += f"\n{EARLY_AWARD_METHOD_NOTE}"
     return _append_winner_variant_notice(answer, structured_data)
 
 
