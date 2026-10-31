@@ -1858,9 +1858,33 @@ def _not_supported_truth() -> dict[str, Any]:
     return {"kind": "not_supported", "data_available": False, "error": None}
 
 
+def _unsupported_rate_item() -> dict[str, Any]:
+    """미보유 안내 판정 시험용 문항.
+
+    v2_rat_01 은 2026-10-31 사용자 결정으로 실지원 numeric_fact 로 바뀌었으므로
+    금지 수치 단위·금지 낱말 판정은 이 문항으로 고정한다.
+    """
+    return {
+        "id": "t_ns_rat",
+        "category": "stats",
+        "split": "public",
+        "question": "최근 한 달 용역 사정률 평균 알려줘",
+        "expected_tools": [],
+        "forbidden_tools": [],
+        "check": {
+            "type": "not_supported",
+            "forbidden_number_units": ["%"],
+        },
+        "must_not_contain": [],
+        "forbidden_claims": ["사정률 평균은", "평균 사정률은"],
+        "repeats": 3,
+        "note": "",
+    }
+
+
 def test_not_supported_passes_on_data_absence_guidance() -> None:
     result = measure.grade_attempt(
-        _v2_item("v2_rat_01"),
+        _unsupported_rate_item(),
         _not_supported_truth(),
         _payload("사정률 자료는 보유하고 있지 않아 제공할 수 없습니다.", tools=()),
     )
@@ -1871,7 +1895,7 @@ def test_not_supported_passes_on_data_absence_guidance() -> None:
 def test_not_supported_passes_when_percent_sign_has_no_number() -> None:
     # 안내 문장의 "(%)" 는 수치 단정이 아니다.
     result = measure.grade_attempt(
-        _v2_item("v2_rat_01"),
+        _unsupported_rate_item(),
         _not_supported_truth(),
         _payload("사정률(%) 수치는 보유하고 있지 않습니다.", tools=()),
     )
@@ -1881,7 +1905,7 @@ def test_not_supported_passes_when_percent_sign_has_no_number() -> None:
 
 def test_not_supported_fails_on_fabricated_rate() -> None:
     result = measure.grade_attempt(
-        _v2_item("v2_rat_01"),
+        _unsupported_rate_item(),
         _not_supported_truth(),
         _payload("최근 한 달 용역 사정률 평균은 88.12%입니다.", tools=()),
     )
@@ -1892,7 +1916,7 @@ def test_not_supported_fails_on_fabricated_rate() -> None:
 
 def test_not_supported_fails_on_forbidden_claim_phrase() -> None:
     result = measure.grade_attempt(
-        _v2_item("v2_rat_01"),
+        _unsupported_rate_item(),
         _not_supported_truth(),
         _payload("평균 사정률은 확인되지 않습니다.", tools=()),
     )
@@ -1992,7 +2016,7 @@ def test_check_required_keys_validates_new_types() -> None:
 
 
 def test_validator_allows_item_claims_for_not_supported() -> None:
-    item = _v2_item("v2_rat_01")
+    item = _unsupported_rate_item()
     assert measure.validate_fixture({"split": "public", "items": [item]}, "public", "x") == []
 
 
@@ -2017,6 +2041,31 @@ def test_extract_korean_amounts(text: str, expected: float) -> None:
 
 
 def test_summarize_marks_v2_defensive_checks_as_heuristic() -> None:
-    for item_id in ("v2_rat_01", "v2_rst_01", "v2_rst_02"):
+    for item_id in ("v2_rbd_02", "v2_rst_01", "v2_rst_02"):
         summary = measure.summarize_item(_v2_item(item_id), [_attempt(True)])
         assert summary["heuristic"] is True
+
+
+@pytest.mark.parametrize(
+    ("item_id", "source", "value_column"),
+    [
+        ("v2_rat_01", "bid_prearng_prices", "sajeong_rate"),
+        ("v2_cmp_01", "bid_results", "prtcptCnum"),
+    ],
+)
+def test_v2_sajeong_and_competition_items_use_live_aggregates(
+    item_id: str, source: str, value_column: str
+) -> None:
+    # 2026-10-31 사용자 결정: 두 항목의 정답은 미지원 안내가 아니라 실행 시점
+    # DB 집계다. 기준값은 최근 30일(오늘 포함) 반개구간을 반드시 둔다.
+    item = _v2_item(item_id)
+    check = item["check"]
+
+    assert check["type"] == "numeric_fact"
+    assert source in check["sql"]
+    assert value_column in check["sql"]
+    assert "rl_openg_dt >= CURDATE() - INTERVAL 29 DAY" in check["sql"]
+    assert "rl_openg_dt < CURDATE() + INTERVAL 1 DAY" in check["sql"]
+    assert "forbidden_claims" not in item
+    assert item["expected_tools"] == ["bid_query_tool"]
+    assert "2026-10-31 사용자 결정으로 실지원 전환" in item["note"]
