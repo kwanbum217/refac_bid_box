@@ -118,3 +118,65 @@ orca worktree rm --worktree path:<워크트리> --force
 | 8 | 연도 없는 월·분기 | 권장안 | 가장 최근에 시작된 기간으로 해석(2절 `task_0c897f18024d` 그대로) |
 
 순서 권고: 1(설정 한 파일) -> 6, 2, 3(지표·필터, `structured_data.py` 공유라 직렬) -> 5 -> 7 -> 4(설계 문서 먼저).
+
+---
+
+## 7. 재개 세션 결과 (2026-10-31 저녁, 이 절이 0~3절보다 우선)
+
+main 은 `ada865fb` 입니다. 0~3절의 병합 대기 4개와 2절 워커 3대는 모두 처리했습니다. 오늘 병합 12건이며 공급망 CI 는 `45c0c89f` 에서 초록입니다. `93b65b33` 이후 병합의 CI 는 확인하지 못했습니다.
+
+### 7.1 운영 DB 변경 (사용자 승인)
+
+| 항목 | 값 |
+| --- | --- |
+| 백업 | `data/backups/snapshots/snapshot_20261031_112947`(DB 2.3GB, ChromaDB, 모델) |
+| 적용 | `alembic upgrade head` 로 `a6b7c8d9e0f1 -> b7c8d9e0f1a2 -> c1d2e3f4a5b6` |
+| 신규 테이블 | `accounts_session_generation`(2026-10-12 병합분 미적용이었음), `bid_openg_results` |
+| 대조 | 공고 5,560,232, 낙찰 3,464,615, 사정률 353,042행 전후 동일. 테이블 43 -> 45 |
+| G1 기준선 | `c06d1d52`(브랜치 `kwanbum217/openg-g1-baseline-20261031`), bid_openg_results 만 추가 |
+
+운영 DB 는 이미 c1d2 이지만 main 에는 아직 그 마이그레이션이 없습니다. 7.2 의 1번을 가장 먼저 병합해야 main 과 DB 가 맞습니다.
+
+### 7.2 병합 대기 (모두 리뷰 pass, 이 순서로 한 번에 하나씩)
+
+| 순서 | 브랜치 | 내용 | 비고 |
+| --- | --- | --- | --- |
+| 1 | `kwanbum217/openg-g1-baseline-20261031` | 유찰 수집 설계 문서 + T1·T2 + T3 + T4 + G1 기준선 묶음 | 코디네이터 Capsule `.orca/capsules/coord_openg-chain-20261031/capsule.yaml`(변경 12파일). strict 게이트를 `--allow-missing-report` 로 다시 기록. 수집 플래그 `OPENG_RESULT_COLLECTION_ENABLED` 기본 꺼짐 |
+| 2 | `kwanbum217/chromadb-allowlist-20261031` | chromadb 예외 2027-03-31 연장 | 리뷰 `task_chromadb_allowlist_review_20261031` |
+| 3 | `kwanbum217/eligibility-filter-20261031` | 적격심사 조건 실지원 | 4·6 의 기준 커밋 b3dfe707 |
+| 4 | `kwanbum217/small-talk-branch-20261031` | 잡담 도움말 분기 | |
+| 5 | `kwanbum217/amount-band-axis-20261031` | 금액대별 4구간 | 3 위에 쌓임 |
+| 6 | `kwanbum217/sajeong-competition-20261031` | 사정률·경쟁률 실조회 + v2 점검 항목 numeric_fact 전환 | 3 위에 쌓임. v2 점수 영향 있음 |
+
+`kwanbum217/gap-guard-eligibility-20261031`(미지원 안내)은 결정 6 으로 대체되어 병합하지 않습니다.
+
+병합마다: strict 게이트 `--record-evidence`, 워크트리에서 `premerge_full_suite_gate.py --record`, `git merge --no-ff --no-commit`, `CURRENT_STATE.md` source_commit 갱신, 병합 결과 시험을 `> log; rc=$?` 로 받아 0 이 아니면 `git reset --merge`. 쌓인 브랜치끼리 `query_planning.py`·`structured_data.py` 를 공유하므로 병합 결과 시험에 각 브랜치 신규 시험을 함께 넣습니다. 이 세션에서 결합 결함이 두 번(지역 폴백·기간 분리, 기간 분리·연도 없는 월) 이 방식으로 잡혔습니다.
+
+### 7.3 중단한 워커 (종료로 끊김, 결과 미확인)
+
+| Task | 내용 | 워크트리 |
+| --- | --- | --- |
+| `task_9371f5cefaa4` | 경쟁률 응답을 중앙값 우선으로(최근 30일 평균 95.06곳, 중앙값 근사 7, 최댓값 9,118) | `competition-median-20261031`(6 위) |
+| `task_397508a8ea64` | 백업 도구가 `docker exec -e MYSQL_PWD=<값>` 로 비밀번호를 ps 에 노출하는 결함 수정 | `backup-pwd-argv-20261031` |
+
+커밋이 있으면 리뷰부터, 없으면 같은 Intent(`.orca/intents/competition_median_20261031.yaml`, `backup_pwd_argv_20261031.yaml`)로 다시 띄웁니다.
+
+### 7.4 남은 과업
+
+| 과업 | 상태 |
+| --- | --- |
+| 유찰 1년 소급 실행 | `scripts/backfill_openg_results.py`(기본 dry-run, `--max-calls` 필수). 승인 트래픽 단위와 rbidNo 유니크성 실측 후 `--execute` |
+| 유찰 T5(가드 해제·목록 조건) | 소급 적재 뒤 착수 |
+| v2 재측정 | 6 병합 뒤 app 재시작 후 v1·v2 측정 |
+| app 재시작 | 병합분 반영을 위해 `docker compose up -d` 후 `docker compose restart app` |
+| 잔여 관찰 | 의미 검색 질의문에 공백 삽입(최근 에), 날짜 창 없는 적격심사 건수의 JSON 전체 스캔 |
+
+### 7.5 운영 메모
+
+| 교훈 | 내용 |
+| --- | --- |
+| 병합 결과 시험 파이프 | `| tail` 로 받아 실패 2건을 커밋·푸시(b14142ad), edb40d4d 로 복구. 종료 코드를 따로 받는다 |
+| 셸 `&` 배경 | 세 번 반복. 게이트·대기는 run_in_background 로만 띄운다 |
+| 쌓인 브랜치 | 선행 브랜치가 병합되기 전 후속 빌더의 changed_files 는 선행 커밋 기준 diff 로 받는다 |
+
+Docker 는 종료 시 `docker compose stop` 으로 내렸습니다(볼륨 유지).
