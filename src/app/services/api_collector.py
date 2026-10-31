@@ -258,6 +258,7 @@ async def _fetch_paged(
     mapper: Callable[[ET.Element, dict[str, str]], dict[str, Any]],
     error_label: str,
     sem: asyncio.Semaphore,
+    inqry_div: str = "1",
 ) -> list[dict[str, Any]]:
     """단일 날짜 구간을 페이지 끝까지 수집합니다.
 
@@ -271,7 +272,7 @@ async def _fetch_paged(
             "serviceKey": get_service_key(),
             "pageNo": str(page_no),
             "numOfRows": str(num_of_rows),
-            "inqryDiv": "1",
+            "inqryDiv": inqry_div,
             "inqryBgnDt": f"{step_start}0000",
             "inqryEndDt": f"{step_end}2359",
             "type": "xml",
@@ -403,6 +404,7 @@ async def _gather_ranges(
     num_of_rows: int,
     mapper: Callable[[ET.Element, dict[str, str]], dict[str, Any]],
     error_label: str,
+    inqry_div: str = "1",
 ) -> list[dict[str, Any]]:
     """날짜 구간을 병렬 수집해 전부 메모리에 모아 반환합니다.
 
@@ -411,7 +413,14 @@ async def _gather_ranges(
     """
     collected: list[dict[str, Any]] = []
     await _run_ranges(
-        api_url, start_date, end_date, num_of_rows, mapper, error_label, collected.extend
+        api_url,
+        start_date,
+        end_date,
+        num_of_rows,
+        mapper,
+        error_label,
+        collected.extend,
+        inqry_div,
     )
     return collected
 
@@ -424,6 +433,7 @@ async def _run_ranges(
     mapper: Callable[[ET.Element, dict[str, str]], dict[str, Any]],
     error_label: str,
     sink: Callable[[list[dict[str, Any]]], Any],
+    inqry_div: str = "1",
 ) -> int:
     """15일 구간을 병렬로 받아 끝나는 즉시 `sink` 에 넘기고 메모리에서 버립니다.
 
@@ -445,7 +455,15 @@ async def _run_ranges(
             # 구간은 전부 동시에 시작하고, 실제 요청 수는 _fetch_paged 안의
             # 세마포어가 통제합니다. 구간 단위로 막으면 페이지 병렬화가 무의미해집니다.
             items = await _fetch_paged(
-                client, api_url, step_start, step_end, num_of_rows, mapper, error_label, sem
+                client,
+                api_url,
+                step_start,
+                step_end,
+                num_of_rows,
+                mapper,
+                error_label,
+                sem,
+                inqry_div,
             )
             async with sink_lock:
                 saved = await asyncio.to_thread(sink, items)
@@ -607,6 +625,94 @@ async def stream_bid_participation_regions(
         _map_participation_region_item,
         "참가가능지역",
         sink,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 개찰결과 목록(공사·물품·용역)
+#
+# 낙찰현황(getScsbidListSttus*)은 낙찰자가 있는 건만 내려주므로 유찰을 담지
+# 못합니다. 개찰결과 목록은 유찰·재입찰까지 내려주며, 같은 서비스
+# (as/ScsbidInfoService)와 같은 키를 씁니다. 날짜 축은 개찰일시(inqryDiv=3)를
+# 쓰고, 응답의 `progrsDivCdNm` 이 유찰 판정 원천입니다.
+#
+# `opengCorpInfo`(개찰 업체 정보)에는 대표자명 등 개인정보가 포함되므로
+# 저장하지 않고 raw_data 에서도 제외합니다.
+# ---------------------------------------------------------------------------
+
+OPENG_RESULT_API_BASE_URL = "https://apis.data.go.kr/1230000/as/ScsbidInfoService/"
+OPENG_RESULT_URLS: dict[str, str] = {
+    "Thng": f"{OPENG_RESULT_API_BASE_URL}getOpengResultListInfoThng",
+    "Cnstwk": f"{OPENG_RESULT_API_BASE_URL}getOpengResultListInfoCnstwk",
+    "Servc": f"{OPENG_RESULT_API_BASE_URL}getOpengResultListInfoServc",
+}
+OPENG_RESULT_INQRY_DIV = "3"
+OPENG_RESULT_PII_KEYS = frozenset({"opengCorpInfo"})
+
+
+def _resolve_openg_result_url(category: str) -> str:
+    try:
+        return OPENG_RESULT_URLS[category]
+    except KeyError:
+        raise ValueError(f"개찰결과는 지원하지 않는 분류입니다: {category}") from None
+
+
+def _openg_raw_data(raw_data: dict[str, str]) -> dict[str, str]:
+    """응답 원문에서 개인정보 필드(`opengCorpInfo`)를 제거합니다."""
+    return {key: value for key, value in raw_data.items() if key not in OPENG_RESULT_PII_KEYS}
+
+
+def _map_openg_result_item(category: str):
+    def _mapper(item: ET.Element, raw_data: dict[str, str]) -> dict[str, Any]:
+        return {
+            "bid_ntce_no": _get_text(item, "bidNtceNo", "") or "",
+            "bid_ntce_ord": normalize_bid_ntce_ord(_get_text(item, "bidNtceOrd")),
+            "rbid_no": _clean_str(_get_text(item, "rbidNo")) or "000",
+            "bid_clsfc_no": _clean_str(_get_text(item, "bidClsfcNo")) or "0",
+            "category": category,
+            "progrs_div_cd_nm": _clean_str(_get_text(item, "progrsDivCdNm")) or "",
+            "prtcpt_cnum": _parse_amount(_get_text(item, "prtcptCnum")),
+            "bid_ntce_nm": _clean_str(_get_text(item, "bidNtceNm")),
+            "dminstt_nm": _clean_str(_get_text(item, "dminsttNm")),
+            "openg_dt": _parse_datetime(_get_text(item, "opengDt")),
+            "raw_data": _openg_raw_data(raw_data),
+        }
+
+    return _mapper
+
+
+async def fetch_openg_results(
+    start_date: str, end_date: str, num_of_rows: int = 999, category: str = "Thng"
+) -> list[dict[str, Any]]:
+    """조달청 개찰결과를 비동기 병렬 수집합니다."""
+    return await _gather_ranges(
+        _resolve_openg_result_url(category),
+        start_date,
+        end_date,
+        num_of_rows,
+        _map_openg_result_item(category),
+        "개찰결과",
+        OPENG_RESULT_INQRY_DIV,
+    )
+
+
+async def stream_openg_results(
+    start_date: str,
+    end_date: str,
+    sink: Callable[[list[dict[str, Any]]], Any],
+    num_of_rows: int = 999,
+    category: str = "Thng",
+) -> int:
+    """개찰결과를 15일 구간 단위로 받아 즉시 `sink` 로 넘깁니다."""
+    return await _run_ranges(
+        _resolve_openg_result_url(category),
+        start_date,
+        end_date,
+        num_of_rows,
+        _map_openg_result_item(category),
+        "개찰결과",
+        sink,
+        OPENG_RESULT_INQRY_DIV,
     )
 
 
