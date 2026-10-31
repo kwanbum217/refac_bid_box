@@ -59,7 +59,8 @@ def test_attached_period_matches_spaced_control(monkeypatch, attached, spaced):
 @pytest.mark.parametrize(
     ("query", "expected_institution", "expected_from", "expected_to"),
     [
-        ("10월서울 공고 건수", "서울", None, None),
+        # 연도 없는 월은 가장 최근에 시작된 그 달로 읽습니다(연도 없는 월·분기 병합 뒤).
+        ("10월서울 공고 건수", "서울", "2026-10-01", "2026-10-31"),
         ("3분기한국전력공사 낙찰 건수", "한국전력공사", None, None),
         ("올해한국도로공사 공고 수", None, "2026-01-01", "2026-10-31"),
         ("작년경기도 공고 건수", "경기도", "2025-01-01", "2025-12-31"),
@@ -83,7 +84,7 @@ def test_attached_period_keeps_institution_and_date(
     ("query", "expected_filters"),
     [
         ("2026년도 공고", {"date_from": "2026-01-01", "date_to": "2026-12-31"}),
-        ("10월에 공고", {}),
+        ("10월에 공고", {"date_from": "2026-10-01", "date_to": "2026-10-31"}),
         ("3분기별 낙찰", {"time_bucket": "quarter", "analysis_mode": "trend"}),
         ("2025년간 낙찰", {"date_from": "2025-01-01", "date_to": "2025-12-31"}),
         ("이번주에 공고", {"date_from": "2026-10-25", "date_to": "2026-10-31"}),

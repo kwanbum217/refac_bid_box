@@ -2441,7 +2441,7 @@ def _month_end(year: int, month: int) -> date:
 # 뒤에 대상월·월의 일부를 가리키는 표지가 붙은 형태는 기간 표지로 읽지 않습니다.
 # "2026년 9월분" 처럼 대상월을 가리키는 "3월분", 월의 일부를 뜻하는 "10월말" 이
 # 여기에 해당합니다.
-_YEARLESS_PERIOD_SUFFIX = r"(?!\s*(?:분|말|초|중|순|째|차|간))"
+_YEARLESS_PERIOD_SUFFIX = r"(?!\s*(?:분|말|초|중|순|째|차|간|별))"
 _YEARLESS_MONTH_PATTERN = re.compile(rf"(?<![\d.년])(\d{{1,2}})\s*월{_YEARLESS_PERIOD_SUFFIX}")
 _YEARLESS_QUARTER_PATTERN = re.compile(rf"(?<![\d.년])([1-4])\s*분기{_YEARLESS_PERIOD_SUFFIX}")
 
