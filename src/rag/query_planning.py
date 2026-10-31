@@ -725,6 +725,19 @@ NON_INSTITUTION_SUFFIXES = (
     "심사",
     "계약방식",
     "입찰방식",
+    # 제도·계약 용어 어미. 실제 기관명·업체명과 겹치지 않는 것만 넣습니다.
+    # "입찰"(업체명 3건)과 "보수"(업체명 3건)는 bid_results.bidwinnr_nm 와
+    # 충돌하므로 제외하고, 그 어미는 정의 의도 가드가 막습니다.
+    "경쟁",
+    "계약",
+    "도급",
+    "보증금",
+    "노무비",
+    "물가변동",
+    "지역제한",
+    "부정당업자",
+    "하한율",
+    "총액",
 )
 
 COMPARISON_MARKERS = ("비교", "대비", "차이", "vs")
@@ -1202,7 +1215,64 @@ def _normalize_comparison_target(text: str) -> tuple[str, str] | None:
     return "institution", cleaned
 
 
-def _extract_comparison_targets(query: str) -> tuple[list[str], list[str]]:
+DEFINITION_INTENT_MARKERS = (
+    "무엇",
+    "뜻",
+    "의미",
+    "설명",
+    "원리",
+    "뭐야",
+    "뭔가요",
+    "차이점",
+    "어떻게 진행",
+    "어떻게 되나요",
+)
+# "차이" 는 정의 표지로 쓰지 않습니다. "조달청과 국방부 공고 수 차이 알려줘"
+# 처럼 실제 비교 질의가 벡터 경로로 후퇴합니다.
+DEFINITION_INTENT_METRIC_EXCEPTIONS = (
+    "공고 수",
+    "공고수",
+    "공고 건수",
+    "공고건수",
+    "낙찰 건수",
+    "낙찰건수",
+    "낙찰 결과",
+    "낙찰결과",
+    "낙찰률",
+)
+
+
+def _is_definition_intent_query(query: str) -> bool:
+    """정의·설명 의도만 있는 질의인지 판정합니다.
+
+    "적격심사와 최저가낙찰제의 차이가 무엇인가요" 처럼 제도·계약 용어의 뜻이나
+    차이를 묻는 질의는 기관명 비교가 아닙니다. 이런 질의에서 기관명 추출을
+    돌리면 "의" 앞 명사구가 그대로 기관명으로 승격되어 SQL 로 새므로, 두
+    추출기를 건너뛰기 위한 판정입니다.
+
+    목록·통계·비교 의도가 함께 있으면 정의 질의로 보지 않습니다. 명시 지표
+    표현(공고 수, 낙찰 건수, 낙찰률)과 통계 키워드, 건수 질의, 목록 질의 판정을
+    모두 예외로 두어 실제 비교 질문의 라우팅을 그대로 유지합니다.
+    """
+    lowered = _query_lower(query)
+    if not any(marker in lowered for marker in DEFINITION_INTENT_MARKERS):
+        return False
+    if any(marker in lowered for marker in DEFINITION_INTENT_METRIC_EXCEPTIONS):
+        return False
+    if any(keyword in lowered for keyword in STATISTICS_KEYWORDS):
+        return False
+    if _is_count_statistics_query(query):
+        return False
+    return not (
+        is_result_list_query(query)
+        or is_announcement_list_query(query)
+        or is_multi_institution_announcement_list_query(query)
+    )
+
+
+def _extract_comparison_targets(
+    query: str, *, apply_definition_guard: bool = True
+) -> tuple[list[str], list[str]]:
     """비교 질의에서 지역명과 정확 기관명 대상을 추출합니다.
 
     "비교/대비/차이/vs" 표지와 입찰 도메인 표지가 함께 있을 때만 동작합니다.
@@ -1213,6 +1283,8 @@ def _extract_comparison_targets(query: str) -> tuple[list[str], list[str]]:
 
     반환값은 (지역명 목록, 정확 기관명 목록)이며 둘 중 하나만 채워집니다.
     """
+    if apply_definition_guard and _is_definition_intent_query(query):
+        return [], []
     normalized = _normalize_text(query)
     lowered = normalized.lower()
     if not any(marker in lowered for marker in COMPARISON_MARKERS):
@@ -1266,6 +1338,8 @@ def _extract_institution_list(query: str) -> list[str]:
     각 부분이 공백·괄호·대괄호가 없는 2~20자 한글·영문·숫자 문자열일 때만 후보 목록을 반환합니다.
     조건을 하나라도 어기면 빈 목록을 반환합니다.
     """
+    if _is_definition_intent_query(query):
+        return []
     normalized = _normalize_text(query)
     match = FIRST_NOUN_PHRASE_OF_PATTERN.search(normalized)
     if not match:
@@ -1504,7 +1578,11 @@ def is_multi_institution_announcement_list_query(query: str) -> bool:
         return False
     if not any(marker in lowered for marker in COUNT_QUERY_DOMAIN_MARKERS):
         return False
-    comparison_regions, comparison_institutions = _extract_comparison_targets(normalized)
+    # 정의 의도 가드가 이 함수를 예외 판정에 쓰므로, 여기서는 가드를 다시
+    # 적용하지 않습니다. 그대로 두면 두 함수가 서로를 호출해 재귀합니다.
+    comparison_regions, comparison_institutions = _extract_comparison_targets(
+        normalized, apply_definition_guard=False
+    )
     if comparison_regions or comparison_institutions:
         return False
     if _has_excluded_list_marker(lowered):
