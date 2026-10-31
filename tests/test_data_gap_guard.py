@@ -101,6 +101,14 @@ SUPPORTED_CASES = (
 )
 
 
+GAP_REASON_PHRASES = {
+    "사정률": "현재 챗봇 조회 경로에서 지원하지 않아",
+    "경쟁률": "현재 챗봇 조회 경로에서 지원하지 않아",
+}
+
+DEFAULT_GAP_REASON = "현재 수집하는 입찰 데이터에 포함되어 있지 않아"
+
+
 def _fail_prepare(*args: object, **kwargs: object) -> None:
     raise AssertionError("미보유 항목 질문은 검색 컨텍스트를 준비하면 안 됩니다")
 
@@ -133,7 +141,7 @@ def test_every_item_has_a_fixed_message() -> None:
 def test_fixed_message_has_no_numbers_or_internal_terms(item: str) -> None:
     message = DATA_GAP_MESSAGES[item]
     assert item in message
-    assert "현재 수집하는 입찰 데이터에 포함되어 있지 않아" in message
+    assert GAP_REASON_PHRASES.get(item, DEFAULT_GAP_REASON) in message
     assert "조회할 수 있습니다" in message
     assert re.search(r"\d", message) is None
     for term in ("검색 컨텍스트", "Source", "시스템", "지침"):
