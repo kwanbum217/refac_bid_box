@@ -96,6 +96,10 @@ def test_later_word_start_occurrence_still_matches(query: str, expected: str):
         ("2026서울 공고 보여줘", "서울"),
         ("2026경기도 공고", "경기"),
         ("2026부산 공고 최근 5건", "부산"),
+        # 기간 표지 뒤에 붙은 지역명은 진입부 기간 분리 정규화가 공백을 넣어 주므로
+        # 지역으로 잡습니다(2026-10-31 기간 표지 분리 병합 뒤 동작).
+        ("2026년서울 공고", "서울"),
+        ("올해서울 공고", "서울"),
     ],
 )
 def test_region_right_after_number_is_institution_scope(query: str, expected: str):
@@ -105,9 +109,7 @@ def test_region_right_after_number_is_institution_scope(query: str, expected: st
 @pytest.mark.parametrize(
     "query",
     [
-        "2026년서울 공고",
         "1차서울 용역 공고",
-        "올해서울 공고",
     ],
 )
 def test_region_attached_to_korean_word_is_not_institution_scope(query: str):
