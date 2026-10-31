@@ -851,7 +851,17 @@ SINGLE_METRIC_LABELS = {
     "bid_count": "낙찰 건수는",
     "announcement_count": "공고는",
     "avg_rate": "평균 낙찰률은",
+    "avg_sajeong_rate": "평균 사정률은",
+    "avg_participants": "평균 참가업체 수는",
 }
+# 사정률·경쟁률은 원천 테이블이 달라 summary 에 전용 집계 키로 들어옵니다.
+DETAIL_METRIC_SUMMARY_KEYS = {
+    "avg_sajeong_rate": "sajeong_rate",
+    "avg_participants": "participants",
+}
+COMPETITION_RATE_SAMPLE_NOTE = (
+    "경쟁률은 낙찰 1건당 평균 참가업체 수로 계산하며, 유찰 공고는 표본에 포함되지 않습니다."
+)
 # 단일 지표 직접 응답이 답하면 안 되는 질문입니다. 순위·경쟁률·추세·설명형은
 # 값 하나로 답할 수 없거나 다른 경로가 맡습니다. 설명형은 값(얼마야, 몇 건이야)이
 # 아니라 뜻·정의·산식·이유를 묻는 표지로 넓게 잡습니다.
@@ -921,6 +931,38 @@ def _format_single_metric_period(filters: dict) -> str:
     return "전체 기간"
 
 
+def _format_detail_metric_answer(metric: str, stats: Any, subject: list[str]) -> str:
+    """사정률·경쟁률 평균을 라벨·단위·표본 수와 함께 문장으로 만듭니다."""
+    if not isinstance(stats, dict):
+        return ""
+    notice = _normalize_text(str(stats.get("notice") or ""))
+    try:
+        sample_count = int(stats.get("sample_count") or 0)
+    except (TypeError, ValueError):
+        sample_count = 0
+    average = stats.get("average")
+    if average is None or sample_count <= 0:
+        if notice:
+            return notice
+        return f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} 계산할 표본이 0건입니다."
+    try:
+        if metric == "avg_sajeong_rate":
+            rendered = f"{float(average):.4f}%"
+        else:
+            rendered = f"{float(average):.2f}곳"
+    except (TypeError, ValueError):
+        return ""
+    answer = (
+        f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다. "
+        f"표본 {sample_count:,}건입니다."
+    )
+    if metric == "avg_participants":
+        answer += f" {COMPETITION_RATE_SAMPLE_NOTE}"
+    if notice:
+        answer += f"\n{notice}"
+    return answer
+
+
 def _build_single_metric_answer(
     plan: RetrievalPlan,
     structured_data: dict | None,
@@ -960,25 +1002,32 @@ def _build_single_metric_answer(
     query = _normalize_text(plan.semantic_query).lower()
     if any(marker in query for marker in LIST_REQUEST_MARKERS):
         return ""
-    if any(marker in query for marker in SINGLE_METRIC_EXCLUDED_MARKERS):
-        return ""
 
-    metric = _single_metric(query)
+    # 사정률·경쟁률은 계획이 정한 전용 지표를 그대로 씁니다. 응답 단계에서
+    # 질문 원문으로 다시 정하면 경쟁률 낱말이 제외 표지에 걸려 답을 놓칩니다.
+    plan_metric = _normalize_text(str(plan_filters.get("metric") or ""))
+    metric = plan_metric if plan_metric in DETAIL_METRIC_SUMMARY_KEYS else _single_metric(query)
     if metric not in SINGLE_METRIC_LABELS:
         return ""
+    if metric not in DETAIL_METRIC_SUMMARY_KEYS and any(
+        marker in query for marker in SINGLE_METRIC_EXCLUDED_MARKERS
+    ):
+        return ""
 
-    value_key = {
-        "bid_count": "total_bids",
-        "announcement_count": "announcement_count",
-        "avg_rate": "average_winning_rate",
-    }[metric]
-    value = summary.get(value_key)
-    if value is None:
-        return ""
-    try:
-        rendered = f"{float(value):.2f}%" if metric == "avg_rate" else f"{int(value):,}건"
-    except (TypeError, ValueError):
-        return ""
+    detail_summary_key = DETAIL_METRIC_SUMMARY_KEYS.get(metric)
+    if detail_summary_key is None:
+        value_key = {
+            "bid_count": "total_bids",
+            "announcement_count": "announcement_count",
+            "avg_rate": "average_winning_rate",
+        }[metric]
+        value = summary.get(value_key)
+        if value is None:
+            return ""
+        try:
+            rendered = f"{float(value):.2f}%" if metric == "avg_rate" else f"{int(value):,}건"
+        except (TypeError, ValueError):
+            return ""
 
     filters = dict(structured_data.get("filters") or {})
     for key, filter_value in plan_filters.items():
@@ -1004,6 +1053,17 @@ def _build_single_metric_answer(
         category_label = _category_label(category)
         if category_label and category_label != "-":
             subject.append(category_label)
+
+    if detail_summary_key is not None:
+        answer = _format_detail_metric_answer(metric, summary.get(detail_summary_key), subject)
+        if not answer:
+            return ""
+        unapplied_notice = unapplied_result_condition_notice(
+            structured_data.get("unapplied_conditions") or []
+        )
+        if unapplied_notice:
+            answer += f"\n{unapplied_notice}"
+        return _append_winner_variant_notice(answer, structured_data)
 
     award_method = _award_method(filters)
     if award_method and metric == "announcement_count":
