@@ -19,6 +19,12 @@ OUT_OF_SCOPE_REFUSAL_MESSAGE = (
     "공고 조회, 낙찰 결과, 입찰 통계, 낙찰가 예측에 대해 물어봐 주세요."
 )
 
+SMALL_TALK_MESSAGE = (
+    "안녕하세요. 저는 BIDBOX 입찰 분석 어시스턴트입니다. "
+    "최근 공고 목록, 기관별 낙찰 현황, 낙찰률 예측처럼 입찰 데이터에 대해 "
+    "물어봐 주세요."
+)
+
 # 입찰 도메인 표지. 지역명 단독, "기관" 단독, "예측" 단독은 넣지 않습니다.
 # "서울 날씨"나 "월드컵 예측"을 입찰 질문으로 구제하지 않기 위해서입니다.
 _DOMAIN_MARKERS: tuple[str, ...] = (
@@ -217,6 +223,60 @@ def _normalize_request(message: str) -> str:
     return unicodedata.normalize("NFC", message or "").lower()
 
 
+# 잡담 표지. 낱말 단위로 비교하므로 "this"의 "hi" 같은 우연 일치는 걸리지 않습니다.
+_SMALL_TALK_PHRASES: tuple[tuple[str, ...], ...] = (
+    ("안녕",),
+    ("안녕하세요",),
+    ("반가워",),
+    ("반가워요",),
+    ("하이",),
+    ("hello",),
+    ("hi",),
+    ("ping",),
+    ("테스트",),
+    ("test",),
+    ("들려",),
+    ("너는", "누구야"),
+    ("누구세요",),
+    ("자기소개", "해줘"),
+    ("고마워",),
+    ("감사합니다",),
+)
+
+_SMALL_TALK_TOKEN_PATTERN = re.compile(r"[0-9a-z가-힣]+")
+
+
+def _is_small_talk_tokens(tokens: list[str]) -> bool:
+    """낱말 전체가 잡담 표지의 연속으로만 이루어졌는지 확인합니다."""
+    reachable = [False] * (len(tokens) + 1)
+    reachable[0] = True
+    for index in range(len(tokens)):
+        if not reachable[index]:
+            continue
+        for phrase in _SMALL_TALK_PHRASES:
+            end = index + len(phrase)
+            if end <= len(tokens) and tuple(tokens[index:end]) == phrase:
+                reachable[end] = True
+    return reachable[len(tokens)]
+
+
+def is_small_talk_request(message: str) -> bool:
+    """인사·연결 확인·자기소개·감사 잡담이면 True 를 반환합니다.
+
+    질문 전체가 잡담 표지와 문장부호로만 이루어져야 합니다. 입찰 도메인 표지가
+    하나라도 섞이면 잡담이 아니므로 False 입니다.
+    """
+    normalized = _normalize_request(message)
+    if not normalized.strip():
+        return False
+    if any(marker in normalized for marker in _DOMAIN_MARKERS):
+        return False
+    tokens = _SMALL_TALK_TOKEN_PATTERN.findall(normalized)
+    if not tokens:
+        return False
+    return _is_small_talk_tokens(tokens)
+
+
 def is_out_of_scope_request(message: str) -> bool:
     """입찰 도메인과 무관한 질문이면 True 를 반환합니다.
 
@@ -235,5 +295,7 @@ def is_out_of_scope_request(message: str) -> bool:
 
 __all__ = [
     "OUT_OF_SCOPE_REFUSAL_MESSAGE",
+    "SMALL_TALK_MESSAGE",
     "is_out_of_scope_request",
+    "is_small_talk_request",
 ]
