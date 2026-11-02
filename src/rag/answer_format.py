@@ -54,6 +54,7 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "group_by": "집계 축",
         "metric": "집계 지표",
         "group_limit": "집계 행 상한",
+        "award_method": "낙찰방법",
     }
     lines = []
     for key, value in filters.items():
@@ -142,6 +143,7 @@ def _build_result_list_answer(
     unapplied_notice = unapplied_result_condition_notice(
         structured_data.get("unapplied_conditions") or []
     )
+    award_method_notice = RESULT_AWARD_METHOD_NOTICE if _award_method(plan.filters) else ""
     if not results:
         latest = summary.get("latest_available_result_at")
         answer = f"요청하신 기간에 조건에 맞는 최근 {category_label} 낙찰 결과는 0건입니다."
@@ -149,6 +151,8 @@ def _build_result_list_answer(
             answer += f"\n현재 DB에서 확인 가능한 해당 분야의 최신 개찰일은 {latest}입니다."
         if unapplied_notice:
             answer += f"\n{unapplied_notice}"
+        if award_method_notice:
+            answer += f"\n{award_method_notice}"
         return _append_winner_variant_notice(answer, structured_data)
 
     lines = [
@@ -157,6 +161,8 @@ def _build_result_list_answer(
     ]
     if unapplied_notice:
         lines.extend([unapplied_notice, ""])
+    if award_method_notice:
+        lines.extend([award_method_notice, ""])
     lines.extend(
         [
             "| # | 공고명 | 수요기관 | 낙찰업체 | 낙찰금액 | 낙찰률 | 개찰일 |",
@@ -195,11 +201,36 @@ def _format_condition_amount(value: Any) -> str:
         return str(value)
 
 
+EARLY_AWARD_METHOD_NOTE = (
+    "2024년 이전 공고는 낙찰방법명이 공고서참조로만 남아 있어 일부만 집계되었을 수 있습니다."
+)
+RESULT_AWARD_METHOD_NOTICE = (
+    "낙찰 결과 조회에서는 낙찰방법 조건을 지원하지 않아 해당 조건 없이 조회했습니다."
+)
+
+
+def _award_method(filters: dict | None) -> str:
+    return _normalize_text(str((filters or {}).get("award_method") or ""))
+
+
+def _award_method_window_includes_early_period(filters: dict | None) -> bool:
+    """조회 창이 2024년 이전을 포함하는지 판정합니다.
+
+    적격심사는 2024년 이후 공고에 낙찰방법명이 채워집니다. 2024년 이전 창을
+    함께 조회하면 이름이 공고서참조인 행이 빠져 일부만 집계될 수 있습니다.
+    """
+    date_from = _normalize_text(str((filters or {}).get("date_from") or ""))
+    return not date_from or date_from < "2024-01-01"
+
+
 def _announcement_condition_line(filters: dict | None) -> str:
     """목록 표에 적용된 마감일·금액·정렬 조건을 한 줄로 요약합니다."""
     if not filters:
         return ""
     parts: list[str] = []
+    award_method = _award_method(filters)
+    if award_method:
+        parts.append(f"낙찰방법: {award_method}")
     recent_days = int(filters.get("recent_days") or 0)
     if recent_days:
         parts.append(f"최근 {recent_days}일")
@@ -251,10 +282,17 @@ def _build_announcement_list_answer(
     samples = summary.get("sample_announcements") or []
     category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
     condition_line = _announcement_condition_line(plan.filters)
+    award_method_note = (
+        EARLY_AWARD_METHOD_NOTE
+        if _award_method(plan.filters) and _award_method_window_includes_early_period(plan.filters)
+        else ""
+    )
     if not samples:
         answer = f"요청하신 기간에 조건에 맞는 {category_label} 공고는 0건입니다."
         if condition_line:
             answer += f"\n{condition_line}"
+        if award_method_note:
+            answer += f"\n{award_method_note}"
         return answer
 
     head_sentence = (
@@ -268,6 +306,8 @@ def _build_announcement_list_answer(
     ]
     if condition_line:
         lines.extend([condition_line, ""])
+    if award_method_note:
+        lines.extend([award_method_note, ""])
     lines.extend(
         [
             "| # | 공고명(공고번호) | 수요기관 | 추정가격 | 공고일 | 마감일 |",
@@ -811,7 +851,18 @@ SINGLE_METRIC_LABELS = {
     "bid_count": "낙찰 건수는",
     "announcement_count": "공고는",
     "avg_rate": "평균 낙찰률은",
+    "avg_sajeong_rate": "평균 사정률은",
+    "avg_participants": "경쟁률 중앙값은",
 }
+# 사정률·경쟁률은 원천 테이블이 달라 summary 에 전용 집계 키로 들어옵니다.
+DETAIL_METRIC_SUMMARY_KEYS = {
+    "avg_sajeong_rate": "sajeong_rate",
+    "avg_participants": "participants",
+}
+COMPETITION_RATE_SAMPLE_NOTE = (
+    "경쟁률은 낙찰 1건당 참가업체 수로 계산하며, 유찰 공고는 표본에 포함되지 않습니다."
+)
+COMPETITION_RATE_OUTLIER_NOTE = "참가업체가 매우 많은 일부 공고 때문에 중앙값보다 큽니다."
 # 단일 지표 직접 응답이 답하면 안 되는 질문입니다. 순위·경쟁률·추세·설명형은
 # 값 하나로 답할 수 없거나 다른 경로가 맡습니다. 설명형은 값(얼마야, 몇 건이야)이
 # 아니라 뜻·정의·산식·이유를 묻는 표지로 넓게 잡습니다.
@@ -881,6 +932,76 @@ def _format_single_metric_period(filters: dict) -> str:
     return "전체 기간"
 
 
+def _format_participants_average(average: Any, median: float) -> str:
+    """경쟁률 평균 문장을 만듭니다. 중앙값보다 크면 이상치 영향을 함께 밝힙니다."""
+    try:
+        average_value = float(average)
+    except (TypeError, ValueError):
+        return ""
+    rendered = f"{average_value:.2f}곳"
+    if average_value > median:
+        return f"평균은 {rendered}인데, {COMPETITION_RATE_OUTLIER_NOTE}"
+    return f"평균은 {rendered}입니다."
+
+
+def _format_participants_answer(
+    stats: dict, subject: list[str], notice: str, sample_count: int
+) -> str:
+    """경쟁률은 중앙값을 주 수치로, 평균은 이상치 안내와 함께 덧붙입니다.
+
+    평균만 내면 참가업체가 매우 많은 일부 공고가 실제 경쟁 상황을 가립니다.
+    """
+    median = stats.get("median_participants")
+    if median is None or sample_count <= 0:
+        if notice:
+            return notice
+        return (
+            f"{' '.join(subject)} {SINGLE_METRIC_LABELS['avg_participants']} "
+            "계산할 표본이 0건입니다."
+        )
+    try:
+        median_value = float(median)
+    except (TypeError, ValueError):
+        return ""
+    answer = f"{' '.join(subject)} 경쟁률 중앙값은 {median_value:.2f}곳입니다."
+    average_text = _format_participants_average(stats.get("average"), median_value)
+    if average_text:
+        answer += f" {average_text}"
+    answer += f" 표본 {sample_count:,}건입니다. {COMPETITION_RATE_SAMPLE_NOTE}"
+    if notice:
+        answer += f"\n{notice}"
+    return answer
+
+
+def _format_detail_metric_answer(metric: str, stats: Any, subject: list[str]) -> str:
+    """사정률·경쟁률 집계값을 라벨·단위·표본 수와 함께 문장으로 만듭니다."""
+    if not isinstance(stats, dict):
+        return ""
+    notice = _normalize_text(str(stats.get("notice") or ""))
+    try:
+        sample_count = int(stats.get("sample_count") or 0)
+    except (TypeError, ValueError):
+        sample_count = 0
+    if metric == "avg_participants":
+        return _format_participants_answer(stats, subject, notice, sample_count)
+    average = stats.get("average")
+    if average is None or sample_count <= 0:
+        if notice:
+            return notice
+        return f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} 계산할 표본이 0건입니다."
+    try:
+        rendered = f"{float(average):.4f}%"
+    except (TypeError, ValueError):
+        return ""
+    answer = (
+        f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다. "
+        f"표본 {sample_count:,}건입니다."
+    )
+    if notice:
+        answer += f"\n{notice}"
+    return answer
+
+
 def _build_single_metric_answer(
     plan: RetrievalPlan,
     structured_data: dict | None,
@@ -920,25 +1041,32 @@ def _build_single_metric_answer(
     query = _normalize_text(plan.semantic_query).lower()
     if any(marker in query for marker in LIST_REQUEST_MARKERS):
         return ""
-    if any(marker in query for marker in SINGLE_METRIC_EXCLUDED_MARKERS):
-        return ""
 
-    metric = _single_metric(query)
+    # 사정률·경쟁률은 계획이 정한 전용 지표를 그대로 씁니다. 응답 단계에서
+    # 질문 원문으로 다시 정하면 경쟁률 낱말이 제외 표지에 걸려 답을 놓칩니다.
+    plan_metric = _normalize_text(str(plan_filters.get("metric") or ""))
+    metric = plan_metric if plan_metric in DETAIL_METRIC_SUMMARY_KEYS else _single_metric(query)
     if metric not in SINGLE_METRIC_LABELS:
         return ""
+    if metric not in DETAIL_METRIC_SUMMARY_KEYS and any(
+        marker in query for marker in SINGLE_METRIC_EXCLUDED_MARKERS
+    ):
+        return ""
 
-    value_key = {
-        "bid_count": "total_bids",
-        "announcement_count": "announcement_count",
-        "avg_rate": "average_winning_rate",
-    }[metric]
-    value = summary.get(value_key)
-    if value is None:
-        return ""
-    try:
-        rendered = f"{float(value):.2f}%" if metric == "avg_rate" else f"{int(value):,}건"
-    except (TypeError, ValueError):
-        return ""
+    detail_summary_key = DETAIL_METRIC_SUMMARY_KEYS.get(metric)
+    if detail_summary_key is None:
+        value_key = {
+            "bid_count": "total_bids",
+            "announcement_count": "announcement_count",
+            "avg_rate": "average_winning_rate",
+        }[metric]
+        value = summary.get(value_key)
+        if value is None:
+            return ""
+        try:
+            rendered = f"{float(value):.2f}%" if metric == "avg_rate" else f"{int(value):,}건"
+        except (TypeError, ValueError):
+            return ""
 
     filters = dict(structured_data.get("filters") or {})
     for key, filter_value in plan_filters.items():
@@ -965,12 +1093,31 @@ def _build_single_metric_answer(
         if category_label and category_label != "-":
             subject.append(category_label)
 
+    if detail_summary_key is not None:
+        answer = _format_detail_metric_answer(metric, summary.get(detail_summary_key), subject)
+        if not answer:
+            return ""
+        unapplied_notice = unapplied_result_condition_notice(
+            structured_data.get("unapplied_conditions") or []
+        )
+        if unapplied_notice:
+            answer += f"\n{unapplied_notice}"
+        return _append_winner_variant_notice(answer, structured_data)
+
+    award_method = _award_method(filters)
+    if award_method and metric == "announcement_count":
+        subject.append(award_method)
+
     answer = f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
     unapplied_notice = unapplied_result_condition_notice(
         structured_data.get("unapplied_conditions") or []
     )
     if unapplied_notice:
         answer += f"\n{unapplied_notice}"
+    if award_method and metric != "announcement_count":
+        answer += f"\n{RESULT_AWARD_METHOD_NOTICE}"
+    elif award_method and _award_method_window_includes_early_period(filters):
+        answer += f"\n{EARLY_AWARD_METHOD_NOTE}"
     return _append_winner_variant_notice(answer, structured_data)
 
 

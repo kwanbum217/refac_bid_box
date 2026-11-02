@@ -150,21 +150,21 @@
       "category": "stats",
       "split": "public",
       "question": "최근 한 달 용역 사정률 평균 알려줘",
-      "expected_tools": [],
+      "expected_tools": [
+        "bid_query_tool"
+      ],
       "forbidden_tools": [],
       "check": {
-        "type": "not_supported",
-        "forbidden_number_units": [
-          "%"
-        ]
+        "type": "numeric_fact",
+        "sql": "SELECT AVG(sajeong_rate) FROM bid_prearng_prices WHERE category = 'Servc' AND rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY",
+        "tolerance_ratio": 0.00001
       },
-      "must_not_contain": [],
-      "forbidden_claims": [
-        "사정률 평균은",
-        "평균 사정률은"
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
       ],
-      "repeats": 3,
-      "note": "사정률 원자료 미보유. 퍼센트 수치를 단정하면 실패다."
+      "repeats": 1,
+      "note": "2026-10-31 사용자 결정으로 실지원 전환. 사정률은 bid_prearng_prices 용역 rl_openg_dt 최근 30일(오늘 포함) 창 sajeong_rate 평균이고 NULL 은 표본에서 빠진다. 허용 오차는 응답의 소수 4자리 표기를 덮는다."
     },
     {
       "id": "v2_com_01",
@@ -230,19 +230,21 @@
       "category": "result_analysis",
       "split": "public",
       "question": "최근 한 달 평균 경쟁률 알려줘",
-      "expected_tools": [],
+      "expected_tools": [
+        "bid_query_tool"
+      ],
       "forbidden_tools": [],
       "check": {
-        "type": "not_supported",
-        "forbidden_number_units": [
-          "배",
-          "대 1",
-          ":1"
-        ]
+        "type": "numeric_fact",
+        "sql": "SELECT AVG(middle.value) FROM (SELECT CAST(JSON_EXTRACT(raw_data, '$.prtcptCnum') AS DECIMAL(12, 2)) AS value, ROW_NUMBER() OVER (ORDER BY CAST(JSON_EXTRACT(raw_data, '$.prtcptCnum') AS DECIMAL(12, 2))) AS median_rank, COUNT(*) OVER () AS sample_count FROM bid_results WHERE rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY AND CAST(JSON_EXTRACT(raw_data, '$.prtcptCnum') AS DECIMAL(12, 2)) > 0) AS middle WHERE middle.median_rank * 2 >= middle.sample_count AND middle.median_rank * 2 <= middle.sample_count + 2",
+        "tolerance_ratio": 0.001
       },
-      "must_not_contain": [],
-      "repeats": 3,
-      "note": "경쟁률 컬럼이 없다. 비율 수치를 단정하면 실패다."
+      "must_not_contain": [
+        "제공된 검색 컨텍스트에는",
+        "컨텍스트에 포함되어 있지 않"
+      ],
+      "repeats": 1,
+      "note": "2026-10-31 사용자 결정으로 실지원 전환. 경쟁률은 bid_results raw_data.prtcptCnum 의 중앙값(낙찰 1건당 참가업체 수)이고 키가 없거나 비숫자인 행은 제외한다. 짝수 표본은 가운데 두 값의 평균이며 평균은 이상치 안내와 함께만 답한다. 최근 30일(오늘 포함) 창을 쓰며 유찰 공고는 표본에 없다. 허용 오차는 응답의 소수 2자리 표기를 덮는다."
     },
     {
       "id": "v2_cmp_02",

@@ -20,7 +20,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Integer, and_, case, event, func, or_, select
+from sqlalchemy import Integer, Numeric, and_, case, cast, event, func, or_, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,7 @@ from src.app.models.bids import (
     is_corrupted_display_text,
     normalize_bid_ntce_ord,
 )
+from src.app.models.prearng_prices import BidPrearngPrice
 from src.app.services.ranking_snapshots import (
     DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
@@ -601,6 +602,18 @@ def _result_conditions(
     return conditions
 
 
+def _announcement_award_method_condition(award_method: str) -> Any:
+    """공고 원문 낙찰방법명이 그 값으로 시작하는 공고만 고릅니다.
+
+    sucsfbidMthdNm 은 raw_data JSON 안에만 있습니다. JSON 인덱스 식은 MySQL 에서
+    JSON_UNQUOTE(JSON_EXTRACT(...)), SQLite 에서 json_extract(...) 로 컴파일되며
+    값은 문자열 조립이 아니라 LIKE 패턴 바인딩 파라미터로 전달합니다.
+    """
+    escaped = award_method.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    column = BidAnnouncement.raw_data["sucsfbidMthdNm"].as_string()
+    return column.like(f"{escaped}%", escape="\\")
+
+
 def _announcement_conditions(
     plan: RetrievalPlan,
     *,
@@ -622,6 +635,7 @@ def _announcement_conditions(
     institution_name = _normalize_text(str(filters.get("institution_name") or ""))
     category = _normalize_text(str(filters.get("category") or ""))
     notice_kind = _normalize_text(str(filters.get("notice_kind") or ""))
+    award_method = _normalize_text(str(filters.get("award_method") or ""))
 
     conditions = []
     if (
@@ -647,6 +661,8 @@ def _announcement_conditions(
         conditions.append(BidAnnouncement.category == category)
     if notice_kind:
         conditions.append(BidAnnouncement.ntce_kind_nm == notice_kind)
+    if award_method:
+        conditions.append(_announcement_award_method_condition(award_method))
     conditions.extend(_close_conditions(filters))
     conditions.extend(_amount_conditions(filters, ANNOUNCEMENT_AMOUNT_COLUMNS))
     # 최댓값·최솟값 질문은 금액이 NULL 인 행을 순위에서 제외합니다. 정렬만으로는
@@ -700,6 +716,10 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     if filters.get("winner_name"):
         return None
     if _normalize_text(str(filters.get("notice_kind") or "")):
+        return None
+    # 낙찰방법 조건은 사전 집계 스냅샷에 없습니다. 스냅샷을 쓰면 조건이 사라진
+    # 전체 순위가 그 조건의 답처럼 나옵니다.
+    if _normalize_text(str(filters.get("award_method") or "")):
         return None
     if filters.get("close_from") or filters.get("close_to"):
         return None
@@ -2383,6 +2403,145 @@ def _fetch_sample_announcements(
     return samples
 
 
+SAJEONG_RATE_SOURCE_CATEGORY = "Servc"
+SAJEONG_RATE_OTHER_CATEGORY_NOTICE = (
+    "사정률 원천 데이터는 용역 분류만 제공되어 요청한 분류의 사정률은 조회할 수 없습니다."
+)
+SAJEONG_RATE_SOURCE_NOTICE = (
+    "사정률 원천 데이터는 용역 분류만 제공되므로 용역 표본으로 계산했습니다."
+)
+PARTICIPANTS_JSON_PATH = "$.prtcptCnum"
+
+
+def _detail_metric_conditions(
+    plan: RetrievalPlan,
+    *,
+    date_column,
+    category_column,
+) -> list[Any]:
+    """사정률·참가업체 수 집계에 쓰는 기간·분류 조건을 만듭니다."""
+    filters = plan.filters or {}
+    date_from, date_to = _resolve_window(filters)
+    conditions: list[Any] = []
+    if date_from:
+        conditions.append(date_column >= date_from)
+    if date_to:
+        conditions.append(date_column < date_to + timedelta(days=1))
+    category = _normalize_text(str(filters.get("category") or ""))
+    if category:
+        conditions.append(category_column == category)
+    return conditions
+
+
+def _sajeong_rate_stats(
+    db: Session,
+    plan: RetrievalPlan,
+    *,
+    institution_name: str,
+    institution_names: list[str] | None,
+) -> dict[str, Any]:
+    """사정률 평균과 표본 수를 원천 테이블에서 직접 집계합니다.
+
+    원천(bid_prearng_prices)에는 용역 분류만 있습니다. 요청 분류가 명시적으로
+    다른 분류이면 0건으로 조용히 답하지 않고 안내를 함께 돌려줍니다.
+    """
+    filters = plan.filters or {}
+    category = _normalize_text(str(filters.get("category") or ""))
+    if category and category != SAJEONG_RATE_SOURCE_CATEGORY:
+        return {
+            "category": category,
+            "average": None,
+            "sample_count": 0,
+            "notice": SAJEONG_RATE_OTHER_CATEGORY_NOTICE,
+        }
+    conditions = _detail_metric_conditions(
+        plan,
+        date_column=BidPrearngPrice.rl_openg_dt,
+        category_column=BidPrearngPrice.category,
+    )
+    conditions.append(BidPrearngPrice.category == SAJEONG_RATE_SOURCE_CATEGORY)
+    if institution_name:
+        conditions.append(
+            _institution_condition(BidPrearngPrice.dminstt_nm, institution_name, institution_names)
+        )
+    average, sample_count = db.execute(
+        select(
+            func.avg(BidPrearngPrice.sajeong_rate),
+            func.count(BidPrearngPrice.sajeong_rate),
+        ).where(*conditions)
+    ).one()
+    stats: dict[str, Any] = {
+        "average": float(round(float(average), 4)) if average is not None else None,
+        "sample_count": int(sample_count or 0),
+    }
+    if not category:
+        stats["notice"] = SAJEONG_RATE_SOURCE_NOTICE
+    return stats
+
+
+def _participant_count_expression():
+    """bid_results.raw_data 의 참가업체 수를 숫자 표현식으로 읽습니다.
+
+    키가 없으면 NULL, 숫자가 아닌 값은 0 으로 캐스팅되므로 0 초과 조건으로
+    함께 걸러냅니다. 참가업체 수는 1 이상이므로 정상 표본을 잃지 않습니다.
+    """
+    return cast(func.json_extract(BidResult.raw_data, PARTICIPANTS_JSON_PATH), Numeric(12, 2))
+
+
+def _participants_stats(
+    db: Session,
+    plan: RetrievalPlan,
+    *,
+    institution_name: str,
+    institution_names: list[str] | None,
+) -> dict[str, Any]:
+    """낙찰 1건당 참가업체 수의 중앙값·평균과 표본 수를 집계합니다.
+
+    평균은 참가업체가 매우 많은 일부 공고에 끌려 실제 경쟁 상황을 과대평가하므로
+    중앙값을 주 수치로 씁니다. bid_results 는 낙찰 성공 행만 담으므로 유찰 공고는
+    표본에 없습니다.
+    """
+    participant_count = _participant_count_expression()
+    conditions = _detail_metric_conditions(
+        plan,
+        date_column=BidResult.rl_openg_dt,
+        category_column=BidResult.category,
+    )
+    conditions.extend((participant_count.is_not(None), participant_count > 0))
+    if institution_name:
+        conditions.append(
+            _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
+        )
+    # 전체 행을 파이썬으로 끌어오지 않고 정렬 순번과 표본 수만 질의합니다.
+    ranked = (
+        select(
+            participant_count.label("value"),
+            func.row_number().over(order_by=participant_count).label("median_rank"),
+            func.count().over().label("sample_count"),
+        )
+        .where(*conditions)
+        .subquery()
+    )
+    # 홀수 표본은 가운데 한 행, 짝수 표본은 가운데 두 행이 남습니다. 나눗셈과
+    # floor 없이 2*순번과 표본 수를 비교해 MySQL 8 과 SQLite 가 같은 식을 씁니다.
+    middle_rows = and_(
+        ranked.c.median_rank * 2 >= ranked.c.sample_count,
+        ranked.c.median_rank * 2 <= ranked.c.sample_count + 2,
+    )
+    median, average, sample_count = db.execute(
+        select(
+            func.avg(case((middle_rows, ranked.c.value))),
+            func.avg(ranked.c.value),
+            func.max(ranked.c.sample_count),
+        ).select_from(ranked)
+    ).one()
+    return {
+        "median_participants": (float(round(float(median), 4)) if median is not None else None),
+        "average": float(round(float(average), 4)) if average is not None else None,
+        "sample_count": int(sample_count or 0),
+    }
+
+
 def _generate_quarters_between(
     start_date: date | datetime, end_date: date | datetime
 ) -> list[tuple[int, int]]:
@@ -3115,6 +3274,27 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     # 표 라벨과 값이 어긋나지 않습니다.
     if group_by == "winner" and metric not in ("avg_rate", "award_amount"):
         metric = "bid_count"
+    # 사정률·경쟁률 평균은 낙찰률·건수와 원천이 달라 전용 집계를 한 번 더 읽습니다.
+    detail_metric_stats: dict[str, Any] = {}
+    detail_metric_notices: list[str] = []
+    if metric == "avg_sajeong_rate":
+        detail_metric_stats["sajeong_rate"] = _sajeong_rate_stats(
+            db,
+            condition_plan,
+            institution_name=institution_name,
+            institution_names=result_names_arg,
+        )
+    elif metric == "avg_participants":
+        detail_metric_stats["participants"] = _participants_stats(
+            db,
+            condition_plan,
+            institution_name=institution_name,
+            institution_names=result_names_arg,
+        )
+    for stats in detail_metric_stats.values():
+        notice = _normalize_text(str(stats.get("notice") or ""))
+        if notice:
+            detail_metric_notices.append(notice)
     group_limit = _group_limit(plan)
     winner_conditions = _result_conditions(
         condition_plan, enable_ngram_prefilter=True, institution_names=result_names_arg
@@ -3339,6 +3519,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     unapplied_notice = unapplied_result_condition_notice(unapplied_conditions)
     if unapplied_notice:
         insufficiency.append(unapplied_notice)
+    insufficiency.extend(detail_metric_notices)
 
     assembly_started = time.perf_counter()
     response_filters = dict(plan.filters or {})
@@ -3369,6 +3550,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         ),
         "time_series": time_series,
     }
+    summary.update(detail_metric_stats)
     if group_by:
         summary["axis_breakdown"] = axis_breakdown
         summary["aggregate_meta"] = {

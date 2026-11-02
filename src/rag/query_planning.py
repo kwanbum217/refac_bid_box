@@ -1485,6 +1485,44 @@ def extract_notice_kind(query: str) -> str:
     return best_kind
 
 
+# 낙찰방법 조건입니다. 공고 원문 raw_data.sucsfbidMthdNm 이 "적격심사" 로
+# 시작하는 공고만 고릅니다. 적격심사는 제도 뜻·기준을 묻는 질문에도 흔히
+# 나오므로, 목록·건수·통계를 요구하는 질의에서만 조회 조건으로 승격합니다.
+AWARD_METHOD_ELIGIBILITY = "적격심사"
+_ELIGIBILITY_MARKER = re.compile(r"적격\s*심사")
+_ELIGIBILITY_DEFINITION = re.compile(
+    r"적격\s*심사[^.!?]{0,20}?(?:뭐야|뭔가요|무엇|뜻|의미|정의|개념|이란|"
+    r"설명|차이|다른\s*점|산식|원리|절차)"
+)
+_ELIGIBILITY_DATA_INTENT_MARKERS = (
+    "공고",
+    "입찰",
+    "낙찰",
+    "목록",
+    "리스트",
+    "통계",
+    "건수",
+    "결과",
+    "대상",
+)
+
+
+def extract_award_method(query: str) -> str:
+    """질의가 지목한 낙찰방법 조건을 돌려줍니다.
+
+    적격심사는 목록·건수·통계를 요구할 때만 조건으로 승격합니다. "적격심사가
+    뭐야" 처럼 뜻·기준·차이를 묻는 정의 질문은 기존 의미 검색 경로에 남깁니다.
+    """
+    lowered = _query_lower(query)
+    if not _ELIGIBILITY_MARKER.search(lowered):
+        return ""
+    if _ELIGIBILITY_DEFINITION.search(lowered):
+        return ""
+    if not any(marker in lowered for marker in _ELIGIBILITY_DATA_INTENT_MARKERS):
+        return ""
+    return AWARD_METHOD_ELIGIBILITY
+
+
 def _is_count_statistics_query(query: str) -> bool:
     """건수 표현만으로 통계 질의인지 판정합니다.
 
@@ -2816,12 +2854,83 @@ def _requested_metric(lowered: str) -> str:
     return "bid_count" if "낙찰" in lowered else "announcement_count"
 
 
+DETAIL_METRIC_SAJEONG_RATE = "avg_sajeong_rate"
+DETAIL_METRIC_PARTICIPANTS = "avg_participants"
+DETAIL_METRICS = (DETAIL_METRIC_SAJEONG_RATE, DETAIL_METRIC_PARTICIPANTS)
+
+# 사정률·경쟁률은 낙찰률과 원천 테이블이 다릅니다. 낱말만 보고 기존 낙찰률
+# 지표로 보내면 다른 값을 답하므로, 실제 값을 요구하는 질의에서만 전용 지표로
+# 승격합니다. 정의·계산법을 묻는 설명형과 수치 조건으로 공고를 거르는 질의는
+# 제외합니다.
+_DETAIL_METRIC_SAJEONG_RATE = re.compile(r"사정[률율]")
+_DETAIL_METRIC_COMPETITION = re.compile(r"경쟁률")
+_DETAIL_METRIC_PARTICIPANTS = re.compile(r"(?:참가|참여)업체수")
+_DETAIL_METRIC_VALUE_INTENT = re.compile(r"평균|통계|집계|추이|분포|알려|얼마|어때|보여")
+_DETAIL_METRIC_DEFINITION = re.compile(
+    r"제도|뜻|의미|정의|개념|뭐야|뭔가요|무엇|이란|설명|기준|방법|계산|산식|공식|원리|차이|"
+    r"구분|비교|대비"
+)
+_DETAIL_METRIC_FILTER = re.compile(
+    r"높은|낮은|넘는|이상|이하|미만|상위|하위|많은|적은|\d+\s*(?:%|곳|개|건)"
+)
+# 낱말이 사업명(공고명) 구 안에 들어간 경우입니다. "경쟁률 분석 용역 낙찰
+# 결과" 의 경쟁률은 지표가 아니라 사업명 일부입니다.
+_DETAIL_METRIC_PROJECT_HEAD_NOUNS = (
+    "용역",
+    "사업",
+    "구매",
+    "심사",
+    "분석",
+    "컨설팅",
+    "연구",
+    "방지",
+    "개선",
+)
+_DETAIL_METRIC_PROJECT_COUNTERS = re.compile(r"^(?:가지|개|건|수|곳|회|차)+")
+_DETAIL_METRIC_WHITESPACE = re.compile(r"\s+")
+_DETAIL_METRIC_PROJECT_TAIL_LENGTH = 16
+
+
+def _detail_metric_project_phrase(compact: str, match: re.Match[str]) -> bool:
+    """지표 낱말 뒤에 사업 명사가 이어져 공고명 구를 이루는지 판정합니다."""
+    tail = compact[match.end() :][:_DETAIL_METRIC_PROJECT_TAIL_LENGTH]
+    if tail.startswith(_DETAIL_METRIC_PROJECT_HEAD_NOUNS):
+        return True
+    return _DETAIL_METRIC_PROJECT_COUNTERS.sub("", tail).startswith(
+        _DETAIL_METRIC_PROJECT_HEAD_NOUNS
+    )
+
+
+def _detail_metric(query: str) -> str:
+    """사정률·경쟁률 평균 질의의 전용 지표를 정합니다.
+
+    정의·계산법 질문과 수치 조건으로 공고를 거르는 질의, 사업명 안에 낱말이
+    들어간 질의는 빈 문자열입니다. 기존 낙찰률 지표 판정은 건드리지 않습니다.
+    """
+    compact = _DETAIL_METRIC_WHITESPACE.sub("", _query_lower(query))
+    if _DETAIL_METRIC_DEFINITION.search(compact):
+        return ""
+    if _DETAIL_METRIC_FILTER.search(compact):
+        return ""
+    if not _DETAIL_METRIC_VALUE_INTENT.search(compact):
+        return ""
+    for pattern, metric in (
+        (_DETAIL_METRIC_SAJEONG_RATE, DETAIL_METRIC_SAJEONG_RATE),
+        (_DETAIL_METRIC_COMPETITION, DETAIL_METRIC_PARTICIPANTS),
+        (_DETAIL_METRIC_PARTICIPANTS, DETAIL_METRIC_PARTICIPANTS),
+    ):
+        match = pattern.search(compact)
+        if match and not _detail_metric_project_phrase(compact, match):
+            return metric
+    return ""
+
+
 def _single_metric(lowered: str) -> str:
     """단일 지표 질의의 지표를 축별 집계와 같은 우선순위로 정합니다.
 
     extract_aggregate_filters 의 지표 결정 규칙(낙찰률 > 낙찰 금액 > 낙찰 >
     공고)을 따르되, 도메인 표지가 전혀 없으면 지표를 정하지 않고 빈 문자열을
-    돌려줍니다.
+    돌려줍니다. 사정률·경쟁률은 기존 지표 판정 뒤에서 전용 지표로 읽습니다.
     """
     if any(marker in lowered for marker in AGGREGATE_RATE_MARKERS):
         return "avg_rate"
@@ -2833,6 +2942,9 @@ def _single_metric(lowered: str) -> str:
         and "평균" not in lowered
     ):
         return "bid_count"
+    detail_metric = _detail_metric(lowered)
+    if detail_metric:
+        return detail_metric
     if any(marker in lowered for marker in AGGREGATE_ANNOUNCEMENT_MARKERS):
         return "announcement_count"
     if "낙찰" in lowered:
@@ -3010,6 +3122,15 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         amount_filters["amount_field"] = RESULT_AMOUNT_FIELD
     filters.update(amount_filters)
     filters.update(extract_sort_filters(normalized_query))
+
+    # 적격심사 조건 목록·건수 질문은 공고 원문 낙찰방법명 조건으로 조회합니다.
+    # 정의 질문은 extract_award_method 가 걸러 기존 의미 검색 경로에 남깁니다.
+    award_method = extract_award_method(normalized_query)
+    if award_method:
+        filters["award_method"] = award_method
+        use_sql = True
+        if not has_semantic_keywords and not is_entity:
+            use_vector = False
 
     # 특정 업체를 지목한 낙찰 이력 질문은 그 업체 조건을 SQL 로 넘깁니다. 조건을
     # 빼면 전체 최신 목록이 그 업체 실적처럼 답해집니다(조용한 범위 확대).
@@ -3279,6 +3400,15 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
             use_vector = False
     if has_comparison and not filters.get("group_by"):
         filters["metric"] = _requested_metric(lowered)
+
+    # 사정률·경쟁률 평균은 낙찰 결과·공고 집계와 다른 원천을 읽습니다. 전용
+    # 지표로 표시하고 정형 조회를 켜야 응답 단계가 다른 지표로 바꾸지 않습니다.
+    detail_metric = _detail_metric(normalized_query)
+    if detail_metric and not filters.get("metric") and not filters.get("group_by"):
+        filters["metric"] = detail_metric
+        use_sql = True
+        if not has_semantic_keywords and not is_entity:
+            use_vector = False
 
     route_reason_parts = []
     if is_bid_number:
