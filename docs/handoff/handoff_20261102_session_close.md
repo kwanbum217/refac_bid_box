@@ -47,7 +47,7 @@
 | Task | 상태 | 내용 |
 | --- | --- | --- |
 | `task_a578b85123cb` | completed | 재입찰번호 실측. 커밋 `936426d5`. `bid_openg_results` 행 수 0, 중복 0, `AUTO_INCREMENT` 1, `UPDATE_TIME` NULL. 0건은 표본이 없어 공허합니다. 유니크 인덱스는 `category` 이고 `bid_clsfc_no` 는 키에 없습니다. |
-| `task_53689036ce9c` | dispatched | 리뷰어. 터미널 `term_0b756f88-8eef-405c-838a-a0ac47071988`. 모델 `z-ai/glm-5.3-flash`. 체크리스트 `wrote_db`, `no_count`, `scope_exceeded`. |
+| `task_53689036ce9c` | completed | 리뷰 pass. `validate_review_report.py` 위반 0. 보고 `.orca/capsules/task_openg_rbidno_review_20261102/review_done.json`. DB 숫자는 재실행하지 않고 문서와 빌더 보고의 일치만 확인했다. 터미널 `term_0b756f88-8eef-405c-838a-a0ac47071988` 은 닫음. |
 | `task_71f974178f18` | dispatched | 적격심사 JSON 스캔 빌더. 터미널 `term_3b57b1f9-5d73-438f-aaf4-3f2ca88a1e06`. 커밋은 이 문서 수정 시점에 아직 없습니다. |
 
 기동 방식은 아래 표를 남깁니다. cmd 와 qwen 은 `worker-start` 에이전트가 아닙니다.
@@ -91,7 +91,7 @@ Intent 는 `.orca/intents/openg_rbidno_uniqueness_20261102.yaml`, `.orca/intents
 
 | 과업 | 상태 |
 | --- | --- |
-| 재입찰번호 유니크 실측 | 커밋 `936426d5` 로 행 수 0 을 확인. 유니크 유지 여부는 소급 적재 후 재검증. 리뷰어 `task_53689036ce9c` 진행 중 |
+| 재입찰번호 유니크 실측 | 커밋 `936426d5`, 리뷰 pass. 행 수 0 이라 유니크 유지 여부는 소급 적재 후 재검증. `main` 병합은 적격심사 JSON 빌더가 DB 를 쓰는 동안 전량 스위트를 돌리지 않아 보류 |
 | 적격심사 JSON 전량 스캔 | 2절 빌더가 문서만 작성. 코드 변경은 사용자 결정 후 |
 | 유찰 1년 소급 `--execute` | 차단. dry-run 과 `--max-calls` 는 스크립트에 있음. 승인 전 실행 금지 |
 | 유찰 T5 | 소급 적재 뒤에만 |
