@@ -204,14 +204,13 @@ def mysql_client_command(
     ]
     env = os.environ.copy()
     password = str(db_config.get("password") or "")
-    if container:
-        prefix = ["docker", "exec", "-i"]
-        if password:
-            prefix += ["-e", f"MYSQL_PWD={password}"]
-        return [*prefix, container, *args], env
     if password:
         env["MYSQL_PWD"] = password
-    return args, env
+    if not container:
+        return args, env
+    # 값이 붙은 -e MYSQL_PWD=<비밀번호> 는 ps 에 노출되므로 변수 이름만 넘깁니다.
+    prefix = ["docker", "exec", "-i", *(["-e", "MYSQL_PWD"] if password else [])]
+    return [*prefix, container, *args], env
 
 
 def dump_mysql_database(db_config: dict[str, Any], output_gz_path: Path) -> tuple[int, str]:
