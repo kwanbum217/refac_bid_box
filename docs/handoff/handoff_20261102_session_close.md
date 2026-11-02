@@ -2,8 +2,8 @@
 
 > **작성일**: 2026-11-02
 > **작성**: 코디네이터(Grok). Orca Run `run_4d41c7466734`
-> **기준 커밋**: `b4cd0866` (`main`, `origin/main` 과 같음)
-> **상태 문서**: `docs/context/CURRENT_STATE.md` 의 `source_commit` 은 `66f408d3`, `updated_at` 은 2026-11-02 입니다. 이 인수인계 브랜치는 그 파일을 바꾸지 않습니다.
+> **기준 커밋**: 작성 시작은 `b4cd0866` 입니다. 조사 두 건을 넣은 뒤 `main` 과 `origin/main` 은 `145e224a` 입니다.
+> **상태 문서**: `docs/context/CURRENT_STATE.md` 의 `source_commit` 은 `8cf14177`, `updated_at` 은 2026-11-02 입니다. 이 인수인계 브랜치는 그 파일을 바꾸지 않습니다.
 > **종료 사유**: 주간 토큰 사용 83% 시점에서 남은 한도로 다음 과업을 병렬로 열고, 만료 전에 인수인계를 남기는 것이 우선이었습니다.
 > **이 문서의 위치**: 브랜치 `kwanbum217/handoff-20261102-close`. 작성 시점에는 `main` 에 없습니다.
 
@@ -48,7 +48,7 @@
 | --- | --- | --- |
 | `task_a578b85123cb` | merged | 재입찰번호 실측. 커밋 `936426d5` 를 `main` `8cf14177` 로 병합하고 `origin/main` 에 푸시함. 워크트리와 로컬 브랜치는 회수함. 행 수 0 이라 유니크 유지 여부는 소급 적재 후 재검증. |
 | `task_53689036ce9c` | completed | 리뷰 pass. `validate_review_report.py` 위반 0. 보고 `.orca/capsules/task_openg_rbidno_review_20261102/review_done.json`. DB 숫자는 재실행하지 않고 문서와 빌더 보고의 일치만 확인했다. 터미널 `term_0b756f88-8eef-405c-838a-a0ac47071988` 은 닫음. |
-| `task_71f974178f18` | completed | 적격심사 JSON 스캔. 커밋 `68f47314`. 날짜 창 없음 112.876초·162,682건, 2024-01-01 이후 35.029초·같은 건수, 2024년 이전 0건. 코드·스키마 변경 없음. 빌더 터미널은 닫음. |
+| `task_71f974178f18` | merged | 적격심사 JSON 스캔. 커밋 `68f47314` 를 `main` `145e224a` 로 병합하고 `origin/main` 에 푸시함. 워크트리와 로컬 브랜치는 회수함. 날짜 창 없음 112.876초·162,682건, 2024-01-01 이후 35.029초·같은 건수. 코드·스키마 변경 없음. |
 | `task_c5ebfca1ac30` | completed | 리뷰 pass. `validate_review_report.py` 위반 0. 보고 `.orca/capsules/task_eligibility_json_scan_review_20261102/review_done.json`. DB 숫자는 재실행하지 않음. `retrieve_structured_data` 3506행 인용과 실제 3670행 차이는 결함으로 보지 않음. 터미널은 닫음. Level 1 strict 는 증거 기록 없이 pass. |
 
 기동 방식은 아래 표를 남깁니다. cmd 와 qwen 은 `worker-start` 에이전트가 아닙니다.
@@ -93,7 +93,7 @@ Intent 는 `.orca/intents/openg_rbidno_uniqueness_20261102.yaml`, `.orca/intents
 | 과업 | 상태 |
 | --- | --- |
 | 재입찰번호 유니크 실측 | `main` `8cf14177` 에 반영됨. 행 수 0 이라 유니크 유지 여부는 소급 적재 후 재검증 |
-| 적격심사 JSON 전량 스캔 | 커밋 `68f47314`, 리뷰 pass. Level 1 strict 증거는 `68f47314` 로 다시 기록함. 전량 스위트 기록 후 `main` 병합. 창 하한·창 필수화·별도 컬럼은 사용자 결정 전 |
+| 적격심사 JSON 전량 스캔 | `main` `145e224a` 에 문서만 반영됨. 전량 10097 passed. 창 하한·창 필수화·별도 컬럼은 사용자 결정 전이라 구현하지 않음 |
 | 유찰 1년 소급 `--execute` | 차단. dry-run 과 `--max-calls` 는 스크립트에 있음. 승인 전 실행 금지 |
 | 유찰 T5 | 소급 적재 뒤에만 |
 | v2 재측정 | 앱을 재시작한 뒤. 중앙값 병합 때는 Docker 가 꺼져 재계산하지 않았음 |
