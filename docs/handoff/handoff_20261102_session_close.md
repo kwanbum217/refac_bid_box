@@ -46,7 +46,7 @@
 
 | Task | 상태 | 내용 |
 | --- | --- | --- |
-| `task_a578b85123cb` | completed | 재입찰번호 실측. 커밋 `936426d5`. `bid_openg_results` 행 수 0, 중복 0, `AUTO_INCREMENT` 1, `UPDATE_TIME` NULL. 0건은 표본이 없어 공허합니다. 유니크 인덱스는 `category` 이고 `bid_clsfc_no` 는 키에 없습니다. |
+| `task_a578b85123cb` | merged | 재입찰번호 실측. 커밋 `936426d5` 를 `main` `8cf14177` 로 병합하고 `origin/main` 에 푸시함. 워크트리와 로컬 브랜치는 회수함. 행 수 0 이라 유니크 유지 여부는 소급 적재 후 재검증. |
 | `task_53689036ce9c` | completed | 리뷰 pass. `validate_review_report.py` 위반 0. 보고 `.orca/capsules/task_openg_rbidno_review_20261102/review_done.json`. DB 숫자는 재실행하지 않고 문서와 빌더 보고의 일치만 확인했다. 터미널 `term_0b756f88-8eef-405c-838a-a0ac47071988` 은 닫음. |
 | `task_71f974178f18` | completed | 적격심사 JSON 스캔. 커밋 `68f47314`. 날짜 창 없음 112.876초·162,682건, 2024-01-01 이후 35.029초·같은 건수, 2024년 이전 0건. 코드·스키마 변경 없음. 빌더 터미널은 닫음. |
 | `task_c5ebfca1ac30` | completed | 리뷰 pass. `validate_review_report.py` 위반 0. 보고 `.orca/capsules/task_eligibility_json_scan_review_20261102/review_done.json`. DB 숫자는 재실행하지 않음. `retrieve_structured_data` 3506행 인용과 실제 3670행 차이는 결함으로 보지 않음. 터미널은 닫음. Level 1 strict 는 증거 기록 없이 pass. |
@@ -92,8 +92,8 @@ Intent 는 `.orca/intents/openg_rbidno_uniqueness_20261102.yaml`, `.orca/intents
 
 | 과업 | 상태 |
 | --- | --- |
-| 재입찰번호 유니크 실측 | 커밋 `936426d5`, 리뷰 pass, Level 1 strict 증거 기록됨. 전량 스위트 증거 기록이 끝나면 `main` 에 병합. 행 수 0 이라 유니크 유지 여부는 소급 적재 후 재검증 |
-| 적격심사 JSON 전량 스캔 | 커밋 `68f47314`, 리뷰 pass, Level 1 strict pass. 증거 칸은 재입찰번호 병합이 쓴 뒤 다시 기록. 창 하한·창 필수화·별도 컬럼은 사용자 결정 전이라 구현하지 않음 |
+| 재입찰번호 유니크 실측 | `main` `8cf14177` 에 반영됨. 행 수 0 이라 유니크 유지 여부는 소급 적재 후 재검증 |
+| 적격심사 JSON 전량 스캔 | 커밋 `68f47314`, 리뷰 pass. Level 1 strict 증거는 `68f47314` 로 다시 기록함. 전량 스위트 기록 후 `main` 병합. 창 하한·창 필수화·별도 컬럼은 사용자 결정 전 |
 | 유찰 1년 소급 `--execute` | 차단. dry-run 과 `--max-calls` 는 스크립트에 있음. 승인 전 실행 금지 |
 | 유찰 T5 | 소급 적재 뒤에만 |
 | v2 재측정 | 앱을 재시작한 뒤. 중앙값 병합 때는 Docker 가 꺼져 재계산하지 않았음 |
@@ -140,6 +140,7 @@ git merge --no-ff --no-commit <브랜치>
 | --- | --- |
 | taskctl create | Task 는 생긴 뒤에도 Task ID 파싱 실패로 종료 코드 1 이 나고 Capsule 을 지웁니다. ID 는 task-list 로 찾고, 실제 ID 경로와 spec 이 가리키는 stem 경로에 같은 Capsule 을 다시 씁니다 |
 | 동시 쓰기 | 지금 쓰기 워커는 빌더 2대입니다. 상한은 3 입니다. 리뷰어는 쓰기 상한 밖입니다 |
-| 편집 가능 설치 | `uv pip show` 의 Editable project location 은 주 저장소입니다. 워크트리가 사라진 뒤 주 저장소에서 `uv run` 이 설치 경로를 옮긴 적이 있으므로, 게이트 전에 위치를 확인합니다 |
+| 편집 가능 설치 | `uv pip show` 의 Editable project location 은 주 저장소입니다. 워크트리에서 `uv run` 하면 공용 `.venv` 가 그 워크트리를 가리킵니다. 게이트는 `UV_NO_SYNC=1` 로 돌리고, 끝나면 주 저장소에서 `uv pip install -e . --no-deps` 로 되돌립니다 |
+| 개찰 시험과 서비스 키 | `scripts/backfill_openg_results.py` 가 import 시 `.env` 를 올립니다. 전량 스위트에서 `test_stream_openg_results_uses_openg_day_axis` 가 빈 `serviceKey` 를 기대해 실패합니다. 기록 전에 `G2B_SERVICE_KEY`, `serviceKey`, `SERVICE_KEY` 를 빈 값으로 두면 `load_dotenv` 가 덮어쓰지 않습니다. 시험이 키를 직접 비우는 수정은 아직 없습니다 |
 | Docker | 조사 조회를 위해 `db` 만 올렸습니다. 볼륨은 지우지 않았습니다. 워커가 DB 를 보는 동안 `docker compose down` 하지 않습니다 |
 | 인수인계 병합 | 이 브랜치 병합은 조사 브랜치 검증과 증거 칸을 다툰다. 조사를 먼저 병합하려면 이 문서 병합의 증거 기록을 그 뒤로 미룹니다 |
