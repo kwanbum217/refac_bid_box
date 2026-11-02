@@ -48,7 +48,8 @@
 | --- | --- | --- |
 | `task_a578b85123cb` | completed | 재입찰번호 실측. 커밋 `936426d5`. `bid_openg_results` 행 수 0, 중복 0, `AUTO_INCREMENT` 1, `UPDATE_TIME` NULL. 0건은 표본이 없어 공허합니다. 유니크 인덱스는 `category` 이고 `bid_clsfc_no` 는 키에 없습니다. |
 | `task_53689036ce9c` | completed | 리뷰 pass. `validate_review_report.py` 위반 0. 보고 `.orca/capsules/task_openg_rbidno_review_20261102/review_done.json`. DB 숫자는 재실행하지 않고 문서와 빌더 보고의 일치만 확인했다. 터미널 `term_0b756f88-8eef-405c-838a-a0ac47071988` 은 닫음. |
-| `task_71f974178f18` | dispatched | 적격심사 JSON 스캔 빌더. 터미널 `term_3b57b1f9-5d73-438f-aaf4-3f2ca88a1e06`. 커밋은 이 문서 수정 시점에 아직 없습니다. |
+| `task_71f974178f18` | completed | 적격심사 JSON 스캔. 커밋 `68f47314`. 날짜 창 없음 112.876초·162,682건, 2024-01-01 이후 35.029초·같은 건수, 2024년 이전 0건. 코드·스키마 변경 없음. 빌더 터미널은 닫음. |
+| `task_c5ebfca1ac30` | dispatched | 리뷰어. 터미널 `term_9ebec56d-58ef-41d1-a9ec-031e472fdba9`. 모델 `z-ai/glm-5.3-flash`. 체크리스트 `schema_changed`, `no_observation`, `scope_exceeded`. 문서의 `retrieve_structured_data` 3506행 인용은 현재 정의 3670행과 다르며, 그 차이만으로 체크리스트 결함은 아니다. |
 
 기동 방식은 아래 표를 남깁니다. cmd 와 qwen 은 `worker-start` 에이전트가 아닙니다.
 
@@ -91,8 +92,8 @@ Intent 는 `.orca/intents/openg_rbidno_uniqueness_20261102.yaml`, `.orca/intents
 
 | 과업 | 상태 |
 | --- | --- |
-| 재입찰번호 유니크 실측 | 커밋 `936426d5`, 리뷰 pass. 행 수 0 이라 유니크 유지 여부는 소급 적재 후 재검증. `main` 병합은 적격심사 JSON 빌더가 DB 를 쓰는 동안 전량 스위트를 돌리지 않아 보류 |
-| 적격심사 JSON 전량 스캔 | 2절 빌더가 문서만 작성. 코드 변경은 사용자 결정 후 |
+| 재입찰번호 유니크 실측 | 커밋 `936426d5`, 리뷰 pass. 행 수 0 이라 유니크 유지 여부는 소급 적재 후 재검증. JSON 빌더가 끝나 DB 경합은 해소됐으나 `main` 병합 게이트는 아직 돌리지 않음 |
+| 적격심사 JSON 전량 스캔 | 커밋 `68f47314`. 리뷰어 `task_c5ebfca1ac30` 진행 중. 창 하한·창 필수화·별도 컬럼은 사용자 결정 전이라 구현하지 않음 |
 | 유찰 1년 소급 `--execute` | 차단. dry-run 과 `--max-calls` 는 스크립트에 있음. 승인 전 실행 금지 |
 | 유찰 T5 | 소급 적재 뒤에만 |
 | v2 재측정 | 앱을 재시작한 뒤. 중앙값 병합 때는 Docker 가 꺼져 재계산하지 않았음 |
