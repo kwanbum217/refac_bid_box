@@ -2495,9 +2495,11 @@ def _participants_stats(
     institution_name: str,
     institution_names: list[str] | None,
 ) -> dict[str, Any]:
-    """낙찰 1건당 평균 참가업체 수와 표본 수를 집계합니다.
+    """낙찰 1건당 참가업체 수의 중앙값·평균과 표본 수를 집계합니다.
 
-    bid_results 는 낙찰 성공 행만 담으므로 유찰 공고는 표본에 없습니다.
+    평균은 참가업체가 매우 많은 일부 공고에 끌려 실제 경쟁 상황을 과대평가하므로
+    중앙값을 주 수치로 씁니다. bid_results 는 낙찰 성공 행만 담으므로 유찰 공고는
+    표본에 없습니다.
     """
     participant_count = _participant_count_expression()
     conditions = _detail_metric_conditions(
@@ -2510,10 +2512,31 @@ def _participants_stats(
         conditions.append(
             _institution_condition(BidResult.dminstt_nm, institution_name, institution_names)
         )
-    average, sample_count = db.execute(
-        select(func.avg(participant_count), func.count(participant_count)).where(*conditions)
+    # 전체 행을 파이썬으로 끌어오지 않고 정렬 순번과 표본 수만 질의합니다.
+    ranked = (
+        select(
+            participant_count.label("value"),
+            func.row_number().over(order_by=participant_count).label("median_rank"),
+            func.count().over().label("sample_count"),
+        )
+        .where(*conditions)
+        .subquery()
+    )
+    # 홀수 표본은 가운데 한 행, 짝수 표본은 가운데 두 행이 남습니다. 나눗셈과
+    # floor 없이 2*순번과 표본 수를 비교해 MySQL 8 과 SQLite 가 같은 식을 씁니다.
+    middle_rows = and_(
+        ranked.c.median_rank * 2 >= ranked.c.sample_count,
+        ranked.c.median_rank * 2 <= ranked.c.sample_count + 2,
+    )
+    median, average, sample_count = db.execute(
+        select(
+            func.avg(case((middle_rows, ranked.c.value))),
+            func.avg(ranked.c.value),
+            func.max(ranked.c.sample_count),
+        ).select_from(ranked)
     ).one()
     return {
+        "median_participants": (float(round(float(median), 4)) if median is not None else None),
         "average": float(round(float(average), 4)) if average is not None else None,
         "sample_count": int(sample_count or 0),
     }

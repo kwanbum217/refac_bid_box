@@ -2069,3 +2069,12 @@ def test_v2_sajeong_and_competition_items_use_live_aggregates(
     assert "forbidden_claims" not in item
     assert item["expected_tools"] == ["bid_query_tool"]
     assert "2026-10-31 사용자 결정으로 실지원 전환" in item["note"]
+
+
+def test_v2_competition_truth_uses_median_not_average() -> None:
+    # 경쟁률 기준값은 극단값에 끌린 평균이 아니라 가운데 행의 중앙값이다.
+    check = _v2_item("v2_cmp_01")["check"]
+
+    assert "ROW_NUMBER() OVER" in check["sql"]
+    assert "COUNT(*) OVER ()" in check["sql"]
+    assert "AVG(middle.value)" in check["sql"]

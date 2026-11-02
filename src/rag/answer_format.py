@@ -852,7 +852,7 @@ SINGLE_METRIC_LABELS = {
     "announcement_count": "공고는",
     "avg_rate": "평균 낙찰률은",
     "avg_sajeong_rate": "평균 사정률은",
-    "avg_participants": "평균 참가업체 수는",
+    "avg_participants": "경쟁률 중앙값은",
 }
 # 사정률·경쟁률은 원천 테이블이 달라 summary 에 전용 집계 키로 들어옵니다.
 DETAIL_METRIC_SUMMARY_KEYS = {
@@ -860,8 +860,9 @@ DETAIL_METRIC_SUMMARY_KEYS = {
     "avg_participants": "participants",
 }
 COMPETITION_RATE_SAMPLE_NOTE = (
-    "경쟁률은 낙찰 1건당 평균 참가업체 수로 계산하며, 유찰 공고는 표본에 포함되지 않습니다."
+    "경쟁률은 낙찰 1건당 참가업체 수로 계산하며, 유찰 공고는 표본에 포함되지 않습니다."
 )
+COMPETITION_RATE_OUTLIER_NOTE = "참가업체가 매우 많은 일부 공고 때문에 중앙값보다 큽니다."
 # 단일 지표 직접 응답이 답하면 안 되는 질문입니다. 순위·경쟁률·추세·설명형은
 # 값 하나로 답할 수 없거나 다른 경로가 맡습니다. 설명형은 값(얼마야, 몇 건이야)이
 # 아니라 뜻·정의·산식·이유를 묻는 표지로 넓게 잡습니다.
@@ -931,8 +932,49 @@ def _format_single_metric_period(filters: dict) -> str:
     return "전체 기간"
 
 
+def _format_participants_average(average: Any, median: float) -> str:
+    """경쟁률 평균 문장을 만듭니다. 중앙값보다 크면 이상치 영향을 함께 밝힙니다."""
+    try:
+        average_value = float(average)
+    except (TypeError, ValueError):
+        return ""
+    rendered = f"{average_value:.2f}곳"
+    if average_value > median:
+        return f"평균은 {rendered}인데, {COMPETITION_RATE_OUTLIER_NOTE}"
+    return f"평균은 {rendered}입니다."
+
+
+def _format_participants_answer(
+    stats: dict, subject: list[str], notice: str, sample_count: int
+) -> str:
+    """경쟁률은 중앙값을 주 수치로, 평균은 이상치 안내와 함께 덧붙입니다.
+
+    평균만 내면 참가업체가 매우 많은 일부 공고가 실제 경쟁 상황을 가립니다.
+    """
+    median = stats.get("median_participants")
+    if median is None or sample_count <= 0:
+        if notice:
+            return notice
+        return (
+            f"{' '.join(subject)} {SINGLE_METRIC_LABELS['avg_participants']} "
+            "계산할 표본이 0건입니다."
+        )
+    try:
+        median_value = float(median)
+    except (TypeError, ValueError):
+        return ""
+    answer = f"{' '.join(subject)} 경쟁률 중앙값은 {median_value:.2f}곳입니다."
+    average_text = _format_participants_average(stats.get("average"), median_value)
+    if average_text:
+        answer += f" {average_text}"
+    answer += f" 표본 {sample_count:,}건입니다. {COMPETITION_RATE_SAMPLE_NOTE}"
+    if notice:
+        answer += f"\n{notice}"
+    return answer
+
+
 def _format_detail_metric_answer(metric: str, stats: Any, subject: list[str]) -> str:
-    """사정률·경쟁률 평균을 라벨·단위·표본 수와 함께 문장으로 만듭니다."""
+    """사정률·경쟁률 집계값을 라벨·단위·표본 수와 함께 문장으로 만듭니다."""
     if not isinstance(stats, dict):
         return ""
     notice = _normalize_text(str(stats.get("notice") or ""))
@@ -940,24 +982,21 @@ def _format_detail_metric_answer(metric: str, stats: Any, subject: list[str]) ->
         sample_count = int(stats.get("sample_count") or 0)
     except (TypeError, ValueError):
         sample_count = 0
+    if metric == "avg_participants":
+        return _format_participants_answer(stats, subject, notice, sample_count)
     average = stats.get("average")
     if average is None or sample_count <= 0:
         if notice:
             return notice
         return f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} 계산할 표본이 0건입니다."
     try:
-        if metric == "avg_sajeong_rate":
-            rendered = f"{float(average):.4f}%"
-        else:
-            rendered = f"{float(average):.2f}곳"
+        rendered = f"{float(average):.4f}%"
     except (TypeError, ValueError):
         return ""
     answer = (
         f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다. "
         f"표본 {sample_count:,}건입니다."
     )
-    if metric == "avg_participants":
-        answer += f" {COMPETITION_RATE_SAMPLE_NOTE}"
     if notice:
         answer += f"\n{notice}"
     return answer

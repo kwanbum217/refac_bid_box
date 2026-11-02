@@ -236,7 +236,7 @@
       "forbidden_tools": [],
       "check": {
         "type": "numeric_fact",
-        "sql": "SELECT AVG(CAST(JSON_EXTRACT(raw_data, '$.prtcptCnum') AS DECIMAL(12, 2))) FROM bid_results WHERE rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY AND CAST(JSON_EXTRACT(raw_data, '$.prtcptCnum') AS DECIMAL(12, 2)) > 0",
+        "sql": "SELECT AVG(middle.value) FROM (SELECT CAST(JSON_EXTRACT(raw_data, '$.prtcptCnum') AS DECIMAL(12, 2)) AS value, ROW_NUMBER() OVER (ORDER BY CAST(JSON_EXTRACT(raw_data, '$.prtcptCnum') AS DECIMAL(12, 2))) AS median_rank, COUNT(*) OVER () AS sample_count FROM bid_results WHERE rl_openg_dt >= CURDATE() - INTERVAL 29 DAY AND rl_openg_dt < CURDATE() + INTERVAL 1 DAY AND CAST(JSON_EXTRACT(raw_data, '$.prtcptCnum') AS DECIMAL(12, 2)) > 0) AS middle WHERE middle.median_rank * 2 >= middle.sample_count AND middle.median_rank * 2 <= middle.sample_count + 2",
         "tolerance_ratio": 0.001
       },
       "must_not_contain": [
@@ -244,7 +244,7 @@
         "컨텍스트에 포함되어 있지 않"
       ],
       "repeats": 1,
-      "note": "2026-10-31 사용자 결정으로 실지원 전환. 경쟁률은 bid_results raw_data.prtcptCnum 숫자 평균(낙찰 1건당 평균 참가업체 수)이고 키가 없거나 비숫자인 행은 제외한다. 최근 30일(오늘 포함) 창을 쓰며 유찰 공고는 표본에 없다. 허용 오차는 응답의 소수 2자리 표기를 덮는다."
+      "note": "2026-10-31 사용자 결정으로 실지원 전환. 경쟁률은 bid_results raw_data.prtcptCnum 의 중앙값(낙찰 1건당 참가업체 수)이고 키가 없거나 비숫자인 행은 제외한다. 짝수 표본은 가운데 두 값의 평균이며 평균은 이상치 안내와 함께만 답한다. 최근 30일(오늘 포함) 창을 쓰며 유찰 공고는 표본에 없다. 허용 오차는 응답의 소수 2자리 표기를 덮는다."
     },
     {
       "id": "v2_cmp_02",

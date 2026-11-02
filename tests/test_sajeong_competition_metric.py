@@ -1,8 +1,9 @@
-"""사정률·경쟁률 평균 질의의 계획·SQL 집계·응답을 고정합니다.
+"""사정률·경쟁률 질의의 계획·SQL 집계·응답을 고정합니다.
 
-사정률 원천은 bid_prearng_prices.sajeong_rate, 경쟁률은 낙찰 1건당 평균
-참가업체 수(bid_results.raw_data.prtcptCnum)입니다. 정의·계산법 질문은 기존
-설명 경로를 유지하고, 기간·분류 조건과 표본 수를 응답에 함께 표기합니다.
+사정률 원천은 bid_prearng_prices.sajeong_rate, 경쟁률은 낙찰 1건당 참가업체
+수(bid_results.raw_data.prtcptCnum)의 중앙값을 주 수치로 쓰고 평균은 이상치
+안내와 함께 덧붙입니다. 정의·계산법 질문은 기존 설명 경로를 유지하고, 기간·분류
+조건과 표본 수를 응답에 함께 표기합니다.
 """
 
 from __future__ import annotations
@@ -169,22 +170,85 @@ def test_sajeong_rate_explicit_non_service_category_reports_missing_source(metri
     assert "용역 분류만 제공되어" in answer
 
 
+def _seed_competition(session, values: list[int]) -> None:
+    for index, value in enumerate(values, start=1):
+        session.add(
+            BidResult(
+                id=900 + index,
+                bid_ntce_no=f"CMP-{index}",
+                bid_ntce_ord="00",
+                bidwinnr_nm=f"경쟁업체{index}",
+                sucsf_bid_amt=1_000_000,
+                sucsf_bid_rate=90.0,
+                rl_openg_dt=datetime(2026, 10, 10, 9, index),
+                category="Servc",
+                raw_data={"prtcptCnum": value},
+            )
+        )
+    session.commit()
+
+
+def _participants_result(session):
+    plan = build_retrieval_plan("최근 한 달 용역 평균 경쟁률 알려줘")
+    result = retrieve_structured_data(session, plan)
+    return result, _build_single_metric_answer(plan, result)
+
+
 def test_participants_aggregate_excludes_null_and_non_numeric(metric_db) -> None:
     plan = build_retrieval_plan("최근 한 달 용역 평균 경쟁률 알려줘")
 
     result = retrieve_structured_data(metric_db, plan)
     stats = result["summary"]["participants"]
 
+    assert stats["median_participants"] == pytest.approx(6.0)
     assert stats["average"] == pytest.approx(6.0)
     assert stats["sample_count"] == 3
 
 
-def test_participants_answer_has_label_unit_samples_and_limit(metric_db) -> None:
-    plan = build_retrieval_plan("최근 한 달 용역 평균 경쟁률 알려줘")
+@pytest.mark.parametrize(
+    ("values", "median", "average"),
+    [
+        ([2, 4, 100], 4.0, 106 / 3),
+        ([2, 4, 6, 100], 5.0, 28.0),
+    ],
+)
+def test_participants_median_handles_odd_and_even_samples(
+    isolated_db, values: list[int], median: float, average: float
+) -> None:
+    # 짝수 표본은 가운데 두 값의 평균입니다.
+    _seed_competition(isolated_db, values)
 
-    result = retrieve_structured_data(metric_db, plan)
-    answer = _build_single_metric_answer(plan, result)
+    result, answer = _participants_result(isolated_db)
+    stats = result["summary"]["participants"]
 
-    assert "평균 참가업체 수는 6.00곳입니다" in answer
+    assert stats["median_participants"] == pytest.approx(median)
+    assert stats["average"] == pytest.approx(average, rel=1e-4)
+    assert stats["sample_count"] == len(values)
+    assert f"경쟁률 중앙값은 {median:.2f}곳입니다" in answer
+
+
+def test_participants_answer_leads_with_median_before_average(metric_db) -> None:
+    _, answer = _participants_result(metric_db)
+
+    assert answer.startswith("2026-10-02 ~ 2026-10-31 용역 경쟁률 중앙값은 6.00곳입니다.")
+    assert answer.index("경쟁률 중앙값은") < answer.index("평균은")
     assert "표본 3건입니다" in answer
+    assert "유찰 공고는 표본에 포함되지 않습니다" in answer
+    # 표본이 3, 6, 9 로 고르게 퍼져 평균이 중앙값보다 크지 않으면 이상치 안내를 넣지 않습니다.
+    assert "참가업체가 매우 많은 일부 공고 때문에" not in answer
+
+
+def test_participants_answer_explains_outlier_inflated_average(isolated_db) -> None:
+    _seed_competition(isolated_db, [1, 1, 2, 3, 900])
+
+    result, answer = _participants_result(isolated_db)
+    stats = result["summary"]["participants"]
+
+    assert stats["median_participants"] == pytest.approx(2.0)
+    assert stats["average"] > stats["median_participants"]
+    assert "평균은 181.40곳인데, 참가업체가 매우 많은 일부 공고 때문에 중앙값보다 큽니다." in answer
+    median_at = answer.index("경쟁률 중앙값은")
+    average_at = answer.index("평균은")
+    sample_at = answer.index("표본 5건입니다")
+    assert median_at < average_at < sample_at
     assert "유찰 공고는 표본에 포함되지 않습니다" in answer
