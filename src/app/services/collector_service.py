@@ -16,11 +16,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import date, timedelta
 from typing import Any
 
 from sqlalchemy import func, insert, select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.sql.dml import Insert
 
 from src.app.core.db import SessionLocal
 from src.app.core.timeutil import utcnow
@@ -29,8 +33,10 @@ from src.app.models.bid_restrictions import (
     BidAnnouncementParticipationRegion,
 )
 from src.app.models.bids import DATASET_ANNOUNCEMENT, DATASET_RESULT, BidAnnouncement, BidResult
+from src.app.models.openg_results import BidOpengResult
 from src.app.services.api_collector import (
     BID_CATEGORIES,
+    OPENG_RESULT_URLS,
     RangeCollectionError,
     get_service_key,
     mask_credentials,
@@ -38,6 +44,7 @@ from src.app.services.api_collector import (
     stream_bid_data,
     stream_bid_license_limits,
     stream_bid_participation_regions,
+    stream_openg_results,
 )
 from src.app.services.dashboard import rebuild_bid_dataset_summaries, warm_dashboard_stats_cache
 from src.app.services.home_context import warm_home_page_cache
@@ -55,6 +62,25 @@ CHECKPOINT_EXCLUDED_CATEGORIES = ("Frgcpt",)
 # API 과부하와 수집 시간 예산을 고려한 상한입니다. 이보다 오래된 공백은
 # scripts/backfill_from_g2b.py 로 수동 채우기가 필요합니다.
 MAX_CATCHUP_DAYS = 7
+
+# 개찰결과(유찰 상태) 수집 스텝 활성화 플래그. 기본값은 꺼짐입니다.
+# 켜면 공고·낙찰 스텝 뒤에 개찰결과를 bid_openg_results 에 upsert 로 적재합니다.
+OPENG_RESULT_COLLECTION_ENABLED = os.getenv(
+    "OPENG_RESULT_COLLECTION_ENABLED", ""
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+
+# 유니크 키 충돌 시 갱신할 컬럼. first_seen_at 은 첫 관측 시각이라 제외합니다.
+OPENG_RESULT_UPSERT_UPDATE_COLUMNS = (
+    "progrs_div_cd_nm",
+    "raw_data",
+    "last_seen_at",
+    "collected_at",
+)
 
 
 def _checkpoint_categories(
@@ -228,6 +254,57 @@ def _bulk_insert(db: Session, model, rows: list[dict[str, Any]]) -> int:
         raise
 
 
+def _openg_result_upsert_statement(db: Session) -> Insert:
+    """개찰결과 upsert 문을 방언에 맞게 만듭니다.
+
+    기존 테이블의 INSERT IGNORE 는 첫 관측값을 고정하지만, 개찰 상태는 늦게
+    확정되므로(유찰 -> 개찰완료) 이 테이블만 충돌 시 상태를 갱신합니다. 첫 관측
+    시각인 first_seen_at 은 갱신 대상에서 빼 이력 추적 근거로 남깁니다.
+    """
+    if db.get_bind().dialect.name in ("mysql", "mariadb"):
+        mysql_stmt = mysql_insert(BidOpengResult)
+        return mysql_stmt.on_duplicate_key_update(
+            **{name: mysql_stmt.inserted[name] for name in OPENG_RESULT_UPSERT_UPDATE_COLUMNS}
+        )
+    sqlite_stmt = sqlite_insert(BidOpengResult)
+    return sqlite_stmt.on_conflict_do_update(
+        index_elements=["bid_ntce_no", "bid_ntce_ord", "rbid_no", "category"],
+        set_={name: sqlite_stmt.excluded[name] for name in OPENG_RESULT_UPSERT_UPDATE_COLUMNS},
+    )
+
+
+def _upsert_openg_results(db: Session, rows: list[dict[str, Any]]) -> int:
+    """개찰결과를 유니크 키 기준 upsert 로 적재합니다.
+
+    같은 창을 다시 수집해도 행이 늘지 않고, 상태·원문·마지막 관측 시각만
+    갱신됩니다.
+    """
+    if not rows:
+        return 0
+    stmt = _openg_result_upsert_statement(db)
+    now = utcnow()
+    saved = 0
+    try:
+        for start in range(0, len(rows), BATCH_ROWS):
+            chunk = [row for row in rows[start : start + BATCH_ROWS] if row.get("bid_ntce_no")]
+            if not chunk:
+                continue
+            for row in chunk:
+                row.setdefault("first_seen_at", now)
+                row["last_seen_at"] = now
+                row["collected_at"] = now
+            db.execute(stmt, chunk)
+            db.commit()
+            saved += len(chunk)
+        return saved
+    except Exception:
+        try:
+            db.rollback()
+        except Exception as rb_exc:
+            logger.debug("개찰결과 upsert 실패 후 롤백 실패: %s", rb_exc)
+        raise
+
+
 def _record_partial_failure(
     metrics: dict[str, Any],
     cat_code: str,
@@ -239,7 +316,7 @@ def _record_partial_failure(
     체크포인트는 MAX(date) 라 실패 구간을 자동으로 되돌아보지 않습니다.
     failed_ranges 는 운영자가 그 구간만 수동 백필하기 위한 근거입니다.
     """
-    count_key = "announcement_count" if kind == "announcement" else "result_count"
+    count_key = f"{kind}_count"
     metrics[count_key] += exc.saved
     metrics["categories"][cat_code][count_key] += exc.saved
     metrics["categories"][cat_code][f"{kind}_error"] = mask_credentials(exc)
@@ -331,6 +408,7 @@ async def collect_bids(
             "message": "G2B serviceKey 가 설정되지 않아 수집을 수행할 수 없습니다.",
             "announcement_count": 0,
             "result_count": 0,
+            "openg_result_count": 0,
             "total_records": 0,
             "attempted": 0,
             "failed_count": 0,
@@ -360,6 +438,7 @@ async def collect_bids(
         "catchup": is_catchup,
         "announcement_count": 0,
         "result_count": 0,
+        "openg_result_count": 0,
         "license_limit_count": 0,
         "participation_region_count": 0,
         "attempted": 0,
@@ -383,7 +462,9 @@ async def collect_bids(
         if cat_info is None:
             continue
         cat_name = cat_info["name"]
-        metrics["categories"].setdefault(cat_code, {"announcement_count": 0, "result_count": 0})
+        metrics["categories"].setdefault(
+            cat_code, {"announcement_count": 0, "result_count": 0, "openg_result_count": 0}
+        )
 
         if fetch_type in ("both", "announce"):
             metrics["attempted"] += 1
@@ -434,6 +515,35 @@ async def collect_bids(
                 except Exception as rb_exc:
                     logger.debug("낙찰정보 롤백 실패: %s", rb_exc)
                 metrics["categories"][cat_code]["result_error"] = mask_credentials(exc)
+
+        # 개찰결과는 유찰 상태의 원천이라 낙찰정보 스텝 바로 뒤에 적재합니다.
+        # 외자(Frgcpt)는 개찰결과 오퍼레이션이 없어 건너뜁니다.
+        if (
+            OPENG_RESULT_COLLECTION_ENABLED
+            and fetch_type in ("both", "result")
+            and cat_code in OPENG_RESULT_URLS
+        ):
+            metrics["attempted"] += 1
+            try:
+                saved = await stream_openg_results(
+                    resolved_start,
+                    resolved_end,
+                    lambda rows: _upsert_openg_results(db, rows),
+                    category=cat_code,
+                )
+                metrics["openg_result_count"] += saved
+                metrics["categories"][cat_code]["openg_result_count"] += saved
+                logger.info("[%s] 개찰결과 %s건 적재", cat_name, saved)
+            except RangeCollectionError as exc:
+                logger.error("[%s] 개찰결과 부분 실패: %s", cat_name, mask_credentials(exc))
+                _record_partial_failure(metrics, cat_code, "openg_result", exc)
+            except Exception as exc:
+                logger.exception("[%s] 개찰결과 수집 실패", cat_name)
+                try:
+                    db.rollback()
+                except Exception as rb_exc:
+                    logger.debug("개찰결과 롤백 실패: %s", rb_exc)
+                metrics["categories"][cat_code]["openg_result_error"] = mask_credentials(exc)
 
     if fetch_type in ("both", "announce"):
         metrics["attempted"] += 1
@@ -529,7 +639,7 @@ async def collect_bids(
         sum(
             error_key in category_metrics
             for category_metrics in metrics["categories"].values()
-            for error_key in ("announcement_error", "result_error")
+            for error_key in ("announcement_error", "result_error", "openg_result_error")
         )
         + failed_restrictions
     )

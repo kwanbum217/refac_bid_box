@@ -2192,6 +2192,166 @@
       ],
       "hash": "d3545ead57491842655c4a62129b36e428bcdcd9cd85ecad9aff13d8141e409a"
     },
+    "bid_openg_results": {
+      "name": "bid_openg_results",
+      "columns": [
+        {
+          "name": "bid_clsfc_no",
+          "type": "VARCHAR(20)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_nm",
+          "type": "VARCHAR(500)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(50)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "category",
+          "type": "VARCHAR(10)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "collected_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "dminstt_nm",
+          "type": "VARCHAR(200)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "first_seen_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "last_seen_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "openg_dt",
+          "type": "DATETIME",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "progrs_div_cd_nm",
+          "type": "VARCHAR(30)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "prtcpt_cnum",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "raw_data",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rbid_no",
+          "type": "VARCHAR(10)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_openg_cat_dt",
+          "column_names": [
+            "category",
+            "openg_dt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_openg_inst_cat_dt",
+          "column_names": [
+            "dminstt_nm",
+            "category",
+            "openg_dt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_openg_notice",
+          "column_names": [
+            "bid_ntce_no",
+            "category"
+          ],
+          "unique": false
+        },
+        {
+          "name": "ix_openg_status_dt",
+          "column_names": [
+            "progrs_div_cd_nm",
+            "openg_dt"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_bid_openg_results",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord",
+            "rbid_no",
+            "category"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "f8499133f49cbb2cdbd4b5c459c4c0194411c3a8f8415f96bb009dad68a71509"
+    },
     "bid_prearng_prices": {
       "name": "bid_prearng_prices",
       "columns": [
@@ -4381,6 +4541,7 @@
     "bid_evaluation_evidence": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a",
     "bid_evaluation_profiles": "fee7f458d7d9966e3c10ce2637420330c5174629f667ac5c826c56bbe28bab8e",
     "bid_evaluation_snapshots": "d3545ead57491842655c4a62129b36e428bcdcd9cd85ecad9aff13d8141e409a",
+    "bid_openg_results": "f8499133f49cbb2cdbd4b5c459c4c0194411c3a8f8415f96bb009dad68a71509",
     "bid_prearng_prices": "e9cfe16810593327143a3d9e03dc2306063dedc08eb66f698c0e0668c008b5b0",
     "bid_ranking_snapshots": "dd386a5dee7f4abf08926b8978dbad4244f5d69cfbf0d062bdf7b827c1ec5dca",
     "bid_results": "a266e790a042c2524096f7a2e3144b25810e16cc506644300d0fb7c473b4944f",
@@ -4403,7 +4564,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "2778157c73cb04f0afebaa145b8b31f87650d9b34adf52b1cf67572bc218388d",
+  "overall_hash": "c1a05b2288e9130d8b6ab7ee240c3c9eeea032c1678bf45bc03892dfc213bf9a",
   "orm_tables": [
     "account_company_profiles",
     "account_consent_events",
@@ -4420,6 +4581,7 @@
     "bid_evaluation_evidence",
     "bid_evaluation_profiles",
     "bid_evaluation_snapshots",
+    "bid_openg_results",
     "bid_prearng_prices",
     "bid_ranking_snapshots",
     "bid_results",
@@ -4456,6 +4618,7 @@
     "bid_evaluation_evidence",
     "bid_evaluation_profiles",
     "bid_evaluation_snapshots",
+    "bid_openg_results",
     "bid_prearng_prices",
     "bid_ranking_snapshots",
     "bid_results",
@@ -4479,10 +4642,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-10-11T23:22:31.055126+00:00",
+    "generated_at": "2026-10-31T12:02:59.219083+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "173851f19ff96075858c5e91cdc2bcf06de5cbf5"
+    "git_head": "20207be23fc888a1f2f13fa809b0b47412542571"
   }
 }

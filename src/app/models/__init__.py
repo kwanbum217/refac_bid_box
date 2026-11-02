@@ -28,6 +28,7 @@ from src.app.models.evaluations import (
     BidEvaluationProfile,
     BidEvaluationSnapshot,
 )
+from src.app.models.openg_results import BidOpengResult
 from src.app.models.prearng_prices import BidPrearngPrice, InstitutionSajeongRateStat
 from src.app.models.predictions import PredictionResult, RetrainLog
 
@@ -44,6 +45,7 @@ __all__ = [
     "BidEvaluationEvidence",
     "BidEvaluationProfile",
     "BidEvaluationSnapshot",
+    "BidOpengResult",
     "BidPrearngPrice",
     "BidRankingSnapshot",
     "BidResult",

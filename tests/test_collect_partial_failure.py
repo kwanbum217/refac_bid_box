@@ -28,7 +28,7 @@ async def test_run_ranges_raises_when_one_range_fails(monkeypatch):
     doomed_start = ranges[1][0]
 
     async def fake_fetch_paged(
-        client, api_url, step_start, step_end, num_of_rows, mapper, error_label, sem
+        client, api_url, step_start, step_end, num_of_rows, mapper, error_label, sem, inqry_div="1"
     ):
         if step_start == doomed_start:
             raise RuntimeError("G2B 502")
@@ -58,7 +58,7 @@ async def test_run_ranges_returns_total_when_all_succeed(monkeypatch):
     """모든 구간이 성공하면 기존과 동일하게 합계를 반환합니다."""
 
     async def fake_fetch_paged(
-        client, api_url, step_start, step_end, num_of_rows, mapper, error_label, sem
+        client, api_url, step_start, step_end, num_of_rows, mapper, error_label, sem, inqry_div="1"
     ):
         return [{"row": step_start}]
 
