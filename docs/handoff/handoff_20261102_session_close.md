@@ -40,7 +40,19 @@
 
 ---
 
-## 2. 진행 중인 빌더 (비감독 cmd 런처)
+## 2. 조사 빌더와 리뷰
+
+재입찰번호 빌더는 `worker_done` 을 보냈고, 코디네이터가 커밋 `936426d5` 와 문서 1건을 확인했습니다. 빌더 터미널 `term_a1764f18-4732-4628-9716-ca0ced35d7f3` 은 회수 뒤 창만 닫았습니다(`--tab` 아님). 리뷰어는 비감독 런처로 붙여 두었습니다.
+
+| Task | 상태 | 내용 |
+| --- | --- | --- |
+| `task_a578b85123cb` | completed | 재입찰번호 실측. 커밋 `936426d5`. `bid_openg_results` 행 수 0, 중복 0, `AUTO_INCREMENT` 1, `UPDATE_TIME` NULL. 0건은 표본이 없어 공허합니다. 유니크 인덱스는 `category` 이고 `bid_clsfc_no` 는 키에 없습니다. |
+| `task_53689036ce9c` | dispatched | 리뷰어. 터미널 `term_0b756f88-8eef-405c-838a-a0ac47071988`. 모델 `z-ai/glm-5.3-flash`. 체크리스트 `wrote_db`, `no_count`, `scope_exceeded`. |
+| `task_71f974178f18` | dispatched | 적격심사 JSON 스캔 빌더. 터미널 `term_3b57b1f9-5d73-438f-aaf4-3f2ca88a1e06`. 커밋은 이 문서 수정 시점에 아직 없습니다. |
+
+기동 방식은 아래 표를 남깁니다. cmd 와 qwen 은 `worker-start` 에이전트가 아닙니다.
+
+## 2.1 기동 기록 (비감독 cmd 런처)
 
 cmd 와 qwen 은 `worker-start` 에이전트가 아닙니다. 터미널을 만들고 `scripts/orca_cmd_launch.py` 로 붙인 뒤 taskctl `--launcher` 로 고유 preamble 을 넘겼습니다. 감독 Dispatch 가 아닙니다.
 
@@ -79,7 +91,7 @@ Intent 는 `.orca/intents/openg_rbidno_uniqueness_20261102.yaml`, `.orca/intents
 
 | 과업 | 상태 |
 | --- | --- |
-| 재입찰번호 유니크 실측 | 2절 빌더가 진행. 숫자 확인 전 설계 8항은 미확인 |
+| 재입찰번호 유니크 실측 | 커밋 `936426d5` 로 행 수 0 을 확인. 유니크 유지 여부는 소급 적재 후 재검증. 리뷰어 `task_53689036ce9c` 진행 중 |
 | 적격심사 JSON 전량 스캔 | 2절 빌더가 문서만 작성. 코드 변경은 사용자 결정 후 |
 | 유찰 1년 소급 `--execute` | 차단. dry-run 과 `--max-calls` 는 스크립트에 있음. 승인 전 실행 금지 |
 | 유찰 T5 | 소급 적재 뒤에만 |
