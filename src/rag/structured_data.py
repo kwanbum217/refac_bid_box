@@ -444,6 +444,19 @@ ANNOUNCEMENT_AMOUNT_COLUMNS = {
 RESULT_AMOUNT_COLUMNS = {
     "sucsf_bid_amt": BidResult.sucsf_bid_amt,
 }
+# 금액 구간 축의 경계입니다. 상한은 그 값 미만이 아니라 상위 구간에 속합니다.
+# 1억·5억·10억 정확값은 각각 1억~5억, 5억~10억, 10억 이상 구간에 들어갑니다.
+AMOUNT_BAND_BOUNDARIES: tuple[tuple[int, str], ...] = (
+    (100_000_000, "1억 미만"),
+    (500_000_000, "1억~5억"),
+    (1_000_000_000, "5억~10억"),
+)
+AMOUNT_BAND_TOP_LABEL = "10억 이상"
+AMOUNT_BAND_UNKNOWN_LABEL = "금액 미상"
+AMOUNT_BAND_LABELS = (
+    *(label for _, label in AMOUNT_BAND_BOUNDARIES),
+    AMOUNT_BAND_TOP_LABEL,
+)
 ANNOUNCEMENT_SORT_COLUMNS = {
     **ANNOUNCEMENT_AMOUNT_COLUMNS,
     "bid_clse_dt": BidAnnouncement.bid_clse_dt,
@@ -1703,6 +1716,80 @@ def _region_axis_breakdown(
     return entries[:limit], len(entries) > limit
 
 
+def _amount_band_expression(amount_column: Any) -> Any:
+    """금액 컬럼을 네 구간 라벨로 묶는 case 식을 만듭니다.
+
+    case 는 위에서부터 먼저 맞는 가지만 고르므로 경계값은 상위 구간에
+    들어갑니다. 어떤 가에도 맞지 않는 NULL 만 금액 미상으로 떨어집니다.
+    """
+    return case(
+        *((amount_column < boundary, label) for boundary, label in AMOUNT_BAND_BOUNDARIES),
+        (amount_column >= AMOUNT_BAND_BOUNDARIES[-1][0], AMOUNT_BAND_TOP_LABEL),
+        else_=AMOUNT_BAND_UNKNOWN_LABEL,
+    )
+
+
+def _amount_band_axis_breakdown(
+    db: Session,
+    metric: str,
+    result_conditions: list,
+    announcement_conditions: list,
+) -> tuple[list[dict[str, Any]], bool]:
+    """금액 구간 축을 집계합니다.
+
+    공고 건수는 추정가격을 쓰고, 없으면 기초금액을 씁니다. 낙찰 지표는 낙찰
+    결과 테이블의 낙찰금액을 기준으로 같은 구간을 씁니다. 두 값이 모두 없는
+    공고와 낙찰금액이 없는 행은 금액 미상으로 따로 셉니다. 행 순서는 값
+    크기가 아니라 경계 오름차순으로 고정해 표가 구간 순서를 유지합니다.
+    """
+    amount_expr: Any
+    if metric == "announcement_count":
+        amount_expr = func.coalesce(BidAnnouncement.presmpt_prce, BidAnnouncement.base_amount)
+        conditions = announcement_conditions
+        value_columns: list[Any] = [func.count()]
+    elif metric == "award_amount":
+        amount_expr = BidResult.sucsf_bid_amt
+        conditions = result_conditions
+        value_columns = [func.sum(BidResult.sucsf_bid_amt)]
+    else:
+        amount_expr = BidResult.sucsf_bid_amt
+        conditions = result_conditions
+        value_columns = [
+            func.count(),
+            func.avg(BidResult.sucsf_bid_rate),
+            func.count(BidResult.sucsf_bid_rate),
+        ]
+
+    band_expr = _amount_band_expression(amount_expr)
+    stmt = (
+        select(band_expr.label("amount_band"), *value_columns)
+        .where(*conditions)
+        .group_by(band_expr)
+    )
+    rows = {str(row[0]): row for row in _cached_rows(db, stmt)}
+
+    def entry(label: str, row: tuple[Any, ...] | None) -> dict[str, Any]:
+        if metric == "announcement_count":
+            count = int(row[1] or 0) if row is not None else 0
+            return _axis_entry(label, label, announcement_count=count)
+        if metric == "award_amount":
+            amount = int(row[1] or 0) if row is not None else 0
+            return _axis_entry(label, label, award_amount=amount)
+        sample_count = int(row[3] or 0) if row is not None else 0
+        return _axis_entry(
+            label,
+            label,
+            bid_count=int(row[1] or 0) if row is not None else 0,
+            avg_rate=_axis_rate(row[2], sample_count) if row is not None else None,
+            sample_count=sample_count,
+        )
+
+    entries = [entry(label, rows.get(label)) for label in AMOUNT_BAND_LABELS]
+    if AMOUNT_BAND_UNKNOWN_LABEL in rows:
+        entries.append(entry(AMOUNT_BAND_UNKNOWN_LABEL, rows[AMOUNT_BAND_UNKNOWN_LABEL]))
+    return entries, False
+
+
 def _build_axis_breakdown(
     db: Session,
     *,
@@ -1729,6 +1816,9 @@ def _build_axis_breakdown(
         return _region_axis_breakdown(db, metric, result_conditions, announcement_conditions, limit)
     if group_by == "winner":
         return _winner_axis_breakdown(db, metric, result_conditions, limit)
+    if group_by == "amount_band":
+        # 금액 구간은 다섯 칸이 상한이라 group_limit 으로 자르지 않습니다.
+        return _amount_band_axis_breakdown(db, metric, result_conditions, announcement_conditions)
     return None
 
 

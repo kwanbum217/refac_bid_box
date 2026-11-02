@@ -480,6 +480,18 @@ AXIS_LABELS = {
     "institution": "기관",
     "region": "지역",
     "winner": "업체",
+    "amount_band": "금액대",
+}
+# 금액 구간 축은 다른 축과 달리 기준 금액이 무엇인지 밝혀야 합니다. 공고 건수는
+# 추정가격(없으면 기초금액), 낙찰 지표는 낙찰금액으로 구간을 나눕니다.
+AMOUNT_BAND_BASIS_NOTES = {
+    "announcement_count": (
+        "구간 기준 금액은 공고 추정가격이며, 값이 없으면 기초금액을 사용합니다. "
+        "두 값이 모두 없는 공고는 금액 미상으로 셉니다."
+    ),
+    "bid_count": "구간 기준 금액은 낙찰금액입니다.",
+    "avg_rate": "구간 기준 금액은 낙찰금액입니다.",
+    "award_amount": "구간 기준 금액은 낙찰금액입니다.",
 }
 METRIC_LABELS = {
     "announcement_count": "공고 건수",
@@ -542,6 +554,61 @@ def _winner_axis_caption(
     return f"{period} {category} 업체별 {metric_label}입니다."
 
 
+def _build_amount_band_answer(
+    headline: str,
+    metric: str,
+    metric_label: str,
+    rows: list[dict],
+    meta: dict,
+) -> str:
+    """금액 구간 표는 경계 오름차순을 유지하고 건수 지표에는 비율을 더합니다.
+
+    다른 축은 지표 값 내림차순으로 정렬하지만 금액 구간은 순서 자체가 뜻을
+    가지므로 조회 계층이 정한 순서를 그대로 씁니다. 비율의 분모는 금액 미상
+    을 포함한 표 전체 건수입니다.
+    """
+    count_metric = metric in ("announcement_count", "bid_count")
+    total = 0
+    if count_metric:
+        for item in rows:
+            try:
+                total += int(item.get(metric) or 0)
+            except (TypeError, ValueError):
+                continue
+
+    lines = [headline, ""]
+    if count_metric:
+        lines.extend(
+            [
+                f"| 금액대 | {metric_label} | 비율 |",
+                "| --- | ---: | ---: |",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"| 금액대 | {metric_label} |",
+                "| --- | ---: |",
+            ]
+        )
+    for item in rows:
+        label = _markdown_result_cell(item.get("label"))
+        value = _format_axis_value(metric, item.get(metric))
+        if not count_metric:
+            lines.append(f"| {label} | {value} |")
+            continue
+        try:
+            count = int(item.get(metric) or 0)
+        except (TypeError, ValueError):
+            count = 0
+        share = f"{count / total * 100:.2f}%" if total else "-"
+        lines.append(f"| {label} | {value} | {share} |")
+    lines.extend(["", AMOUNT_BAND_BASIS_NOTES[metric]])
+    if meta.get("truncated"):
+        lines.extend(["", f"상위 {len(rows)}건만 표시했습니다."])
+    return "\n".join(lines)
+
+
 def _build_axis_answer(
     plan: RetrievalPlan,
     structured_data: dict | None,
@@ -568,6 +635,8 @@ def _build_axis_answer(
         headline = _winner_axis_caption(plan, structured_data, metric_label, meta)
     else:
         headline = f"{axis_label}별 {metric_label}입니다."
+    if group_by == "amount_band":
+        return _build_amount_band_answer(headline, metric, metric_label, rows, meta)
     lines = [
         headline,
         "",
