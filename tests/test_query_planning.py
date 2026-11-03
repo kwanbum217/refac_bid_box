@@ -649,3 +649,28 @@ def test_extract_institution_list_contract_examples():
     )
     assert _extract_institution_list("낙찰금액과 낙찰률의 차이") == []
     assert _extract_institution_list("투찰률과 사정률의 관계") == []
+
+
+def test_period_marker_keeps_trailing_particle_in_semantic_query():
+    """기간 표지에 붙은 조사가 떨어져 "최근 에" 처럼 의미 검색 질의에 남지 않아야 합니다."""
+    cases = {
+        "최근에 올라온 용역 공고": "최근에 올라온 용역 공고",
+        "올해는 어떤 사업이 있나": "올해는 어떤 사업이 있나",
+        "이번달에 올라온 공고": "이번달에 올라온 공고",
+        "요즘은 어떤 공고": "요즘은 어떤 공고",
+        "지난해에는 어떤 공고가 있었어": "지난해에는 어떤 공고가 있었어",
+        "최근에는 어떤 공고": "최근에는 어떤 공고",
+        "2025년 1월부터 3월까지 물품 공고 건수": "2025년 1월부터 3월까지 물품 공고 건수",
+        "v25 모델로 최근에 수집된 물품 공고 투찰가 예측해줘": (
+            "v25 모델로 최근에 수집된 물품 공고 투찰가 예측해줘"
+        ),
+    }
+    for query, expected in cases.items():
+        assert build_retrieval_plan(query).semantic_query == expected, query
+
+
+def test_period_marker_still_splits_attached_place_name():
+    """기간 표지에 붙은 지명은 종전대로 분리해 기관 후보를 살려야 합니다."""
+    assert query_planning._split_attached_period("10월서울 공고") == "10월 서울 공고"
+    assert query_planning._split_attached_period("최근이천시 공고") == "최근 이천시 공고"
+    assert query_planning._split_attached_period("2026년도 상반기 용역") == "2026년도 상반기 용역"

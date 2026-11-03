@@ -8,6 +8,7 @@ tests/test_chatbot_planner.py
 from unittest.mock import patch
 
 from src.app.services.planner import plan_chat_request
+from src.rag.query_planning import build_retrieval_plan
 
 
 def _context_state(
@@ -229,3 +230,12 @@ def test_followup_kb_refresh_escalates_to_action():
     assert plan.mode == "action"
     assert plan.primary_action_key == "data_refresh"
     assert plan.followup_query == "최근 낙찰률 추세와 사례를 알려줘"
+
+
+def test_semantic_search_step_keeps_period_particle_attached():
+    """챗봇 의미 검색 단계가 기간 표지와 조사가 끊긴 질의를 넘기지 않아야 합니다."""
+    query = "최근에 낙찰률 추세와 사례를 같이 알려줘"
+    plan = plan_chat_request(query)
+    semantic_step = next(step for step in plan.steps if step.tool == "semantic_search_tool")
+    assert semantic_step.params["query"] == query
+    assert build_retrieval_plan(semantic_step.params["query"]).semantic_query == query

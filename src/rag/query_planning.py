@@ -2989,19 +2989,89 @@ _ATTACHED_PERIOD_CONTINUATIONS = {
 }
 
 
+# 기간 표지에 바로 붙은 조사는 표지의 일부로 남깁니다. "최근에"·"올해는" 처럼
+# 표지와 조사 사이에 공백을 넣으면 의미 검색 질의에 "최근 에" 가 남습니다.
+_PERIOD_TRAILING_PARTICLES = (
+    "에서는",
+    "에서도",
+    "에게서",
+    "으로부터",
+    "으로서",
+    "으로써",
+    "으로는",
+    "이라는",
+    "이라고",
+    "이라도",
+    "부터는",
+    "까지는",
+    "에서",
+    "에게",
+    "에는",
+    "에도",
+    "에만",
+    "으로",
+    "부터",
+    "까지",
+    "보다",
+    "처럼",
+    "마다",
+    "조차",
+    "마저",
+    "라고",
+    "라는",
+    "이며",
+    "이고",
+    "이라",
+    "이랑",
+    "한테",
+    "께서",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "의",
+    "에",
+    "도",
+    "만",
+    "과",
+    "와",
+    "로",
+)
+
+
+def _followed_by_period_particle(rest: str) -> bool:
+    """기간 표지 뒤에 조사가 붙어 있는지 판정합니다.
+
+    조사 뒤에 한글이 이어지면 "최근이천시" 의 지명처럼 표지와 이름이 붙은
+    형태이므로 조사로 보지 않습니다.
+    """
+    for particle in _PERIOD_TRAILING_PARTICLES:
+        if not rest.startswith(particle):
+            continue
+        following = rest[len(particle) : len(particle) + 1]
+        if not following or not ("가" <= following <= "힣"):
+            return True
+    return False
+
+
 def _split_attached_period(text: str) -> str:
     """기간 표지 뒤에 한글이 바로 붙은 경우 공백을 하나 넣습니다.
 
     "10월서울" 처럼 기간 표지가 기관·지역명과 붙어 있으면 기관 후보 추출기가
     어절 전체를 이름으로 읽어 조건이 오염되거나 사라집니다. 표지가 단위·조사로
-    이어지는 "2026년도", "3분기별" 같은 형태는 제외해 과분리를 막습니다.
+    이어지는 "2026년도", "3분기별", "최근에" 같은 형태는 제외해 과분리를 막습니다.
     """
 
     def _replace(match: re.Match[str]) -> str:
         marker = match.group(0)
+        rest = text[match.end() :]
         for unit, continuations in _ATTACHED_PERIOD_CONTINUATIONS.items():
-            if marker.endswith(unit) and text.startswith(continuations, match.end()):
+            if marker.endswith(unit) and rest.startswith(continuations):
                 return marker
+        if _followed_by_period_particle(rest):
+            return marker
         return marker + " "
 
     return _ATTACHED_PERIOD_PATTERN.sub(_replace, text)
