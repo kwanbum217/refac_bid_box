@@ -2197,35 +2197,35 @@
       "columns": [
         {
           "name": "bid_clsfc_no",
-          "type": "VARCHAR(20)",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": false,
           "primary_key": false,
           "default": null
         },
         {
           "name": "bid_ntce_nm",
-          "type": "VARCHAR(500)",
+          "type": "VARCHAR(500) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": true,
           "primary_key": false,
           "default": null
         },
         {
           "name": "bid_ntce_no",
-          "type": "VARCHAR(50)",
+          "type": "VARCHAR(50) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": false,
           "primary_key": false,
           "default": null
         },
         {
           "name": "bid_ntce_ord",
-          "type": "VARCHAR(10)",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": false,
           "primary_key": false,
           "default": null
         },
         {
           "name": "category",
-          "type": "VARCHAR(10)",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": false,
           "primary_key": false,
           "default": null
@@ -2239,7 +2239,7 @@
         },
         {
           "name": "dminstt_nm",
-          "type": "VARCHAR(200)",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": true,
           "primary_key": false,
           "default": null
@@ -2274,7 +2274,7 @@
         },
         {
           "name": "progrs_div_cd_nm",
-          "type": "VARCHAR(30)",
+          "type": "VARCHAR(30) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": false,
           "primary_key": false,
           "default": null
@@ -2295,7 +2295,7 @@
         },
         {
           "name": "rbid_no",
-          "type": "VARCHAR(10)",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
           "nullable": false,
           "primary_key": false,
           "default": null
@@ -2350,7 +2350,7 @@
           "unique": true
         }
       ],
-      "hash": "f8499133f49cbb2cdbd4b5c459c4c0194411c3a8f8415f96bb009dad68a71509"
+      "hash": "cc1155422d9a394c188660bbdd1ebb369e44d1b4a309f6fdb82cc52f621e3246"
     },
     "bid_prearng_prices": {
       "name": "bid_prearng_prices",
@@ -4541,7 +4541,7 @@
     "bid_evaluation_evidence": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a",
     "bid_evaluation_profiles": "fee7f458d7d9966e3c10ce2637420330c5174629f667ac5c826c56bbe28bab8e",
     "bid_evaluation_snapshots": "d3545ead57491842655c4a62129b36e428bcdcd9cd85ecad9aff13d8141e409a",
-    "bid_openg_results": "f8499133f49cbb2cdbd4b5c459c4c0194411c3a8f8415f96bb009dad68a71509",
+    "bid_openg_results": "cc1155422d9a394c188660bbdd1ebb369e44d1b4a309f6fdb82cc52f621e3246",
     "bid_prearng_prices": "e9cfe16810593327143a3d9e03dc2306063dedc08eb66f698c0e0668c008b5b0",
     "bid_ranking_snapshots": "dd386a5dee7f4abf08926b8978dbad4244f5d69cfbf0d062bdf7b827c1ec5dca",
     "bid_results": "a266e790a042c2524096f7a2e3144b25810e16cc506644300d0fb7c473b4944f",
@@ -4564,7 +4564,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "c1a05b2288e9130d8b6ab7ee240c3c9eeea032c1678bf45bc03892dfc213bf9a",
+  "overall_hash": "24d6f236a937a45e842c9465e3828297a71596ce2824d039b93582583b13212b",
   "orm_tables": [
     "account_company_profiles",
     "account_consent_events",
@@ -4642,10 +4642,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-10-31T12:02:59.219083+00:00",
+    "generated_at": "2026-11-03T02:52:09.988893+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "20207be23fc888a1f2f13fa809b0b47412542571"
+    "git_head": "30cd6901cf8370083c3a981692e2c3cc76444a0b"
   }
 }

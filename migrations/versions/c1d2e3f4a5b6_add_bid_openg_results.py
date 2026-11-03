@@ -62,6 +62,8 @@ def upgrade() -> None:
                 "category",
                 name="uq_bid_openg_results",
             ),
+            mysql_charset="utf8mb4",
+            mysql_collate="utf8mb4_unicode_ci",
         )
         op.create_index(
             "ix_openg_cat_dt",
