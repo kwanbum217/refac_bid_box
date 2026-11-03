@@ -2399,6 +2399,71 @@ def test_cmd_create_puts_capsule_path_in_task_spec(
     )
 
 
+def test_cmd_create_reads_task_id_from_task_id_field(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """2026-11-03 실측 형태인 result.taskId 에서 Task ID 를 읽어 정상 종료해야 합니다."""
+    intent_file = tmp_path / "intent_new_shape.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        return (
+            0,
+            json.dumps({"ok": True, "result": {"taskId": "task_new_shape", "status": "ready"}}),
+            "",
+        )
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    capsules_dir = tmp_path / "capsules"
+    code = main(
+        [
+            "create",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(capsules_dir),
+            "--json",
+        ]
+    )
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["task_id"] == "task_new_shape"
+
+    created_capsule = capsules_dir / "task_new_shape" / "capsule.yaml"
+    assert created_capsule.exists()
+    assert parse_capsule_scalar(created_capsule.read_text(encoding="utf-8"), "task_id") == (
+        "task_new_shape"
+    )
+
+
+def test_cmd_create_reads_task_id_from_legacy_task_object(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """구 형태인 result.task.id 도 계속 읽어야 합니다."""
+    intent_file = tmp_path / "intent_legacy_shape.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
+
+    def mock_run(cmd, cwd=None, timeout=30):
+        return 0, json.dumps({"ok": True, "result": {"task": {"id": "task_legacy_shape"}}}), ""
+
+    monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
+
+    capsules_dir = tmp_path / "capsules"
+    code = main(
+        [
+            "create",
+            "--intent",
+            str(intent_file),
+            "--capsule-dir",
+            str(capsules_dir),
+            "--json",
+        ]
+    )
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["task_id"] == "task_legacy_shape"
+    assert (capsules_dir / "task_legacy_shape" / "capsule.yaml").exists()
+
+
 def test_bare_directory_write_scope_is_flagged(tmp_path: Path):
     """디렉터리 이름만 적은 쓰기 범위는 하위 파일을 허용하지 못합니다.
 
@@ -2516,24 +2581,37 @@ def test_cmd_create_atomic_cleanup_on_task_create_exit_failure(
         assert not any(capsules_dir.iterdir())
 
 
-def test_cmd_create_atomic_cleanup_on_missing_task_id(
+def test_cmd_create_preserves_provisional_capsule_when_task_id_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ):
-    """task-create 결과에서 Task ID 를 얻지 못하면 종료 코드 1을 반환하고 파일을 남기지 않아야 합니다."""
+    """Task 는 만들어졌는데 ID 를 못 찾으면 Capsule 을 지우지 않고 안내를 남겨야 합니다.
+
+    이 시점의 Capsule 은 이미 Orca Task 의 spec 이 가리키는 정본입니다. 지우면
+    워커가 첫 턴에 없는 파일을 엽니다 (2026-11-02 인수인계 6절).
+    """
     intent_file = tmp_path / "intent_no_id.yaml"
     intent_file.write_text(SAMPLE_BUILDER_INTENT, encoding="utf-8")
 
     def mock_run(cmd, cwd=None, timeout=30):
-        return 0, json.dumps({"ok": True, "result": {}}), ""
+        return 0, json.dumps({"ok": True, "result": {"status": "ready"}, "marker": "raw-echo"}), ""
 
     monkeypatch.setattr("scripts.orca_taskctl._run_command", mock_run)
 
     capsules_dir = tmp_path / "capsules"
     code = main(["create", "--intent", str(intent_file), "--capsule-dir", str(capsules_dir)])
     assert code == 1
-    assert "Task ID 를 얻지 못했습니다" in capsys.readouterr().err
-    if capsules_dir.exists():
-        assert not any(capsules_dir.iterdir())
+
+    err = capsys.readouterr().err
+    assert "Task ID 를 찾지 못했습니다" in err
+    assert "task-list" in err
+    assert "raw-echo" in err
+
+    provisional_capsule = capsules_dir / "task_intent_no_id" / "capsule.yaml"
+    assert provisional_capsule.exists()
+    assert (
+        parse_capsule_scalar(provisional_capsule.read_text(encoding="utf-8"), "task_id")
+        == "task_intent_no_id"
+    )
 
 
 def test_cmd_create_atomic_cleanup_on_reexpansion_error(
