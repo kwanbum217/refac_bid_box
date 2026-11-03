@@ -3469,6 +3469,39 @@ def _maybe_json(text: str) -> Any:
         return text.strip()
 
 
+def extract_created_task_id(payload: Any) -> str | None:
+    """task-create 응답에서 Task ID 를 꺼냅니다.
+
+    Orca 응답 형태는 바뀌어 왔습니다. 2026-11-03 실측은
+    `{"ok": true, "result": {"taskId": "task_...", "status": "ready"}}` 이고,
+    그 이전 형태는 `{"result": {"task": {"id": "task_..."}}}` 입니다. 한 형태만
+    읽으면 Task 가 실제로 만들어진 뒤에도 ID 를 못 찾아 실패로 처리합니다.
+    후보를 순서대로 보고 처음으로 비어 있지 않은 문자열을 씁니다.
+    """
+    if not isinstance(payload, dict):
+        return None
+
+    candidates: list[Any] = []
+    result = payload.get("result")
+    if isinstance(result, dict):
+        candidates.append(result.get("taskId"))
+        candidates.append(result.get("task_id"))
+        task = result.get("task")
+        if isinstance(task, dict):
+            candidates.append(task.get("id"))
+            candidates.append(task.get("taskId"))
+    candidates.append(payload.get("taskId"))
+    candidates.append(payload.get("task_id"))
+    top_task = payload.get("task")
+    if isinstance(top_task, dict):
+        candidates.append(top_task.get("id"))
+
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return None
+
+
 def _deliver_capsule_notice(
     args: argparse.Namespace,
     task_id: str,
@@ -3661,16 +3694,21 @@ def cmd_create(args: argparse.Namespace) -> int:
         sys.stderr.write(f"오류: task-create 실패: {reason}\n")
         return 1
 
-    created_id = None
-    payload = _maybe_json(stdout)
-    if isinstance(payload, dict):
-        created_id = ((payload.get("result") or {}).get("task") or {}).get("id")
+    created_id = extract_created_task_id(_maybe_json(stdout))
 
     if not created_id:
-        capsule_path.unlink(missing_ok=True)
-        with suppress(OSError):
-            task_capsule_dir.rmdir()
-        sys.stderr.write("오류: task-create 결과에서 Task ID 를 얻지 못했습니다.\n")
+        # 여기까지 왔다면 Orca 는 Task 를 만들었다고 응답했습니다. Capsule 을
+        # 지우면 실제 Task 의 spec 이 가리키는 정본이 사라져 워커가 첫 턴에
+        # 없는 파일을 엽니다. 잠정 경로 Capsule 은 남기고, 사람이 응답 원문과
+        # task-list 로 실제 ID 를 찾아 디렉터리를 맞추게 합니다.
+        snippet = stdout.strip()[:400] or "(빈 응답)"
+        sys.stderr.write(
+            "오류: task-create 는 성공했지만 응답에서 Task ID 를 찾지 못했습니다.\n"
+            f"잠정 Capsule 을 보존했습니다: {capsule_path}\n"
+            f"응답 원문(일부): {snippet}\n"
+            "orca orchestration task-list 로 실제 Task ID 를 찾아 잠정 Capsule 디렉터리 "
+            "이름을 실제 Task ID 로 맞추십시오.\n"
+        )
         return 1
 
     actual_task_id = str(created_id)
@@ -4587,10 +4625,7 @@ def cmd_rework(args: argparse.Namespace) -> int:
     final_capsule_text = new_capsule_text
 
     if code == 0:
-        payload = _maybe_json(stdout)
-        created_id = None
-        if isinstance(payload, dict):
-            created_id = ((payload.get("result") or {}).get("task") or {}).get("id")
+        created_id = extract_created_task_id(_maybe_json(stdout))
         if created_id and str(created_id) != new_task_id:
             actual_task_id = str(created_id)
             actual_capsule_dir = capsule_dir / actual_task_id
