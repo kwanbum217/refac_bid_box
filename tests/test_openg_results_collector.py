@@ -139,6 +139,12 @@ class _FakeAsyncClient:
         return self._responses.pop(0)
 
 
+@pytest.fixture(autouse=True)
+def _empty_service_key(monkeypatch):
+    """서비스 키 환경(.env, 셸 변수)과 무관하게 빈 키로 수집 경로를 고정합니다."""
+    monkeypatch.setattr(api_collector, "get_service_key", lambda: "")
+
+
 def _install_fake_client(monkeypatch, responses: list[httpx.Response]) -> list[dict]:
     calls: list[dict] = []
 

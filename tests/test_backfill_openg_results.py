@@ -94,6 +94,9 @@ def _install_fake_client(monkeypatch, responses: list[httpx.Response]) -> None:
 
 
 def _prepare(monkeypatch) -> None:
+    """실제 서비스 키 환경(.env, 셸 변수)과 무관하게 가짜 키로 수집 경로를 고정합니다."""
+    for name in ("G2B_SERVICE_KEY", "serviceKey", "SERVICE_KEY"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(bf, "get_service_key", lambda: "dummy-key")
     monkeypatch.setattr(ac, "get_service_key", lambda: "dummy-key")
 
