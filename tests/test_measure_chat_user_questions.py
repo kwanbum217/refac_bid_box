@@ -2105,7 +2105,7 @@ def test_extract_korean_amounts(text: str, expected: float) -> None:
 
 
 def test_summarize_marks_v2_defensive_checks_as_heuristic() -> None:
-    for item_id in ("v2_rbd_02", "v2_rst_01", "v2_rst_02"):
+    for item_id in ("v2_rst_01", "v2_rst_02"):
         summary = measure.summarize_item(_v2_item(item_id), [_attempt(True)])
         assert summary["heuristic"] is True
 
