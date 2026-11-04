@@ -1911,6 +1911,40 @@ def _is_void_announcement_list_request(lowered: str) -> bool:
     )
 
 
+# 유찰 정의 질문은 상태 조건 대상이 아닙니다. "건수" 같은 통계 표지가 함께
+# 있어도 뜻·의미·뭐야 를 묻는 질의는 정형 조회가 아닙니다. query_planning 의
+# DEFINITION_INTENT_MARKERS 와 data_gap_guard 의 _EXPLANATION 이 잡는 표현을
+# 합쳤습니다.
+VOID_DEFINITION_MARKERS = (
+    "무엇",
+    "뜻",
+    "의미",
+    "정의",
+    "개념",
+    "설명",
+    "원리",
+    "뭐야",
+    "뭔가요",
+    "이란",
+)
+VOID_BARE_RAN_PATTERN = re.compile(r"(?<![가-힣])란(?![가-힣])")
+
+
+def is_void_definition_query(query: str) -> bool:
+    """유찰 상태를 정의·설명으로 묻는 질의인지 판정합니다.
+
+    "유찰 건수가 뭐야" 처럼 건수 표지가 붙어도 뜻·의미·뭐야 를 묻는 질의는
+    정형 집계 대상이 아닙니다. "유찰 건수 알려줘" 처럼 정의 표지가 없으면
+    거짓입니다.
+    """
+    lowered = _query_lower(query)
+    if VOID_STATUS_MARKER not in lowered:
+        return False
+    return any(marker in lowered for marker in VOID_DEFINITION_MARKERS) or bool(
+        VOID_BARE_RAN_PATTERN.search(lowered)
+    )
+
+
 def _is_void_outcome_scope(query: str) -> bool:
     """유찰 상태 조건을 실을 목록·건수 질의인지 판정합니다.
 
@@ -1919,6 +1953,8 @@ def _is_void_outcome_scope(query: str) -> bool:
     """
     lowered = _query_lower(query)
     if VOID_STATUS_MARKER not in lowered:
+        return False
+    if is_void_definition_query(query):
         return False
     if _is_definition_intent_query(query):
         return False
@@ -3129,9 +3165,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     announcement_list_query = is_announcement_list_query(
         normalized_query
     ) or is_multi_institution_announcement_list_query(normalized_query)
-    has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS) or (
-        _is_count_statistics_query(normalized_query)
-    )
+    has_stat_keywords = (
+        any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
+        or _is_count_statistics_query(normalized_query)
+    ) and not is_void_definition_query(normalized_query)
     has_semantic_keywords = any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
     is_bid_number = is_bid_number_query(normalized_query)

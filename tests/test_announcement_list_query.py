@@ -116,6 +116,26 @@ def test_retrieval_plan_carries_void_outcome_for_announcement_list():
     assert "result_limit" not in plan.filters
 
 
+@pytest.mark.parametrize("query", ["유찰이 뭐야", "유찰 건수가 뭐야", "유찰 건수 뜻"])
+def test_void_definition_questions_do_not_take_structured_path(query):
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.use_sql is False
+    assert "outcome" not in plan.filters
+    assert "bid_query_tool" not in execution_plan.requested_capabilities
+
+
+def test_void_count_question_keeps_void_outcome():
+    query = "최근 한 달 유찰 공고 몇 건이야"
+    plan = build_retrieval_plan(query)
+    execution_plan = interpret_request(query)
+
+    assert plan.use_sql is True
+    assert plan.filters.get("outcome") == "유찰"
+    assert "bid_query_tool" in execution_plan.requested_capabilities
+
+
 def _sample(index: int) -> dict:
     return {
         "bid_ntce_no": f"SERVC-{index:03d}",
