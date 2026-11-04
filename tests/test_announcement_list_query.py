@@ -29,6 +29,7 @@ from src.rag.structured_data import retrieve_structured_data
         "서울시 공사 공고 목록 보여줘",
         "조달청 용역 공고 3건 뽑아줘",
         "한국농어촌공사 공고 최근 거 5개만 뽑아줘",
+        "유찰 공고 5개 보여줘",
     ],
 )
 def test_announcement_list_query_matches_request(query):
@@ -60,7 +61,6 @@ def test_announcement_list_query_excludes_explanatory_questions(query):
         "최근 낙찰 공고 목록 5개 보여줘",
         "수요기관이 공고 목록을 낙찰받은 금액 알려줘",
         "용역 낙찰 공고 리스트 줘",
-        "유찰 공고 5개 보여줘",
         "개찰 완료된 공고 목록 보여줘",
     ],
 )
@@ -103,6 +103,16 @@ def test_retrieval_plan_uses_announcement_limit_without_result_limit():
     assert plan.use_vector is False
     assert plan.filters.get("announcement_limit") == 5
     assert plan.filters.get("category") == "Servc"
+    assert "result_limit" not in plan.filters
+
+
+def test_retrieval_plan_carries_void_outcome_for_announcement_list():
+    plan = build_retrieval_plan("유찰 공고 5개 보여줘")
+
+    assert plan.use_sql is True
+    assert plan.use_vector is False
+    assert plan.filters.get("outcome") == "유찰"
+    assert plan.filters.get("announcement_limit") == 5
     assert "result_limit" not in plan.filters
 
 
@@ -159,6 +169,21 @@ def test_planner_routes_announcement_list_to_bid_query_tool():
     assert execution_plan.requested_capabilities == ["bid_query_tool"]
     assert execution_plan.parameters.get("announcement_limit") == 5
     assert "limit" not in execution_plan.parameters
+
+
+def test_planner_routes_void_announcement_list_to_bid_query_tool():
+    execution_plan = interpret_request("유찰 공고 5개 보여줘")
+
+    assert execution_plan.query_type == "answer"
+    assert execution_plan.requested_capabilities == ["bid_query_tool"]
+    assert execution_plan.parameters.get("announcement_limit") == 5
+
+
+def test_planner_routes_void_count_without_domain_marker_to_bid_query_tool():
+    execution_plan = interpret_request("작년에 유찰된 공사 몇 건이야?")
+
+    assert execution_plan.query_type == "answer"
+    assert execution_plan.requested_capabilities == ["bid_query_tool"]
 
 
 def test_planner_keeps_winning_result_list_route():

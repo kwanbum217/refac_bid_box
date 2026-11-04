@@ -18,6 +18,7 @@ from src.rag.data_gap_guard import DATA_GAP_MESSAGES, detect_data_gap
 from src.rag.engine import HybridRAGEngine
 from src.rag.injection_guard import INJECTION_NOTICE
 from src.rag.leak_guard import contains_system_prompt_leak
+from src.rag.query_planning import build_retrieval_plan
 
 DATA_GAP_CASES = (
     ("낙찰하한율 평균 알려줘", "낙찰하한율"),
@@ -44,10 +45,6 @@ DATA_GAP_CASES = (
     ("서울 업체만 참여 가능한 공사 공고 알려줘", "지역 제한·업종 제한 참가자격"),
     ("업종제한 확인할 수 있는 공고 목록 보여줘", "지역 제한·업종 제한 참가자격"),
     ("전기공사업 면허 필요한 공고 알려줘", "지역 제한·업종 제한 참가자격"),
-    ("유찰된 공사 공고 최근 5건 보여줘", "유찰 상태"),
-    ("작년에 유찰된 공사 몇 건이야?", "유찰 상태"),
-    ("유찰 건수 알려줘", "유찰 상태"),
-    ("유찰 후 재공고된 용역 알려줘", "유찰 상태"),
 )
 
 # 사정률·경쟁률은 원천 테이블에서 직접 집계하므로 가드가 잡지 않습니다.
@@ -130,6 +127,18 @@ def test_sajeong_and_competition_questions_are_not_data_gap(message: str) -> Non
 @pytest.mark.parametrize("message", SUPPORTED_CASES)
 def test_supported_questions_are_not_blocked(message: str) -> None:
     assert detect_data_gap(message) is None
+
+
+def test_void_status_questions_are_not_data_gap() -> None:
+    assert detect_data_gap("유찰이 뭐야") is None
+    assert detect_data_gap("유찰 공고 5개 보여줘") is None
+
+
+def test_void_definition_stays_on_vector_path() -> None:
+    plan = build_retrieval_plan("유찰이 뭐야")
+
+    assert plan.use_sql is False
+    assert "outcome" not in plan.filters
 
 
 @pytest.mark.parametrize("message", ["", "   "])

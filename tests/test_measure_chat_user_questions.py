@@ -1671,6 +1671,45 @@ def test_announcement_filtered_fails_on_row_below_min_amount() -> None:
     assert result["detail"]["unverified_bid_numbers"] == [ALLOWED[4]]
 
 
+def test_announcement_filtered_outcome_uses_final_round_condition() -> None:
+    item = _v2_item("v2_rbd_02")
+    truth = _list_truth(item, expected_count=1000, verified=ALLOWED)
+
+    assert "r.progrs_div_cd_nm = '유찰'" in truth["count_sql"]
+    assert "r2.rbid_no > r.rbid_no" in truth["count_sql"]
+    assert "category = 'Cnstwk'" in truth["count_sql"]
+    assert "bid_ntce_dt >= CURDATE() - INTERVAL 29 DAY" in truth["count_sql"]
+
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+
+    assert result["passed"] is True
+    assert "r.progrs_div_cd_nm = '유찰'" in result["detail"]["verify_sql"]
+
+
+def test_announcement_filtered_outcome_fails_on_non_final_round_row() -> None:
+    item = _v2_item("v2_rbd_02")
+    truth = _list_truth(item, expected_count=1000, verified=ALLOWED[:4])
+    result = measure.grade_attempt(item, truth, _payload(", ".join(ALLOWED)))
+
+    assert result["passed"] is False
+    assert result["detail"]["unverified_bid_numbers"] == [ALLOWED[4]]
+
+
+def test_announcement_filtered_without_outcome_keeps_existing_condition() -> None:
+    item = _v2_item("v2_amt_01")
+    truth = _list_truth(item, expected_count=1493, verified=ALLOWED)
+
+    assert "bid_openg_results" not in truth["count_sql"]
+
+
+def test_validator_rejects_unsupported_outcome() -> None:
+    item = _v2_item("v2_rbd_02")
+    item["check"]["outcome"] = "낙찰"
+    errors = measure.validate_fixture({"split": "public", "items": [item]}, "public", "x")
+
+    assert any("outcome" in error for error in errors)
+
+
 def test_winner_result_list_passes_when_all_rows_match_company() -> None:
     item = _v2_item("v2_com_02")
     truth = _list_truth(
@@ -2041,7 +2080,7 @@ def test_extract_korean_amounts(text: str, expected: float) -> None:
 
 
 def test_summarize_marks_v2_defensive_checks_as_heuristic() -> None:
-    for item_id in ("v2_rbd_02", "v2_rst_01", "v2_rst_02"):
+    for item_id in ("v2_rst_01", "v2_rst_02"):
         summary = measure.summarize_item(_v2_item(item_id), [_attempt(True)])
         assert summary["heuristic"] is True
 

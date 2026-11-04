@@ -21,6 +21,7 @@ from sqlalchemy import event
 
 from src.app.core.cache import cache
 from src.app.models.bids import BidAnnouncement, BidResult
+from src.app.models.openg_results import BidOpengResult
 from src.rag.answer_format import _award_method_window_includes_early_period
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
@@ -109,6 +110,26 @@ def _seed_announcement(
             bid_ntce_dt=ntce_dt,
             category=category,
             raw_data={"sucsfbidMthdNm": award_method} if award_method else None,
+        )
+    )
+
+
+def _seed_openg(
+    session,
+    *,
+    bid_ntce_no: str,
+    rbid_no: str,
+    status: str,
+    bid_ntce_ord: str = "000",
+    category: str = "Cnstwk",
+) -> None:
+    session.add(
+        BidOpengResult(
+            bid_ntce_no=bid_ntce_no,
+            bid_ntce_ord=bid_ntce_ord,
+            rbid_no=rbid_no,
+            category=category,
+            progrs_div_cd_nm=status,
         )
     )
 
@@ -416,3 +437,60 @@ def test_award_method_sql_floor_does_not_change_displayed_period(isolated_db):
     assert result["filters"]["date_to"] == "2026-12-31"
     # 조회 창이 2024년 이전을 포함한다는 안내는 종전대로 유지됩니다.
     assert _award_method_window_includes_early_period(filters) is True
+
+
+def test_void_outcome_returns_only_final_round_void_announcements(isolated_db):
+    """최종 차수가 유찰인 공고만 남고, 재입찰 개찰완료 공고는 빠집니다.
+
+    A 는 유찰 1건, B 는 유찰 뒤 재입찰에서 개찰완료, C 는 처음부터 개찰완료입니다.
+    outcome 이 없으면 기존과 같이 세 건 모두 조회됩니다.
+    """
+    for index, (bid_ntce_no, ntce_dt) in enumerate(
+        (
+            ("VOID-A", datetime(2026, 10, 1, 9, 0, 0)),
+            ("VOID-B", datetime(2026, 10, 2, 9, 0, 0)),
+            ("VOID-C", datetime(2026, 10, 3, 9, 0, 0)),
+        ),
+        start=1,
+    ):
+        isolated_db.add(
+            BidAnnouncement(
+                id=index,
+                bid_ntce_no=bid_ntce_no,
+                bid_ntce_ord="000",
+                category="Cnstwk",
+                bid_ntce_nm=f"{bid_ntce_no} 공사 공고",
+                dminstt_nm="수요기관",
+                bid_ntce_dt=ntce_dt,
+            )
+        )
+    _seed_openg(isolated_db, bid_ntce_no="VOID-A", rbid_no="000", status="유찰")
+    _seed_openg(isolated_db, bid_ntce_no="VOID-B", rbid_no="000", status="유찰")
+    _seed_openg(isolated_db, bid_ntce_no="VOID-B", rbid_no="001", status="개찰완료")
+    _seed_openg(isolated_db, bid_ntce_no="VOID-C", rbid_no="000", status="개찰완료")
+    isolated_db.commit()
+
+    _clear_cache()
+    void_result = retrieve_structured_data(
+        isolated_db,
+        RetrievalPlan(
+            use_sql=True,
+            filters={"outcome": "유찰", "announcement_limit": 5},
+        ),
+    )
+
+    assert void_result["summary"]["announcement_count"] == 1
+    assert [sample["bid_ntce_no"] for sample in void_result["summary"]["sample_announcements"]] == [
+        "VOID-A"
+    ]
+
+    _clear_cache()
+    unfiltered_result = retrieve_structured_data(
+        isolated_db,
+        RetrievalPlan(use_sql=True, filters={"announcement_limit": 5}),
+    )
+
+    assert unfiltered_result["summary"]["announcement_count"] == 3
+    assert {
+        sample["bid_ntce_no"] for sample in unfiltered_result["summary"]["sample_announcements"]
+    } == {"VOID-A", "VOID-B", "VOID-C"}

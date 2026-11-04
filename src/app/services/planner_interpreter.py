@@ -284,6 +284,18 @@ def interpret_request(
         execution_plan.reasoning = "recent announcement list request"
         return execution_plan
 
+    # 유찰 건수는 공고·낙찰 도메인 표지 없이도 정형 집계로 답합니다.
+    if "유찰" in normalized and any(
+        marker in normalized for marker in ("건수", "몇 건", "몇건", "몇 개", "몇개")
+    ):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = ["bid_query_tool"]
+        execution_plan.parameters.update(
+            _extract_bid_query_params(execution_plan.effective_query, execution_plan.filters)
+        )
+        execution_plan.reasoning = "void announcement count request"
+        return execution_plan
+
     # 개수 표지가 없어 기존 공고 목록 판정이 거짓이 되는 복수 기관 나열
     # ("공주시 및 서산시 및 천안시 공고")도 목록 도구로 보내 모든 기관 조건을
     # 겁니다. 기존 판정은 그대로 둡니다.
