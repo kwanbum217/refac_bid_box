@@ -94,7 +94,7 @@ def _seed_announcement(
     session,
     *,
     row_id: int,
-    institution: str,
+    institution: str | None,
     ntce_dt: datetime | None,
     category: str = "Thng",
     award_method: str | None = None,
@@ -339,19 +339,24 @@ def test_quarter_series_values_and_empty_defaults(isolated_db):
 
 
 # ===========================================================================
-# 낙찰방법 조건: 단일 집계와 2024-01-01 SQL 하한
+# 낙찰방법 조건: 공고 건수 범위와 2024-01-01 SQL 하한
 # ===========================================================================
 
 
-def test_award_method_single_aggregate_keeps_total_and_institution_ranking(isolated_db):
-    """공고 COUNT 와 기관별 순위를 한 문장으로 합쳐도 값과 순서가 그대로입니다."""
+def test_award_method_announcement_total_counts_unresolved_institution_rows(isolated_db):
+    """낙찰방법 질의의 공고 total 은 기관명이 비었거나 손상된 행도 포함합니다.
+
+    기관별 순위는 기관명이 확정된 행만 세지만, 전체 건수는 사용자가 건 조건
+    (낙찰방법·기간)에 맞는 공고를 모두 세야 합니다. 두 집계의 조건 집합을
+    하나로 합치면 이 행들이 total 에서 빠집니다.
+    """
     ntce_dt = datetime(2026, 5, 10, 10, 0, 0)
     rows = [
         ("서울특별시", "적격심사"),
         ("서울특별시", "적격심사"),
-        ("서울특별시", "적격심사"),
         ("부산광역시", "적격심사"),
-        ("부산광역시", "적격심사"),
+        (None, "적격심사"),
+        ("서울\ufffd특별시", "적격심사"),
         ("대구광역시", "최저가낙찰제"),
     ]
     for row_id, (institution, award_method) in enumerate(rows, start=1):
@@ -366,35 +371,17 @@ def test_award_method_single_aggregate_keeps_total_and_institution_ranking(isola
 
     plan = RetrievalPlan(use_sql=True, filters={"award_method": "적격심사"})
     _clear_cache()
-    with _SelectCounter(isolated_db.get_bind()) as counter:
-        summary = retrieve_structured_data(isolated_db, plan)["summary"]
-
-    assert summary["announcement_count"] == 5
-    assert [(item["dminstt_nm"], item["ntce_count"]) for item in summary["top_institutions"]] == [
-        ("서울특별시", 3),
-        ("부산광역시", 2),
-    ]
-    # 전체 건수는 GROUP BY 순위 집계와 같은 문장에서 윈도 함수로 계산됩니다.
-    assert any("OVER (" in statement.upper() for statement in counter.statements)
-
-
-def test_award_method_single_aggregate_zero_rows(isolated_db):
-    """조건에 맞는 공고가 없으면 전체 건수 0, 순위는 빈 목록입니다."""
-    _seed_announcement(
-        isolated_db,
-        row_id=1,
-        institution="서울특별시",
-        ntce_dt=datetime(2026, 5, 10, 10, 0, 0),
-        award_method="최저가낙찰제",
-    )
-    isolated_db.commit()
-
-    plan = RetrievalPlan(use_sql=True, filters={"award_method": "적격심사"})
     result = retrieve_structured_data(isolated_db, plan)
 
-    assert result["summary"]["announcement_count"] == 0
-    assert result["summary"]["top_institutions"] == []
-    assert any("공고 데이터가 없어" in hint for hint in result["insufficiency_hints"])
+    matched = sum(1 for _, award_method in rows if award_method == "적격심사")
+    assert matched == 5
+    assert result["summary"]["announcement_count"] == matched
+    assert [
+        (item["dminstt_nm"], item["ntce_count"]) for item in result["summary"]["top_institutions"]
+    ] == [
+        ("서울특별시", 2),
+        ("부산광역시", 1),
+    ]
 
 
 def test_award_method_sql_floor_does_not_change_displayed_period(isolated_db):
