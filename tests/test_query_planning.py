@@ -17,14 +17,17 @@ import pytest
 from src.rag import query_planning
 from src.rag.query_planning import (
     ENTITY_ORG_SUFFIXES,
+    RECENT_ANNOUNCEMENT_WINDOW_DAYS,
     _extract_institution_list,
     _extract_public_corporation_tokens,
+    apply_default_statistics_window,
     build_retrieval_plan,
     extract_result_limit,
     is_entity_specific_query,
     is_result_list_query,
     is_result_query,
 )
+from src.rag.schemas import DEFAULT_STATISTICS_WINDOW_YEARS
 
 # "최근" 같은 표현의 계획 결과를 실행 날짜와 무관하게 검증하기 위한 고정 기준일.
 _FROZEN_TODAY = date(2026, 10, 4)
@@ -674,3 +677,62 @@ def test_period_marker_still_splits_attached_place_name():
     assert query_planning._split_attached_period("10월서울 공고") == "10월 서울 공고"
     assert query_planning._split_attached_period("최근이천시 공고") == "최근 이천시 공고"
     assert query_planning._split_attached_period("2026년도 상반기 용역") == "2026년도 상반기 용역"
+
+
+def test_award_method_query_uses_recent_30_day_default_window(monkeypatch):
+    """기간 없는 낙찰방법 질의는 지표 종류와 상관없이 최근 30일 창을 씁니다."""
+    monkeypatch.setattr(query_planning, "date", _FrozenDate)
+
+    plan = build_retrieval_plan("적격심사 공고 몇 건이야")
+    windowed = apply_default_statistics_window(plan.filters, query=plan.semantic_query)
+
+    assert plan.filters["award_method"] == "적격심사"
+    assert windowed["recent_days"] == RECENT_ANNOUNCEMENT_WINDOW_DAYS
+    assert windowed["date_from"] == "2026-09-05"
+    assert windowed["date_to"] == "2026-10-04"
+    assert "relative_years" not in windowed
+
+    # 공고 건수가 아닌 지표도 같은 기본 창을 씁니다.
+    rate_windowed = apply_default_statistics_window(
+        {"award_method": "적격심사", "metric": "avg_rate"}
+    )
+    assert rate_windowed["recent_days"] == RECENT_ANNOUNCEMENT_WINDOW_DAYS
+    assert rate_windowed["date_from"] == "2026-09-05"
+    assert rate_windowed["date_to"] == "2026-10-04"
+
+
+def test_award_method_explicit_period_is_not_overridden(monkeypatch):
+    """사용자가 기간을 명시한 낙찰방법 질의는 30일 기본 창으로 덮어쓰지 않습니다."""
+    monkeypatch.setattr(query_planning, "date", _FrozenDate)
+
+    plan = build_retrieval_plan("2025년 적격심사 공고 건수")
+    windowed = apply_default_statistics_window(plan.filters, query=plan.semantic_query)
+
+    assert windowed["date_from"] == "2025-01-01"
+    assert windowed["date_to"] == "2025-12-31"
+    assert "recent_days" not in windowed
+    assert "relative_years" not in windowed
+
+    explicit = {"award_method": "적격심사", "relative_years": 0}
+    assert apply_default_statistics_window(explicit) == explicit
+
+
+def test_non_award_method_default_windows_are_unchanged(monkeypatch):
+    """낙찰방법 조건이 없는 기존 질의의 30일·5년 기본값은 그대로입니다."""
+    monkeypatch.setattr(query_planning, "date", _FrozenDate)
+
+    count_plan = build_retrieval_plan("전체 공고 건수 알려줘")
+    count_windowed = apply_default_statistics_window(
+        count_plan.filters, query=count_plan.semantic_query
+    )
+    assert count_windowed["recent_days"] == RECENT_ANNOUNCEMENT_WINDOW_DAYS
+    assert count_windowed["date_from"] == "2026-09-05"
+    assert count_windowed["date_to"] == "2026-10-04"
+
+    trend_plan = build_retrieval_plan("월별 공고 건수 추이 알려줘")
+    trend_windowed = apply_default_statistics_window(
+        trend_plan.filters, query=trend_plan.semantic_query
+    )
+    assert trend_windowed["relative_years"] == DEFAULT_STATISTICS_WINDOW_YEARS
+    assert "recent_days" not in trend_windowed
+    assert "date_from" not in trend_windowed

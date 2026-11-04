@@ -615,6 +615,12 @@ def _result_conditions(
     return conditions
 
 
+# 적격심사 낙찰방법명은 2024년 이후 공고에만 채워집니다. 그 이전 구간을 함께
+# 훑어도 결과는 늘지 않고 raw_data JSON 스캔만 늘어나므로 SQL 하한만 올립니다.
+# 사용자에게 보이는 기간 표기는 바꾸지 않습니다.
+AWARD_METHOD_MIN_ANNOUNCEMENT_DATE = datetime(2024, 1, 1)
+
+
 def _announcement_award_method_condition(award_method: str) -> Any:
     """공고 원문 낙찰방법명이 그 값으로 시작하는 공고만 고릅니다.
 
@@ -649,6 +655,8 @@ def _announcement_conditions(
     category = _normalize_text(str(filters.get("category") or ""))
     notice_kind = _normalize_text(str(filters.get("notice_kind") or ""))
     award_method = _normalize_text(str(filters.get("award_method") or ""))
+    if award_method and date_from and date_from < AWARD_METHOD_MIN_ANNOUNCEMENT_DATE:
+        date_from = AWARD_METHOD_MIN_ANNOUNCEMENT_DATE
 
     conditions = []
     if (
