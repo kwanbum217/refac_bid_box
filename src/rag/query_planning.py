@@ -1886,6 +1886,83 @@ ANNOUNCEMENT_EXPLANATION_MARKERS = (
     "란",
 )
 ANNOUNCEMENT_RESULT_STATUS_MARKERS = ("낙찰", "유찰", "개찰")
+# 유찰은 개찰결과 원천으로 조회할 수 있으므로 목록 표지가 함께 있으면 공고 목록
+# 질의로 인정합니다. 낙찰·개찰 표지는 기존 결과 조회 경로가 그대로 맡습니다.
+VOID_STATUS_MARKER = "유찰"
+
+
+def _is_void_announcement_list_request(lowered: str) -> bool:
+    """유찰 상태 표지가 있어도 공고 목록 요청인지 판정합니다.
+
+    "유찰 공고 5개 보여줘", "유찰된 공사 공고 최근 5건 보여줘" 처럼 유찰과
+    개수·목록 표지가 함께 있으면 목록입니다. 낙찰·개찰 표지가 섞여 있으면
+    결과 조회 경로가 맡도록 거짓입니다.
+    """
+    if VOID_STATUS_MARKER not in lowered:
+        return False
+    if any(
+        marker in lowered
+        for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS
+        if marker != VOID_STATUS_MARKER
+    ):
+        return False
+    return bool(COUNT_PATTERN.search(lowered)) or any(
+        marker in lowered for marker in RESULT_LIST_MARKERS
+    )
+
+
+# 유찰 정의 질문은 상태 조건 대상이 아닙니다. "건수" 같은 통계 표지가 함께
+# 있어도 뜻·의미·뭐야 를 묻는 질의는 정형 조회가 아닙니다. query_planning 의
+# DEFINITION_INTENT_MARKERS 와 data_gap_guard 의 _EXPLANATION 이 잡는 표현을
+# 합쳤습니다.
+VOID_DEFINITION_MARKERS = (
+    "무엇",
+    "뜻",
+    "의미",
+    "정의",
+    "개념",
+    "설명",
+    "원리",
+    "뭐야",
+    "뭔가요",
+    "이란",
+)
+VOID_BARE_RAN_PATTERN = re.compile(r"(?<![가-힣])란(?![가-힣])")
+
+
+def is_void_definition_query(query: str) -> bool:
+    """유찰 상태를 정의·설명으로 묻는 질의인지 판정합니다.
+
+    "유찰 건수가 뭐야" 처럼 건수 표지가 붙어도 뜻·의미·뭐야 를 묻는 질의는
+    정형 집계 대상이 아닙니다. "유찰 건수 알려줘" 처럼 정의 표지가 없으면
+    거짓입니다.
+    """
+    lowered = _query_lower(query)
+    if VOID_STATUS_MARKER not in lowered:
+        return False
+    return any(marker in lowered for marker in VOID_DEFINITION_MARKERS) or bool(
+        VOID_BARE_RAN_PATTERN.search(lowered)
+    )
+
+
+def _is_void_outcome_scope(query: str) -> bool:
+    """유찰 상태 조건을 실을 목록·건수 질의인지 판정합니다.
+
+    정의 질문은 상태 조건 대상이 아닙니다. 결과 질의·공고번호 단건·비교 질의는
+    호출부에서 따로 걸러 냅니다.
+    """
+    lowered = _query_lower(query)
+    if VOID_STATUS_MARKER not in lowered:
+        return False
+    if is_void_definition_query(query):
+        return False
+    if _is_definition_intent_query(query):
+        return False
+    if "건수" in lowered or COUNT_QUERY_PATTERN.search(lowered):
+        return True
+    return is_announcement_list_query(query)
+
+
 # 기관·지역 범위와 요청 동사가 함께 있는 공고 질의는 개수·목록·신선도 표지가
 # 없어도 목록 요청입니다. 다만 설명형(절차·방법·기준·이유 등)과 통계형
 # (몇 건·건수·평균·비율) 표지가 있으면 목록이 아닙니다.
@@ -2053,7 +2130,9 @@ def is_announcement_list_query(query: str) -> bool:
     # 개수 단위이지 "건수" 통계 표지가 아닙니다.
     if _has_excluded_list_marker(lowered):
         return False
-    if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS):
+    if any(marker in lowered for marker in ANNOUNCEMENT_RESULT_STATUS_MARKERS) and not (
+        _is_void_announcement_list_request(lowered)
+    ):
         return False
     if any(marker in lowered for marker in ANNOUNCEMENT_EXPLANATION_MARKERS):
         return False
@@ -3086,9 +3165,10 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     announcement_list_query = is_announcement_list_query(
         normalized_query
     ) or is_multi_institution_announcement_list_query(normalized_query)
-    has_stat_keywords = any(keyword in lowered for keyword in STATISTICS_KEYWORDS) or (
-        _is_count_statistics_query(normalized_query)
-    )
+    has_stat_keywords = (
+        any(keyword in lowered for keyword in STATISTICS_KEYWORDS)
+        or _is_count_statistics_query(normalized_query)
+    ) and not is_void_definition_query(normalized_query)
     has_semantic_keywords = any(keyword in lowered for keyword in SEMANTIC_KEYWORDS)
     use_kb_status = any(keyword in lowered for keyword in KB_KEYWORDS)
     is_bid_number = is_bid_number_query(normalized_query)
@@ -3192,6 +3272,22 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         amount_filters["amount_field"] = RESULT_AMOUNT_FIELD
     filters.update(amount_filters)
     filters.update(extract_sort_filters(normalized_query))
+
+    # 유찰은 최종 차수 기준으로 정형 조회합니다. 목록·건수 의도에만 상태 조건을
+    # 싣고, 공고번호 단건·낙찰 결과·비교·정의 질문에는 싣지 않습니다.
+    if (
+        _is_void_outcome_scope(normalized_query)
+        and not result_list_query
+        and not is_result_query(normalized_query)
+        and not is_bid_number
+        and not comparison_regions
+        and not comparison_institutions
+        and not comparison_dimension
+    ):
+        filters["outcome"] = VOID_STATUS_MARKER
+        use_sql = True
+        if not has_semantic_keywords and not is_entity:
+            use_vector = False
 
     # 적격심사 조건 목록·건수 질문은 공고 원문 낙찰방법명 조건으로 조회합니다.
     # 정의 질문은 extract_award_method 가 걸러 기존 의미 검색 경로에 남깁니다.

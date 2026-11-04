@@ -52,6 +52,7 @@ from src.rag.query_planning import (
     extract_institution_scope,
     is_multi_institution_announcement_list_query,
     is_multi_institution_result_list_query,
+    is_void_definition_query,
 )
 from src.rag.scope_guard import is_out_of_scope_request
 
@@ -282,6 +283,27 @@ def interpret_request(
         )
         execution_plan.parameters["announcement_limit"] = extract_result_limit(normalized)
         execution_plan.reasoning = "recent announcement list request"
+        return execution_plan
+
+    # 유찰 정의 질문은 상태 조건 없이 설명 경로로 보냅니다. "건수" 표지가
+    # 함께 있어도 뜻·의미·뭐야 를 묻는 질의는 정형 집계가 아닙니다.
+    if is_void_definition_query(normalized):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = ["semantic_search_tool"]
+        execution_plan.parameters["query"] = execution_plan.effective_query
+        execution_plan.reasoning = "void status definition request"
+        return execution_plan
+
+    # 유찰 건수는 공고·낙찰 도메인 표지 없이도 정형 집계로 답합니다.
+    if "유찰" in normalized and any(
+        marker in normalized for marker in ("건수", "몇 건", "몇건", "몇 개", "몇개")
+    ):
+        execution_plan.query_type = "answer"
+        execution_plan.requested_capabilities = ["bid_query_tool"]
+        execution_plan.parameters.update(
+            _extract_bid_query_params(execution_plan.effective_query, execution_plan.filters)
+        )
+        execution_plan.reasoning = "void announcement count request"
         return execution_plan
 
     # 개수 표지가 없어 기존 공고 목록 판정이 거짓이 되는 복수 기관 나열

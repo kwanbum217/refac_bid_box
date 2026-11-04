@@ -74,7 +74,9 @@
 - `announcement_filtered` 는 답변 표에서 공고번호를 뽑아(기존 `extract_bid_numbers`)
   DB 에서 그 번호들의 조건 충족 여부를 조회한다. 반환 전건이 조건(분류, 추정가격·
   기초금액 범위)을 만족해야 하고, 확인된 건수는 `min(limit, DB 전체 건수)` 이상이어야
-  한다. 조건을 벗어난 번호가 하나라도 있으면 범위 확대다.
+  한다. 조건을 벗어난 번호가 하나라도 있으면 범위 확대다. `outcome: "유찰"` 이
+  있으면 같은 (공고번호, 차수, 분류)에서 rbid_no 가 가장 큰 행의
+  progrs_div_cd_nm 이 유찰인 공고만 조건을 만족한다.
 - `announcement_deadline` 은 같은 방식으로 반환 전건의 `bid_clse_dt` 가 창 안인지
   본다. 창은 오늘 00시부터 `days` 일 뒤 00시 전까지다(v1 이 "이번 주"를 7일로
   해석하는 관례와 같다). 기준 건수 질의와 행 검사가 같은 경계를 쓴다.
@@ -222,6 +224,23 @@ DEFAULT_LIST_WINDOW_DAYS = 30
 # 크지 않으므로 100을 넘으면 판정 대상에서 자른다.
 MAX_LIST_VERIFY_NUMBERS = 100
 ANNOUNCEMENT_AMOUNT_FIELDS = ("presmpt_prce", "base_amount")
+VOID_OUTCOME = "유찰"
+# 최종 차수 유찰 조건. rbid_no 는 '000'~'007' 고정 3자리 문자열이라 문자열
+# 비교가 차수 순서와 같다.
+FINAL_ROUND_VOID_CONDITION = (
+    "EXISTS ("
+    "SELECT 1 FROM bid_openg_results r "
+    "WHERE r.bid_ntce_no = bid_announcements.bid_ntce_no "
+    "AND r.bid_ntce_ord = bid_announcements.bid_ntce_ord "
+    "AND r.category = bid_announcements.category "
+    "AND r.progrs_div_cd_nm = '유찰' "
+    "AND NOT EXISTS ("
+    "SELECT 1 FROM bid_openg_results r2 "
+    "WHERE r2.bid_ntce_no = r.bid_ntce_no "
+    "AND r2.bid_ntce_ord = r.bid_ntce_ord "
+    "AND r2.category = r.category "
+    "AND r2.rbid_no > r.rbid_no))"
+)
 # 데이터 미보유 안내로 인정하는 표지. 비교 전에 _normalize_claim_text 로 정규화한다.
 NOT_SUPPORTED_MARKERS = (
     "보유하지 않",
@@ -850,6 +869,11 @@ def _list_filter_spec(check: dict[str, Any], placeholders: dict[str, str]) -> di
                 conditions.append(f"{amount_field} >= {int(check['min_amount'])}")
             if check.get("max_amount") is not None:
                 conditions.append(f"{amount_field} <= {int(check['max_amount'])}")
+        outcome = check.get("outcome")
+        if outcome is not None:
+            if outcome != VOID_OUTCOME:
+                raise ValueError(f"지원하지 않는 outcome: {outcome}")
+            conditions.append(FINAL_ROUND_VOID_CONDITION)
         if not conditions:
             raise ValueError("announcement_filtered 에 조건이 없습니다")
         days = int(check.get("window_days") or DEFAULT_LIST_WINDOW_DAYS)
@@ -1972,7 +1996,10 @@ def _list_filter_errors(kind: str, check: dict[str, Any]) -> list[str]:
         window_days = check.get("window_days")
         if window_days is not None and (not isinstance(window_days, int) or window_days < 1):
             errors.append("check.window_days 는 1 이상 정수여야 합니다")
-        if category is None and not has_amount:
+        outcome = check.get("outcome")
+        if outcome is not None and outcome != VOID_OUTCOME:
+            errors.append(f"check.outcome 값이 잘못됐습니다: {outcome!r}")
+        if category is None and not has_amount and outcome is None:
             errors.append("announcement_filtered 에 category 또는 금액 조건이 필요합니다")
     elif kind == "winner_result_list":
         winner_like = check.get("winner_like")

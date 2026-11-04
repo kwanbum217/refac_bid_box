@@ -20,9 +20,9 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Integer, Numeric, and_, case, cast, event, func, or_, select
+from sqlalchemy import Integer, Numeric, and_, case, cast, event, exists, func, or_, select
 from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from src.app.core.cache import cache
 from src.app.core.config import settings
@@ -35,6 +35,7 @@ from src.app.models.bids import (
     is_corrupted_display_text,
     normalize_bid_ntce_ord,
 )
+from src.app.models.openg_results import OPENG_STATUS_FAILED, BidOpengResult
 from src.app.models.prearng_prices import BidPrearngPrice
 from src.app.services.ranking_snapshots import (
     DATASET_ANNOUNCEMENT,
@@ -633,6 +634,36 @@ def _announcement_award_method_condition(award_method: str) -> Any:
     return column.like(f"{escaped}%", escape="\\")
 
 
+def _final_round_void_condition() -> Any:
+    """최종 차수가 유찰인 공고만 고르는 EXISTS 조건을 만듭니다.
+
+    같은 (공고번호, 차수, 분류)에서 rbid_no 가 가장 큰 행이 유찰이어야 합니다.
+    유찰 뒤 재입찰에서 개찰완료된 공고는 최종 차수가 개찰완료이므로 제외됩니다.
+    rbid_no 는 '000'~'007' 고정 3자리 문자열이라 문자열 비교가 차수 순서와 같습니다.
+    """
+    final_row = aliased(BidOpengResult, name="openg_final")
+    later_row = aliased(BidOpengResult, name="openg_later")
+    latest_void = (
+        select(final_row.id)
+        .where(
+            final_row.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+            final_row.bid_ntce_ord == BidAnnouncement.bid_ntce_ord,
+            final_row.category == BidAnnouncement.category,
+            final_row.progrs_div_cd_nm == OPENG_STATUS_FAILED,
+            ~exists(
+                select(later_row.id).where(
+                    later_row.bid_ntce_no == final_row.bid_ntce_no,
+                    later_row.bid_ntce_ord == final_row.bid_ntce_ord,
+                    later_row.category == final_row.category,
+                    later_row.rbid_no > final_row.rbid_no,
+                )
+            ),
+        )
+        .correlate(BidAnnouncement)
+    )
+    return exists(latest_void)
+
+
 def _announcement_conditions(
     plan: RetrievalPlan,
     *,
@@ -655,6 +686,7 @@ def _announcement_conditions(
     category = _normalize_text(str(filters.get("category") or ""))
     notice_kind = _normalize_text(str(filters.get("notice_kind") or ""))
     award_method = _normalize_text(str(filters.get("award_method") or ""))
+    outcome = _normalize_text(str(filters.get("outcome") or ""))
     if award_method and date_from and date_from < AWARD_METHOD_MIN_ANNOUNCEMENT_DATE:
         date_from = AWARD_METHOD_MIN_ANNOUNCEMENT_DATE
 
@@ -684,6 +716,8 @@ def _announcement_conditions(
         conditions.append(BidAnnouncement.ntce_kind_nm == notice_kind)
     if award_method:
         conditions.append(_announcement_award_method_condition(award_method))
+    if outcome == OPENG_STATUS_FAILED:
+        conditions.append(_final_round_void_condition())
     conditions.extend(_close_conditions(filters))
     conditions.extend(_amount_conditions(filters, ANNOUNCEMENT_AMOUNT_COLUMNS))
     # 최댓값·최솟값 질문은 금액이 NULL 인 행을 순위에서 제외합니다. 정렬만으로는
