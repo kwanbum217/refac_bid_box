@@ -5,15 +5,19 @@
 > **기준 커밋**: 작성 시점 `main` 과 `origin/main` 은 `2d85d865` 입니다. 이 문서는 브랜치 `kwanbum217/close-20261104` 에서 F 보고서와 함께 묶어 병합합니다.
 > **상태 문서**: `docs/context/CURRENT_STATE.md` 의 `source_commit` 은 이 브랜치에서 병합 직전 `main` 으로 갱신했습니다.
 > **종료 사유**: 사용자 지시(컴퓨터 종료). 워커 0대, Docker 전부 정지.
+> **갱신**: 2026-11-05. 첫 종료(`8576446e`) 뒤 사용자 지시로 재개해 E 재작업과 T5 를 병합했습니다. 9절이 재개 이후 기록이며, 0절은 재개 후 기준으로 바꿨습니다.
 
 ---
 
 ## 0. 다음 세션이 바로 할 일
 
-1. **E 재작업.** 브랜치 `kwanbum217/orca-e-eligibility-window`(`f89c25b6`, 백업 `refs/backup/orca-e-eligibility-window`)는 병합 금지입니다. 3절의 집계 범위 결함을 고치는 rework Task 를 발급합니다. 30일 기본 창과 2024-01-01 하한 변경은 사양대로이므로 유지합니다.
-2. **T5 빌더.** E 재작업이 병합된 뒤 그 위에서 시작합니다. E 와 같은 파일(`src/rag/query_planning.py`, `src/rag/structured_data.py`)을 고치기 때문입니다. 근거는 `docs/analysis/fail_bid_t5_prestudy_20261104.md` 4.2절이고 사용자 결정은 4절에 있습니다.
-3. **조건 1 기준선 결정.** T5 병합 전에 사용자에게 받아야 합니다. 제안은 취소공고를 뺀 비율, 기준선 75% 입니다.
-4. 이 문서의 병합 커밋 CI 를 다음 병합 전에 `gh run list --branch main --limit 3` 으로 확인합니다.
+1. **`v2_rbd_02` 창 수정(1순위).** "유찰된 공사 공고 최근 5건" 이 최근 7일 공고일 창 때문에 3건만 답합니다(9.5절). `outcome` 이 있는 목록 질의는 "최근 N건" 창을 30일로 넓히거나 개찰일(`bid_openg_results.openg_dt`) 기준으로 정렬하도록 빌더 Task 를 냅니다. 어느 쪽인지는 사용자에게 먼저 묻습니다. 데이터 정확성 결함은 아닙니다(답한 건은 모두 유찰).
+2. E·T5 는 병합을 마쳤습니다(9절).
+3. 이 문서의 병합 커밋 CI 를 다음 병합 전에 `gh run list --branch main --limit 3` 으로 확인합니다.
+4. 후속 과제 후보입니다. 착수 전에 사용자에게 우선순위를 받습니다.
+   - 설계 8장 T6: 운영 문서와 `CURRENT_STATE` 에 유찰 수집 상태 반영, 수집 지표 대시보드.
+   - `orca_worker_watch.py` 차단 신호에 cmd 공급자 500(`Failed after 3 attempts`, `concurrent requests`)을 추가합니다(6절).
+   - 유찰 소급은 1년분만 했습니다. 3년 소급 여부는 사용자 결정 사항입니다.
 
 ---
 
@@ -128,3 +132,53 @@
 | 보고 파일 누락 | cmd deepseek 빌더가 `worker_done` 만 보내고 `report_path` 파일을 쓰지 않는 일이 2회째입니다(11-03 C, 11-04 F). 회수 전에 파일 존재를 확인합니다 |
 | zsh glob | `cp dir/*.json` 에서 일치 파일이 없으면 그 명령 전체가 실패해 같은 줄의 yaml 복사도 빠집니다 |
 | Docker | 세션 종료 시 `docker compose stop` 으로 정지, 볼륨은 그대로 |
+
+---
+
+## 9. 재개 이후 (2026-11-04 밤 ~ 11-05)
+
+### 9.1 main 에 넣은 것
+
+| 병합 | 내용 | 검증 |
+| --- | --- | --- |
+| `6fa75923` | E 재작업. 낙찰방법 질의의 최근 30일 기본 창과 2024-01-01 SQL 하한. 단일 집계는 걷어내 집계 경로는 main 과 같음. 빌더 `f89c25b6` + 재작업 `e8dab6a5` | agy 리뷰 pass(NULL·U+FFFD 회귀 시험 `test_award_method_announcement_total_counts_unresolved_institution_rows` 확인), strict 11/11, 전량 10,099 passed |
+| `62ce2d0b` | T5. 유찰 가드 해제, 계획 계층 `outcome`, 최종 차수 조건 `_final_round_void_condition`, 유찰 정의 질문 분리 `is_void_definition_query`, 측정기 `announcement_filtered` 의 `outcome` 판정. 빌더 `ad222810` + 재작업 `54168bfb` | agy 리뷰 pass(1차 fail), strict 11/11, 전량 10,100 passed |
+| `773d10bb` | `v2_rbd_02` 정답을 최종 차수 유찰 목록 판정으로 변경(코디네이터 직접, `1d60988d`) | strict pass, 전량 10,109 passed |
+
+조건 1 기준선은 사용자 결정으로 **취소공고 제외 75%** 입니다. 2026-11-04 측정값 81.4% 로 통과했습니다.
+
+### 9.2 반려와 원인
+
+| Task | 반려 사유 | 원인 |
+| --- | --- | --- |
+| T5 1차 | 정의 질문 "유찰 건수가 뭐야", "유찰 건수 뜻" 이 정형 경로로 감 | `planner_interpreter.py` 의 유찰+건수 분기가 정의 의도를 거르지 않음 |
+| T5 1차 | 전량 시험 1 failed 를 10,096 passed 로 보고 | `tests/test_chat_gold_measurer_split.py`. 한 브랜치에서 정답 JSON 과 측정기를 함께 바꾸면 실패한다. **코디네이터 사양 실수**로, 정답 변경은 별도 브랜치로 분리했다 |
+
+### 9.3 Orca 기록
+
+| Task | 상태 | 비고 |
+| --- | --- | --- |
+| `task_ecc6fe49a38d` E 재작업 | completed | cmd deepseek high |
+| `task_20587e496de1` E 재작업 리뷰 | completed | agy `gemini-3.8-flash-medium`, pass |
+| `task_2e61edc601c4` T5 | completed | cmd deepseek max. 리뷰 fail 로 rework |
+| `task_b6772291113e` T5 리뷰 | completed | agy `gemini-3.8-flash-high`, fail |
+| `task_5e852bcb6283` T5 재작업 | completed | cmd deepseek max |
+| `task_aa5ff8ad55fe` T5 재작업 리뷰 | completed | agy `gemini-3.8-flash-high`, pass |
+
+`task_cfe166b8f064`(E 1차 리뷰)는 cmd glm 정체로 `failed` 처리했다가 `ready` 로 되돌려 agy 로 완료했습니다. agy pass 였지만 NULL 행 확인이 근거에 없어 코디네이터가 반려를 유지했습니다.
+
+### 9.4 운영 메모 추가
+
+| 항목 | 내용 |
+| --- | --- |
+| agy 기동 escalation 오탐 | agy 리뷰어를 띄울 때마다 기동 직후 `Signing in...` 화면에서 Orca 가 "Worker is waiting on a prompt" escalation 을 보냈습니다(3회). 매번 수십 초 뒤 스스로 진행했습니다. 화면을 한 번 읽어 진행 중이면 무시합니다 |
+| rework Capsule 의 objective | `orca_taskctl.py rework` 는 원래 Intent 의 objective 를 그대로 둡니다. 재작업이 원래 목표를 뒤집으면(E: 단일 집계 제거) 워커 터미널에 정정 지시를 보내야 합니다 |
+| `git merge -F -` | 지원되지 않아 병합이 실행되지 않습니다. `-m` 두 번으로 씁니다 |
+| `orca worktree create` | `--base-branch main` 을 명시하면 현재 main 기준으로 만들어집니다 |
+| 정답·측정기 분리 | 챗봇 측정 기대값을 바꾸는 Task 는 측정기 변경과 다른 브랜치로 나눕니다. 시험 파일은 분리 규칙 대상이 아닙니다 |
+
+### 9.5 측정
+
+| 측정 | 결과 |
+| --- | --- |
+| v2 점검 세트(`773d10bb`, 앱 `62ce2d0b` 기동·`rag:*` 비움) | **19/20**. `.cache/chat_measure_v2_20261105_773d10bb.json`. 실패는 `v2_rbd_02` 하나(data_mismatch). 봇이 답한 3건(R26BK01797417, R26BK01797857, R26BK01800316)은 모두 최종 차수 유찰로 검증됨. 원인은 "최근 5건" 에 계획이 최근 7일 공고일 창(`date_from` 2026-10-30)을 거는데, 유찰은 개찰 뒤에야 생겨 7일 안에 3건뿐인 것. 측정 기준은 30일 창 79건 |
