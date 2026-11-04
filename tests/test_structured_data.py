@@ -21,6 +21,7 @@ from sqlalchemy import event
 
 from src.app.core.cache import cache
 from src.app.models.bids import BidAnnouncement, BidResult
+from src.rag.answer_format import _award_method_window_includes_early_period
 from src.rag.schemas import RetrievalPlan
 from src.rag.structured_data import retrieve_structured_data
 
@@ -96,6 +97,7 @@ def _seed_announcement(
     institution: str,
     ntce_dt: datetime | None,
     category: str = "Thng",
+    award_method: str | None = None,
 ) -> None:
     session.add(
         BidAnnouncement(
@@ -106,7 +108,7 @@ def _seed_announcement(
             dminstt_nm=institution,
             bid_ntce_dt=ntce_dt,
             category=category,
-            raw_data=None,
+            raw_data={"sucsfbidMthdNm": award_method} if award_method else None,
         )
     )
 
@@ -334,3 +336,96 @@ def test_quarter_series_values_and_empty_defaults(isolated_db):
 
     assert series[2]["avg_rate"] == pytest.approx(88.0, rel=1e-6)
     assert series[2]["bid_count"] == 1
+
+
+# ===========================================================================
+# 낙찰방법 조건: 단일 집계와 2024-01-01 SQL 하한
+# ===========================================================================
+
+
+def test_award_method_single_aggregate_keeps_total_and_institution_ranking(isolated_db):
+    """공고 COUNT 와 기관별 순위를 한 문장으로 합쳐도 값과 순서가 그대로입니다."""
+    ntce_dt = datetime(2026, 5, 10, 10, 0, 0)
+    rows = [
+        ("서울특별시", "적격심사"),
+        ("서울특별시", "적격심사"),
+        ("서울특별시", "적격심사"),
+        ("부산광역시", "적격심사"),
+        ("부산광역시", "적격심사"),
+        ("대구광역시", "최저가낙찰제"),
+    ]
+    for row_id, (institution, award_method) in enumerate(rows, start=1):
+        _seed_announcement(
+            isolated_db,
+            row_id=row_id,
+            institution=institution,
+            ntce_dt=ntce_dt,
+            award_method=award_method,
+        )
+    isolated_db.commit()
+
+    plan = RetrievalPlan(use_sql=True, filters={"award_method": "적격심사"})
+    _clear_cache()
+    with _SelectCounter(isolated_db.get_bind()) as counter:
+        summary = retrieve_structured_data(isolated_db, plan)["summary"]
+
+    assert summary["announcement_count"] == 5
+    assert [(item["dminstt_nm"], item["ntce_count"]) for item in summary["top_institutions"]] == [
+        ("서울특별시", 3),
+        ("부산광역시", 2),
+    ]
+    # 전체 건수는 GROUP BY 순위 집계와 같은 문장에서 윈도 함수로 계산됩니다.
+    assert any("OVER (" in statement.upper() for statement in counter.statements)
+
+
+def test_award_method_single_aggregate_zero_rows(isolated_db):
+    """조건에 맞는 공고가 없으면 전체 건수 0, 순위는 빈 목록입니다."""
+    _seed_announcement(
+        isolated_db,
+        row_id=1,
+        institution="서울특별시",
+        ntce_dt=datetime(2026, 5, 10, 10, 0, 0),
+        award_method="최저가낙찰제",
+    )
+    isolated_db.commit()
+
+    plan = RetrievalPlan(use_sql=True, filters={"award_method": "적격심사"})
+    result = retrieve_structured_data(isolated_db, plan)
+
+    assert result["summary"]["announcement_count"] == 0
+    assert result["summary"]["top_institutions"] == []
+    assert any("공고 데이터가 없어" in hint for hint in result["insufficiency_hints"])
+
+
+def test_award_method_sql_floor_does_not_change_displayed_period(isolated_db):
+    """명시 하한 2020-01-01 은 SQL 에서만 2024-01-01 로 올리고 표기는 그대로 둡니다."""
+    _seed_announcement(
+        isolated_db,
+        row_id=1,
+        institution="서울특별시",
+        ntce_dt=datetime(2022, 5, 10, 10, 0, 0),
+        award_method="적격심사",
+    )
+    _seed_announcement(
+        isolated_db,
+        row_id=2,
+        institution="서울특별시",
+        ntce_dt=datetime(2025, 5, 10, 10, 0, 0),
+        award_method="적격심사",
+    )
+    isolated_db.commit()
+
+    filters = {
+        "award_method": "적격심사",
+        "date_from": "2020-01-01",
+        "date_to": "2026-12-31",
+    }
+    plan = RetrievalPlan(use_sql=True, filters=filters)
+    result = retrieve_structured_data(isolated_db, plan)
+
+    # 2022년 공고는 SQL 하한 클램프로 빠지고 2025년 공고만 남습니다.
+    assert result["summary"]["announcement_count"] == 1
+    assert result["filters"]["date_from"] == "2020-01-01"
+    assert result["filters"]["date_to"] == "2026-12-31"
+    # 조회 창이 2024년 이전을 포함한다는 안내는 종전대로 유지됩니다.
+    assert _award_method_window_includes_early_period(filters) is True

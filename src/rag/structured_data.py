@@ -14,6 +14,7 @@ import re
 import threading
 import time
 import unicodedata
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
@@ -615,6 +616,12 @@ def _result_conditions(
     return conditions
 
 
+# 적격심사 낙찰방법명은 2024년 이후 공고에만 채워집니다. 그 이전 구간을 함께
+# 훑어도 결과는 늘지 않고 raw_data JSON 스캔만 늘어나므로 SQL 하한만 올립니다.
+# 사용자에게 보이는 기간 표기는 바꾸지 않습니다.
+AWARD_METHOD_MIN_ANNOUNCEMENT_DATE = datetime(2024, 1, 1)
+
+
 def _announcement_award_method_condition(award_method: str) -> Any:
     """공고 원문 낙찰방법명이 그 값으로 시작하는 공고만 고릅니다.
 
@@ -649,6 +656,8 @@ def _announcement_conditions(
     category = _normalize_text(str(filters.get("category") or ""))
     notice_kind = _normalize_text(str(filters.get("notice_kind") or ""))
     award_method = _normalize_text(str(filters.get("award_method") or ""))
+    if award_method and date_from and date_from < AWARD_METHOD_MIN_ANNOUNCEMENT_DATE:
+        date_from = AWARD_METHOD_MIN_ANNOUNCEMENT_DATE
 
     conditions = []
     if (
@@ -1242,6 +1251,46 @@ def _flight_lock(key: str):
                 _flight_locks.pop(key, None)
 
 
+def _finalize_live_ranking(
+    db: Session,
+    rows: Sequence[Any],
+    *,
+    dataset: str,
+    dimension: str,
+    category: str,
+    limit: int,
+    corrupted_probe: Any = None,
+) -> tuple[list, int]:
+    """실시간 순위 행에서 손상값을 제외하고 제외 수를 확정합니다.
+
+    SQL 이 exclude_corrupted 로 이미 손상값을 걸러 보내더라도, 가져온 창이
+    깨끗한 것과 전체 결과에 손상이 없는 것은 다릅니다. 마커가 없으면 탐침으로
+    제외 여부를 확인합니다(2026-09-06 확인, tests/test_ranking_snapshots.py 의
+    live_path 계열).
+    """
+    kept, dropped = _drop_corrupted(rows, limit)
+    marker: int | None = None
+    if not dropped:
+        # 마커가 존재하면(0 포함) 그 값을 그대로 쓰고 탐침을 돌리지 않습니다.
+        # 마커가 아예 없을 때만 종전대로 탐침을 실행합니다.
+        marker = get_skipped_marker(db, dataset, dimension, category)
+        if marker is not None:
+            dropped = marker
+    if not dropped and marker is None and corrupted_probe is not None:
+        # 마커까지 없으면 제외 여부를 알 방법이 없습니다. 그 상태로 0 을 확정하면
+        # 실제로 제외했는데도 안내가 사라집니다(Wave E1 회귀). 마커가 있는 운영
+        # 환경에서는 앞 줄에서 끝나 이 줄에 오지 않으므로, 스냅샷이 아직 없는
+        # 환경에서만 LIMIT 1 탐침 한 번을 씁니다.
+        # 비용 실측(2026-09-06 EXPLAIN): 날짜 무 3,118,641행 전체 스캔,
+        # 날짜 유 501,266행 범위 스캔. 선행 와일드카드라 줄일 수 없습니다.
+        probe_started = time.perf_counter()
+        try:
+            dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
+        finally:
+            _record_segment("corrupted_probe_ms", (time.perf_counter() - probe_started) * 1000.0)
+    return kept, dropped
+
+
 @_measure_call("top_rows")
 def _top_rows(
     db: Session,
@@ -1285,37 +1334,71 @@ def _top_rows(
             rows, dropped = cached_live
             return [tuple(row) for row in rows], int(dropped)
 
-        kept, dropped = _drop_corrupted(db.execute(stmt).all(), limit)
-        marker: int | None = None
-        if not dropped:
-            # 마커가 존재하면(0 포함) 그 값을 그대로 쓰고 탐침을 돌지 않습니다.
-            # 마커가 아예 없을 때만 종전대로 탐침을 실행합니다.
-            marker = get_skipped_marker(db, dataset, dimension, category)
-            if marker is not None:
-                dropped = marker
-        if not dropped and marker is None and corrupted_probe is not None:
-            # 마커까지 없으면 제외 여부를 알 방법이 없습니다. SQL 이 exclude_corrupted 로
-            # 이미 손상값을 걸러 보내기 때문에 파이썬 계층이 셀 것이 남지 않습니다.
-            # 그 상태로 0 을 확정하면 실제로 제외했는데도 안내가 사라집니다(Wave E1 회귀).
-            # 순위가 채워졌어도 탐침을 생략할 수 없습니다. 가져온 창이 깨끗한 것과
-            # 전체 결과에 손상이 없는 것은 다르기 때문입니다(2026-09-06 확인,
-            # tests/test_ranking_snapshots.py 의 live_path 계열이 이 동작을 고정합니다).
-            # 마커가 있는 운영 환경에서는 앞 줄에서 끝나 이 줄에 오지 않으므로,
-            # 스냅샷이 아직 없는 환경에서만 LIMIT 1 탐침 한 번을 씁니다.
-            # 비용 실측(2026-09-06 EXPLAIN): 날짜 무 3,118,641행 전체 스캔,
-            # 날짜 유 501,266행 범위 스캔. 선행 와일드카드라 줄일 수 없습니다.
-            probe_started = time.perf_counter()
-            try:
-                dropped = int(db.execute(corrupted_probe.limit(1)).first() is not None)
-            finally:
-                _record_segment(
-                    "corrupted_probe_ms", (time.perf_counter() - probe_started) * 1000.0
-                )
+        kept, dropped = _finalize_live_ranking(
+            db,
+            db.execute(stmt).all(),
+            dataset=dataset,
+            dimension=dimension,
+            category=category,
+            limit=limit,
+            corrupted_probe=corrupted_probe,
+        )
 
         # 손상 탐지 결과까지 함께 담습니다. 순위만 캐시하면 적중할 때마다 탐지
         # 질의가 다시 돌아 절반만 아끼게 됩니다.
         cache.set(key, [[[_cacheable(v) for v in row] for row in kept], dropped], ttl)
         return kept, dropped
+
+
+@_measure_call("top_rows")
+def _top_rows_with_total(
+    db: Session,
+    *,
+    dataset: str,
+    dimension: str,
+    live_stmt,
+    category: str = "",
+    corrupted_probe: Any = None,
+    limit: int = 5,
+    ttl: int = AGGREGATE_CACHE_TTL,
+) -> tuple[list, int, int]:
+    """순위 상위 행과 전체 건수를 한 문장으로 읽습니다.
+
+    `SUM(COUNT(*)) OVER ()` 는 LIMIT 을 적용하기 전 그룹 합계를 계산하므로,
+    전체 건수와 기관 순위를 같은 스캔에서 얻습니다. 마지막 열이 전체 건수이며
+    결과가 0행이면 전체 건수도 0 입니다.
+    """
+    stmt = live_stmt.limit(limit * LIVE_OVERFETCH_FACTOR)
+    key = _stmt_cache_key("rag:top_total:", stmt, db)
+    cached_live = _timed_cache_get(key)
+    if cached_live is not None:
+        rows, dropped, total = cached_live
+        return [tuple(row) for row in rows], int(dropped), int(total)
+
+    with _flight_lock(key):
+        cached_live = _timed_cache_get(key)
+        if cached_live is not None:
+            rows, dropped, total = cached_live
+            return [tuple(row) for row in rows], int(dropped), int(total)
+
+        raw_rows = db.execute(stmt).all()
+        total = int(raw_rows[0][-1] or 0) if raw_rows else 0
+        kept, dropped = _finalize_live_ranking(
+            db,
+            raw_rows,
+            dataset=dataset,
+            dimension=dimension,
+            category=category,
+            limit=limit,
+            corrupted_probe=corrupted_probe,
+        )
+        ranked = [(row[0], row[1]) for row in kept]
+        cache.set(
+            key,
+            [[[_cacheable(v) for v in row] for row in ranked], dropped, total],
+            ttl,
+        )
+        return ranked, dropped, total
 
 
 @_measure_call("cached_aggregate")
@@ -3469,6 +3552,42 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             ),
         )
 
+    def announcement_ranking_with_total(session: Session) -> tuple[list, int, int]:
+        """기관별 공고 순위와 전체 건수를 한 문장으로 집계합니다.
+
+        낙찰방법 조건은 raw_data JSON 을 행마다 파싱해 인덱스를 쓰지 못합니다.
+        COUNT 와 GROUP BY 를 따로 실행하면 같은 JSON 스캔이 두 번 일어나므로,
+        윈도 함수로 전체 건수를 순위 집계에 합칩니다. 전체 건수는 기관명이
+        확정된 행만 세므로 기관 순위와 같은 범위입니다.
+        """
+        return _top_rows_with_total(
+            session,
+            dataset=DATASET_ANNOUNCEMENT,
+            dimension="dminstt_nm",
+            category=category_filter,
+            live_stmt=_hint_announcement_institution_cover(
+                _hint_announcement_date_index(
+                    select(
+                        BidAnnouncement.dminstt_nm,
+                        func.count(BidAnnouncement.id),
+                        func.sum(func.count(BidAnnouncement.id)).over(),
+                    )
+                    .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions)
+                    .group_by(BidAnnouncement.dminstt_nm)
+                    .order_by(func.count(BidAnnouncement.id).desc()),
+                    plan,
+                ),
+                condition_plan,
+                announcement_names_arg,
+            ),
+            corrupted_probe=select(BidAnnouncement.id).where(
+                BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+            ),
+            limit=(
+                group_limit if group_by == "institution" and metric == "announcement_count" else 5
+            ),
+        )
+
     def announcement_ranking(session: Session) -> tuple[list, int]:
         return _top_rows(
             session,
@@ -3503,24 +3622,44 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         )
 
     # 가장 긴 공고명 집계를 마지막에 두어 요청 세션이 직접 맡게 합니다.
-    (
-        (total_count, avg_rate, total_amt),
-        (announcement_count,),
-        (winner_rows, dropped_winners),
-        (institution_rows, dropped_institutions),
-        axis_result,
-        (announcement_rows, dropped_announcements),
-    ) = _run_aggregates(
-        db,
-        [
-            ("cached_aggregate", result_amounts),
-            ("cached_aggregate", announcement_total),
-            ("top_rows", winner_ranking),
-            ("top_rows", institution_ranking),
-            ("axis_breakdown", axis_aggregate),
-            ("top_rows", announcement_ranking),
-        ],
-    )
+    # 낙찰방법 조건은 공고 COUNT 와 기관별 순위를 한 문장으로 합칩니다. 같은
+    # raw_data JSON 스캔을 두 번 하지 않으려는 것입니다.
+    if _normalize_text(str(filters.get("award_method") or "")):
+        (
+            (total_count, avg_rate, total_amt),
+            (winner_rows, dropped_winners),
+            (institution_rows, dropped_institutions, announcement_count),
+            axis_result,
+            (announcement_rows, dropped_announcements),
+        ) = _run_aggregates(
+            db,
+            [
+                ("cached_aggregate", result_amounts),
+                ("top_rows", winner_ranking),
+                ("top_rows_total", announcement_ranking_with_total),
+                ("axis_breakdown", axis_aggregate),
+                ("top_rows", announcement_ranking),
+            ],
+        )
+    else:
+        (
+            (total_count, avg_rate, total_amt),
+            (announcement_count,),
+            (winner_rows, dropped_winners),
+            (institution_rows, dropped_institutions),
+            axis_result,
+            (announcement_rows, dropped_announcements),
+        ) = _run_aggregates(
+            db,
+            [
+                ("cached_aggregate", result_amounts),
+                ("cached_aggregate", announcement_total),
+                ("top_rows", winner_ranking),
+                ("top_rows", institution_ranking),
+                ("axis_breakdown", axis_aggregate),
+                ("top_rows", announcement_ranking),
+            ],
+        )
 
     recent_results = _fetch_recent_results(
         db, result_conditions, result_limit, filters=plan.filters or {}

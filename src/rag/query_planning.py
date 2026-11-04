@@ -3602,16 +3602,27 @@ def uses_recent_announcement_window(filters: dict[str, Any] | None, query: str) 
     return _single_metric(lowered) == "announcement_count"
 
 
+def _apply_recent_announcement_window(filters: dict[str, Any]) -> dict[str, Any]:
+    """기준일을 포함한 최근 30일 창을 채웁니다."""
+    today = date.today()
+    filters["recent_days"] = RECENT_ANNOUNCEMENT_WINDOW_DAYS
+    filters["date_from"] = (today - timedelta(days=RECENT_ANNOUNCEMENT_WINDOW_DAYS - 1)).isoformat()
+    filters["date_to"] = today.isoformat()
+    return filters
+
+
 def apply_default_statistics_window(
     filters: dict[str, Any], *, time_bucket_aware: bool = True, query: str = ""
 ) -> dict[str, Any]:
     """기간을 말하지 않은 통계 질의에 기본 창을 채웁니다.
 
     공고 건수와 금액 정렬 공고 목록은 최근 30일, 그 밖의 통계는 최근 5년입니다.
-    명시 기간이 항상 이기고, 분기 버킷의 연도 미지정 기본값과 명시적 전체
-    기간(`relative_years` 가 이미 있는 경우, 예: years=0)은 그대로 둡니다.
-    마감 창이 걸린 질의에는 공고일 기본 창을 겹쳐 걸지 않습니다.
-    원본 dict 는 바꾸지 않고 사본을 돌려줍니다.
+    낙찰방법 조건이 걸린 질의는 지표 종류와 상관없이 최근 30일입니다. 적격심사
+    낙찰방법명은 2024년 이후 공고에만 채워져 있어 5년 창은 raw_data JSON 을
+    넓게 훑기만 하기 때문입니다. 명시 기간이 항상 이기고, 분기 버킷의 연도
+    미지정 기본값과 명시적 전체 기간(`relative_years` 가 이미 있는 경우,
+    예: years=0)은 그대로 둡니다. 마감 창이 걸린 질의에는 공고일 기본 창을
+    겹쳐 걸지 않습니다. 원본 dict 는 바꾸지 않고 사본을 돌려줍니다.
     """
     windowed = dict(filters)
     if windowed.get("date_from") or windowed.get("date_to"):
@@ -3622,14 +3633,10 @@ def apply_default_statistics_window(
         return windowed
     if time_bucket_aware and str(windowed.get("time_bucket") or "") == "quarter":
         return windowed
+    if windowed.get("award_method"):
+        return _apply_recent_announcement_window(windowed)
     if uses_recent_announcement_window(windowed, query):
-        today = date.today()
-        windowed["recent_days"] = RECENT_ANNOUNCEMENT_WINDOW_DAYS
-        windowed["date_from"] = (
-            today - timedelta(days=RECENT_ANNOUNCEMENT_WINDOW_DAYS - 1)
-        ).isoformat()
-        windowed["date_to"] = today.isoformat()
-        return windowed
+        return _apply_recent_announcement_window(windowed)
     windowed["relative_years"] = DEFAULT_STATISTICS_WINDOW_YEARS
     return windowed
 

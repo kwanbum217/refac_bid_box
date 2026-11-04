@@ -36,6 +36,7 @@ _WINDOW_END = "2026-10-24"
 _STAT_QUERY = "지역별 공고 건수 알려줘"
 _MONTHLY_QUERY = "월별 공고 건수 추이 알려줘"
 _SINGLE_METRIC_QUERY = "전체 공고 건수 알려줘"
+_AWARD_METHOD_QUERY = "적격심사 공고 몇 건이야"
 _RECENT_FIVE_YEARS_QUERY = "최근 5년 공고 건수 알려줘"
 _QUARTER_QUERY = "분기별 공고 건수 알려줘"
 
@@ -286,3 +287,26 @@ def test_single_metric_answer_shows_default_window(monkeypatch):
     )
     assert "전체 기간" not in caption
     assert "최근 30일 기준" in caption
+
+
+def test_award_method_without_period_uses_recent_30_day_window(monkeypatch):
+    """기간 없는 낙찰방법 질의는 두 진입 경로 모두 최근 30일 창을 씁니다."""
+    result, tool_plan = _run_tool(monkeypatch, _AWARD_METHOD_QUERY)
+
+    assert tool_plan.filters["award_method"] == "적격심사"
+    assert tool_plan.filters["recent_days"] == 30
+    assert tool_plan.filters["date_from"] == "2026-09-25"
+    assert tool_plan.filters["date_to"] == _WINDOW_END
+    assert "relative_years" not in tool_plan.filters
+
+    tool_hints = "\n".join(result["retrieval_plan"]["insufficiency_hints"])
+    assert "최근 30일" in tool_hints
+    assert "전체 기준" not in tool_hints
+
+    prepared, engine_plan = _run_engine(monkeypatch, _AWARD_METHOD_QUERY)
+    assert engine_plan.filters["award_method"] == "적격심사"
+    assert engine_plan.filters["recent_days"] == 30
+    assert engine_plan.filters["date_from"] == "2026-09-25"
+    assert engine_plan.filters["date_to"] == _WINDOW_END
+    assert "relative_years" not in engine_plan.filters
+    assert "전체 기준" not in "\n".join(prepared.provenance.insufficiency_hints)
