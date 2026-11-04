@@ -289,14 +289,20 @@
       "category": "announcement_list",
       "split": "public",
       "question": "유찰된 공사 공고 최근 5건 보여줘",
-      "expected_tools": [],
+      "expected_tools": [
+        "bid_query_tool"
+      ],
       "forbidden_tools": [],
       "check": {
-        "type": "not_supported"
+        "type": "announcement_filtered",
+        "category": "Cnstwk",
+        "limit": 5,
+        "window_days": 30,
+        "outcome": "유찰"
       },
       "must_not_contain": [],
       "repeats": 3,
-      "note": "유찰 상태 컬럼이 없다. 최근 공고 목록으로 대체하면 공고번호 검출로 실패한다."
+      "note": "개찰결과 원천의 최종 차수(rbid_no 최대)가 유찰인 공고만 정답이다. 유찰 뒤 재입찰에서 개찰완료된 공고는 제외한다."
     },
     {
       "id": "v2_rst_01",
