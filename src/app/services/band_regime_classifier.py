@@ -5,12 +5,17 @@ src/app/services/band_regime_classifier.py
 판별하는 순수 함수.
 
 설계 정본: `.orca/ref/band_2to1_attachment_classifier_design_20261106.md`
-- 2.1절 정규식 표 R1~R13 을 그대로 옮겼습니다.
+- 2.1절 정규식 표 R1~R13 을 그대로 옮기고, 제안 1 의 세부표 직접 표지를 R14 로
+  더했습니다.
 - 1단은 결정 문장(`낙찰자 결정`·`적격심사`·`적용`) 안의 문서명 패턴만 봅니다.
   `숙지`·`참고`·서류 목록 문장의 매치는 버립니다(2.2절 오탐 사례).
 - 2단은 행안부 제2장의2 로 판정된 경우에만 세부표를 가릅니다. 낙찰하한율
-  `87.745` 는 `MOIS_OTHER`, `80.495` 와 `별표4`·`학술연구용역 평가기준` 은
-  `MOIS_ACADEMIC` 입니다. LOCAL 은 `87.745` 신호보다 먼저 확정합니다(7.1절).
+  `87.745` 는 `MOIS_OTHER` 확정 신호이고, `별표 4` 직접 표지(R14)와
+  `학술연구용역 평가기준`(R4)만 `MOIS_ACADEMIC` 을 확정합니다. 장 이름(R1·R3)만
+  있으면 `UNSPECIFIED_SUBTABLE` 로 남깁니다. LOCAL 은 `87.745` 신호보다 먼저
+  확정합니다(7.1절).
+- 참고·숙지·참조 문장의 매치는 버리고(제안 2), 텍스트 추출 실패는
+  `EXTRACT_FAIL` 로 `UNSPECIFIED` 와 분리합니다(제안 4).
 
 이 모듈은 파일·네트워크·DB 에 접근하지 않습니다. 수집기·규칙 해석기와 연결하지
 않으며, 판별 결과 저장은 `bid_announcement_regime` 테이블이 맡습니다.
@@ -28,14 +33,15 @@ PPS = "PPS"
 LOCAL = "LOCAL"
 MOIS4 = "MOIS4"
 UNSPECIFIED = "UNSPECIFIED"
+UNSPECIFIED_SUBTABLE = "UNSPECIFIED_SUBTABLE"
+EXTRACT_FAIL = "EXTRACT_FAIL"
 NO_ATTACH = "NO_ATTACH"
 
-BAND_REGIME_CLASSIFIER_VERSION = "1.0.0"
+BAND_REGIME_CLASSIFIER_VERSION = "1.1.0"
 
 _EVIDENCE_LIMIT = 80
 _DECISION_WINDOW = 160
 _NUMERIC_MOIS_OTHER = "87.745"
-_NUMERIC_MOIS_ACADEMIC = "80.495"
 
 
 @dataclass(frozen=True)
@@ -43,8 +49,9 @@ class BandRegimeResult:
     """첨부 원문 판별 결과.
 
     `regime` 은 `MOIS_ACADEMIC`, `MOIS_OTHER`, `PPS`, `LOCAL`, `MOIS4`,
-    `UNSPECIFIED`, `NO_ATTACH` 가운데 하나입니다. `evidence` 는 근거 문장을
-    80자 이내로 자른 값이고, `matched_rules` 는 판정에 쓰인 규칙 ID 입니다.
+    `UNSPECIFIED`, `UNSPECIFIED_SUBTABLE`, `EXTRACT_FAIL`, `NO_ATTACH` 가운데
+    하나입니다. `evidence` 는 근거 문장을 80자 이내로 자른 값이고,
+    `matched_rules` 는 판정에 쓰인 규칙 ID 입니다.
     """
 
     regime: str
@@ -104,6 +111,10 @@ _RULES: tuple[_Rule, ...] = (
         "BAND",
         re.compile(r"추정가격\s*2\s*억\s*원?\s*미만\s*1\s*억\s*원?\s*이상"),
     ),
+    # 제안 1 의 세부표 직접 표지입니다. `[별표 4]`·`[별표4]`·`별표 4]` 처럼
+    # 괄호 표기가 달라도 잡고, `별표 4의2`·`별표 42` 는 제외합니다. 가중치가
+    # 0 이라 갈래 점수는 흔들지 않고 학술 세부표 확정 여부만 알립니다.
+    _Rule("R14", MOIS_ACADEMIC, re.compile(r"별표\s*4(?!\s*의?\s*\d)")),
 )
 
 # 2.3절 패턴 가중치.
@@ -120,6 +131,7 @@ _WEIGHTS: dict[str, float] = {
     "R10": 2.0,
     "R11": 1.5,
     "R12": 2.0,
+    "R14": 0.0,
 }
 
 # 2.3절 동점 우선순위.
@@ -132,8 +144,11 @@ _DECISION_CUE = re.compile(
     r"낙찰자\s*(?:결정|선정)|계약상대자\s*결정|적격심사"
 )
 _DECISIVE = re.compile(r"낙찰자\s*(?:결정|선정)|계약상대자\s*결정|적격심사")
-_NOISE = re.compile(r"숙지|참고\s*(?:하|하시)|양식|목록|문의")
-_MOIS_ACADEMIC_SUBTABLE_RULES = frozenset({"R2", "R4"})
+# 제안 2: 참고·숙지·참조가 같은 문장에 있는 매치는 버립니다. 기존 서류 목록
+# 표지도 같은 문장 기준으로 좁혀 유지합니다.
+_NOISE = re.compile(r"참고|숙지|참조|양식|목록|문의")
+_SENTENCE_END = re.compile(r"[.!?。！？]")  # noqa: RUF001 - 전각 문장 부호도 경계로 봅니다.
+_MOIS_ACADEMIC_SUBTABLE_RULES = frozenset({"R2", "R4", "R14"})
 
 
 @dataclass(frozen=True)
@@ -162,6 +177,16 @@ def _context(text: str, start: int, end: int) -> str:
     return text[left:right].strip()
 
 
+def _sentence_at(text: str, start: int, end: int) -> str:
+    """매치가 속한 문장을 돌려줍니다."""
+    left = 0
+    for boundary in _SENTENCE_END.finditer(text, 0, start):
+        left = boundary.end()
+    right_match = _SENTENCE_END.search(text, end)
+    right = right_match.start() if right_match is not None else len(text)
+    return text[left:right]
+
+
 def _accepted_matches(texts: Sequence[str]) -> list[_Match]:
     matches: list[_Match] = []
     for text_index, text in enumerate(texts):
@@ -175,7 +200,7 @@ def _accepted_matches(texts: Sequence[str]) -> list[_Match]:
                         len(text), found.end() + _DECISION_WINDOW
                     )
                 ]
-                if _NOISE.search(window):
+                if _NOISE.search(_sentence_at(text, found.start(), found.end())):
                     continue
                 if not _DECISION_CUE.search(window):
                     continue
@@ -252,10 +277,11 @@ def _numeric_evidence(texts: Sequence[str], needle: str) -> str | None:
 def _resolve_mois_branch(texts: Sequence[str], matches: Sequence[_Match]) -> BandRegimeResult:
     """행안부 갈래 안에서 세부표를 가릅니다.
 
-    `87.745` 는 기술·일반용역, `별표4`·`학술연구용역 평가기준` 과 `80.495` 는
-    학술연구입니다. 기술용역 문구(R12)는 학술연구 세부표가 명시되지 않은
-    경우에만 세부표 신호로 씁니다. `R12` 의 `기술·학술연구 용역 적격심사`
-    부분 문자열 오탐(2.2절)을 R2·R4 가 막습니다.
+    `87.745` 는 기술·일반용역 확정 신호입니다. 학술연구는 `별표 4` 직접
+    표지(R14)나 `학술연구용역 평가기준`(R4)이 있을 때만 확정하고, 장 이름
+    (R1·R3)만 있으면 `UNSPECIFIED_SUBTABLE` 로 남깁니다. `80.495` 는 확정
+    신호로 쓰지 않습니다. 기술용역 문구(R12)는 학술연구 세부표가 명시되지 않은
+    경우에만 세부표 신호로 씁니다.
     """
     chapter_matches = [match for match in matches if match.rule.branch == MOIS_ACADEMIC]
     chapter_rules = _rule_ids(chapter_matches)
@@ -277,9 +303,6 @@ def _resolve_mois_branch(texts: Sequence[str], matches: Sequence[_Match]) -> Ban
             chapter_rules,
         )
 
-    if (evidence := _numeric_evidence(texts, _NUMERIC_MOIS_ACADEMIC)) is not None:
-        return BandRegimeResult(MOIS_ACADEMIC, evidence, chapter_rules)
-
     if technical is not None:
         text_index, start, end = technical
         return BandRegimeResult(
@@ -288,11 +311,7 @@ def _resolve_mois_branch(texts: Sequence[str], matches: Sequence[_Match]) -> Ban
             _merge_rule_ids(chapter_rules, technical_rules),
         )
 
-    return BandRegimeResult(
-        MOIS_ACADEMIC,
-        _evidence_for_match(texts, _best_match(chapter_matches)),
-        chapter_rules,
-    )
+    return BandRegimeResult(UNSPECIFIED_SUBTABLE, None, chapter_rules)
 
 
 def _result_for_branch(
@@ -306,14 +325,23 @@ def _result_for_branch(
     )
 
 
-def classify_band_regime(texts: Sequence[str]) -> BandRegimeResult:
+def classify_band_regime(
+    texts: Sequence[str], *, extraction_failed: bool = False
+) -> BandRegimeResult:
     """첨부 원문 텍스트들에서 적용 기준 갈래를 판별합니다.
 
-    `texts` 가 비어 있거나 공백뿐이면 `NO_ATTACH` 입니다. 어느 규칙도 결정
-    문장에서 잡히지 않으면 `UNSPECIFIED` 이고, 이때는 갈래를 확정하지 않습니다.
+    첨부 레코드 자체가 없는 빈 시퀀스는 `NO_ATTACH` 입니다. 첨부는 있었지만
+    텍스트가 모두 비었거나 호출부가 `extraction_failed` 로 알리면
+    `EXTRACT_FAIL` 입니다. 어느 규칙도 결정 문장에서 잡히지 않으면
+    `UNSPECIFIED` 이고, 행안부 장 이름만 있고 세부표가 없으면
+    `UNSPECIFIED_SUBTABLE` 입니다.
     """
+    if extraction_failed:
+        return BandRegimeResult(EXTRACT_FAIL, None, ())
     normalized = [text for text in (_normalize(item) for item in texts) if text]
     if not normalized:
+        if len(texts) > 0:
+            return BandRegimeResult(EXTRACT_FAIL, None, ())
         return BandRegimeResult(NO_ATTACH, None, ())
 
     matches = _accepted_matches(normalized)
