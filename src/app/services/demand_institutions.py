@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -227,6 +228,43 @@ def is_education_institution(
         _institution_value(institution, "instt_ty_smlclsfc_nm", "insttTyCdSmlclsfcNm") or ""
     ).strip()
     return large in {"초등학교", "중학교", "고등학교", "특수학교", "유치원"} and small == "공립"
+
+
+# 시·도 세부기준(예규) 적용 대상이 아닌 법인 유형입니다. 지방공사·지방공단은
+# 지방공기업법상 법인이고 대한적십자사는 대한적십자사조직법상 법인이라, 지방계약법
+# 제2조의 적용 주체인 "지방자치단체"가 아닙니다. 이 유형의 공고는 공고문이 인용한
+# 조달청 기본 규칙으로 해석합니다(docs/analysis/local_mapping_gap_applicable_law_20261106.md).
+SIDO_RULE_EXCLUDED_JURISDICTIONS: frozenset[str] = frozenset({"지방공기업", "기타기관"})
+
+# 기관 유형 필드가 비어 있을 때만 쓰는 보조 표기입니다. "공단"·"공사"는 지방공기업법상
+# 공사·공단 이름이고, "적십자"는 대한적십자사 혈액원 등 특수법인 이름입니다.
+SIDO_RULE_EXCLUDED_NAME_MARKERS: tuple[str, ...] = ("적십자", "공단", "공사")
+
+
+def _name_matches_sido_rule_excluded(name: str | None) -> bool:
+    compact = re.sub(r"\s+", "", name or "")
+    return any(marker in compact for marker in SIDO_RULE_EXCLUDED_NAME_MARKERS)
+
+
+def is_sido_rule_excluded(
+    institution: G2BDemandInstitution | dict[str, Any] | str | None,
+) -> bool:
+    """수요기관이 시·도 세부기준 적용 대상이 아닌지 판정합니다.
+
+    기관 유형 필드(jrsdctn_div_nm)를 우선하고, 필드가 비어 있을 때만 이름 표기를
+    보조로 씁니다. 교육 계열은 기존 제외 판단을 그대로 두기 위해 여기서는 False 입니다.
+    """
+    if institution is None:
+        return False
+    if isinstance(institution, str):
+        return _name_matches_sido_rule_excluded(institution)
+    if is_education_institution(institution):
+        return False
+    jurisdiction = _institution_value(institution, "jrsdctn_div_nm", "jrsdctnDivNm")
+    if jurisdiction:
+        return jurisdiction in SIDO_RULE_EXCLUDED_JURISDICTIONS
+    name = _institution_value(institution, "dminstt_nm", "dminsttNm")
+    return _name_matches_sido_rule_excluded(name)
 
 
 def classify_contract_regime(
