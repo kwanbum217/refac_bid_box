@@ -51,6 +51,16 @@ def test_default_compose_waits_for_shared_services_to_be_healthy():
     assert "json.load(response)['status'] in ('ready', 'degraded')" in compose
 
 
+def test_default_compose_pins_app_timezone_to_seoul_like_worker():
+    """앱 컨테이너가 UTC 로 돌면 KST 00~09시에 date.today() 마감 창이 하루 밀립니다."""
+    compose = COMPOSE_FILE.read_text(encoding="utf-8")
+    app = compose.split("\n  app:\n", maxsplit=1)[1].split("\n  worker:\n", maxsplit=1)[0]
+    worker = _worker_service()
+
+    assert "- TZ=Asia/Seoul" in app
+    assert "- TZ=Asia/Seoul" in worker
+
+
 def test_default_compose_forwards_cors_settings_to_every_python_service():
     """이미지에 .env 가 없으므로 compose 가 전달하지 않으면 값이 사라집니다.
 
