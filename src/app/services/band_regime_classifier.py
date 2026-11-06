@@ -9,11 +9,16 @@ src/app/services/band_regime_classifier.py
   더했습니다.
 - 1단은 결정 문장(`낙찰자 결정`·`적격심사`·`적용`) 안의 문서명 패턴만 봅니다.
   `숙지`·`참고`·서류 목록 문장의 매치는 버립니다(2.2절 오탐 사례).
-- 2단은 행안부 제2장의2 로 판정된 경우에만 세부표를 가릅니다. 낙찰하한율
-  `87.745` 는 `MOIS_OTHER` 확정 신호이고, `별표 4` 직접 표지(R14)와
-  `학술연구용역 평가기준`(R4)만 `MOIS_ACADEMIC` 을 확정합니다. 장 이름(R1·R3)만
-  있으면 `UNSPECIFIED_SUBTABLE` 로 남깁니다. LOCAL 은 `87.745` 신호보다 먼저
-  확정합니다(7.1절).
+- 2단은 행안부 제2장의2 로 판정된 경우에만 세부표를 가릅니다. 공고문 본문의
+  `별표 4` 직접 표지(R14)·`학술연구용역 평가기준`(R4)은 예규 전문에 인쇄된
+  `87.745` 보다 우선합니다(대구 2건). 공고문이 기술용역 [별표 2] 4.를 지목하고
+  `낙찰하한율(87.745%)` 을 적으면 `MOIS_TECH`, 일반용역 평가기준만 지목하면
+  `MOIS_OTHER` 입니다. 장 이름(R1·R3)만 있으면 `UNSPECIFIED_SUBTABLE` 로
+  남깁니다. LOCAL 은 `87.745` 신호보다 먼저 확정합니다(7.1절).
+- 2단의 R15(1.2.0)는 `학술…용역 적격심사 (세부)기준` 표기가 행안부·지방자치단체
+  낙찰자 결정기준과 같은 결정 창에 있고 `87.745`·`별표 2`·`P.Q`·`기술용역` 이
+  없을 때만 학술연구를 확정합니다. `_NOISE` 하드 드롭은 R6·R7(조달청 일반용역
+  적격심사)에만 적용하지 않습니다(후보 C2).
 - 참고·숙지·참조 문장의 매치는 버리고(제안 2), 텍스트 추출 실패는
   `EXTRACT_FAIL` 로 `UNSPECIFIED` 와 분리합니다(제안 4).
 
@@ -28,6 +33,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 MOIS_ACADEMIC = "MOIS_ACADEMIC"
+MOIS_TECH = "MOIS_TECH"
 MOIS_OTHER = "MOIS_OTHER"
 PPS = "PPS"
 LOCAL = "LOCAL"
@@ -37,7 +43,7 @@ UNSPECIFIED_SUBTABLE = "UNSPECIFIED_SUBTABLE"
 EXTRACT_FAIL = "EXTRACT_FAIL"
 NO_ATTACH = "NO_ATTACH"
 
-BAND_REGIME_CLASSIFIER_VERSION = "1.1.0"
+BAND_REGIME_CLASSIFIER_VERSION = "1.2.0"
 
 _EVIDENCE_LIMIT = 80
 _DECISION_WINDOW = 160
@@ -48,9 +54,9 @@ _NUMERIC_MOIS_OTHER = "87.745"
 class BandRegimeResult:
     """첨부 원문 판별 결과.
 
-    `regime` 은 `MOIS_ACADEMIC`, `MOIS_OTHER`, `PPS`, `LOCAL`, `MOIS4`,
-    `UNSPECIFIED`, `UNSPECIFIED_SUBTABLE`, `EXTRACT_FAIL`, `NO_ATTACH` 가운데
-    하나입니다. `evidence` 는 근거 문장을 80자 이내로 자른 값이고,
+    `regime` 은 `MOIS_ACADEMIC`, `MOIS_TECH`, `MOIS_OTHER`, `PPS`, `LOCAL`,
+    `MOIS4`, `UNSPECIFIED`, `UNSPECIFIED_SUBTABLE`, `EXTRACT_FAIL`, `NO_ATTACH`
+    가운데 하나입니다. `evidence` 는 근거 문장을 80자 이내로 자른 값이고,
     `matched_rules` 는 판정에 쓰인 규칙 ID 입니다.
     """
 
@@ -115,6 +121,17 @@ _RULES: tuple[_Rule, ...] = (
     # 괄호 표기가 달라도 잡고, `별표 4의2`·`별표 42` 는 제외합니다. 가중치가
     # 0 이라 갈래 점수는 흔들지 않고 학술 세부표 확정 여부만 알립니다.
     _Rule("R14", MOIS_ACADEMIC, re.compile(r"별표\s*4(?!\s*의?\s*\d)")),
+    # 후보 C1. `기술·학술연구 용역 적격심사 세부기준` 안의 부분 문자열은 부정
+    # lookbehind 로 막습니다(대전 1건). 가중치가 0 이라 1단 갈래 점수는 흔들지
+    # 않고, `_resolve_mois_branch` 의 확정 조건을 함께 통과할 때만 씁니다.
+    _Rule(
+        "R15",
+        MOIS_ACADEMIC,
+        re.compile(
+            # 원문에 쓰인 가운뎃점·쉼표·원점을 그대로 둡니다.
+            r"(?<!기술[·ㆍ.,․])학술(?:[·ㆍ.]?\s*연구)?\s*용역\s*적격심사\s*(?:세부\s*)?기준"  # noqa: RUF001
+        ),
+    ),
 )
 
 # 2.3절 패턴 가중치.
@@ -132,6 +149,7 @@ _WEIGHTS: dict[str, float] = {
     "R11": 1.5,
     "R12": 2.0,
     "R14": 0.0,
+    "R15": 0.0,
 }
 
 # 2.3절 동점 우선순위.
@@ -149,6 +167,22 @@ _DECISIVE = re.compile(r"낙찰자\s*(?:결정|선정)|계약상대자\s*결정|
 _NOISE = re.compile(r"참고|숙지|참조|양식|목록|문의")
 _SENTENCE_END = re.compile(r"[.!?。！？]")  # noqa: RUF001 - 전각 문장 부호도 경계로 봅니다.
 _MOIS_ACADEMIC_SUBTABLE_RULES = frozenset({"R2", "R4", "R14"})
+# 후보 C2: 조달청 일반용역 적격심사 표지(R6·R7)는 참고 문구가 같은 문장에 붙어도
+# 실제 적용 기준인 경우가 있어 하드 드롭에서 제외합니다. 다른 규칙의 드롭은 유지합니다.
+_NOISE_EXEMPT_RULES = frozenset({"R6", "R7"})
+# 후보 C1 확정 조건. 같은 결정 창에 발행기관·근거 문서가 있어야 하고, 기술용역
+# 갈래를 가리키는 표지가 없어야 합니다.
+_C1_ISSUER = re.compile(r"행정안전부|행안부|지방자치단체\s*입찰시\s*낙찰자\s*결정\s*기준")
+_C1_BLOCKERS = re.compile(r"87\.745|별표\s*2|P\.?\s*Q|기술\s*용역")
+# MOIS_TECH 확정 표지. 공고문이 [별표 2] 4. P.Q 비대상 기술용역이나 제2장의2
+# 기술용역 적격심사를 지목한 경우입니다. `낙찰하한율(87.745%)` 표기와 함께
+# 볼 때만 기술용역으로 확정하므로, 예규 전문만 첨부된 공고는 뒤집히지 않습니다.
+_MOIS_TECH_MARKER = re.compile(
+    r"P\.?\s*Q\s*\)?\s*(?:를)?\s*하지\s*않는\s*기술\s*용역|"
+    r"P\.?\s*Q\s*비대상\s*기술\s*용역|"
+    r"제\s*2\s*장\s*의\s*2[^.]{0,30}기술\s*용역\s*적격심사"
+)
+_MOIS_TECH_LWLT = re.compile(r"낙찰하한율\s*\(?\s*87\.745")
 
 
 @dataclass(frozen=True)
@@ -200,7 +234,9 @@ def _accepted_matches(texts: Sequence[str]) -> list[_Match]:
                         len(text), found.end() + _DECISION_WINDOW
                     )
                 ]
-                if _NOISE.search(_sentence_at(text, found.start(), found.end())):
+                if rule.rule_id not in _NOISE_EXEMPT_RULES and _NOISE.search(
+                    _sentence_at(text, found.start(), found.end())
+                ):
                     continue
                 if not _DECISION_CUE.search(window):
                     continue
@@ -274,21 +310,81 @@ def _numeric_evidence(texts: Sequence[str], needle: str) -> str | None:
     return _context(texts[text_index], start, start + len(needle))
 
 
+def _c1_confirms(texts: Sequence[str], match: _Match) -> bool:
+    """후보 C1 의 확정 조건을 같은 결정 창에서 확인합니다."""
+    text = texts[match.text_index]
+    window = text[
+        max(0, match.start - _DECISION_WINDOW) : min(len(text), match.end + _DECISION_WINDOW)
+    ]
+    if _C1_ISSUER.search(window) is None:
+        return False
+    return _C1_BLOCKERS.search(window) is None
+
+
+def _mois_tech_evidence(texts: Sequence[str]) -> str | None:
+    """공고문이 기술용역 [별표 2] 4.를 지목했는지 확인하고 근거를 돌려줍니다.
+
+    `낙찰하한율(87.745%)` 표기와 기술용역 표지가 함께 있어야 합니다. 행안부
+    예규 전문을 통째로 첨부한 공고는 예규 안에 두 신호가 모두 있어도 공고문이
+    기술용역을 지목한 것이 아니므로, 공고문에 쓰는 낙찰하한율 표기를 함께 봅니다.
+    """
+    if not any(_MOIS_TECH_LWLT.search(text) for text in texts):
+        return None
+    for text in texts:
+        found = _MOIS_TECH_MARKER.search(text)
+        if found is not None:
+            return _context(text, found.start(), found.end())
+    return None
+
+
 def _resolve_mois_branch(texts: Sequence[str], matches: Sequence[_Match]) -> BandRegimeResult:
     """행안부 갈래 안에서 세부표를 가릅니다.
 
-    `87.745` 는 기술·일반용역 확정 신호입니다. 학술연구는 `별표 4` 직접
-    표지(R14)나 `학술연구용역 평가기준`(R4)이 있을 때만 확정하고, 장 이름
+    공고문 본문의 `별표 4` 직접 표지(R14)·`학술연구용역 평가기준`(R4)은 예규
+    전문에 인쇄된 `87.745` 보다 우선합니다. 그 밖에 `87.745` 는 기술용역 표지가
+    함께 있으면 `MOIS_TECH`, 없으면 `MOIS_OTHER` 입니다. `87.745` 가 없는
+    공고는 R15 가 C1 확정 조건을 통과할 때 학술연구로 확정하고, 장 이름
     (R1·R3)만 있으면 `UNSPECIFIED_SUBTABLE` 로 남깁니다. `80.495` 는 확정
     신호로 쓰지 않습니다. 기술용역 문구(R12)는 학술연구 세부표가 명시되지 않은
     경우에만 세부표 신호로 씁니다.
     """
-    chapter_matches = [match for match in matches if match.rule.branch == MOIS_ACADEMIC]
+    chapter_matches = [
+        match
+        for match in matches
+        if match.rule.branch == MOIS_ACADEMIC and match.rule.rule_id != "R15"
+    ]
     chapter_rules = _rule_ids(chapter_matches)
     technical = _raw_match(texts, "R12")
     technical_rules: tuple[str, ...] = ("R12",) if technical is not None else ()
 
     if (evidence := _numeric_evidence(texts, _NUMERIC_MOIS_OTHER)) is not None:
+        # 공고문 본문의 학술연구 직접 표지는 예규 전문의 87.745 보다 우선합니다.
+        # 첨부는 공고문이 먼저 오므로, 87.745 가 처음 나오는 텍스트보다 앞선
+        # 표지만 공고문 본문으로 봅니다. 예규 전문 안의 표지까지 인정하면 원주
+        # 1건처럼 예규를 통째로 첨부한 공고가 뒤집힙니다.
+        first_numeric_index = next(
+            index for index, text in enumerate(texts) if _NUMERIC_MOIS_OTHER in text
+        )
+        academic_notice = _best_match(
+            [
+                match
+                for match in matches
+                if match.rule.rule_id in _MOIS_ACADEMIC_SUBTABLE_RULES
+                and match.text_index < first_numeric_index
+            ]
+        )
+        if academic_notice is not None:
+            return BandRegimeResult(
+                MOIS_ACADEMIC,
+                _evidence_for_match(texts, academic_notice),
+                chapter_rules,
+            )
+        if (tech_evidence := _mois_tech_evidence(texts)) is not None:
+            return BandRegimeResult(
+                MOIS_TECH,
+                tech_evidence,
+                _merge_rule_ids(chapter_rules, technical_rules),
+            )
         return BandRegimeResult(
             MOIS_OTHER, evidence, _merge_rule_ids(chapter_rules, technical_rules)
         )
@@ -301,6 +397,16 @@ def _resolve_mois_branch(texts: Sequence[str], matches: Sequence[_Match]) -> Ban
             MOIS_ACADEMIC,
             _evidence_for_match(texts, academic_subtable),
             chapter_rules,
+        )
+
+    c1_match = _best_match(
+        [match for match in matches if match.rule.rule_id == "R15" and _c1_confirms(texts, match)]
+    )
+    if c1_match is not None:
+        return BandRegimeResult(
+            MOIS_ACADEMIC,
+            _evidence_for_match(texts, c1_match),
+            _merge_rule_ids(chapter_rules, ("R15",)),
         )
 
     if technical is not None:

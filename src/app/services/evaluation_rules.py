@@ -1811,6 +1811,17 @@ _SRC_MOIS_ACADEMIC_BAND = (
     "1억미만 65, 평점 = 배점한도 - 2x|88 - 입찰가격/예정가격x100|, 제5절 낙찰자 결정 1. "
     "학술연구용역 적격통과점수 85점); docs/analysis/local_academic_band_apply_20261017.md"
 )
+# 행안부 예규 제2장의2 [별표 2] 4. P.Q 비대상 기술용역의 2억미만 1억이상 열입니다.
+# 제325호(시행 2025-07-01)·제344호(시행 2025-12-01)·제373호(시행 2026-07-01) 세 판이
+# 같은 값을 인쇄합니다. 87.745%는 예규 산식 제목에 인쇄된 값이라 공고 인용이 아닙니다.
+_SRC_MOIS_TECH_BAND = (
+    "행정안전부 예규 「지방자치단체 입찰시 낙찰자 결정기준」 [시행 2025. 7. 1.]"
+    "[행정안전부 예규 제325호]·[시행 2026. 7. 1.][제373호] 제2장의2 기술·학술연구 용역 "
+    "적격심사 세부기준 [별표 2] 4. 추정가격 2억미만 1억이상 평가기준 "
+    "(입찰가격 배점한도 80, 평점 = 80 - 20x|88 - 입찰가격/예정가격x100|, "
+    "낙찰하한율 87.745%, 제5절 낙찰자 결정 1. 추정가격 10억원 미만 용역 적격통과점수 95점); "
+    "docs/analysis/mois_other_band_rule_source_20261106.md"
+)
 # 같은 띠라도 기준 문서가 갈리는 표기입니다. 이 표기가 있으면 학술연구 열로 확정하지 않습니다.
 _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS = ("2억미만", "1억이상")
 
@@ -1892,6 +1903,36 @@ MOIS_ACADEMIC_ATTACHMENT_WARNING = (
     "그 2억미만 1억이상 열을 적용했습니다."
 )
 
+# 첨부 판별로 기술용역이 확인된 공고에만 쓴다. 낙찰방법명 매칭에 쓰지 않는다.
+# '추정가격 2억미만 1억이상' 표기는 공고마다 기준 문서가 갈려 낙찰방법명만으로는 확정하지
+# 않으므로, 첨부 문서로 [별표 2] 4. 기술용역이 확인된 공고의 조회에만 이 규칙을 씁니다.
+MOIS_TECH_BAND_RULES: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_LOCAL_MOIS_TECH_20250701_1E_2E",
+        service_type="TECH",
+        table_name="행안부 예규 제2장의2 [별표 2] 4. 기술용역 (추정가격 2억미만 1억이상)",
+        description="추정가격 2억미만 1억이상 P.Q 비대상 기술용역 평가기준 (행안부 예규 제2장의2 [별표 2])",
+        effective_date="2025-07-01",
+        source=(
+            "행정안전부 예규 제325호(시행 2025-07-01)·제373호(시행 2026-07-01) "
+            "제2장의2 [별표 2] 4. P.Q 비대상 기술용역 2억미만 1억이상 열"
+        ),
+        patterns=("추정가격 2억미만 1억이상", "추정가격 2억 미만 1억 이상"),
+        lwlt_rate=Decimal("87.745"),
+        base_rate=Decimal("0.88"),
+        max_price_score=Decimal("80"),
+        multiplier=Decimal("20"),
+        pass_threshold=Decimal("95"),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=_SRC_MOIS_TECH_BAND,
+    ),
+)
+
+MOIS_TECH_ATTACHMENT_WARNING = (
+    "첨부 공고문이 행정안전부 예규 제2장의2 [별표 2] 4. P.Q 비대상 기술용역 평가기준을 "
+    "지정해 그 2억미만 1억이상 열을 적용했습니다."
+)
+
 
 def select_mois_academic_band_rule(method_name: str | None) -> EvaluationRule | None:
     """낙찰방법명이 학술연구 띠 표기일 때 행안부 [별표 4] 해당 열 규칙을 돌려줍니다.
@@ -1914,6 +1955,16 @@ def get_mois_academic_attachment_rule(band: str) -> EvaluationRule | None:
     """
     if band == "1E_2E":
         return MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES[0]
+    return None
+
+
+def get_mois_tech_attachment_rule(band: str) -> EvaluationRule | None:
+    """첨부 판별로 기술용역이 확인된 공고의 띠 열 규칙을 돌려줍니다.
+
+    band 가 '1E_2E' 일 때만 행안부 [별표 2] 4. 2억미만 1억이상 열 규칙을 돌려줍니다.
+    """
+    if band == "1E_2E":
+        return MOIS_TECH_BAND_RULES[0]
     return None
 
 
@@ -3157,10 +3208,11 @@ def resolve_evaluation_rule(
     - 공고 하한율이 없으면 estimated_price 로 고른 구간의 하한율을 씁니다. 구간별
       하한율이 서로 다른데 추정가격이 없으면 하한율을 확정하지 않고(effective_lwlt_rate
       None) 호출부가 추정가격 입력을 요구합니다.
-    - attachment_regime == "MOIS_ACADEMIC" 이고 낙찰방법명이 '2억미만 1억이상' 띠를
-      담으며 국가계약이 아닌 공고만, 시·도·기관 규칙으로 확정하지 못해 차단된 경우
-      행안부 예규 제2장의2 [별표 4] 학술연구용역 2억미만 1억이상 열로 계산합니다.
-      첨부 판별이 없거나 다른 값이면 판정은 종전과 같습니다.
+    - attachment_regime == "MOIS_ACADEMIC" 또는 "MOIS_TECH" 이고 낙찰방법명이
+      '2억미만 1억이상' 띠를 담으며 국가계약이 아닌 공고만, 시·도·기관 규칙으로
+      확정하지 못해 차단된 경우 행안부 예규 제2장의2 [별표 4] 학술연구용역 또는
+      [별표 2] 4. 기술용역의 2억미만 1억이상 열로 계산합니다. 첨부 판별이 없거나
+      다른 값이면 판정은 종전과 같습니다.
     """
     method_name, method_source, method_warnings = resolve_method_name(
         sucsfbid_mthd_nm, sucsfbid_mthd_cd
@@ -3343,17 +3395,22 @@ def resolve_evaluation_rule(
             )
             scope_stage = RULE_SCOPE_ALL
     if (
-        attachment_regime == "MOIS_ACADEMIC"
+        attachment_regime in ("MOIS_ACADEMIC", "MOIS_TECH")
         and all(marker in (method_name or "") for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS)
         and contract_regime != "NATIONAL"
         and result.is_blocked
         and result.block_reason_code in _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES
     ):
-        # 첨부 원문 판별이 학술연구용역을 확정한 '2억미만 1억이상' 띠 공고만 행안부
-        # 예규 제2장의2 [별표 4] 2억미만 1억이상 열로 계산합니다. 낙찰방법명만으로는
+        # 첨부 원문 판별이 학술연구용역·기술용역을 확정한 '2억미만 1억이상' 띠 공고만
+        # 행안부 예규 제2장의2 해당 별표의 2억미만 1억이상 열로 계산합니다. 낙찰방법명만으로는
         # 기준 문서가 갈려 확정하지 않으므로, 시·도·기관 규칙으로도 풀지 못한 공고만
         # 대상으로 하고 국가계약에는 적용하지 않습니다.
-        attachment_band_rule = get_mois_academic_attachment_rule("1E_2E")
+        if attachment_regime == "MOIS_TECH":
+            attachment_band_rule = get_mois_tech_attachment_rule("1E_2E")
+            attachment_warning = MOIS_TECH_ATTACHMENT_WARNING
+        else:
+            attachment_band_rule = get_mois_academic_attachment_rule("1E_2E")
+            attachment_warning = MOIS_ACADEMIC_ATTACHMENT_WARNING
         if attachment_band_rule is not None and (
             announced is None
             or announced >= date.fromisoformat(attachment_band_rule.effective_date)
@@ -3363,7 +3420,7 @@ def resolve_evaluation_rule(
                 is_blocked=False,
                 block_reason_code=None,
                 block_reason_message=None,
-                warnings=[*result.warnings, MOIS_ACADEMIC_ATTACHMENT_WARNING],
+                warnings=[*result.warnings, attachment_warning],
             )
             scope_stage = RULE_SCOPE_ALL
     if (
