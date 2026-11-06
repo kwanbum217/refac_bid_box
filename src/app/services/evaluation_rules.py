@@ -2561,6 +2561,62 @@ EDU_PPS_FALLBACK_WARNING = (
     "(지방계약법 시행령 제42조 제1항, 조달청 세부기준 제3조)."
 )
 
+# 전라남도 세부기준(예규 제1075호) 제11조 ① 은 이 세부기준에 정하지 아니한 사항을
+# 조달청 일반용역 적격심사 세부기준 등에서 정한 바에 따르도록 준용합니다. 전남 자체
+# 별표가 없는 유형만 조달청 매칭 결과로 계산하고, 다른 시·도와 다른 차단 코드는
+# 그대로 둡니다. 준용 조항은 예규 제1075호가 효력을 갖는 기간에만 인용합니다.
+JEONNAM_PPS_FALLBACK_WARNING = (
+    "전라남도 일반용역 적격심사 세부기준(예규 제1075호) 제11조 ① 에 따라 "
+    "해당 별표가 없는 유형은 조달청 일반용역 적격심사 세부기준을 준용했습니다."
+)
+
+# 전남 규칙의 지역 축과 효력 구간은 규칙 선언에서 유도합니다. 별표가 추가·개정되면
+# 준용 조건도 함께 따라가야 하므로 값을 따로 적지 않습니다.
+_JEONNAM_LOCAL_RULE_PREFIX = "SERVC_LOCAL_JEONNAM_"
+_JEONNAM_LOCAL_RULES = tuple(
+    rule for rule in LOCAL_RULES if rule.rule_id.startswith(_JEONNAM_LOCAL_RULE_PREFIX)
+)
+_JEONNAM_REGION_CODES = frozenset(
+    code for rule in _JEONNAM_LOCAL_RULES if (code := rule.region_code) is not None
+)
+_JEONNAM_REGION_NAMES = frozenset(
+    re.sub(r"\s+", "", name)
+    for rule in _JEONNAM_LOCAL_RULES
+    if (name := rule.region_name) is not None
+)
+JEONNAM_LOCAL_RULE_EFFECTIVE_DATE = min(
+    date.fromisoformat(rule.effective_date) for rule in _JEONNAM_LOCAL_RULES
+)
+JEONNAM_LOCAL_RULE_SUPERSEDED_DATE = min(
+    (
+        date.fromisoformat(rule.superseded_date)
+        for rule in _JEONNAM_LOCAL_RULES
+        if rule.superseded_date is not None
+    ),
+    default=None,
+)
+
+
+def _is_jeonnam_local_announcement(
+    region_code: str | None, region_name: str | None, announced: date | None
+) -> bool:
+    """전남 세부기준(예규 제1075호)이 적용되는 공고인지 판정합니다.
+
+    지역 축은 _select_local_rule 에 넘기는 region_code/region_name 그대로 보고,
+    공고일이 예규 시행일 이상이며 후속 지침으로 대체되기 전일 때만 참입니다.
+    """
+    if announced is None or announced < JEONNAM_LOCAL_RULE_EFFECTIVE_DATE:
+        return False
+    if (
+        JEONNAM_LOCAL_RULE_SUPERSEDED_DATE is not None
+        and announced >= JEONNAM_LOCAL_RULE_SUPERSEDED_DATE
+    ):
+        return False
+    code = (region_code or "").strip()
+    name = re.sub(r"\s+", "", region_name or "")
+    return code in _JEONNAM_REGION_CODES or name in _JEONNAM_REGION_NAMES
+
+
 METHOD_NAME_PLACEHOLDER = "공고서참조"
 METHOD_SOURCE_ANNOUNCEMENT = "ANNOUNCEMENT"
 METHOD_SOURCE_CODE = "CODE"
@@ -3162,6 +3218,29 @@ def resolve_evaluation_rule(
                     )
                 if result.rule is not None:
                     result = replace(result, warnings=[*result.warnings, EDU_PPS_FALLBACK_WARNING])
+            elif (
+                local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+                and _is_jeonnam_local_announcement(region_code, region_name, announced)
+                and select_moe_cdw_rule(method_name) is None
+            ):
+                # 전남 예규 제1075호 제11조 ① 의 준용 조항으로, 전남 자체 별표가 없는
+                # 유형만 조달청 매칭 결과로 계산합니다. 건설폐기물 띠 표기 공고는 뒤의
+                # 환경부고시 경로가 처리하므로 여기서 가로채지 않습니다.
+                if result.rule is not None:
+                    result, scope_stage = _narrow_rule_scope(
+                        result,
+                        method_name=method_name,
+                        allocated_rules=allocated_rules,
+                        institution_code=institution_code,
+                        institution_name=institution_name,
+                        region_code=region_code,
+                        region_name=region_name,
+                        contract_regime=contract_regime,
+                    )
+                if result.rule is not None:
+                    result = replace(
+                        result, warnings=[*result.warnings, JEONNAM_PPS_FALLBACK_WARNING]
+                    )
             else:
                 result = replace(
                     result,
