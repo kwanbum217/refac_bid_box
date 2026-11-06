@@ -433,6 +433,48 @@ def test_committed_ledger_totals_are_self_consistent() -> None:
         assert item["announcements"] >= ledger["filter"]["min_announcements"]
 
 
+def test_committed_ledger_totals_blocked_breakdown_when_present() -> None:
+    """커밋된 원장에 totals.blocked_breakdown 이 있을 때만 분리 집계 정합을 검사한다."""
+    ledger = _ledger()
+    breakdown = ledger["totals"].get("blocked_breakdown")
+    if breakdown is None:
+        pytest.skip("커밋된 원장에 totals.blocked_breakdown 이 없습니다")
+
+    assert list(breakdown) == list(ledger_script.BLOCKED_CATEGORIES)
+    for category, summary in breakdown.items():
+        assert set(summary) == {"announcements", "codes"}
+        assert sum(summary["codes"].values()) == summary["announcements"]
+        if category == ledger_script.BLOCKED_CATEGORY_MANUAL_INPUT:
+            assert set(summary["codes"]) <= ledger_script.MANUAL_INPUT_BLOCK_CODES
+        else:
+            assert not set(summary["codes"]) & ledger_script.MANUAL_INPUT_BLOCK_CODES
+
+    blocked = ledger["totals"]["applied_scope"][ledger_script.LEDGER_SCOPE_BLOCKED]
+    assert (
+        sum(summary["announcements"] for summary in breakdown.values()) <= blocked["announcements"]
+    )
+
+
+def test_committed_ledger_institution_blocked_breakdown_when_present() -> None:
+    """커밋된 원장의 기관 항목이 blocked_breakdown 을 가질 때만 정합을 검사한다."""
+    ledger = _ledger()
+    if not any("blocked_breakdown" in item for item in ledger["institutions"]):
+        pytest.skip("커밋된 원장 기관 항목에 blocked_breakdown 이 없습니다")
+
+    for item in ledger["institutions"]:
+        breakdown = item["blocked_breakdown"]
+        assert set(breakdown) == set(ledger_script.BLOCKED_CATEGORIES)
+        assert "blocked_breakdown" not in item["scope_counts"]
+        for category, summary in breakdown.items():
+            assert sum(summary["codes"].values()) == summary["announcements"]
+            for code, count in summary["codes"].items():
+                assert item["block_codes"][code] == count
+                if category == ledger_script.BLOCKED_CATEGORY_MANUAL_INPUT:
+                    assert code in ledger_script.MANUAL_INPUT_BLOCK_CODES
+                else:
+                    assert code not in ledger_script.MANUAL_INPUT_BLOCK_CODES
+
+
 def test_committed_ledger_region_rule_ids_are_registered() -> None:
     registered = _all_rule_ids()
     for region in _ledger()["regions"]:

@@ -8,6 +8,11 @@ data/reference/rule_coverage_ledger.yaml 로 남깁니다.
 (classify_contract_regime, institution_sido, resolve_evaluation_rule_from_raw_data)를
 같은 인자로 부르기만 합니다. DB 는 READ ONLY 트랜잭션에서 SELECT 만 씁니다.
 
+차단(BLOCKED)은 사용자 입력이 있어야 계산되는 코드와 자동 계산이 불가능한 코드로 나눠
+totals.blocked_breakdown 과 기관 항목 blocked_breakdown 에 함께 셉니다. 사용자 입력 경로
+코드 집합은 src/app/api/v1/evaluations.py 의 사용자 입력 처리(약 1862·1892행)를 근거로
+MANUAL_INPUT_BLOCK_CODES 에 둡니다.
+
 사용법:
 
     uv run python scripts/report_rule_coverage.py
@@ -71,6 +76,21 @@ LEDGER_SCOPES: tuple[str, ...] = (
     LEDGER_SCOPE_PPS_DEFAULT,
     LEDGER_SCOPE_BLOCKED,
     LEDGER_SCOPE_ERROR,
+)
+
+MANUAL_INPUT_BLOCK_CODES: frozenset[str] = frozenset(
+    {
+        "MANUAL_EVALUATION",
+        "LOCAL_RULE_NOT_FOUND",
+        "LOCAL_SERVICE_TYPE_UNRESOLVED",
+    }
+)
+
+BLOCKED_CATEGORY_MANUAL_INPUT = "manual_input"
+BLOCKED_CATEGORY_NOT_COMPUTABLE = "not_computable"
+BLOCKED_CATEGORIES: tuple[str, ...] = (
+    BLOCKED_CATEGORY_MANUAL_INPUT,
+    BLOCKED_CATEGORY_NOT_COMPUTABLE,
 )
 
 # --check 는 재계산이 불가능한 값(generated_at)과 생성 시점에 따라 달라지는 값
@@ -171,6 +191,28 @@ def classify_result(
     return ResolutionOutcome(applied_scope=scope, rule_id=rule.rule_id, region_name=region_name)
 
 
+def blocked_category(block_code: str | None) -> str:
+    """차단 코드를 사용자 입력 필요(manual_input)와 자동 계산 불가(not_computable)로 나눕니다."""
+    if block_code in MANUAL_INPUT_BLOCK_CODES:
+        return BLOCKED_CATEGORY_MANUAL_INPUT
+    return BLOCKED_CATEGORY_NOT_COMPUTABLE
+
+
+def _empty_blocked_codes() -> dict[str, Counter]:
+    return {category: Counter() for category in BLOCKED_CATEGORIES}
+
+
+def _blocked_breakdown(codes_by_category: dict[str, Counter]) -> dict[str, dict[str, Any]]:
+    """차단 코드 집계를 사용자 입력 필요·자동 계산 불가 두 갈래로 접습니다."""
+    return {
+        category: {
+            "announcements": sum(codes_by_category[category].values()),
+            "codes": dict(codes_by_category[category].most_common()),
+        }
+        for category in BLOCKED_CATEGORIES
+    }
+
+
 def _registry_status(
     scope_counts: Counter,
     inst_rule_ids: Counter,
@@ -222,12 +264,15 @@ def build_ledger(
             investigation_by_code[str(code)] = item.get("investigation")
 
     scope_totals: Counter = Counter()
+    blocked_totals = _empty_blocked_codes()
     region_acc: dict[str, dict[str, Any]] = {}
     institution_acc: dict[str, dict[str, Any]] = {}
 
     for record in records:
         outcome = classify_result(record.get("result"), record.get("error_type"))
         scope_totals[outcome.applied_scope] += 1
+        if outcome.applied_scope == LEDGER_SCOPE_BLOCKED and outcome.block_code:
+            blocked_totals[blocked_category(outcome.block_code)][outcome.block_code] += 1
 
         if outcome.applied_scope == LEDGER_SCOPE_REGION:
             key = outcome.region_name or "(미상)"
@@ -246,6 +291,7 @@ def build_ledger(
                 "rule_ids": Counter(),
                 "inst_rule_ids": Counter(),
                 "block_codes": Counter(),
+                "blocked_codes": _empty_blocked_codes(),
                 "announcements": 0,
                 "jurisdiction": None,
                 "contract_regime": None,
@@ -262,6 +308,7 @@ def build_ledger(
                 acc["inst_rule_ids"][outcome.rule_id] += 1
         if outcome.applied_scope == LEDGER_SCOPE_BLOCKED and outcome.block_code:
             acc["block_codes"][outcome.block_code] += 1
+            acc["blocked_codes"][blocked_category(outcome.block_code)][outcome.block_code] += 1
         if outcome.applied_scope == LEDGER_SCOPE_ERROR:
             acc["block_codes"][outcome.error_type or "UnknownError"] += 1
         if acc["jurisdiction"] is None and record.get("jurisdiction"):
@@ -315,6 +362,7 @@ def build_ledger(
                 "scope_counts": scope_counts,
                 "rule_ids": _institution_rule_ids(acc["rule_ids"], acc["inst_rule_ids"]),
                 "block_codes": dict(acc["block_codes"].most_common()),
+                "blocked_breakdown": _blocked_breakdown(acc["blocked_codes"]),
                 "announcements": acc["announcements"],
                 "registry_status": _registry_status(
                     acc["scope_counts"], acc["inst_rule_ids"], representative_name, registry_index
@@ -346,6 +394,7 @@ def build_ledger(
             "announcements": total_announcements,
             "institutions": len(institutions) + tail_institutions,
             "applied_scope": applied_scope_summary,
+            "blocked_breakdown": _blocked_breakdown(blocked_totals),
         },
         "tail": {
             "institutions": tail_institutions,
@@ -600,6 +649,8 @@ def _print_summary(ledger: dict[str, Any]) -> None:
     print(f"공고 {totals['announcements']}건, 기관 {totals['institutions']}곳")
     for scope, summary in totals["applied_scope"].items():
         print(f"  {scope}: {summary['announcements']}건 ({summary['ratio']})")
+    for category, summary in totals["blocked_breakdown"].items():
+        print(f"  BLOCKED[{category}]: {summary['announcements']}건 {summary['codes']}")
     unregistered = [
         item for item in ledger["institutions"] if item["registry_status"] == "unregistered"
     ][:10]
