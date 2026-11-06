@@ -50,7 +50,10 @@ DEFAULT_FEATURE_STORE_DIR = settings.FEATURE_STORE_DIR
 NO_CHAMPION = "__no_champion__"
 
 
-def _serving_metrics(model_name: str) -> tuple[str, dict] | None:
+def _serving_metrics(
+    model_name: str,
+    serving_dir: str | Path | None = None,
+) -> tuple[str, dict] | None:
     """실제 서빙 중인 모델의 버전과 지표를 읽습니다.
 
     **레지스트리가 아니라 서빙 슬롯을 봅니다.** 재학습이 레지스트리의 최신
@@ -58,23 +61,30 @@ def _serving_metrics(model_name: str) -> tuple[str, dict] | None:
     됩니다. 2026-08-06 에 quantum_leap_v25_pro 가 실제로 그 상태였습니다.
     서빙본은 25.1 인데 비교 대상은 표본 2개짜리 R2 -35999 버전이었고,
     그 결과 어떤 챌린저든 승격 권고를 받았습니다.
+
+    serving_dir 을 주면 대체 서빙 루트를 봅니다. 재현·시험이 운영 슬롯을
+    읽지 않게 하기 위한 인자입니다.
     """
     from src.ml.promotion import load_serving_metrics
 
-    version, metrics = load_serving_metrics(model_name)
+    version, metrics = load_serving_metrics(model_name, serving_dir=serving_dir)
     if not version and not metrics:
         return None
     return version, metrics
 
 
-def _load_champion_metrics(model_name: str, registry_dir: str | None = None) -> tuple[str, dict]:
+def _load_champion_metrics(
+    model_name: str,
+    registry_dir: str | None = None,
+    serving_dir: str | Path | None = None,
+) -> tuple[str, dict]:
     """현재 서빙 중인 모델의 지표를 읽습니다.
 
     서빙본에 지표가 없으면 비교가 불가능하다는 뜻이며, 레지스트리의 다른
     버전으로 대체하지 않습니다. 대체하면 서빙본과 무관한 근거로 승격을
     권하게 됩니다.
     """
-    serving = _serving_metrics(model_name)
+    serving = _serving_metrics(model_name, serving_dir=serving_dir)
     if serving is not None:
         version, metrics = serving
         if metrics:
@@ -100,14 +110,6 @@ def _load_champion_metrics(model_name: str, registry_dir: str | None = None) -> 
 
     # champion 표시가 명시된 버전만 씁니다. "지표를 가진 최신 버전" 으로
     # 대체하면 승격된 적 없는 실험 아티팩트가 비교 대상이 됩니다.
-    for version_dir in versions:
-        meta_path = version_dir / "metadata.json"
-        if not meta_path.exists():
-            continue
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            continue
     return NO_CHAMPION, {}
 
 
