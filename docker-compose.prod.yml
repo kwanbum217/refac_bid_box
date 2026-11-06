@@ -159,6 +159,8 @@ services:
       - AUTOMATION_SCHEDULE_CATCHUP_ENABLED=${AUTOMATION_SCHEDULE_CATCHUP_ENABLED:-true}
       # 개찰결과(유찰) 정기 수집 스위치입니다. worker 는 .env 를 읽지 않으므로 여기서 전달해야 켜집니다.
       - OPENG_RESULT_COLLECTION_ENABLED=${OPENG_RESULT_COLLECTION_ENABLED:-false}
+      # '2억미만 1억이상' 띠 용역 공고 첨부 판별 일일 크론(매일 06:10) 스위치입니다.
+      - BAND_REGIME_SCHEDULE_ENABLED=${BAND_REGIME_SCHEDULE_ENABLED:-false}
       - ML_WEEKLY_RETRAIN_ENABLED=${ML_WEEKLY_RETRAIN_ENABLED:-false}
       # 정기 백업은 backup 전용 서비스가 담당합니다. 워커에서는 항상 비활성입니다.
       - BACKUP_SCHEDULE_ENABLED=false

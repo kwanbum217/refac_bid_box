@@ -104,6 +104,9 @@ class Settings(BaseSettings):
     # 현재 주와 전년 기저에 대칭 적용합니다. 기본값은 꺼짐이며, 플래그와 무관하게 비교
     # 필드(offline_excluded, offline_adjusted_*)는 결과 행에 남습니다.
     RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS: bool = False
+    # '2억미만 1억이상' 띠 용역 공고 첨부 판별 크론(매일 06:10) 사용 여부입니다.
+    # 첨부 원문을 외부에서 내려받는 작업이라 기본값은 비활성(False)입니다.
+    BAND_REGIME_SCHEDULE_ENABLED: bool = False
     # 통합 백업 크론(매일 03:00). 디스크·DB 부하가 있으므로 기본값은 비활성입니다.
     BACKUP_SCHEDULE_ENABLED: bool = False
     # 유지할 스냅샷 개수. 정기 백업 시 이 개수를 초과하는 오래된 스냅샷은 안전 검증 후 자동 정리됩니다.
