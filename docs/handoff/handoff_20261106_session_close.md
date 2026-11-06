@@ -174,3 +174,31 @@
 | A 31건 | 조달청 경로로 전환 (구현 대기, 사용자 확인 필요) |
 | D 51건 | 조달청이 아니라 건설폐기물 규칙 경로 대상. 2026-10-19 처리한 건설폐기물 경로에 왜 잡히지 않는지 원인 조사 먼저 |
 | B·C·E | 현행 유지 |
+
+---
+
+## 7. 세션 종료 (2026-11-06 22:40)
+
+> 사용자 지시로 종료합니다. Claude 5시간 토큰 86% 시점에 남은 과업을 인수인계로 넘겼습니다. main `e7fdff32` 이후 이 문서 병합만 더했습니다. 워커 0대, 남은 워크트리 없음, Docker 정지.
+
+### 7.1 다음 세션이 바로 할 일
+
+| 우선 | 과업 | 방법 |
+| --- | --- | --- |
+| 1 | main CI 확인 | `gh run list --branch main --limit 3`. `e7fdff32` 은 종료 시점에 실행 중이었다 |
+| 2 | 결정 3-A: 조달청 인용 공기업 기관 전환 | Intent `.orca/intents/entity_a31_20261106.yaml` 그대로 재 Dispatch(빌더 effort max). 착수 직후 중단해 산출물 없음 |
+| 3 | 결정 3-D: 건설폐기물 51건 경로 원인 조사 | Intent `.orca/intents/entity_d51_20261106.yaml` 그대로 재 Dispatch(빌더 effort high). 산출물 없음 |
+| 4 | Docker 기동 후 worker 확인 | 판별 크론은 로컬 `.env` `BAND_REGIME_SCHEDULE_ENABLED=true` 로 켜져 있다. 기동 후 `docker compose logs worker` 에 `band_regime_daily_task` 등록 확인 |
+
+### 7.2 근거 문서
+
+| 과업 | 근거 |
+| --- | --- |
+| 3-A | `docs/analysis/local_entity_69_citation_check_20261106.md` 2·3절. 대상은 모든 공고가 A 또는 E 이고 A 가 1건 이상인 기관. 제주특별자치도개발공사·거제해양관광개발공사는 용역 종류로 갈려 제외 |
+| 3-D | 같은 문서 2절 D 51건(서울주택도시개발공사 13, 서울교통공사 7 등). 공고문이 환경부 고시 「건설폐기물처리용역 적격업체 평가기준」을 적격심사 기준으로 인용 |
+
+### 7.3 운영 메모
+
+- Orca 앱이 세션 중 1.4.251 로 올라 Dispatch 가 `skill_receipt_gate` 로 거부됐다. `orca skills get orchestration` 재독 후 `python3 scripts/orca_skill_receipt.py issue` 로 해소.
+- `orca_taskctl.py create` 가 게이트로 실패하면 출력의 task_id 파싱이 Intent 이름을 돌려줄 수 있다. `task_[0-9a-f]` 형식인지 확인하고 Dispatch 한다.
+- Command Code 감시기가 파이썬 변수 `rd` 를 Windows 삭제 명령으로 오탐해 승인창을 띄운다. 명령을 읽고 숫자 1 로 승인.
