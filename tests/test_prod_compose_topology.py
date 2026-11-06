@@ -95,6 +95,16 @@ def test_app_readiness_requires_ready_and_production_gates(compose: dict):
     assert environment["READINESS_REQUIRE_LLM"] == "false"
 
 
+def test_app_and_worker_share_seoul_timezone(compose: dict):
+    """앱 컨테이너가 UTC 로 돌면 KST 00~09시에 date.today() 마감 창이 하루 밀립니다."""
+    services = compose["services"]
+    app_env = _environment(services["app"])
+    worker_env = _environment(services["worker"])
+
+    assert app_env["TZ"] == "Asia/Seoul"
+    assert worker_env["TZ"] == "Asia/Seoul"
+
+
 def test_backup_service_enforces_least_privilege(compose: dict):
     """backup 서비스 최소권한 및 전용 워커 설정 단언.
 

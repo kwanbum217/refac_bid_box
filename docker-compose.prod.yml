@@ -75,6 +75,8 @@ services:
       - OTEL_EXPORTER_TYPE=${OTEL_EXPORTER_TYPE:-otlp}
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318/v1/traces}
       - OTEL_SAMPLING_RATIO=${OTEL_SAMPLING_RATIO:-0.1}
+      # date.today() 로 만드는 마감 창이 KST 기준으로 계산되도록 컨테이너 시간대를 고정합니다.
+      - TZ=Asia/Seoul
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -502,22 +502,30 @@ async def chat_stream_api(
 
             answer_text = ""
             latency_started = utcnow()
-            async for event in rag_engine.stream_tokens(
-                prepared.message,
-                history=prepared.history,
-                tool_context=prepared.tool_context or None,
-            ):
-                kind = event.get("type")
-                if kind == "token":
-                    text = str(event.get("text") or "")
-                    answer_text += text
-                    yield _sse("token", {"text": text})
-                elif kind == "done":
-                    # 출처 표기와 Answer Guard 교정이 반영된 정본입니다.
-                    answer_text = str(event.get("final_answer") or answer_text)
-                    trace_id = str(event.get("trace_id") or trace_id)
-                elif kind == "docs":
-                    yield _sse("docs", {"docs": event.get("docs") or []})
+            # 비스트리밍 경로와 같은 세션을 넘겨야 RAG 가 같은 SQL 근거로 답합니다.
+            # 스트림이 끝나거나 예외·클라이언트 연결 종료로 빠져나갈 때 반드시 닫습니다.
+            rag_db, should_close_rag_db = open_thread_session()
+            try:
+                async for event in rag_engine.stream_tokens(
+                    prepared.message,
+                    db=rag_db,
+                    history=prepared.history,
+                    tool_context=prepared.tool_context or None,
+                ):
+                    kind = event.get("type")
+                    if kind == "token":
+                        text = str(event.get("text") or "")
+                        answer_text += text
+                        yield _sse("token", {"text": text})
+                    elif kind == "done":
+                        # 출처 표기와 Answer Guard 교정이 반영된 정본입니다.
+                        answer_text = str(event.get("final_answer") or answer_text)
+                        trace_id = str(event.get("trace_id") or trace_id)
+                    elif kind == "docs":
+                        yield _sse("docs", {"docs": event.get("docs") or []})
+            finally:
+                if should_close_rag_db:
+                    rag_db.close()
 
             latency_ms = (utcnow() - latency_started).total_seconds() * 1000
             final = await asyncio.to_thread(

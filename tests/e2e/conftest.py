@@ -504,6 +504,7 @@ def _e2e_mock_rag_engine(monkeypatch: pytest.MonkeyPatch) -> None:
 
     async def mock_stream_tokens(
         query: str,
+        db: Any = None,
         history: list[dict[str, Any]] | None = None,
         tool_context: dict[str, Any] | None = None,
     ) -> collections.abc.AsyncIterator[dict[str, Any]]:

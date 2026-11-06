@@ -44,6 +44,21 @@ STEP_STATUS_PROGRESS = {
     "cancelled": 0.0,
 }
 DURATION_FALLBACK_TITLES = ("자동화 실행 소요 시간", "Harness 실행 소요 시간")
+LOGIN_REQUIRED_MESSAGE = "자동화 작업 상태는 로그인한 뒤 확인할 수 있습니다."
+
+
+def _login_required_status_response() -> dict[str, Any]:
+    return {
+        "mode": "answer",
+        "intent": "automation_status",
+        "message": LOGIN_REQUIRED_MESSAGE,
+        "answer": (
+            "자동화 작업 상태는 로그인한 뒤 확인할 수 있습니다. 로그인 후 다시 요청해주세요."
+        ),
+        "suggestions": ["로그인", "최근 공고 보여줘"],
+        "found": False,
+        "visualizations": [],
+    }
 
 
 def _step_status_visualizations(result_payload: dict | None) -> list[dict[str, Any]]:
@@ -139,9 +154,10 @@ def _adapt_status_payload(
 def _find_request(
     db: Session, job_id: str = "", *, user_id: int | None = None
 ) -> AutomationRequest | None:
-    stmt = select(AutomationRequest)
-    if user_id is not None:
-        stmt = stmt.where(AutomationRequest.user_id == user_id)
+    if user_id is None:
+        return None
+
+    stmt = select(AutomationRequest).where(AutomationRequest.user_id == user_id)
 
     if job_id:
         return db.execute(stmt.where(AutomationRequest.request_id == job_id)).scalar_one_or_none()
@@ -166,6 +182,9 @@ def execute(
     **_ignored: Any,
 ) -> dict[str, Any]:
     user_id = (context or {}).get("user_id")
+    if user_id is None:
+        return _login_required_status_response()
+
     request_obj = _find_request(db, str(job_id or "").strip(), user_id=user_id)
 
     if request_obj is None:
