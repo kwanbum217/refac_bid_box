@@ -31,8 +31,10 @@ def test_chatbot_line_counts():
     # 인자를 여러 줄로 펼친 결과이며 로직은 늘지 않았습니다.
     # 2026-09-02 익명 API 쿼터 도입으로 560 -> 565 줄이 됐습니다. 늘어난 것은 세 엔드포인트의
     # Request 파라미터와 enforce_anonymous_api_quota 호출뿐이라 별도 모듈로 뺄 수 없습니다.
+    # 2026-11-06 SSE-01 스트리밍 DB 세션 수명(try/finally) 도입으로 569 -> 577 줄이 됐습니다.
+    # 늘어난 것은 세션 확보와 종료뿐이라 별도 모듈로 뺄 수 없습니다.
     # 상한은 재증가를 막는 장치이므로 실측값에 여유 5줄만 두고 다시 고정합니다.
-    assert chatbot_lines <= 570, f"chatbot.py exceeds 570 lines: {chatbot_lines}"
+    assert chatbot_lines <= 582, f"chatbot.py exceeds 582 lines: {chatbot_lines}"
     assert format_lines <= 300, f"chatbot_format.py exceeds 300 lines: {format_lines}"
     assert conf_lines <= 300, f"chatbot_confirmation.py exceeds 300 lines: {conf_lines}"
 
