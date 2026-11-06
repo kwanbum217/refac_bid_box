@@ -1,7 +1,7 @@
 # 환경변수 명세
 
 > **작성일**: 2026-07-31
-> **갱신일**: 2026-10-11
+> **갱신일**: 2026-11-06
 > **상태**: 운영 계약
 > **관련**: [`.env.example`](../../.env.example)
 
@@ -27,6 +27,7 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `SIGNUP_RATE_LIMIT_MAX` | 아니오 | `10` | IP 축 회원가입 최대 허용 횟수 (고정 윈도우). Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과 |
 | `SIGNUP_RATE_LIMIT_WINDOW_SECONDS` | 아니오 | `3600` | 회원가입 시도 제한 윈도우 시간 (초, 기본 3600초 = 1시간) |
 | `WEB_CONCURRENCY` | 아니오 | `1` | Docker Compose app 서비스의 Uvicorn 워커 프로세스 수. FastAPI 설정 모델이 읽는 값이 아니라 `docker-compose.yml`의 `command`가 직접 소비합니다. 3워커 이상은 100ms 목표에 실패해 기본값에서 철회된 수동 실험 옵션입니다 |
+| `TZ` | 아니오 | `Asia/Seoul` | 컨테이너 OS 시간대. `docker-compose.yml`과 `docker-compose.prod.yml`의 app·worker·backup 서비스가 같은 값을 받습니다. `date.today()` 기반 마감 창을 KST 로 계산하기 위한 Compose 전용 값이며 애플리케이션 설정 모델은 읽지 않습니다 |
 
 요청 제한 정책: Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과합니다. 인증 보안을 위해 로그인 및 회원가입 시도 제한은 fail-closed 로 처리하며, 일반 서비스 가용성을 위해 익명 API 요청 제한은 fail-open 으로 통과시킵니다.
 
@@ -40,6 +41,11 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 전달하는 Compose 전용 변수입니다. Arq `worker` 서비스에는 적용되지 않습니다.
 실제 Docker 실측치와 3·4워커 기각 판정, 안전 기본값 1의 근거는
 [`docs/ops/uvicorn_worker_scaling_candidate_20260813.md`](uvicorn_worker_scaling_candidate_20260813.md)를 참조하십시오.
+
+`TZ`도 `WEB_CONCURRENCY`와 같이 애플리케이션 코드가 아니라 Compose가 컨테이너 OS
+시간대를 정하는 값입니다. app·worker·backup 세 서비스에 같은 값을 두어야 하며,
+앱이 UTC로 남으면 KST 00~09시에 `date.today()`로 만드는 오늘·내일·이번 주 마감
+창이 하루 밀립니다.
 
 `ENVIRONMENT`는 표의 세 값만 허용합니다. 오타나 임의 값은 개발 환경으로 강등하지
 않고 시동을 거부합니다. `SECRET_KEY`가 없거나 32자보다 짧아도 애플리케이션은

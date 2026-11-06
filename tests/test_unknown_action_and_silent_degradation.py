@@ -73,7 +73,7 @@ def test_status_tool_marks_stale_when_sync_fails():
         patch.object(tool, "build_action_response", return_value={}),
         patch.object(tool, "_adapt_status_payload", side_effect=lambda p, *a, **k: p),
     ):
-        payload = tool.execute(db=MagicMock(), job_id="job-1")
+        payload = tool.execute(db=MagicMock(), job_id="job-1", context={"user_id": 1})
 
     assert payload["found"] is True
     assert payload["sync_failed"] is True
@@ -93,7 +93,7 @@ def test_status_tool_not_stale_on_success():
         patch.object(tool, "build_action_response", return_value={}),
         patch.object(tool, "_adapt_status_payload", side_effect=lambda p, *a, **k: p),
     ):
-        payload = tool.execute(db=MagicMock(), job_id="job-1")
+        payload = tool.execute(db=MagicMock(), job_id="job-1", context={"user_id": 1})
 
     assert payload["sync_failed"] is False
     assert payload["status_is_stale"] is False
@@ -167,7 +167,7 @@ def test_stale_flags_survive_into_result_payload_and_answer():
         patch.object(tool, "build_action_response", return_value=base),
         patch.object(tool, "_adapt_status_payload", side_effect=lambda p, *a, **k: p),
     ):
-        payload = tool.execute(db=MagicMock(), job_id="job-1")
+        payload = tool.execute(db=MagicMock(), job_id="job-1", context={"user_id": 1})
 
     assert payload["result_payload"]["sync_failed"] is True
     assert payload["result_payload"]["status_is_stale"] is True
@@ -193,7 +193,7 @@ def test_stale_notice_is_not_duplicated():
         patch.object(tool, "build_action_response", return_value=base),
         patch.object(tool, "_adapt_status_payload", side_effect=lambda p, *a, **k: p),
     ):
-        payload = tool.execute(db=MagicMock(), job_id="job-1")
+        payload = tool.execute(db=MagicMock(), job_id="job-1", context={"user_id": 1})
 
     assert payload["answer"].count("최신이 아닐 수 있습니다") == 1
 
@@ -213,7 +213,7 @@ def test_successful_sync_does_not_add_stale_notice():
         patch.object(tool, "build_action_response", return_value=base),
         patch.object(tool, "_adapt_status_payload", side_effect=lambda p, *a, **k: p),
     ):
-        payload = tool.execute(db=MagicMock(), job_id="job-1")
+        payload = tool.execute(db=MagicMock(), job_id="job-1", context={"user_id": 1})
 
     assert "최신이 아닐 수 있습니다" not in payload["answer"]
     assert "sync_failed" not in payload["result_payload"]
