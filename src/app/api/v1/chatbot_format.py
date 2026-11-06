@@ -227,3 +227,54 @@ def _plan_steps_payload(plan: ChatPlan) -> list[dict[str, str]]:
         {"step_id": step.step_id, "kind": step.kind, "tool": step.tool}
         for step in (plan.steps or [])
     ]
+
+
+def _build_stream_provenance(pending: Any, trace_id: str) -> dict[str, Any]:
+    """SSE final 의 provenance 를 비스트리밍 /chat 과 같은 구조로 만듭니다.
+
+    RAG 엔진이 Provenance 를 만드는 것과 같은 근거 함수(_build_evidence_items)와
+    같은 도구 결과를 쓰므로, 스트림 소비자도 근거 항목·trace_id·kb 버전을 받습니다.
+    """
+    from src.rag.answer_format import _build_evidence_items
+    from src.rag.query_planning import build_retrieval_plan
+
+    tool_results = getattr(pending, "tool_context", None) or {}
+    tool_results = tool_results.get("tool_results") or {}
+
+    structured_data = None
+    bid_query_result = tool_results.get("bid_query")
+    if isinstance(bid_query_result, dict):
+        structured_data = bid_query_result.get("result") or bid_query_result
+    trend_analysis = tool_results.get("trend_analysis")
+    if isinstance(trend_analysis, dict):
+        structured_data = {**(structured_data or {}), "trend_analysis": trend_analysis}
+
+    vector_docs: list[dict[str, Any]] = []
+    semantic_result = tool_results.get("semantic_search")
+    if isinstance(semantic_result, dict):
+        if isinstance(semantic_result.get("documents"), list):
+            vector_docs = semantic_result["documents"]
+        elif semantic_result.get("document"):
+            vector_docs = [
+                {"document": semantic_result["document"], "metadata": {}, "distance": None}
+            ]
+
+    kb_result = tool_results.get("kb_status")
+    context_kb_status = None
+    if isinstance(kb_result, dict):
+        context_kb_status = kb_result.get("kb_status") or kb_result
+    kb_status = context_kb_status or getattr(pending, "kb_status", None)
+
+    plan = build_retrieval_plan(str(getattr(pending, "message", "") or ""))
+    items = _build_evidence_items(structured_data, vector_docs, kb_status)
+    hints = list(plan.insufficiency_hints)
+    if isinstance(structured_data, dict):
+        hints.extend(structured_data.get("insufficiency_hints") or [])
+    return {
+        "trace_id": trace_id,
+        "retrieval_mode": plan.route_reason,
+        "items": [item.model_dump() for item in items],
+        "insufficiency_hints": list(dict.fromkeys(hints)),
+        "kb_version": str((kb_status or {}).get("updated_at") or "") or None,
+        "vector_filter_provenance": None,
+    }

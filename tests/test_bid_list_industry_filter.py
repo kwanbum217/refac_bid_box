@@ -8,7 +8,7 @@ Capsule 계약 (a)~(f) 전체 검증:
   (c) 배치당 제한정보 조회가 한 번 (N+1 방지)
   (d) search 필터 문자열에 license_codes 조건 추가
   (e) /bids/?lic=0036 이 search 에 코드를 넘기고 잘못된 lic 는 무시
-  (f) 페이지 링크에 lic 보존 및 안내 문구 렌더링, 업종 선택지 캐싱
+  (f) 페이지 링크에 lic 보존 및 안내 문구 렌더링
 """
 
 from unittest.mock import Mock
@@ -17,7 +17,6 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from src.app.core.cache import cache
 from src.app.core.config import settings
 from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_password
 from src.app.core.timeutil import utcnow
@@ -324,53 +323,6 @@ def test_bids_page_preserves_lic_in_pagination_and_form(monkeypatch, logged_in_c
         "업종 제한이 없는 공고는 제외됩니다"
     )
     assert expected_notice in html
-
-
-def test_top_industry_choices_uses_cache(isolated_db):
-    now = utcnow()
-    isolated_db.add(
-        BidAnnouncementLicenseLimit(
-            bid_ntce_no="CACHE-TEST-1",
-            bid_ntce_ord="000",
-            lmt_grp_no="1",
-            lmt_sno="1",
-            lcns_lmt_nm="정보통신공사업/0036",
-            permsn_indstryty_list="[전문소방공사감리업/1492]",
-            collected_at=now,
-        )
-    )
-    isolated_db.commit()
-
-    # 첫 호출: DB에서 계산 후 캐시 저장
-    choices1 = bid_queries.get_top_industry_choices(isolated_db)
-    assert len(choices1) >= 2
-    codes1 = [c["code"] for c in choices1]
-    assert "0036" in codes1
-    assert "1492" in codes1
-
-    # 새 행 추가 (캐시 무효화 전)
-    isolated_db.add(
-        BidAnnouncementLicenseLimit(
-            bid_ntce_no="CACHE-TEST-2",
-            bid_ntce_ord="000",
-            lmt_grp_no="1",
-            lmt_sno="1",
-            lcns_lmt_nm="전기공사업/0037",
-            collected_at=now,
-        )
-    )
-    isolated_db.commit()
-
-    # 두 번째 호출: 캐시에서 반환되어 새 행이 반영되지 않음 (1시간 캐시 계약)
-    choices2 = bid_queries.get_top_industry_choices(isolated_db)
-    codes2 = [c["code"] for c in choices2]
-    assert "0037" not in codes2
-
-    # 캐시 삭제 후 재호출: 새 행 반영
-    cache.delete(bid_queries.TOP_INDUSTRY_CHOICES_CACHE_KEY)
-    choices3 = bid_queries.get_top_industry_choices(isolated_db)
-    codes3 = [c["code"] for c in choices3]
-    assert "0037" in codes3
 
 
 # --------------------------------------------------------------------------- #

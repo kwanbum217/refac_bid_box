@@ -15,6 +15,13 @@ class PredictionRequest(BaseModel):
     inst_hist_rate: float | None = Field(
         None, description="기관 과거 평균 낙찰률 (미입력 시 DB/Redis 조회)"
     )
+    bid_ntce_dt: datetime | None = Field(
+        None,
+        description=(
+            "공고일시 (선택). 주면 레짐·월·요일·공고기간 특징을 이 시각 기준으로 계산합니다. "
+            "없으면 요청 시각 기준입니다."
+        ),
+    )
 
 
 class PredictionResponse(BaseModel):
@@ -23,6 +30,10 @@ class PredictionResponse(BaseModel):
     predicted_rate: float = Field(..., description="예측 투찰률 (%)")
     model_version: str = Field(..., description="사용한 ML Champion 모델 버전")
     features_used: dict[str, Any] = Field(..., description="추론에 사용된 단일 특징 레코드")
+    feature_time_basis: Literal["bid_ntce_dt", "request_time"] = Field(
+        "request_time",
+        description="시점 특징 계산 기준. bid_ntce_dt 미입력 시 요청 시각(request_time)입니다.",
+    )
     created_at: datetime = Field(default_factory=utcnow)
 
 

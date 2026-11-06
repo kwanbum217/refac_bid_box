@@ -858,4 +858,5 @@ def predict_winning_price(
         predicted_rate=result["predicted_rate"],
         model_version=result["model_version"],
         features_used=result["features_used"],
+        feature_time_basis="bid_ntce_dt" if payload.bid_ntce_dt is not None else "request_time",
     )
