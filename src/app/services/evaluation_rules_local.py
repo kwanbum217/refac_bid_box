@@ -945,11 +945,18 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         source=_SRC_GB,
         cdw_exclusion="named",  # 원문: "5. '폐기물처리용역'이란 ... (단 건설폐기물의 재활용 촉진에 관한 법률에 따른 '건설폐기물'은 제외한다.)" (.cache/local_src/gb/ab55faa1b1a3_gb_body.txt, sha256 ab55faa1b1a30752252aad8fc530fcd21d9f7141f3236e9df1fcd436b063e121)
         description="경상북도 폐기물처리용역 적격심사 (별표 3)",
+        # 별표 3 은 낙찰하한율을 인쇄하지 않고 산식과 평탄점만 둡니다. 통과점수 95 로
+        # 역산하면 5억원 미만(70-20x|88-투찰률|, 비가격 만점 30, 필요 65)은 87.75% →
+        # 87.745%, 5억원 이상(50-4x|88-투찰률|, 비가격 만점 50, 필요 45)은 86.75% →
+        # 86.745% 입니다.
         price_bands=(
-            _local_price_band("500000000", "70", "20", "추정가격 5억원 미만", _SRC_GB),
-            _local_price_band(None, "50", "4", "추정가격 5억원 이상", _SRC_GB),
+            _local_price_band(
+                "500000000", "70", "20", "추정가격 5억원 미만", _SRC_GB, lwlt_rate="87.745"
+            ),
+            _local_price_band(None, "50", "4", "추정가격 5억원 이상", _SRC_GB, lwlt_rate="86.745"),
         ),
         threshold_bands=_single_threshold("95", "전 구간 95", _SRC_GB),
+        lwlt_rate="87.745",
     ),
     _local_rule(
         "SERVC_LOCAL_GB_20260108_ATTACH_04",

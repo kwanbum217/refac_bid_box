@@ -543,7 +543,9 @@ EXISTING_RULE_IDS = (
 # 단순노무 대표값(87.745) 반영으로 재생성했습니다.
 # 2026-10-07: 경북 단순노무(GB ATTACH_01) 대표값을 원문 산식 역산값 87.745 로 정정하며
 # 재생성했습니다(서울 단순노무는 이 스냅샷 범위 밖입니다).
-EXISTING_RULES_DIGEST = "c35b64538285f2fe7e8e27ffa8a2c4bc03a652b0276de217e70d0c78066cdd78"
+# 2026-11-06: 경북 폐기물(GB ATTACH_03) 대표값을 84.245 에서 87.745 로, 구간 하한율을
+# 87.745/86.745 로 정정하며 재생성했습니다.
+EXISTING_RULES_DIGEST = "35515bec739759a9a0a1b9d868b893b54543092d68711f15ccc16c78a933ab55"
 
 
 def _rule_signature(rule: EvaluationRule) -> dict[str, object]:
