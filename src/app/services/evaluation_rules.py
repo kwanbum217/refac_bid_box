@@ -2732,6 +2732,39 @@ JEONNAM_PPS_FALLBACK_WARNING = (
     "해당 별표가 없는 유형은 조달청 일반용역 적격심사 세부기준을 준용했습니다."
 )
 
+# 지방공사·지방공단은 지방공기업법상 법인이고 대한적십자사는 대한적십자사조직법상
+# 법인이라 지방계약법 제2조의 적용 주체인 "지방자치단체"가 아닙니다. 시·도 매핑이 없어
+# 시·도 규칙을 고르지 못한 공고를 공고문이 인용한 조달청 기본 규칙으로 풀 때 붙입니다.
+SIDO_RULE_EXCLUDED_PPS_WARNING = (
+    "지방공사·지방공단·특수법인 공고: 지방계약법 제2조의 지방자치단체가 아니어서 "
+    "시·도 세부기준 대신 조달청 일반용역 적격심사 세부기준을 적용했습니다."
+)
+
+
+def _is_sido_rule_excluded_institution(
+    raw_data: dict[str, Any] | None,
+    institution_name: str | None,
+) -> bool:
+    """수요기관 유형 기준으로 시·도 규칙 적용 대상이 아닌지 판정합니다.
+
+    판별 정본은 demand_institutions.is_sido_rule_excluded 입니다. 이 경로에는 수요기관
+    테이블 행이 없으므로 raw_data 에 기관 유형 필드가 실려 있으면 그것을 우선하고, 없으면
+    수요기관명 표기로 보조 판정합니다. demand_institutions 가 이 모듈의
+    extract_contract_regime 을 가져다 쓰므로 순환 임포트를 피해 함수 안에서 가져옵니다.
+    """
+    from src.app.services.demand_institutions import is_sido_rule_excluded
+
+    data = raw_data if isinstance(raw_data, dict) else {}
+    hint: dict[str, Any] = {}
+    jurisdiction = data.get("jrsdctnDivNm") or data.get("jrsdctn_div_nm")
+    if jurisdiction:
+        hint["jrsdctn_div_nm"] = jurisdiction
+    name = data.get("dminsttNm") or institution_name
+    if name:
+        hint["dminstt_nm"] = name
+    return is_sido_rule_excluded(hint) if hint else False
+
+
 # 전남 규칙의 지역 축과 효력 구간은 규칙 선언에서 유도합니다. 별표가 추가·개정되면
 # 준용 조건도 함께 따라가야 하므로 값을 따로 적지 않습니다.
 _JEONNAM_LOCAL_RULE_PREFIX = "SERVC_LOCAL_JEONNAM_"
@@ -3284,6 +3317,13 @@ def resolve_evaluation_rule(
       조달청 별표에도 없으면 RULE_NOT_FOUND 로 남습니다. 조달청 기준으로 풀린 결과에만
       경고(EDU_PPS_FALLBACK_WARNING)를 붙이고 범위 판정(scope_stage)은 조달청 기본 경로와
       같은 축 재선택 결과를 씁니다.
+    - 지방공사·지방공단·대한적십자사 등 특수법인(기관 유형 필드 지방공기업·기타기관 또는
+      이름 표기 공단·공사·적십자)이고 region_code 가 없어 시·도 규칙을 고르지 못한
+      LOCAL_RULE_NOT_FOUND 공고도 같은 방식으로 조달청 매칭 결과를 씁니다. 이 법인들은
+      지방계약법 제2조의 "지방자치단체"가 아니어서 시·도 예규 적용 대상이 아닙니다.
+      조달청 별표에도 없으면 RULE_NOT_FOUND 로 남고, 시·도 매핑이 있으면 종전 판정을
+      유지합니다. 조달청 기준으로 풀린 결과에만 경고(SIDO_RULE_EXCLUDED_PPS_WARNING)를
+      붙입니다.
     - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).
       공고일이 없으면 대조하지 않고, 있는데 읽을 수 없으면 차단 대신 경고만 남깁니다.
     - 공고 하한율이 없으면 estimated_price 로 고른 구간의 하한율을 씁니다. 구간별
@@ -3429,6 +3469,30 @@ def resolve_evaluation_rule(
                     )
                 if result.rule is not None:
                     result = replace(result, warnings=[*result.warnings, EDU_PPS_FALLBACK_WARNING])
+            elif (
+                region_code is None
+                and local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+                and _is_sido_rule_excluded_institution(raw_data, institution_name)
+            ):
+                # 지방공사·지방공단·특수법인은 지방계약법 제2조의 "지방자치단체"가 아니어서
+                # 시·도 예규 적용 대상이 아닙니다. 시·도 매핑이 없는 공고만 공고가 인용한
+                # 조달청 기본 규칙으로 풀고, 매핑이 있으면 종전 판정을 유지합니다.
+                if result.rule is not None:
+                    result, scope_stage = _narrow_rule_scope(
+                        result,
+                        method_name=method_name,
+                        allocated_rules=allocated_rules,
+                        institution_code=institution_code,
+                        institution_name=institution_name,
+                        region_code=region_code,
+                        region_name=region_name,
+                        contract_regime=contract_regime,
+                    )
+                if result.rule is not None:
+                    result = replace(
+                        result,
+                        warnings=[*result.warnings, SIDO_RULE_EXCLUDED_PPS_WARNING],
+                    )
             elif (
                 local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
                 and _is_jeonnam_local_announcement(region_code, region_name, announced)
