@@ -187,6 +187,12 @@ def _registry_status(
     return exact or "unregistered"
 
 
+def _institution_rule_ids(rule_ids: Counter, inst_rule_ids: Counter) -> list[str]:
+    """상위 3개 규칙에 적용된 기관 규칙을 빠짐없이 덧붙입니다. registry_status 근거를 남기기 위함입니다."""
+    top = [rule_id for rule_id, _count in rule_ids.most_common(3)]
+    return top + [rule_id for rule_id, _count in inst_rule_ids.most_common() if rule_id not in top]
+
+
 def _split_scopes(counter: Counter) -> dict[str, int]:
     return {scope: counter[scope] for scope in LEDGER_SCOPES if counter[scope]}
 
@@ -307,7 +313,7 @@ def build_ledger(
                 "contract_regime": acc["contract_regime"],
                 "applied_scope": applied_scope,
                 "scope_counts": scope_counts,
-                "rule_ids": [rule_id for rule_id, _count in acc["rule_ids"].most_common(3)],
+                "rule_ids": _institution_rule_ids(acc["rule_ids"], acc["inst_rule_ids"]),
                 "block_codes": dict(acc["block_codes"].most_common()),
                 "announcements": acc["announcements"],
                 "registry_status": _registry_status(
