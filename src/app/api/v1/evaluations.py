@@ -46,6 +46,7 @@ from sqlalchemy.orm import Session, selectinload
 from src.app.api.v1.accounts import require_current_user
 from src.app.api.v1.predictions import predict_price_api
 from src.app.core.db import get_db
+from src.app.core.security import enforce_anonymous_api_quota
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.company_profiles import AccountQualificationFact
@@ -2265,6 +2266,7 @@ def analyze_evaluation(
 
     소유권: 요청 사용자 본인만 접근 가능 (인증된 사용자에서 user_id 추출).
     """
+    enforce_anonymous_api_quota(request, user)
     bid = _get_bid_or_404(db, payload.bid_id)
     institution = _demand_institution_for_bid(db, bid)
     response = _analyze_bid(bid, payload, request, db, institution, institution_loaded=True)
@@ -2652,6 +2654,7 @@ def recommend_evaluation(
     -> 업종 순으로 조회한 과거 실측 최솟값·최댓값을 쓰고, 표본이 없으면 이론 범위(기초금액
     ±2%/±3%)로 물러납니다. 어느 쪽을 썼는지 rate_source·rate_notice 로 알립니다.
     """
+    enforce_anonymous_api_quota(request, user)
     bid = _resolve_recommend_bid(db, payload)
     facts = _member_qualification_facts(db, user.id)
     built = _build_recommend_inputs(payload.overrides, facts)
@@ -3102,10 +3105,12 @@ def list_evaluation_snapshots(
 )
 def create_evaluation_snapshot(
     payload: EvaluationSnapshotCreate,
+    request: Request,
     db: Session = Depends(get_db),
     user: CustomUser = Depends(require_current_user),
 ):
     """분석 스냅샷을 직접 저장합니다. (통합 분석 API가 자동 저장하므로 보통은 불필요)"""
+    enforce_anonymous_api_quota(request, user)
     # 공고 존재 확인
     _get_bid_or_404(db, payload.bid_id)
 
