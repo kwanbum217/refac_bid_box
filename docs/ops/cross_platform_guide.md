@@ -1,7 +1,7 @@
 # 크로스 플랫폼 호환 가이드 (macOS / Windows)
 
 > **작성일**: 2026-07-31
-> **갱신일**: 2026-09-05
+> **갱신일**: 2026-11-06
 > **상태**: 2026-09-05 원격 CI run `33947859707` (`fa1202f`) 에서 ubuntu·macOS·windows 전부 green / Windows Docker Desktop 실기 미수행 (G2 판정: 보류)
 > **관련**: [`docs/design/REFACTORING_DESIGN.md`](../design/REFACTORING_DESIGN.md) 6장
 
@@ -78,6 +78,36 @@ Windows에서는 Docker Desktop을 Linux 컨테이너 모드로 실행하고 Git
 `make` 또는 GNU Make를 설치합니다.
 
 모델 가중치와 ChromaDB는 Git으로 관리하지 않습니다. 따라서 가중치 없는 새 체크아웃의 make test는 외부 자산 의존 G1 테스트를 제외하고 실행합니다. 자산을 복원한 환경에서는 make test-data-assets, make migrate-verify, make model-verify를 추가로 실행해 G1 무결성과 모델 호환성을 확인하십시오.
+
+### 4.1 `make check-all` 구성 (CI 필수 검사 정합)
+
+`make check-all` 은 CI 의 `lint-and-validate` 잡과 `cross-platform-test` 잡 판정을 로컬에서 같은 도구·같은 플래그로 수행합니다. 로컬에서 초록을 확인하고 병합했는데 CI 가 붉어지는 차이를 없애기 위한 구성입니다.
+
+| 타깃 | 검사 내용 | CI 대응 단계 |
+| --- | --- | --- |
+| `frontend-check` | `npm ci`, `tsc --noEmit`, `npm run test`, `npm run build` | Install Frontend Dependencies / Type Check / Tests / Build |
+| `lint` | Ruff 린트·포맷, 프런트 eslint | Run Ruff Lint / Run Ruff Format Check / Run Frontend Lint |
+| `security` | Bandit | Run Bandit Security Scan |
+| `typecheck` | mypy | Run mypy Type Check |
+| `dup-check` | jscpd 중복 코드 | Run Duplicate Code Check |
+| `check-rules` | 다중 에이전트 규칙 정합성 | Validate Multi-Agent Rules Consistency |
+| `check-tests` | pytest 전량 (커버리지 하한 80%) | Run pytest (SQLite in-memory with coverage) |
+| `lint-workflows` | actionlint | Lint GitHub Actions Workflows |
+| `check-docs` | 문서 상대 링크 | Validate Markdown Doc Links |
+| `secret-scan` | gitleaks 작업 트리·전체 이력 | Scan for leaked secrets / Scan git history |
+| `css-check` | Tailwind CSS 재생성 드리프트 | Verify Tailwind CSS Reproducibility |
+
+`secret-scan` 은 gitleaks 실행 파일이 필요합니다. macOS 는 `brew install gitleaks`, Windows(Git Bash)는 `scoop install gitleaks` 로 설치합니다. 설치돼 있지 않으면 조용히 건너뛰지 않고 실패합니다(CI 와 같은 fail-closed). CI 는 8.30.1 고정본의 체크섬을 검증한 뒤 사용합니다.
+
+로컬에서 실행할 수 없어 `check-all` 에 넣지 않은 CI 게이트는 다음과 같습니다.
+
+| CI 게이트 | 로컬 제외 사유 |
+| --- | --- |
+| `supply-chain` (Docker 이미지, Trivy, pip-audit, npm audit) | 컨테이너 러너와 네트워크가 필요 |
+| `e2e-browser-test` | Playwright 브라우저 설치가 필요하며 `make test-e2e` 로 별도 실행 |
+| `docker-build` | Docker 데몬 필요 |
+| `mysql-ngram-integration`, `g1-schema-signature` | MySQL 서비스 컨테이너 필요 |
+| pytest 경고 예산 | CI 가 Python 3.12 러너 한 곳에서만 판정하며 로컬 인터프리터 버전별 경고 수가 다름 |
 
 ---
 
