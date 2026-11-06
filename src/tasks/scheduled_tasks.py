@@ -69,6 +69,7 @@ from src.tasks.notifier import (
     notify,
     notify_collection_gap,
     notify_drift_detected,
+    notify_followup_failures,
     notify_task_failure,
 )
 from src.tasks.retrain_task import run_retrain_pipeline_task
@@ -314,6 +315,20 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
     # Meilisearch 읽기 모델 건수 대조 점검 (읽기 전용, 재구축 자동 실행 금지)
     outcome["search_index_parity"] = await asyncio.to_thread(_check_search_index_parity)
     final_outcome = _mark_followup_failures(outcome)
+    failed_followups = final_outcome.get("failed_followups")
+    if isinstance(failed_followups, list) and failed_followups:
+        failed_keys = [str(key) for key in failed_followups]
+        failure_detail = "; ".join(
+            f"{key}: {outcome[key].get('error') or 'failed'}"
+            for key in failed_keys
+            if isinstance(outcome.get(key), dict)
+        )
+        # 상태만 partial_success 로 바꾸면 낡은 파생 집계를 아무도 보지 못합니다.
+        # 알림 실패가 야간 결과를 되돌리면 안 되므로 삼키고 로그만 남깁니다.
+        try:
+            await notify_followup_failures(failed_keys, detail=failure_detail)
+        except Exception as notify_exc:
+            logger.warning("후속 집계 실패 알림 발신 실패: %s", notify_exc)
     if final_outcome.get("status") == "success":
         await asyncio.to_thread(release_schedule_claim, claim.key, token=claim.token)
     return final_outcome
@@ -588,77 +603,84 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
         logger.info("주간 재학습이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
-    # arq 월요일 03:00 크론과 기동 따라잡기가 같은 키를 잡아 중복 학습을 막습니다.
-    claim = _acquire_weekly_retrain_claim()
-    if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
-        logger.info("주간 재학습이 이미 실행 중이어서 건너뜁니다.")
-        return {"status": "skipped", "reason": "already_running"}
-    if not claim.acquired:
-        logger.warning(
-            "Redis 접근 불가로 주간 재학습 선점 없이 진행합니다 (key=%s, status=%s)",
-            WEEKLY_RETRAIN_CLAIM_KEY,
-            claim.status.value,
-        )
+    # worker.py 가 이 모듈을 import 하므로 순환 import 를 피해 호출 시점에 가져옵니다.
+    from src.tasks.worker import heavy_task_guard
 
-    try:
-        selected = settings.weekly_retrain_categories
-        unknown = [code for code in selected if code not in CATEGORY_MODEL_NAMES]
-        if unknown:
-            error_msg = (
-                f"ML_WEEKLY_RETRAIN_CATEGORIES 에 등록되지 않은 카테고리가 있습니다: {unknown}"
+    # 학습은 DB 전량과 모델 메모리를 함께 쓰므로 수집·색인과 같은 단일 실행 가드 안에서 돕니다.
+    async with heavy_task_guard("weekly_retrain_task"):
+        # arq 월요일 03:00 크론과 기동 따라잡기가 같은 키를 잡아 중복 학습을 막습니다.
+        claim = _acquire_weekly_retrain_claim()
+        if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+            logger.info("주간 재학습이 이미 실행 중이어서 건너뜁니다.")
+            return {"status": "skipped", "reason": "already_running"}
+        if not claim.acquired:
+            logger.warning(
+                "Redis 접근 불가로 주간 재학습 선점 없이 진행합니다 (key=%s, status=%s)",
+                WEEKLY_RETRAIN_CLAIM_KEY,
+                claim.status.value,
             )
-            await notify_task_failure("주간 재학습 스케줄", error_msg)
-            return {"status": "failed", "trigger_source": "weekly_schedule", "error": error_msg}
-        categories = sorted(selected or CATEGORY_MODEL_NAMES.keys())
 
-        logger.info("주간 재학습 실행 시작 (카테고리 fan-out: %s)", categories)
-        results: dict[str, Any] = {}
-        has_failure = False
-
-        for category in categories:
-            try:
-                logger.info("주간 재학습 시작: 카테고리 %s", category)
-                cat_result = await run_retrain_pipeline_task(
-                    ctx,
-                    trigger_source="weekly_schedule",
-                    category_code=category,
+        try:
+            selected = settings.weekly_retrain_categories
+            unknown = [code for code in selected if code not in CATEGORY_MODEL_NAMES]
+            if unknown:
+                error_msg = (
+                    f"ML_WEEKLY_RETRAIN_CATEGORIES 에 등록되지 않은 카테고리가 있습니다: {unknown}"
                 )
-                results[category] = cat_result
-            except Exception as exc:
-                logger.exception("주간 재학습 카테고리 %s 실패", category)
-                has_failure = True
-                results[category] = {
-                    "status": "failed",
-                    "category": category,
-                    **safe_error(exc),
-                }
+                await notify_task_failure("주간 재학습 스케줄", error_msg)
+                return {"status": "failed", "trigger_source": "weekly_schedule", "error": error_msg}
+            categories = sorted(selected or CATEGORY_MODEL_NAMES.keys())
 
-        all_succeeded = not has_failure
-        any_succeeded = any(
-            isinstance(r, dict) and r.get("status") in ("success", "skipped")
-            for r in results.values()
-        )
-        status = "success" if all_succeeded else ("partial_failure" if any_succeeded else "failed")
-        outcome: dict[str, Any] = {
-            "status": status,
-            "trigger_source": "weekly_schedule",
-            "categories": results,
-        }
-        if has_failure:
-            errors = [
-                f"{cat}: {res['error']}"
-                for cat, res in results.items()
-                if isinstance(res, dict) and res.get("status") == "failed"
-            ]
-            error_msg = "; ".join(errors)
-            outcome["error"] = error_msg
-            await notify_task_failure("주간 재학습 스케줄", error_msg)
+            logger.info("주간 재학습 실행 시작 (카테고리 fan-out: %s)", categories)
+            results: dict[str, Any] = {}
+            has_failure = False
 
-        return outcome
-    finally:
-        # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
-        if claim.acquired and claim.token:
-            release_schedule_claim(key=WEEKLY_RETRAIN_CLAIM_KEY, token=claim.token)
+            for category in categories:
+                try:
+                    logger.info("주간 재학습 시작: 카테고리 %s", category)
+                    cat_result = await run_retrain_pipeline_task(
+                        ctx,
+                        trigger_source="weekly_schedule",
+                        category_code=category,
+                    )
+                    results[category] = cat_result
+                except Exception as exc:
+                    logger.exception("주간 재학습 카테고리 %s 실패", category)
+                    has_failure = True
+                    results[category] = {
+                        "status": "failed",
+                        "category": category,
+                        **safe_error(exc),
+                    }
+
+            all_succeeded = not has_failure
+            any_succeeded = any(
+                isinstance(r, dict) and r.get("status") in ("success", "skipped")
+                for r in results.values()
+            )
+            status = (
+                "success" if all_succeeded else ("partial_failure" if any_succeeded else "failed")
+            )
+            outcome: dict[str, Any] = {
+                "status": status,
+                "trigger_source": "weekly_schedule",
+                "categories": results,
+            }
+            if has_failure:
+                errors = [
+                    f"{cat}: {res['error']}"
+                    for cat, res in results.items()
+                    if isinstance(res, dict) and res.get("status") == "failed"
+                ]
+                error_msg = "; ".join(errors)
+                outcome["error"] = error_msg
+                await notify_task_failure("주간 재학습 스케줄", error_msg)
+
+            return outcome
+        finally:
+            # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
+            if claim.acquired and claim.token:
+                release_schedule_claim(key=WEEKLY_RETRAIN_CLAIM_KEY, token=claim.token)
 
 
 def _record_drift_log(
@@ -826,26 +848,31 @@ async def drift_monitor_task(
         logger.info("PSI 드리프트 모니터링이 비활성화되어 있어 건너뜁니다.")
         return {"status": "skipped", "reason": "disabled"}
 
-    # arq 매일 04:00 크론과 기동 따라잡기가 같은 키를 잡아 중복 검사를 막습니다.
-    claim = _acquire_drift_monitor_claim()
-    if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
-        logger.info("PSI 드리프트 모니터링이 이미 실행 중이어서 건너뜁니다.")
-        return {"status": "skipped", "reason": "already_running"}
-    if not claim.acquired:
-        logger.warning(
-            "Redis 접근 불가로 PSI 드리프트 모니터링 선점 없이 진행합니다 (key=%s, status=%s)",
-            DRIFT_MONITOR_CLAIM_KEY,
-            claim.status.value,
-        )
+    # worker.py 가 이 모듈을 import 하므로 순환 import 를 피해 호출 시점에 가져옵니다.
+    from src.tasks.worker import heavy_task_guard
 
-    try:
-        return await _run_drift_monitor(
-            ctx, evaluation_window_days, registry_dir or settings.MODEL_REGISTRY_DIR
-        )
-    finally:
-        # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
-        if claim.acquired and claim.token:
-            release_schedule_claim(key=DRIFT_MONITOR_CLAIM_KEY, token=claim.token)
+    # 카테고리마다 전량 데이터셋과 특징 프레임을 만들므로 같은 단일 실행 가드 안에서 돕니다.
+    async with heavy_task_guard("drift_monitor_task"):
+        # arq 매일 04:00 크론과 기동 따라잡기가 같은 키를 잡아 중복 검사를 막습니다.
+        claim = _acquire_drift_monitor_claim()
+        if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+            logger.info("PSI 드리프트 모니터링이 이미 실행 중이어서 건너뜁니다.")
+            return {"status": "skipped", "reason": "already_running"}
+        if not claim.acquired:
+            logger.warning(
+                "Redis 접근 불가로 PSI 드리프트 모니터링 선점 없이 진행합니다 (key=%s, status=%s)",
+                DRIFT_MONITOR_CLAIM_KEY,
+                claim.status.value,
+            )
+
+        try:
+            return await _run_drift_monitor(
+                ctx, evaluation_window_days, registry_dir or settings.MODEL_REGISTRY_DIR
+            )
+        finally:
+            # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
+            if claim.acquired and claim.token:
+                release_schedule_claim(key=DRIFT_MONITOR_CLAIM_KEY, token=claim.token)
 
 
 async def _run_drift_monitor(
@@ -995,6 +1022,18 @@ async def _run_drift_monitor(
                     "category": category,
                     **safe_error(cat_exc),
                 }
+                # 실패는 결과 dict 에만 남으면 아무도 보지 못합니다. 알림 발신이
+                # 실패해도 나머지 카테고리 검사는 계속 돌아야 하므로 삼킵니다.
+                try:
+                    await notify_task_failure(
+                        "drift_monitor_task",
+                        summarize_error(cat_exc),
+                        detail=f"카테고리 {category} ({model_name})",
+                    )
+                except Exception as notify_exc:
+                    logger.warning(
+                        "카테고리 %s 드리프트 실패 알림 발신 실패: %s", category, notify_exc
+                    )
 
     except Exception as exc:
         logger.exception("PSI 드리프트 모니터링 스케줄 실패")
