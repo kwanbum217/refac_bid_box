@@ -19,6 +19,10 @@ import pandas as pd
 import pytest
 from sqlalchemy.orm import Session
 
+from src.app.api.v1.predictions import (
+    FEATURE_AMOUNT_BASIS_REFERENCE,
+    build_serving_features,
+)
 from src.app.models.bids import BidAnnouncement
 from src.app.services.tools.bid_prediction_tool import (
     _build_prediction_features,
@@ -26,7 +30,7 @@ from src.app.services.tools.bid_prediction_tool import (
     execute,
 )
 from src.ml.dataset import announcement_feature_payload
-from src.ml.features import build_feature_dict
+from src.ml.features import build_feature_frame
 from src.ml.prediction_api import PredictionOutcome
 
 
@@ -96,29 +100,55 @@ def fake_db_session(sample_bid: BidAnnouncement) -> MagicMock:
     return session
 
 
-def _build_api_reference_features(bid: BidAnnouncement, db: Session) -> dict[str, Any]:
-    """src/app/api/v1/predictions.py의 정본 특징 생성 로직을 그대로 재현합니다."""
+@pytest.fixture
+def divergent_amount_bid() -> BidAnnouncement:
+    """기초금액과 추정가격이 다르고 고시금액 경계를 사이에 두는 공고입니다.
+
+    기초금액 242,000,000 과 추정가격 220,000,000 은 2026년 고시금액
+    230,000,000 을 사이에 둡니다. 두 금액이 같으면 기준 불일치를 잡지 못합니다.
+    """
+    return BidAnnouncement(
+        id=2,
+        bid_ntce_no="20261106002",
+        bid_ntce_ord="000",
+        bid_ntce_nm="2026년 공공데이터 클라우드 전환 용역 2차",
+        ntce_instt_nm="한국도로공사",
+        dminstt_nm="한국도로공사",
+        category="Servc",
+        cntrct_mthd_nm="일반경쟁",
+        bid_methd_nm="전자입찰",
+        ntce_kind_nm="등록공고",
+        presmpt_prce=220_000_000.0,
+        base_amount=242_000_000.0,
+        bid_ntce_dt=datetime(2026, 9, 1, 10, 0),
+        bid_clse_dt=datetime(2026, 9, 15, 18, 0),
+        openg_dt=datetime(2026, 9, 16, 10, 0),
+        raw_data={
+            "bdgtAmt": "242000000",
+            "sucsfbidLwltRate": "87.745",
+            "prearngPrceDcsnMthdNm": "복수예가",
+            "srvceDivNm": "일반용역",
+            "pubPrcrmntLrgClsfcNm": "정보통신용역",
+            "pubPrcrmntMidClsfcNm": "소프트웨어유지및지원서비스",
+            "pubPrcrmntClsfcNm": "전산업무(소프트웨어개발)",
+            "intrbidYn": "N",
+            "ppswGnrlSrvceYn": "Y",
+            "techAbltEvlRt": "80",
+            "bidPrceEvlRt": "20",
+            "totPrdprcNum": "15",
+            "drwtPrdprcNum": "4",
+            "sucsfbidMthdNm": "적격심사",
+        },
+    )
+
+
+def _build_api_features(bid: BidAnnouncement, db: Session) -> dict[str, Any]:
+    """src/app/api/v1/predictions.py 의 실제 서빙 특징 생성기를 그대로 호출합니다.
+
+    로직을 복제하면 API 쪽 금액 기준이 바뀌어도 시험이 통과해 버립니다.
+    """
     reference_amount = float(bid.prediction_reference_amount or 0)
-    features = {
-        **announcement_feature_payload(bid),
-        "title": bid.bid_ntce_nm or "",
-        "agency_name": bid.dminstt_nm or bid.ntce_instt_nm or "",
-        "scenario_mode": "2",
-        "presmpt_prce": reference_amount,
-        "presmptPrce": reference_amount,
-        "real_budget": reference_amount,
-        "bid_ntce_nm": bid.bid_ntce_nm or "",
-        "ntce_instt_nm": bid.ntce_instt_nm or "",
-        "ntceInsttNm": bid.ntce_instt_nm or "",
-        "dminstt_nm": bid.dminstt_nm or "",
-        "bidMethdNm": bid.bid_methd_nm or "",
-        "cntrctCnclsMthdNm": bid.cntrct_mthd_nm or "",
-        "category": bid.category or "",
-        "bid_ntce_dt": bid.bid_ntce_dt,
-        "bid_clse_dt": bid.bid_clse_dt,
-        "openg_dt": bid.openg_dt,
-    }
-    return {**features, **build_feature_dict(features, db)}
+    return build_serving_features(bid, db, reference_amount)
 
 
 def test_runtime_feature_parity_between_api_and_chatbot_tool(
@@ -126,7 +156,7 @@ def test_runtime_feature_parity_between_api_and_chatbot_tool(
     fake_db_session: MagicMock,
 ):
     """상세 API와 챗봇 도구가 생성한 런타임 특징이 완전히 동일해야 합니다."""
-    api_features = _build_api_reference_features(sample_bid, fake_db_session)
+    api_features = _build_api_features(sample_bid, fake_db_session)
     chatbot_features = _build_prediction_features(sample_bid, fake_db_session)
 
     assert set(chatbot_features.keys()) == set(api_features.keys())
@@ -140,6 +170,50 @@ def test_runtime_feature_parity_between_api_and_chatbot_tool(
             )
         else:
             assert chat_val == api_val, f"특징 '{key}' 불일치: 챗봇={chat_val}, API={api_val}"
+
+
+AMOUNT_FEATURES = ("log_price", "notice_amt_ratio", "is_over_notice_amt", "price_ratio")
+
+
+def test_serving_amount_features_match_training_frame(
+    divergent_amount_bid: BidAnnouncement,
+    fake_db_session: MagicMock,
+):
+    """A7. 서빙 금액 특징이 학습 프레임과 같은 추정가격 기준이어야 합니다.
+
+    API 로직을 복제하지 않고 실제 build_serving_features 를 호출합니다. 기본
+    기준이 기초금액으로 되돌아가면 이 시험이 깨집니다.
+    """
+    reference_amount = float(divergent_amount_bid.prediction_reference_amount or 0)
+    assert reference_amount == 242_000_000.0
+    assert float(divergent_amount_bid.presmpt_prce) == 220_000_000.0
+
+    training_record = announcement_feature_payload(divergent_amount_bid)
+    [training_features] = build_feature_frame([training_record])
+
+    serving_features = build_serving_features(
+        divergent_amount_bid, fake_db_session, reference_amount
+    )
+
+    for key in AMOUNT_FEATURES:
+        assert serving_features[key] == pytest.approx(training_features[key]), (
+            f"금액 특징 '{key}' 불일치: 서빙={serving_features[key]}, 학습={training_features[key]}"
+        )
+
+    # 픽스처가 실제로 두 기준을 구분하는지 고정합니다. 기초금액 기준으로
+    # 계산하면 네 특징이 모두 학습 프레임과 달라져야 합니다.
+    reference_features = build_serving_features(
+        divergent_amount_bid,
+        fake_db_session,
+        reference_amount,
+        feature_amount_basis=FEATURE_AMOUNT_BASIS_REFERENCE,
+    )
+    for key in AMOUNT_FEATURES:
+        assert reference_features[key] != pytest.approx(training_features[key]), (
+            f"픽스처가 금액 기준 차이를 만들지 못합니다: {key}"
+        )
+    assert reference_features["is_over_notice_amt"] == 1.0
+    assert serving_features["is_over_notice_amt"] == 0.0
 
 
 def test_predict_bid_passes_captured_features_with_db_values(

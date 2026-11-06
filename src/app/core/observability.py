@@ -64,6 +64,10 @@ RAG_LLM_REQUESTS: str = "rag_llm_requests"
 BID_COLLECTION_SAVED_ROWS: str = "bid_collection_saved_rows"
 BID_COLLECTION_FAILED_RANGES: str = "bid_collection_failed_ranges"
 
+# 기관 이력 특징이 집계 표에 없어 다른 정의로 계산된 횟수를 기록하는 메트릭 명칭.
+# reason 은 recent_window(365일 실시간 집계) 또는 default(카테고리 기본값)만 씁니다.
+INST_HISTORY_FALLBACK: str = "inst_history_fallback"
+
 # OTLP 메트릭 exporter 기본 경로. opentelemetry-exporter-otlp-proto-http 1.45.1
 # 에서 _append_metrics_path 가 제거되어 1.44.0 구현과 동일하게 내장합니다.
 DEFAULT_METRICS_EXPORT_PATH: str = "v1/metrics"
@@ -374,6 +378,7 @@ class ObservabilityRegistry:
     llm_requests_counter: Counter | None = None
     collection_saved_rows_counter: Counter | None = None
     collection_failed_ranges_counter: Counter | None = None
+    inst_history_fallback_counter: Counter | None = None
     fastapi_instrumented: bool = False
     sqlalchemy_instrumented: bool = False
     arq_instrumented: bool = False
@@ -415,6 +420,7 @@ def get_metric_instruments() -> dict[str, Any]:
         "rag_llm_requests": _registry.llm_requests_counter,
         "bid_collection_saved_rows": _registry.collection_saved_rows_counter,
         "bid_collection_failed_ranges": _registry.collection_failed_ranges_counter,
+        "inst_history_fallback": _registry.inst_history_fallback_counter,
     }
 
 
@@ -597,6 +603,13 @@ def setup_observability(
             name=BID_COLLECTION_FAILED_RANGES,
             description="Count of failed collection ranges by kind.",
             unit="{range}",
+        )
+
+        # 기관 이력 폴백 계측. 속성은 reason 두 값만 씁니다.
+        _registry.inst_history_fallback_counter = meter.create_counter(
+            name=INST_HISTORY_FALLBACK,
+            description="Count of institution history lookups that used a fallback path.",
+            unit="{lookup}",
         )
 
         _registry.safe_metric_exporter = safe_metric_exporter
@@ -905,6 +918,7 @@ def reset_observability_for_testing() -> None:
     _registry.llm_requests_counter = None
     _registry.collection_saved_rows_counter = None
     _registry.collection_failed_ranges_counter = None
+    _registry.inst_history_fallback_counter = None
     _registry.fastapi_instrumented = False
     _registry.sqlalchemy_instrumented = False
     _registry.arq_instrumented = False
@@ -1019,6 +1033,21 @@ def record_collection_failed_ranges(kind: str, count: int) -> None:
         _registry.collection_failed_ranges_counter.add(int(count), {"kind": kind})
     except Exception as exc:
         logger.warning("수집 실패 구간 기록 예외: %s", exc)
+
+
+def record_institution_history_fallback(reason: str) -> None:
+    """기관 이력 특징이 집계 표 밖 폴백 정의로 계산된 횟수를 기록합니다.
+
+    reason 은 recent_window(365일 실시간 집계) 또는 default(카테고리 기본값)입니다.
+    기관명 같은 고유값은 속성에 넣지 않습니다(카디널리티 폭발 방지).
+    메트릭이 비활성이거나 계측기가 없으면 아무것도 하지 않습니다.
+    """
+    if not _registry.metrics_enabled or _registry.inst_history_fallback_counter is None:
+        return
+    try:
+        _registry.inst_history_fallback_counter.add(1, {"reason": reason})
+    except Exception as exc:
+        logger.warning("기관 이력 폴백 카운터 기록 예외: %s", exc)
 
 
 def record_collection_metrics(metrics: dict[str, Any]) -> None:

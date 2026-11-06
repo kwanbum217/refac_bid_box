@@ -27,6 +27,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from src.app.core.observability import record_institution_history_fallback
 from src.app.core.timeutil import utcnow
 
 # SQLAlchemy 와 pandas 는 이 모듈이 실제로 DB/프레임을 태울 때만 지연 임포트합니다.
@@ -409,6 +410,9 @@ def lookup_institution_stats(
         "inst_ewm_rate": fallback,
     }
     if not institution_name or session is None:
+        # 집계 표를 조회할 대상 자체가 없어 카테고리 기본값을 씁니다.
+        # 이 폴백은 학습 경로에 없는 정의이므로 관측만 남기고 값은 바꾸지 않습니다.
+        record_institution_history_fallback("default")
         return defaults
 
     cached = _lookup_from_stats(session, institution_name, category)
@@ -421,6 +425,9 @@ def lookup_institution_stats(
             "inst_ewm_rate": _as_ratio(ewm_rate) or history,
         }
 
+    # 집계 표에 없는 신규·비활성 기관입니다. 365일 실시간 집계로 내려가며,
+    # 이 정의는 표 값과 다를 수 있습니다. 관측만 남기고 계산은 그대로 둡니다.
+    record_institution_history_fallback("recent_window")
     history = calculate_institution_win_rate(
         session=session,
         institution_name=institution_name,

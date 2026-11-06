@@ -55,6 +55,7 @@ WORKDIR /app
 # 갱신 때 이전 버전이 저장소에서 빠져 빌드가 깨지므로 대상 패키지만 지정해 올립니다.
 # openssl 계열(CVE-2026-75804, CVE-2026-84782), libpcre2-8-0, perl-base 도 같은 이유로
 # 2026-10-02 에 추가했습니다.
+# apt·libapt-pkg7.0(CVE-2026-109518, 3.0.3 -> 3.0.4 stable-security)은 2026-11-06 에 추가했습니다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && apt-get install -y --no-install-recommends --only-upgrade \
@@ -63,6 +64,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpcre2-8-0 \
     libssl3t64 \
     openssl \
+    apt \
+    libapt-pkg7.0 \
     openssl-provider-legacy \
     perl-base \
     && rm -rf /var/lib/apt/lists/*
