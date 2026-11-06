@@ -363,6 +363,17 @@ def test_prod_worker_schedule_defaults(compose: dict):
     assert backup_env["ML_WEEKLY_RETRAIN_ENABLED"] == "false"
 
 
+def test_prod_worker_forwards_openg_result_collection_flag(compose: dict):
+    """운영 worker 가 개찰결과 수집 플래그를 .env 로부터 받아 전달하는지 단언합니다."""
+    worker_env = _environment(compose["services"]["worker"])
+    assert (
+        worker_env["OPENG_RESULT_COLLECTION_ENABLED"] == "${OPENG_RESULT_COLLECTION_ENABLED:-false}"
+    )
+
+    app_env = _environment(compose["services"]["app"])
+    assert "OPENG_RESULT_COLLECTION_ENABLED" not in app_env
+
+
 def test_grafana_provisions_slo_alerts_dashboard():
     dashboard = json.loads(GRAFANA_SLO_DASHBOARD_PATH.read_text(encoding="utf-8"))
     assert dashboard["uid"] == "bidbox-slo-alerts"
