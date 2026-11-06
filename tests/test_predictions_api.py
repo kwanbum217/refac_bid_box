@@ -167,8 +167,9 @@ def test_predict_price_defaults_to_quantum_leap_for_goods(
     assert response.status_code == 200, response.text
     called_model_id, called_features = mock_predict.call_args.args
     assert called_model_id == "quantum_leap_v25_pro"
-    assert called_features["presmpt_prce"] == 110000000.0
-    assert called_features["real_budget"] == 110000000.0
+    # 서빙 금액 특징은 학습과 같은 추정가격 기준이다(2026-11-06 A1)
+    assert called_features["presmpt_prce"] == 100000000.0
+    assert called_features["real_budget"] == 100000000.0
     assert called_features["scenario_mode"] == "2"
 
 

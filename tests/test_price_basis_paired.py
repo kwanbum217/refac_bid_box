@@ -2,7 +2,8 @@
 
 (a) `build_serving_features` 의 'reference' 결과가 리팩터 전 API 가 만들던
     특징 딕셔너리와 같아야 합니다. 응답 동작 불변의 근거입니다.
-(b) 'presmpt' 는 presmpt_prce·presmptPrce·real_budget 을 추정가격으로 채웁니다.
+(b) 기본값은 'presmpt' 이며 presmpt_prce·presmptPrce·real_budget 을 추정가격으로
+    채웁니다.
 (c) 추정가격이 없거나 0 이하이면 기준금액으로 대체하고 플래그를 남깁니다.
 (d) 측정 스크립트의 짝짓기·판정 표본 분리가 고정 입력에서 기대 수치를 냅니다.
 """
@@ -115,13 +116,34 @@ def test_reference_basis_matches_pre_refactor_dict(sample_bid: BidAnnouncement):
     reference_amount = float(sample_bid.prediction_reference_amount or 0)
     assert reference_amount == 110_000_000.0
 
-    features = build_serving_features(sample_bid, db, reference_amount)
+    features = build_serving_features(
+        sample_bid,
+        db,
+        reference_amount,
+        feature_amount_basis=FEATURE_AMOUNT_BASIS_REFERENCE,
+    )
 
     assert features == _legacy_reference_features(sample_bid, db, reference_amount)
     assert "_feature_amount_fallback" not in features
     # DB 세션이 빠지면 기관 이력이 기본값으로 떨어집니다. 회귀를 값으로 고정합니다.
     assert features["inst_hist_rate"] == pytest.approx(0.885)
     assert features["inst_sample_cnt"] == 42.0
+
+
+def test_default_basis_is_presmpt(sample_bid: BidAnnouncement):
+    """API 가 명시하지 않아도 학습과 같은 추정가격 기준을 써야 합니다."""
+    db = _StubSession()
+    default_features = build_serving_features(sample_bid, db, 110_000_000.0)
+    presmpt_features = build_serving_features(
+        sample_bid,
+        db,
+        110_000_000.0,
+        feature_amount_basis=FEATURE_AMOUNT_BASIS_PRESMPT,
+    )
+
+    assert default_features == presmpt_features
+    assert default_features["presmpt_prce"] == 100_000_000.0
+    assert default_features["real_budget"] == 100_000_000.0
 
 
 def test_presmpt_basis_uses_estimate_price(sample_bid: BidAnnouncement):
@@ -183,7 +205,12 @@ def test_unknown_basis_is_rejected(sample_bid: BidAnnouncement):
 def test_two_bases_differ_only_in_amount_features(sample_bid: BidAnnouncement):
     """쌍대 비교가 금액 기준만 바꾸는지 고정합니다."""
     db = _StubSession()
-    reference = build_serving_features(sample_bid, db, 110_000_000.0)
+    reference = build_serving_features(
+        sample_bid,
+        db,
+        110_000_000.0,
+        feature_amount_basis=FEATURE_AMOUNT_BASIS_REFERENCE,
+    )
     presmpt = build_serving_features(
         sample_bid, db, 110_000_000.0, feature_amount_basis=FEATURE_AMOUNT_BASIS_PRESMPT
     )
