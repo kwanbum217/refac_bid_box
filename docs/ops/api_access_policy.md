@@ -1,8 +1,8 @@
 # API 접근 정책
 
-> 적용 범위: `src/app/api/v1/chatbot.py`, `src/app/api/v1/predictions.py`
+> 적용 범위: `src/app/api/v1/chatbot.py`, `src/app/api/v1/predictions.py`, `src/app/api/v1/bids.py`
 >
-> 최종 갱신일: 2026-09-15
+> 최종 갱신일: 2026-11-06
 
 ## 익명 접근 정책
 
@@ -16,6 +16,15 @@
 | `POST /api/v1/chatbot/session/new` | 익명 대화를 시작할 세션 키를 발급합니다. | IP별 60초당 30회 |
 | `POST /api/v1/predictions/predict-price` | 공고 상세 등에서 로그인 없이 투찰가 분석을 체험할 수 있도록 허용합니다. | IP별 60초당 30회 |
 | `POST /api/v1/predictions/predict` | 공고 레코드 없이 특징 직접 입력을 통한 예측을 로그인 없이 체험할 수 있도록 허용합니다. | IP별 60초당 30회 |
+| `GET /api/v1/bids` | 공고 목록 JSON을 로그인 없이 볼 수 있도록 공개로 유지합니다. | IP별 60초당 30회 |
+| `GET /api/v1/bids/results` | 낙찰결과 목록 JSON을 로그인 없이 볼 수 있도록 공개로 유지합니다. | IP별 60초당 30회 |
+| `GET /api/v1/bids/{pk}` | 공고 상세 JSON을 로그인 없이 볼 수 있도록 공개로 유지합니다. | IP별 60초당 30회 |
+| `GET /api/v1/bids/results/{pk}` | 낙찰결과 상세 JSON을 로그인 없이 볼 수 있도록 공개로 유지합니다. | IP별 60초당 30회 |
+| `GET /api/v1/bids/stats` | 대시보드 통계 JSON을 로그인 없이 볼 수 있도록 공개로 유지합니다. | IP별 60초당 30회 |
+| `GET /api/v1/bids/compare-stats` | 공고 대비 낙찰 비교 통계 JSON을 로그인 없이 볼 수 있도록 공개로 유지합니다. | IP별 60초당 30회 |
+| `GET /api/v1/bids/home` | 홈 화면 컨텍스트 JSON을 로그인 없이 볼 수 있도록 공개로 유지합니다. | IP별 60초당 30회 |
+
+`POST /api/v1/bids/collect` 는 관리자 전용이며 익명 접근 정책의 대상이 아닙니다.
 
 쿼터는 `TRUSTED_PROXY_IPS` 정책을 반영하는 `resolve_client_ip`로 식별한 IP를
 기준으로 Redis에 기록합니다. 기본값은 60초당 30회이며, 운영 환경에서는
@@ -27,6 +36,20 @@
 
 쿼터는 인증 사용자에게 적용하지 않습니다. 인증 사용자는 세션별 사용량 제한이
 필요할 수 있으므로 별도 정책으로 판단해야 합니다.
+
+## 공고 JSON API 공개 정책
+
+공고 JSON API(`/api/v1/bids` 의 목록·상세·통계·홈 컨텍스트)는 공개로 둡니다.
+비로그인 사용자가 공고를 탐색하고 대시보드를 확인하는 흐름을 막지 않기
+위해서입니다. 대신 무인증 라우트 전부에 챗봇 API 와 같은 익명 쿼터를 적용해
+자동 수집·과다 호출로부터 백엔드를 보호합니다.
+
+- 익명 쿼터는 위 표의 `GET /api/v1/bids` 계열 7개 라우트에 모두 적용합니다.
+- 익명 쿼터는 로그인 사용자에게 적용하지 않습니다. 로그인 사용자는 인증
+  사용자 쿼터를 따릅니다.
+- 한도 초과 시 HTTP 429를 반환하며, 잠금 해제까지 남은 시간은 노출하지
+  않습니다.
+- `POST /api/v1/bids/collect` 는 관리자 전용이므로 공개 정책에서 제외합니다.
 
 ## 벤치마크 측정 정책
 

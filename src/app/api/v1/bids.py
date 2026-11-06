@@ -21,13 +21,14 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from src.app.api.v1.accounts import require_current_user
+from src.app.api.v1.accounts import get_current_user, require_current_user
 from src.app.core.config import settings
 from src.app.core.db import get_db
+from src.app.core.security import enforce_anonymous_api_quota
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult, preload_matching_announcements
 from src.app.schemas.bids import (
@@ -108,6 +109,7 @@ def _serialize_results(db: Session, results: Sequence[BidResult]) -> list[dict[s
 
 @router.get("", response_model=BidListResponse, summary="입찰공고 목록")
 def list_bids(
+    request: Request,
     q: str = Query("", description="공고명/공고번호/수요기관명 검색어"),
     cat: str = Query("", description="업무구분 코드 (Thng/Servc/Cnstwk/Frgcpt)"),
     region: str = Query("", description="참가가능지역 코드"),
@@ -117,7 +119,9 @@ def list_bids(
     page: int = Query(1, ge=1),
     lic: str = Query("", description="면허 업종 코드 (쉼표 구분, 미지정 시 업종 제한 없음)"),
     db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
 ):
+    enforce_anonymous_api_quota(request, user)
     try:
         page_obj = bid_queries.list_announcements(
             db,
@@ -148,6 +152,7 @@ def list_bids(
 
 @router.get("/results", response_model=BidResultListResponse, summary="낙찰결과 목록")
 def list_bid_results(
+    request: Request,
     q: str = Query("", description="공고명/공고번호/수요기관명/낙찰업체명 검색어"),
     cat: str = Query("", description="업무구분 코드"),
     region: str = Query("", description="지역 코드"),
@@ -156,7 +161,9 @@ def list_bid_results(
     ),
     page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
 ):
+    enforce_anonymous_api_quota(request, user)
     try:
         page_obj = bid_queries.list_results(db, q=q, cat=cat, region=region, sort=sort, page=page)
     except SearchBackendUnavailable as exc:
@@ -187,7 +194,12 @@ def _stats_error(message: str) -> JSONResponse:
 
 
 @router.get("/stats", summary="대시보드 통계")
-def api_stats(db: Session = Depends(get_db)):
+def api_stats(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    enforce_anonymous_api_quota(request, user)
     try:
         return get_dashboard_stats(db)
     except Exception:
@@ -196,7 +208,12 @@ def api_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/compare-stats", summary="공고 대비 낙찰 비교 통계")
-def api_compare_stats(db: Session = Depends(get_db)):
+def api_compare_stats(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    enforce_anonymous_api_quota(request, user)
     try:
         return get_compare_stats_data(db)
     except Exception:
@@ -205,7 +222,12 @@ def api_compare_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/home", response_model=HomeContextResponse, summary="홈 화면 컨텍스트")
-def api_home_context(db: Session = Depends(get_db)):
+def api_home_context(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    enforce_anonymous_api_quota(request, user)
     context = get_home_page_context(db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
     return HomeContextResponse(
         recent_bids=[_serialize_announcement(bid) for bid in context["recent_bids"]],
@@ -226,7 +248,13 @@ def api_home_context(db: Session = Depends(get_db)):
 
 
 @router.get("/results/{pk}", response_model=BidResultDetailResponse, summary="낙찰결과 상세")
-def get_bid_result_detail(pk: int, db: Session = Depends(get_db)):
+def get_bid_result_detail(
+    pk: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    enforce_anonymous_api_quota(request, user)
     detail = bid_queries.get_result_detail(db, pk)
     if detail is None:
         raise HTTPException(status_code=404, detail="낙찰 결과를 찾을 수 없습니다.")
@@ -238,7 +266,13 @@ def get_bid_result_detail(pk: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{pk}", response_model=BidDetailResponse, summary="입찰공고 상세")
-def get_bid_detail(pk: int, db: Session = Depends(get_db)):
+def get_bid_detail(
+    pk: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
+    enforce_anonymous_api_quota(request, user)
     detail = bid_queries.get_announcement_detail(db, pk)
     if detail is None:
         raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")

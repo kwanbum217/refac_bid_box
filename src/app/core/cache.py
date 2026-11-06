@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 # 무한정 붙잡히지 않게 합니다.
 CONNECT_TIMEOUT_SECONDS = 2
 
+# 연결 수립 뒤 응답을 기다리는 상한입니다. socket_connect_timeout 은 연결만
+# 제한하므로, Redis 가 연결은 받고 응답하지 않으면 이 값이 없을 때 요청이
+# 무기한 대기합니다. 연결 상한과 같은 2초로 맞춥니다.
+SOCKET_TIMEOUT_SECONDS = 2
+
 # 재연결 시도 간격입니다. 간격 없이 매 호출마다 붙으려 하면 Redis 가 내려간
 # 동안 모든 요청이 CONNECT_TIMEOUT_SECONDS 만큼 정체되어 장애가 증폭됩니다.
 # 5초면 한 프로세스가 내는 연결 시도가 5초에 한 번(최대 2초)으로 제한되므로
@@ -76,6 +81,7 @@ class RedisConnection:
                 self.url,
                 decode_responses=True,
                 socket_connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                socket_timeout=SOCKET_TIMEOUT_SECONDS,
             )
             client.ping()
         except Exception as exc:
@@ -165,6 +171,28 @@ class CacheLayer:
                 self._conn.invalidate(exc)
             return
         self._local.pop(key, None)
+
+    def delete_prefix(self, prefix: str) -> int:
+        """접두사로 시작하는 캐시 키를 지우고 삭제한 키 수를 돌려줍니다.
+
+        Redis 에서는 SCAN 만 쓰고 KEYS 는 쓰지 않습니다. KEYS 는 키 공간 전체를
+        한 번에 훑어 운영 Redis 를 멈추게 할 수 있습니다. Redis 를 쓸 수 없으면
+        프로세스 메모리 캐시에서 같은 접두사만 지웁니다.
+        """
+        deleted = 0
+        client = self._conn.client()
+        if client is not None:
+            try:
+                for key in client.scan_iter(match=f"{prefix}*", count=LOCAL_CACHE_MAX_ITEMS):
+                    deleted += int(client.delete(key) or 0)
+            except Exception as exc:
+                logger.warning("접두사 캐시 삭제 실패 (%s): %s", prefix, exc)
+                self._conn.invalidate(exc)
+
+        for key in [name for name in self._local if name.startswith(prefix)]:
+            self._local.pop(key, None)
+            deleted += 1
+        return deleted
 
 
 cache = CacheLayer()

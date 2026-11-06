@@ -508,6 +508,68 @@ def _default_model_for_bid(bid: BidAnnouncement) -> str:
     return DEFAULT_PREDICTION_MODEL_BY_CATEGORY.get(bid.category, DEFAULT_PREDICTION_MODEL)
 
 
+FEATURE_AMOUNT_BASIS_REFERENCE = "reference"
+FEATURE_AMOUNT_BASIS_PRESMPT = "presmpt"
+
+
+def build_serving_features(
+    bid: BidAnnouncement,
+    db: Session,
+    reference_amount: float,
+    *,
+    feature_amount_basis: str = FEATURE_AMOUNT_BASIS_REFERENCE,
+) -> dict[str, Any]:
+    """예측 모델에 넘길 서빙 특징을 만듭니다.
+
+    금액 특징(log_price, notice_amt_ratio, is_over_notice_amt 등)은
+    features.py 가 real_budget 을 우선해 계산합니다. 학습은 추정가격을 쓰므로
+    기준금액을 그대로 넣으면 같은 공고라도 학습과 다른 금액을 보게 됩니다.
+    'presmpt' 는 그 차이를 쌍대 실측하기 위한 갈래이며, 기본값 'reference' 는
+    기존 API 동작을 그대로 유지합니다. 추정가격이 없거나 0 이하이면 기준금액으로
+    대체하고 그 사실을 '_feature_amount_fallback' 으로 남깁니다.
+    """
+    if feature_amount_basis == FEATURE_AMOUNT_BASIS_REFERENCE:
+        feature_amount = reference_amount
+        amount_fallback = False
+    elif feature_amount_basis == FEATURE_AMOUNT_BASIS_PRESMPT:
+        presmpt_amount = float(bid.presmpt_prce or 0.0)
+        amount_fallback = presmpt_amount <= 0
+        feature_amount = reference_amount if amount_fallback else presmpt_amount
+    else:
+        raise ValueError(f"알 수 없는 feature_amount_basis: {feature_amount_basis}")
+
+    # 제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 못 채웁니다.
+    # 이 병합을 빼면 학습이 쓰는 34개 중 30개가 기본값으로 떨어집니다.
+    features = {
+        **announcement_feature_payload(bid),
+        "title": bid.bid_ntce_nm or "",
+        "agency_name": bid.dminstt_nm or bid.ntce_instt_nm or "",
+        "scenario_mode": "2",
+        "presmpt_prce": feature_amount,
+        "presmptPrce": feature_amount,
+        "real_budget": feature_amount,
+        "bid_ntce_nm": bid.bid_ntce_nm or "",
+        "ntce_instt_nm": bid.ntce_instt_nm or "",
+        "ntceInsttNm": bid.ntce_instt_nm or "",
+        "dminstt_nm": bid.dminstt_nm or "",
+        "bidMethdNm": bid.bid_methd_nm or "",
+        "cntrctCnclsMthdNm": bid.cntrct_mthd_nm or "",
+        "category": bid.category or "",
+        "bid_ntce_dt": bid.bid_ntce_dt,
+        "bid_clse_dt": bid.bid_clse_dt,
+        "openg_dt": bid.openg_dt,
+    }
+
+    # 기관 이력과 재발주 이력은 DB 조회가 필요합니다. session 을 넘기지 않으면
+    # 상수로 떨어져 학습과 다른 값을 보게 됩니다.
+    # 원본 키 위에 덮어씁니다. 통째로 갈아끼우면 규칙 기반 구 모델이 쓰는
+    # title / agency_name / scenario_mode 가 사라집니다.
+    merged = {**features, **build_feature_dict(features, db)}
+    if amount_fallback:
+        merged["_feature_amount_fallback"] = True
+    return merged
+
+
 def _prediction_dispatch_wait_ms(request: Request) -> float:
     started_ns = request.scope.get("prediction_dispatch_start_ns")
     if not isinstance(started_ns, int):
@@ -571,34 +633,10 @@ def predict_price_api(
             "낙찰률 기반 투찰가를 산출할 수 없습니다.",
         )
 
-    # 제도 특징은 raw_data JSON 안에 있어 공고 컬럼만으로는 못 채웁니다.
-    # 이 병합을 빼면 학습이 쓰는 34개 중 30개가 기본값으로 떨어집니다.
+    # 금액 기준을 바꿔 쌍대 실측할 수 있도록 특징 생성을 함수로 분리했습니다.
+    # API 는 종전과 같은 'reference' 기준을 씁니다(응답 동작 불변).
     t_feature_start = time.perf_counter()
-    features = {
-        **announcement_feature_payload(bid),
-        "title": bid.bid_ntce_nm or "",
-        "agency_name": bid.dminstt_nm or bid.ntce_instt_nm or "",
-        "scenario_mode": "2",
-        "presmpt_prce": reference_amount,
-        "presmptPrce": reference_amount,
-        "real_budget": reference_amount,
-        "bid_ntce_nm": bid.bid_ntce_nm or "",
-        "ntce_instt_nm": bid.ntce_instt_nm or "",
-        "ntceInsttNm": bid.ntce_instt_nm or "",
-        "dminstt_nm": bid.dminstt_nm or "",
-        "bidMethdNm": bid.bid_methd_nm or "",
-        "cntrctCnclsMthdNm": bid.cntrct_mthd_nm or "",
-        "category": bid.category or "",
-        "bid_ntce_dt": bid.bid_ntce_dt,
-        "bid_clse_dt": bid.bid_clse_dt,
-        "openg_dt": bid.openg_dt,
-    }
-
-    # 기관 이력과 재발주 이력은 DB 조회가 필요합니다. session 을 넘기지 않으면
-    # 상수로 떨어져 학습과 다른 값을 보게 됩니다.
-    # 원본 키 위에 덮어씁니다. 통째로 갈아끼우면 규칙 기반 구 모델이 쓰는
-    # title / agency_name / scenario_mode 가 사라집니다.
-    features = {**features, **build_feature_dict(features, db)}
+    features = build_serving_features(bid, db, reference_amount)
     t_feature_build = max(0.0, time.perf_counter() - t_feature_start)
 
     # 후보 순회는 함수 안에서 끝납니다. 여기서 다시 fallback 을 시도하면 같은

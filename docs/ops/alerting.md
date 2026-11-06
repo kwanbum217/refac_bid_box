@@ -1,6 +1,7 @@
 # 알람 라우팅 및 Alertmanager 운영 명세
 
 > **작성일**: 2026-09-15
+> **갱신일**: 2026-11-06
 > **상태**: 운영 계약 정본
 > **관련 파일**: [`docker/alertmanager.yml`](../../docker/alertmanager.yml), [`docker-compose.prod.yml`](../../docker-compose.prod.yml)
 
@@ -47,32 +48,26 @@ Alertmanager는 설정 파일 내 환경변수 직접 치환을 지원하지 않
 
 ### 3.2 비밀 파일 생성 단계
 
-운영 배포 시 다음 절차에 따라 비밀 파일을 준비합니다.
+운영 배포 시 프로젝트 루트에서 다음 명령으로 두 비밀 파일을 한 번에 생성합니다. `make render-alertmanager-secret` 이 `.env` 를 읽어 critical·warning 파일을 모두 만듭니다.
 
-1. **디렉터리 준비**:
-   호스트의 프로젝트 루트에서 `docker/secrets/` 디렉터리가 존재하는지 확인하고, 없으면 생성합니다.
-   ```sh
-   mkdir -p docker/secrets
-   ```
+```sh
+make render-alertmanager-secret
+```
 
-2. **비밀값 파일 작성**:
-   배포 환경의 시크릿 관리 도구(예: CI/CD Secret, 오케스트레이터 시크릿 주입) 또는 `.env` 렌더링 스크립트를 통해 파일 내용을 생성합니다.
-   - 단일 URL 문자열만 개행 없이 파일에 기록합니다.
-   - 예시:
-     ```sh
-     # CI/CD 파이프라인 또는 배포 스크립트 예시
-     echo -n "${PROD_SLACK_SLO_WEBHOOK_URL}" > docker/secrets/alertmanager_slack_url
-     echo -n "${PROD_SLACK_WARNING_WEBHOOK_URL}" > docker/secrets/alertmanager_slack_warning_url
-     ```
+- `.env` 의 `ALERTMANAGER_SLACK_WEBHOOK_URL` 값을 `docker/secrets/alertmanager_slack_url` 로 렌더링합니다.
+- `.env` 의 `ALERTMANAGER_SLACK_WARNING_WEBHOOK_URL` 값을 `docker/secrets/alertmanager_slack_warning_url` 로 렌더링합니다.
+- warning 전용 키가 비어 있으면 critical 웹훅 값으로 warning 파일을 만들고 표준오류에 `경고: warning 전용 웹훅이 없어 critical 웹훅으로 대체했습니다` 를 출력합니다.
+- 두 키가 모두 비어 있으면 파일을 만들지 않고 안내만 출력합니다. 이 경우 Alertmanager 는 마운트 대상 파일이 없어 기동하지 못하므로 두 키 중 최소 하나는 반드시 설정해야 합니다.
+- 생성된 파일 권한은 `0600`, `docker/secrets/` 디렉터리 권한은 `0700` 입니다.
+- 스크립트는 웹훅 URL 값을 표준출력·표준오류·로그에 출력하지 않습니다.
 
-3. **권한 설정**:
-   비밀 파일의 무단 접근을 방지하기 위해 파일 권한을 `0600`(소유자 읽기/쓰기 전용)으로 제한합니다.
-   ```sh
-   chmod 600 docker/secrets/alertmanager_slack_url
-   chmod 600 docker/secrets/alertmanager_slack_warning_url
-   ```
+CI/CD 파이프라인에서 직접 호출할 때도 같은 스크립트를 사용합니다.
 
-4. **도커 볼륨 마운트 확인**:
+```sh
+uv run python scripts/render_alertmanager_secret.py --env-file .env
+```
+
+1. **도커 볼륨 마운트 확인**:
    `docker-compose.prod.yml`의 `alertmanager` 서비스에 두 비밀 파일이 `:ro` 모드로 마운트되어 있는지 확인합니다.
 
 ---
