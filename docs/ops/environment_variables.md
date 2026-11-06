@@ -198,6 +198,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | `AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS` | 아니오 | `24` | 마지막 수집 이후 이 시간을 넘겼을 때만 따라잡기를 실행합니다 |
 | `AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS` | 아니오 | `6` | 따라잡기 재실행을 막는 최소 쿨다운 (시간) |
 | `OPENG_RESULT_COLLECTION_ENABLED` | 아니오 | `false` | 정기 수집(collect_bids)에서 개찰결과(유찰 포함)를 `bid_openg_results` 에 적재할지 여부. 코드·compose 기본 false |
+| `BAND_REGIME_SCHEDULE_ENABLED` | 아니오 | `false` | 매일 06:10 `2억미만 1억이상` 띠 용역 공고 첨부를 판별해 `bid_announcement_regime` 을 채우는 크론 사용 여부. 최근 14일·외부 호출 60회 상한. 코드·compose 기본 false |
 | `ML_DRIFT_MONITOR_ENABLED` | 아니오 | `true` | 매일 04:00 PSI 드리프트 감시 크론 사용 여부 |
 | `RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED` | 아니오 | `false` | 낙찰결과 매칭률에서 같은 공고번호·분류의 더 큰 차수 취소공고가 있는 비취소 공고 미매칭 건을 분모에서 뺄지 여부 |
 | `RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS` | 아니오 | `false` | 전자입찰이 아닌 직찰·우편 계열 공고를 매칭률 분모와 분자에서 뺄지 여부 |

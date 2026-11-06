@@ -651,6 +651,30 @@ def run_batch(
     return summary
 
 
+def run_band_regime_classification(
+    session: Session,
+    *,
+    start: date,
+    end: date,
+    max_calls: int,
+    sleep: float = DEFAULT_SLEEP_SECONDS,
+    execute: bool = False,
+) -> dict[str, Any]:
+    """정기 태스크가 쓰는 진입점입니다.
+
+    CLI 와 같은 대상 선정·내려받기·판별·저장 본문을 그대로 호출합니다.
+    `execute` 가 False 면 dry-run 이며 외부 호출과 DB 쓰기를 하지 않습니다.
+    """
+    return run_batch(
+        session,
+        start=start,
+        end=end,
+        dry_run=not execute,
+        sleep_seconds=sleep,
+        max_calls=max_calls,
+    )
+
+
 def run(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
