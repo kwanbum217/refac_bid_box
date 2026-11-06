@@ -190,7 +190,8 @@ def test_license_limits_idempotent_insert(sqlite_session) -> None:
     inserted_second = _bulk_insert(sqlite_session, BidAnnouncementLicenseLimit, rows)
     count_second = sqlite_session.scalar(select(func.count(BidAnnouncementLicenseLimit.id)))
     assert count_second == 2
-    assert inserted_second == 2
+    # 중복 적재는 실제 삽입 0건으로 보고한다(2026-11-06 A5)
+    assert inserted_second == 0
 
 
 def test_participation_regions_idempotent_insert(sqlite_session) -> None:

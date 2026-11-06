@@ -27,6 +27,7 @@ from src.app.api.v1.chatbot_format import (
     _build_advisory_bundle,
     _build_answer_tool_context,
     _build_direct_tool_answer,
+    _build_stream_provenance,
     _format_bid_number,
     _format_model_summary,
     _format_percent,
@@ -529,7 +530,11 @@ async def chat_stream_api(
 
             latency_ms = (utcnow() - latency_started).total_seconds() * 1000
             final = await asyncio.to_thread(
-                _finalize_rag_answer_sync, prepared, answer_text, None, round(latency_ms, 2)
+                _finalize_rag_answer_sync,
+                prepared,
+                answer_text,
+                _build_stream_provenance(prepared, trace_id),
+                round(latency_ms, 2),
             )
             yield _sse("final", final.model_dump())
         except Exception:

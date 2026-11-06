@@ -22,21 +22,32 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `ENVIRONMENT` | 아니오 | `development` | 실행 환경 (`development` / `staging` / `production`) |
 | `SECRET_KEY` | **예** | - | 32자 이상의 애플리케이션 시크릿 키 (랜덤값) |
 | `DEBUG` | 아니오 | `false` | 디버그 모드 (운영은 `false` 강제) |
+| `LOG_LEVEL` | 아니오 | `INFO` | 애플리케이션·워커 로그 레벨. `DEBUG`·`INFO`·`WARNING`·`ERROR`·`CRITICAL` 만 허용하며 그 외 값은 기동을 거부합니다 |
+| `CSRF_PROTECTION_ENABLED` | 아니오 | `true` | SSR 상태 변경 폼의 CSRF 이중 제출 토큰 검증 여부 |
 | `CORS_ALLOWED_ORIGINS` | 운영·스테이징은 **예** | - | 자격증명 요청을 허용할 오리진 목록. 콤마 구분, 스킴 포함 |
-| `CORS_DEV_ALLOW_ALL` | 아니오 | `true` | `development` 에서만 임의 오리진 허용 여부. `staging`·`production` 에서는 효력이 없고 `CORS_ALLOWED_ORIGINS` 명시가 필수입니다 |
+| `CORS_DEV_ALLOW_ALL` | 아니오 | `false` | `development` 에서만 임의 오리진 허용 여부. `staging`·`production` 에서는 효력이 없고 `CORS_ALLOWED_ORIGINS` 명시가 필수입니다 |
+| `TRUSTED_PROXY_IPS` | 운영 **예** | - | `X-Forwarded-For` 를 신뢰할 리버스 프록시 IP 또는 CIDR 목록 (콤마 구분). 비면 TCP 피어 주소를 클라이언트 IP 로 씁니다. 운영 compose 는 필수로 요구하며 `egress` 고정 서브넷 `172.30.0.0/24` 를 넣습니다 |
+| `AUTH_RATE_LIMIT_IP_MAX_ATTEMPTS` | 아니오 | `10` | IP 축 로그인 시도 최대 허용 횟수 |
+| `AUTH_RATE_LIMIT_ACCOUNT_MAX_ATTEMPTS` | 아니오 | `5` | 계정 축 로그인 시도 최대 허용 횟수 |
+| `AUTH_RATE_LIMIT_LOCKOUT_SECONDS` | 아니오 | `300` | 로그인 시도 초과 시 잠금 유지 시간 (초) |
+| `MAX_REQUEST_BODY_SIZE` | 아니오 | `10485760` | HTTP 요청 본문 크기 상한 (바이트, 10MB) |
+| `ANONYMOUS_API_RATE_LIMIT_MAX_REQUESTS` | 아니오 | `30` | 익명 API 요청 쿼터 (IP별 윈도우당 최대 횟수) |
+| `ANONYMOUS_API_RATE_LIMIT_WINDOW_SECONDS` | 아니오 | `60` | 익명 API 요청 쿼터 윈도우 (초) |
+| `READINESS_REQUIRE_WARMUP` | 아니오 | `false` | warmup 미완료를 503(`not_ready`)으로 승격할지 여부. 운영 compose 는 `true` |
+| `READINESS_REQUIRE_LLM` | 아니오 | `false` | LLM 미가용을 503(`not_ready`)으로 승격할지 여부. 운영 compose 는 `false` 라 LLM 장애는 `degraded` 로 통과합니다 |
 | `SIGNUP_RATE_LIMIT_MAX` | 아니오 | `10` | IP 축 회원가입 최대 허용 횟수 (고정 윈도우). Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과 |
 | `SIGNUP_RATE_LIMIT_WINDOW_SECONDS` | 아니오 | `3600` | 회원가입 시도 제한 윈도우 시간 (초, 기본 3600초 = 1시간) |
 | `WEB_CONCURRENCY` | 아니오 | `1` | Docker Compose app 서비스의 Uvicorn 워커 프로세스 수. FastAPI 설정 모델이 읽는 값이 아니라 `docker-compose.yml`의 `command`가 직접 소비합니다. 3워커 이상은 100ms 목표에 실패해 기본값에서 철회된 수동 실험 옵션입니다 |
 | `TZ` | 아니오 | `Asia/Seoul` | 컨테이너 OS 시간대. `docker-compose.yml`과 `docker-compose.prod.yml`의 app·worker·backup 서비스가 같은 값을 받습니다. `date.today()` 기반 마감 창을 KST 로 계산하기 위한 Compose 전용 값이며 애플리케이션 설정 모델은 읽지 않습니다 |
 
-요청 제한 정책: Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과합니다. 인증 보안을 위해 로그인 및 회원가입 시도 제한은 fail-closed 로 처리하며, 일반 서비스 가용성을 위해 익명 API 요청 제한은 fail-open 으로 통과시킵니다.
+요청 제한 정책: Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과합니다. 인증 보안을 위해 로그인 및 회원가입 시도 제한은 fail-closed 로 처리하며, 일반 서비스 가용성을 위해 익명 API 요청 제한은 fail-open 으로 통과시킵니다. 로그인 사용자에게는 별도의 인증 사용자 쿼터(사용자당 60초 120회)가 챗봇·예측·평가 API 에 적용되며, 이 한도는 코드 상수라 환경변수로 조정하지 않습니다.
 
 현재 FastAPI 설정 모델이 읽는 애플리케이션 키는 위 항목들입니다. `APP_ENV`,
 `APP_SECRET_KEY`, `APP_DEBUG`, `APP_ALLOWED_HOSTS`는 이전 Django 설계의 명칭이므로
 이 프로젝트의 `.env`에 사용하지 않습니다. 허용 호스트 목록은 현재 설정 모델에
 구현되어 있지 않아 별도 환경변수로 추가하지 않습니다.
 
-`WEB_CONCURRENCY`는 위 여섯 가지와 달리 애플리케이션 코드가 아니라
+`WEB_CONCURRENCY`는 위 애플리케이션 설정과 달리 애플리케이션 코드가 아니라
 `docker-compose.yml`의 app 서비스 `command`가 `--workers` 인자로 그대로
 전달하는 Compose 전용 변수입니다. Arq `worker` 서비스에는 적용되지 않습니다.
 실제 Docker 실측치와 3·4워커 기각 판정, 안전 기본값 1의 근거는
@@ -86,6 +97,9 @@ CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명�
 | `MYSQL_ROOT_PASSWORD` | 아니오 | `rootpassword` | Docker Compose 개발용 MySQL root 비밀번호 (운영에서는 교체 필수) |
 | `BACKUP_DB_USER` | 운영 backup 서비스 **예** | (없음, 미설정 시 `DB_USER` 사용) | 백업 덤프 전용 최소 권한 MySQL 사용자 계정 (`docker-compose.prod.yml` backup 서비스 필수) |
 | `BACKUP_DB_PASSWORD` | 운영 backup 서비스 **예** | (없음, 미설정 시 `DB_PASSWORD` 사용) | 백업 덤프 전용 최소 권한 MySQL 계정 비밀번호 (`docker-compose.prod.yml` backup 서비스 필수) |
+| `BACKUP_SCHEDULE_ENABLED` | 아니오 | `false` | 매일 03:00 정기 통합 백업 스케줄 여부. 운영 compose 의 `backup` 서비스만 `true` 로 고정하고 `worker` 는 `false` 입니다 |
+| `BACKUP_RETENTION_COUNT` | 아니오 | `7` | 보존할 최대 스냅샷 개수. 정기 백업이 초과분을 안전 검증 후 자동 삭제합니다 |
+| `BACKUP_DISK_MIN_FREE_GB` | 아니오 | `5.0` | 백업 전 최소 디스크 여유 공간 (GB). 미달이면 알림만 발송하고 백업을 막지는 않습니다 |
 
 > 이중화 제거: 기존 `BIDBOX_DB_BACKEND=sqlite` fallback을 폐지하고 모든 환경에서 MySQL 통일.
 > 백업 최소권한: `docker-compose.prod.yml`의 `backup` 서비스는 애플리케이션 공용 계정 대신 `BACKUP_DB_USER`와 `BACKUP_DB_PASSWORD`를 필수로 요구합니다. 로컬 CLI 실행 시에는 미설정 시 기존 `DB_USER`·`DB_PASSWORD`로 fallback 됩니다.
@@ -103,16 +117,21 @@ CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명�
 | --- | --- | --- | --- |
 | `LLM_PROVIDER` | 아니오 | `ollama` | 생성 LLM 백엔드. `gemini` 로 원본 경로 복원 |
 | `OLLAMA_BASE_URL` | 아니오 | `http://localhost:11434` | Ollama 서버 주소 |
-| `OLLAMA_MODEL` | 아니오 | `gemma4:e4b` | 로컬 생성 모델 |
+| `OLLAMA_MODEL` | 아니오 | `gemma4:e2b` | 로컬 생성 모델. 운영 compose 도 `gemma4:e2b` 를 기본값으로 넘깁니다 |
 | `OLLAMA_KEEP_ALIVE` | 아니오 | `-1` | 모델을 메모리에 붙잡아 두는 시간. `-1` 무기한, `30m` 30분 |
 | `LLM_WARMUP_ON_STARTUP` | 아니오 | `true` | 기동 시 모델을 미리 올립니다 |
+| `VECTOR_WARMUP_ON_STARTUP` | 아니오 | `true` | 기동 시 ChromaDB 컬렉션과 임베딩 연결을 미리 예열합니다 |
 | `LLM_THINKING` | 아니오 | `false` | 사고(thinking) 단계 사용 여부 |
 | `LLM_TIMEOUT_SECONDS` | 아니오 | `120.0` | LLM 요청 타임아웃(초) |
 | `LLM_TEMPERATURE` | 아니오 | `0.2` | 생성 온도 |
+| `RAG_EXPOSE_SEGMENT_METRICS` | 아니오 | `false` | RAG 응답 메타데이터에 `sql_ms`·`vector_ms`·`lexical_ms`·`llm_ms` 등 구간 계측값을 노출할지 여부 |
+| `NUMERIC_OMISSION_DETECTION` | 아니오 | `false` | RAG 답변의 낙찰금액·낙찰률 누락을 결정론적으로 검출해 로그로 남길지 여부 |
+| `READ_PATH_PRELOAD_ANNOUNCEMENTS` | 아니오 | `true` | 낙찰 목록의 공고 정보를 일괄 선채움합니다. 읽기 경로 A/B 측정용 스위치이며 기본값은 운영 동작과 같습니다 |
+| `CHATBOT_ENABLE_LLM_PLAN_DRAFT` | 아니오 | `false` | 챗봇 계획 수립에 Gemini 초안 단계를 쓸지 여부. `GEMINI_API_KEY` 가 없으면 초안을 건너뜁니다 |
 | `GEMINI_MODEL` | 아니오 | `gemini-3.1-flash-lite-preview` | Gemini 모델명 (`LLM_PROVIDER=gemini`일 때만 사용) |
 | `GEMINI_API_KEY` | 아니오 | - | Gemini API 키. `LLM_PROVIDER=gemini` 일 때만 필요 |
 
-뒤의 네 변수(`OLLAMA_KEEP_ALIVE`, `LLM_WARMUP_ON_STARTUP`, `LLM_THINKING`, `LLM_TIMEOUT_SECONDS`)는 **첫 토큰 지연을 직접 좌우합니다.** 2026-08-05 실측입니다.
+다음 네 변수(`OLLAMA_KEEP_ALIVE`, `LLM_WARMUP_ON_STARTUP`, `LLM_THINKING`, `LLM_TIMEOUT_SECONDS`)는 **첫 토큰 지연을 직접 좌우합니다.** 2026-08-05 실측입니다.
 
 | 조건 | 첫 토큰 |
 | --- | ---: |
@@ -126,7 +145,9 @@ CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명�
 
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
-| `G2B_SERVICE_KEY` | **예** | - | 나라장터 공공데이터 serviceKey. 기존 `serviceKey`도 하위 호환으로 읽습니다 |
+| `G2B_SERVICE_KEY` | **예** | - | 나라장터 공공데이터 serviceKey. 기존 `serviceKey` 와 `SERVICE_KEY` 도 하위 호환으로 읽습니다 |
+| `G2B_USRINFO_SERVICE_KEY` | 아니오 | - | 수요기관 기준정보 수집 전용 키. 일반 `G2B_SERVICE_KEY` 와 별도이며 비면 해당 수집을 건너뜁니다 |
+| `G2B_MAX_CONCURRENT` | 아니오 | `16` | G2B OpenAPI 동시 요청 상한. 수집 처리량과 외부 API 차단 위험을 함께 조절합니다 |
 
 ### 2.5 Vector DB / RAG
 
@@ -135,6 +156,7 @@ CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명�
 | `CHROMA_DB_PATH` | 아니오 | `chroma_db` | ChromaDB 저장 경로 |
 | `EMBEDDING_PROVIDER` | 아니오 | `ollama` | 임베딩 제공자. `ollama` 기본, `default` 는 ChromaDB 내장 all-MiniLM-L6-v2 |
 | `EMBEDDING_MODEL` | 아니오 | `bge-m3` | 임베딩 모델명. `EMBEDDING_PROVIDER=ollama`일 때 사용 |
+| `KB_MAX_DOCUMENTS` | 아니오 | `520000` | KB 색인 1회 처리 상한 건수. 비우거나 0 이하이면 코드 기본값 520,000 을 씁니다 |
 
 > `default` 제공자(all-MiniLM-L6-v2)는 영어 전용이라 한국어 검색 적중률이 top-5에서 4%에 그칩니다 (2026-08-06 실측, bge-m3는 100%). 임베딩 모델 교체는 보존된 `bidding_kb` 임베딩과의 정합성 때문에 금지됩니다 (G1 데이터 무손실).
 
@@ -143,6 +165,8 @@ CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명�
 | 변수 | 필수 | 기본값 | 설명 |
 | --- | --- | --- | --- |
 | `REDIS_URL` | **예** | `redis://localhost:6379/0` | Redis 연결 (캐시 + 브로커) |
+| `WORKER_HEARTBEAT_INTERVAL_SECONDS` | 아니오 | `30` | Arq 워커가 `bidbox:worker:heartbeat` 를 갱신하는 주기 (초) |
+| `WORKER_HEARTBEAT_MAX_AGE_SECONDS` | 운영 **예** (compose 전달) | `90` (운영 compose) | 운영 healthcheck 가 heartbeat 를 유효하다고 인정하는 최대 경과 시간 (초). heartbeat 주기의 3배 이상을 권장합니다 |
 
 ### 2.7 Search / Meilisearch
 
@@ -152,6 +176,7 @@ CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명�
 | `MEILI_URL` | 전환 시 예 | `http://localhost:7700` | Meilisearch API 주소. Compose 내부에서는 `http://meilisearch:7700`입니다 |
 | `MEILI_MASTER_KEY` | 전환 시 예 | - | Meilisearch 관리자 키. `.env`와 배포 시크릿에만 저장합니다 |
 | `MEILI_TIMEOUT_SECONDS` | 아니오 | `5.0` | Meilisearch 요청 타임아웃(초) |
+| `NGRAM_PREFILTER_ENABLED` | 아니오 | `false` | 집계 쿼리에 MySQL ngram FULLTEXT 선행필터를 결합할지 여부. 운영에서는 false 로 고정합니다. 기각된 선행필터의 영구 차단 스위치이며 FULLTEXT 인덱스도 제거되어 있습니다 |
 
 Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니다. 초기 전체 색인은
 `uv run python scripts/sync_search_index.py`, 일일 증분 반영은 수집 직후 Arq의
@@ -167,9 +192,16 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | `AUTOMATION_WORKER_SHARES_DB` | 아니오 | `true` | 워커가 앱과 같은 DB 를 보는지 여부. 기본 docker-compose 구성은 공유합니다 |
 | `AUTOMATION_CALLBACK_BASE_URL` | 아니오 | (없음) | 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소 |
 | `AUTOMATION_REUSE_RECENT` | 아니오 | `true` | 고비용 작업(`full_validation`)의 최근 72시간 성공 이력 재사용 |
-| `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | 아니오 | `false` | 매일 02:00 KST 개발 DB 수집·최근 24시간 KB 델타 upsert·집계 최신화. 예측 검증·재학습은 제외 |
-| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | 아니오 | `true` | 매일 02:00 야간 번들 크론 사용 여부 (운영 compose 기본 true, 개발 기본 false) |
+| `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | 아니오 | `true` | 매일 02:00 KST 개발 DB 수집·최근 24시간 KB 델타 upsert·집계 최신화. 예측 검증·재학습은 제외 |
+| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | 아니오 | `false` | 매일 02:00 야간 번들 크론 사용 여부 (운영 compose 기본 true, 개발 기본 false) |
+| `AUTOMATION_SCHEDULE_CATCHUP_ENABLED` | 아니오 | `false` | 워커 기동 시 누락된 일일 정기 수집을 1회 따라잡을지 여부 (운영 compose worker 기본 true) |
+| `AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS` | 아니오 | `24` | 마지막 수집 이후 이 시간을 넘겼을 때만 따라잡기를 실행합니다 |
+| `AUTOMATION_SCHEDULE_CATCHUP_COOLDOWN_HOURS` | 아니오 | `6` | 따라잡기 재실행을 막는 최소 쿨다운 (시간) |
 | `OPENG_RESULT_COLLECTION_ENABLED` | 아니오 | `false` | 정기 수집(collect_bids)에서 개찰결과(유찰 포함)를 `bid_openg_results` 에 적재할지 여부. 코드·compose 기본 false |
+| `ML_DRIFT_MONITOR_ENABLED` | 아니오 | `true` | 매일 04:00 PSI 드리프트 감시 크론 사용 여부 |
+| `RESULT_COVERAGE_EXCLUDE_LATER_CANCELLED` | 아니오 | `false` | 낙찰결과 매칭률에서 같은 공고번호·분류의 더 큰 차수 취소공고가 있는 비취소 공고 미매칭 건을 분모에서 뺄지 여부 |
+| `RESULT_COVERAGE_EXCLUDE_OFFLINE_BIDS` | 아니오 | `false` | 전자입찰이 아닌 직찰·우편 계열 공고를 매칭률 분모와 분자에서 뺄지 여부 |
+| `RESULT_COVERAGE_ALERT_SUPPRESS` | 아니오 | (없음) | 매칭률 경고 임시 억제 목록. 쉼표로 구분한 `분류:규모:만료일` (규모는 `large` 만). 만료일 이하는 알림에서 빠집니다 |
 
 `AUTOMATION_CALLBACK_BASE_URL` 은 **워커가 도달할 수 있는 주소**여야 합니다. 컨테이너를 분리했다면 `http://app:8000` 처럼 서비스명을 쓰십시오. `http://localhost:8000` 은 워커 컨테이너 자기 자신을 가리키므로 거부됩니다.
 
@@ -194,8 +226,11 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | `MODEL_METRICS_DIR` | 아니오 | `data/model_metrics` | 서빙 모델 실측 지표 사이드카. 승격 게이트가 champion 지표를 읽습니다 |
 | `MODEL_MANIFEST_SIGNING_KEY` | staging·production은 **예** | (없음) | 서빙 모델 무결성 manifest(`artifact_manifest.json`)의 HMAC-SHA256 서명 키. 비면 서명 없이 기록됩니다 |
 | `ML_WEEKLY_RETRAIN_ENABLED` | 아니오 | `true` | 매주 월요일 03:00 재학습 크론 사용 여부 |
+| `ML_WEEKLY_RETRAIN_CATEGORIES` | 아니오 | (없음) | 주간 재학습 대상 카테고리 (콤마 구분). 비면 전체 카테고리입니다 |
 | `MLOPS_WEBHOOK_URL` | 아니오 | (없음) | 재학습 실패·승격 권고를 보낼 **Slack Incoming Webhook** 주소. 비면 알림을 보내지 않습니다 |
 | `LATENCY_SEGMENT_LOGGING` | 아니오 | `false` | 구간별 지연 구조화 로그 활성화. 진단 전용이며 정식 레이턴시 게이트에서는 기본 끔 |
+| `PREDICTION_GC_MODE` | 아니오 | (없음) | 예측기의 GC 동작 모드. 정본 측정 설정은 `freeze` 이며 운영 compose 가 기본으로 전달합니다 |
+| `SKIP_MODEL_LOAD` | 아니오 | `false` | 기동 시 모델 로드를 건너뜁니다. 시험·진단 전용이며 운영에서 켜면 예측 기능이 비어 있습니다 |
 
 기본 Docker Compose worker는 개발 DB 최신화를 위해
 `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=true`로 둡니다. 이 작업은
@@ -234,6 +269,21 @@ OCR 은 `rapidocr`(onnxruntime)로 로컬에서만 수행합니다. 인식 모�
 
 두 키는 애플리케이션이 아니라 호스트의 `scripts/render_alertmanager_secret.py` 만 읽는 인프라 전용 값입니다. 파일 경로·권한·마운트 규약은 [`docs/ops/alerting.md`](alerting.md) 3장을 참조하십시오. 실제 값은 `.env` 와 배포 시크릿에만 두고 문서·코드에 기록하지 않습니다.
 
+### 2.12 관측성 (OpenTelemetry)
+
+| 변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `OTEL_ENABLED` | 아니오 | `false` | 분산 추적·메트릭 계측 활성화 여부. 운영 compose 는 `true` 를 기본으로 전달합니다 |
+| `OTEL_SERVICE_NAME` | 아니오 | `refac_bid_box` | 추적 상에 표시될 서비스 이름 |
+| `OTEL_EXPORTER_TYPE` | 아니오 | `none` | 내보내기 대상 (`none` / `console` / `otlp`). 운영 compose 는 `otlp` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | 아니오 | (없음) | OTLP HTTP 수집기 엔드포인트. 운영 compose 는 `http://otel-collector:4318/v1/traces` |
+| `OTEL_SAMPLING_RATIO` | 아니오 | `1.0` | 트레이스 헤드 샘플링 비율 (0.0 ~ 1.0). 운영 compose 는 `0.1` |
+| `OTEL_METRICS_ENABLED` | 아니오 | (없음) | 메트릭 계측만 따로 끌 때 사용합니다. 비면 `OTEL_ENABLED` 를 따릅니다 |
+| `OTEL_METRIC_EXPORT_INTERVAL_MILLIS` | 아니오 | `60000` | 메트릭 내보내기 주기 (밀리초) |
+| `GF_SECURITY_ADMIN_PASSWORD` | 운영 **예** | (없음) | Grafana 관리자 비밀번호. 운영 compose grafana 서비스가 필수로 요구합니다 |
+
+전체 수집 파이프라인과 개발용 관측성 프로파일은 [`docs/ops/observability.md`](observability.md)를 참조하십시오.
+
 ---
 
 ## 3. 기본값 차이 각주
@@ -242,12 +292,13 @@ OCR 은 `rapidocr`(onnxruntime)로 로컬에서만 수행합니다. 인식 모�
 
 | 변수 | 코드 기본값 | `.env.example` 값 | 사유 |
 | --- | --- | --- | --- |
-| `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | `false` | `true` | 개발 환경에서는 매일 DB 최신화를 켜두되, 운영 기본값은 끔 |
-| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | `false` | `false` | 코드 기본값 및 개발 예시는 false, 운영 compose 기본 true |
+| `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | `true` | `true` | 동일 (명시적 표기). 두 야간 스케줄이 함께 켜지면 개발 최신화가 건너뛰어 중복 수집을 막습니다 |
+| `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | `false` | `false` | 동일. 코드·개발 예시는 false, 운영 compose 기본 true |
 | `OPENG_RESULT_COLLECTION_ENABLED` | `false` | `false` | 동일. 운영자가 `.env` 로 켜면 두 compose worker 가 전달 |
 | `ML_WEEKLY_RETRAIN_ENABLED` | `true` | `false` | 코드 기본값은 주간 재학습 활성, 개발 예시는 끔 |
 | `MEILI_ENABLED` | `false` | `false` | 동일 (명시적 표기) |
-| `CORS_DEV_ALLOW_ALL` | `true` | `true` | 동일. `development` 에서만 효력이 있으며 `staging`·`production` 은 `CORS_ALLOWED_ORIGINS` 명시 필수 |
+| `CORS_DEV_ALLOW_ALL` | `false` | `false` | 동일. `development` 에서만 효력이 있으며 `staging`·`production` 은 `CORS_ALLOWED_ORIGINS` 명시 필수 |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `""` | `http://localhost:4318/v1/traces` | 코드는 비어 있고 예시는 로컬 수집기를 가리킵니다. 컨테이너에서는 서비스명 `otel-collector` 를 써야 합니다 |
 | `WEB_CONCURRENCY` | (설정 모델에 없음) | `1` | Compose 전용 변수. 코드는 읽지 않음 |
 | `MYSQL_ROOT_PASSWORD` | (설정 모델에 없음) | `rootpassword` | Compose 전용 변수. 코드는 `DB_PASSWORD` 사용 |
 

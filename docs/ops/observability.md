@@ -125,13 +125,15 @@ FastAPI 요청 진입부터 응답 반환까지의 전체 수명 주기를 계�
 | 속성명 (Span Attribute) | 설명 | 예시 | 민감 정보 여부 |
 | --- | --- | --- | --- |
 | `http.method` | HTTP 메서드 | `GET`, `POST` | 안전 (기록) |
-| `http.route` | 등록된 라우트 템플릿 | `/api/v1/bids/{bid_id}` | 안전 (기록) |
+| `http.route` | 등록된 라우트 템플릿 (앱 수준 prefix 제외) | `/bids/{bid_id}` | 안전 (기록) |
 | `http.status_code` | HTTP 응답 상태 코드 | `200`, `404`, `500` | 안전 (기록) |
 | `http.target` | 요청 URI 경로 | `/api/v1/health` | 안전 (기록) |
 | `http.scheme` | 프로토콜 스킴 | `http`, `https` | 안전 (기록) |
 | `http.flavor` | HTTP 버전 | `1.1` | 안전 (기록) |
 | `http.user_agent` | 클라이언트 식별자 | `Mozilla/5.0...` | 안전 (기록) |
 | `Authorization`, `Cookie` | 인증 및 세션 헤더 | - | **제외 (절대 미기록)** |
+
+`http.route`는 FastAPI 라우터에 등록된 템플릿 경로이며 `api/v1` 같은 앱 수준 prefix 는 붙지 않습니다. Prometheus 규칙과 대시보드의 `http_route="/predictions/predict"`, `http_route="/chatbot/chat/stream"` 필터도 이 형식입니다. 반면 `http.target`은 실제 요청 경로이므로 prefix 가 포함됩니다.
 
 ### 4.2 데이터베이스 계층 (SQLAlchemy)
 

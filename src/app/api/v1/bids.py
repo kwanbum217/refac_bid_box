@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -286,9 +286,15 @@ def get_bid_detail(
 
 @router.post("/collect", summary="G2B 데이터 수집 실행")
 def collect_bids_api(
-    start_date: str = Query("", description="수집 시작일 (YYYYMMDD, 미지정 시 어제)"),
-    end_date: str = Query("", description="수집 종료일 (YYYYMMDD, 미지정 시 어제)"),
-    fetch_type: str = Query("both", description="both/announce/result"),
+    start_date: Annotated[
+        str, Query(pattern=r"^(\d{8})?$", description="수집 시작일 (YYYYMMDD, 미지정 시 어제)")
+    ] = "",
+    end_date: Annotated[
+        str, Query(pattern=r"^(\d{8})?$", description="수집 종료일 (YYYYMMDD, 미지정 시 어제)")
+    ] = "",
+    fetch_type: Annotated[
+        Literal["both", "announce", "result"], Query(description="both/announce/result")
+    ] = "both",
     db: Session = Depends(get_db),
     user: CustomUser = Depends(require_current_user),
 ) -> dict[str, Any]:

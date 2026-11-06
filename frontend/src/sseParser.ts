@@ -1,7 +1,10 @@
 export type SSEEvent = {
   event: string;
-  data: any;
+  data: Record<string, unknown>;
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export class SSEParser {
   private buffer: string = '';
@@ -37,10 +40,10 @@ export class SSEParser {
 
       if (dataStr) {
         try {
-          const parsedData = JSON.parse(dataStr);
-          yield { event: eventType, data: parsedData };
-        } catch (e) {
-          yield { event: eventType, data: dataStr };
+          const parsedData: unknown = JSON.parse(dataStr);
+          yield { event: eventType, data: isRecord(parsedData) ? parsedData : { value: parsedData } };
+        } catch {
+          yield { event: eventType, data: { text: dataStr } };
         }
       }
     }

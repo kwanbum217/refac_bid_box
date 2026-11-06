@@ -11,12 +11,12 @@ TLS_DOMAIN=example.com
 TLS_CERT_DIR=/absolute/path/to/certificates
 TLS_CERT_FILE=/etc/caddy/certs/fullchain.pem
 TLS_KEY_FILE=/etc/caddy/certs/privkey.pem
-TRUSTED_PROXY_IPS=<실제 Caddy 프록시 IP 또는 해당 내부 네트워크 CIDR>
+TRUSTED_PROXY_IPS=172.30.0.0/24
 ```
 
 `TLS_CERT_DIR`은 `fullchain.pem`과 `privkey.pem`을 포함하는 호스트 디렉터리입니다. `TLS_CERT_FILE`과 `TLS_KEY_FILE`은 Caddy 컨테이너 내부 경로이며, 기본값은 위 예시와 같습니다. 인증서 발급 기관이나 실제 인증서 파일은 이 구성의 범위에 포함하지 않습니다.
 
-`TRUSTED_PROXY_IPS`는 반드시 실제 운영 환경의 Caddy 컨테이너 IP 또는 내부 네트워크 CIDR로 설정하십시오. 비워 두거나 추측한 값을 사용하면 앱이 모든 요청을 하나의 프록시 IP로 인식해 로그인 시도 제한이 전체 사용자에게 적용될 수 있습니다.
+`docker-compose.prod.yml`의 `egress` 네트워크는 `172.30.0.0/24`로 고정되어 있습니다. `TRUSTED_PROXY_IPS`는 이 CIDR로 설정하십시오. Caddy 컨테이너 IP 하나를 적으면 `docker compose up --force-recreate`나 호스트 재기동으로 IP가 바뀐 뒤 앱이 헤더를 신뢰하지 않게 되고, 모든 요청이 프록시 IP 하나로 보여 IP 축 로그인 시도 제한이 전체 사용자 잠금으로 번집니다. 호스트의 다른 네트워크와 대역이 겹치면 compose의 `egress` `ipam` 서브넷과 이 값을 함께 바꾸십시오. 같은 네트워크에 붙은 컨테이너는 `X-Forwarded-For`를 위조할 수 있으므로 `egress`에는 프록시와 송신이 필요한 서비스만 두십시오.
 
 ## 기동 전 검증
 

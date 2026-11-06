@@ -33,7 +33,7 @@ def _build_pipeline_capabilities() -> dict[str, CapabilityDefinition]:
             mutating=action.mutating,
             requires_confirmation=action.high_cost,
             allowed_params=(),
-            executor="src.app.services.automation_orchestrator.execute_pipeline_step",
+            executor="src.app.services.plan_executor.execute_pipeline_step",
             pipeline_id=action.pipeline_id,
             run_mode=action.run_mode,
         )
