@@ -23,17 +23,17 @@
 
 | 항목 | 내용 | 근거 코드 |
 | --- | --- | --- |
-| 쿠키 이름 | `bidbox_session` | `src/app/core/security.py:38` (`SESSION_COOKIE_NAME`) |
-| 세션 유효 기간 (TTL) | 14일 (`1,209,600`초) | `src/app/core/security.py:37` (`SESSION_TTL_SECONDS`) |
-| 쿠키 발급 지점 | `_issue_session` | `src/app/api/v1/accounts.py:147` |
-| 로그인 엔드포인트 | `POST /api/v1/accounts/login` | `src/app/api/v1/accounts.py:216` |
-| 인증 판정 의존성 | `get_current_user` / `require_current_user` | `src/app/api/v1/accounts.py:110, 127` |
+| 쿠키 이름 | `bidbox_session` | `src/app/core/security.py:51` (`SESSION_COOKIE_NAME`) |
+| 세션 유효 기간 (TTL) | 14일 (`1,209,600`초) | `src/app/core/security.py:47` (`SESSION_TTL_SECONDS`) |
+| 쿠키 발급 지점 | `_issue_session` | `src/app/api/v1/accounts.py:386` |
+| 로그인 엔드포인트 | `POST /api/v1/accounts/login` | `src/app/api/v1/accounts.py:557` |
+| 인증 판정 의존성 | `get_current_user` / `require_current_user` | `src/app/api/v1/accounts.py:349, 366` |
 
 세션 유효 기간이 14일이므로 측정 세션 동안 쿠키가 만료되지 않으며, 한 번 발급받은 쿠키를 전체 측정 회차에 걸쳐 재사용할 수 있습니다.
 
 ### 2.2 로그인 시도 제한(Rate Limiter) 주의
 
-`src/app/api/v1/accounts.py:229`에는 `login_rate_limiter.check_rate_limit(ip, payload.username)` 가 적용되어 있습니다. 짧은 시간 동안 반복적인 로그인을 시도할 경우 429 (Too Many Requests) 차단이 발생합니다.
+`src/app/api/v1/accounts.py:564`에는 `login_rate_limiter.check_rate_limit(ip, payload.username)` 가 적용되어 있습니다. 짧은 시간 동안 반복적인 로그인을 시도할 경우 429 (Too Many Requests) 차단이 발생합니다.
 
 따라서 동시성(c10, 100회) 측정 과정에서 매 요청마다 로그인을 시도하면 정상적인 서비스 응답 지연이 아니라 로그인 차단 응답 시간을 측정하게 됩니다. **스크립트는 측정 회차 시작 시 단 1회만 로그인하여 `Set-Cookie` 에서 `bidbox_session` 값을 추출하고, 이후 모든 단일 웜 및 동시성 요청에 해당 쿠키를 재사용해야 합니다.**
 
@@ -79,30 +79,30 @@ export BENCHMARK_SESSION_COOKIE="<발급받은_bidbox_session_값>"
 
 | 식별자 | HTTP 메서드 및 경로 | 설명 | 판단 근거 (부작용 없음) |
 | --- | --- | --- | --- |
-| `accounts_me` | `GET /api/v1/accounts/me` | 현재 로그인 사용자 정보 조회 | `src/app/api/v1/accounts.py:265`. `require_current_user` 검증 후 `_serialize(user)` 만 반환하며 DB 쓰기 작업이 일절 없음. |
-| `evaluations_profiles` | `GET /api/v1/evaluations/profiles` | 내 평가 프로필 목록 조회 | `src/app/api/v1/evaluations.py:741`. 로그인한 사용자의 `BidEvaluationProfile` 레코드만 SELECT 조회하여 반환함. |
-| `evaluations_snapshots` | `GET /api/v1/evaluations/snapshots` | 내 분석 스냅샷 목록 조회 | `src/app/api/v1/evaluations.py:906`. 로그인한 사용자의 `BidEvaluationSnapshot` 레코드만 SELECT 조회하여 반환함. |
+| `accounts_me` | `GET /api/v1/accounts/me` | 현재 로그인 사용자 정보 조회 | `src/app/api/v1/accounts.py:605`. `require_current_user` 검증 후 `_serialize(user)` 만 반환하며 DB 쓰기 작업이 일절 없음. |
+| `evaluations_profiles` | `GET /api/v1/evaluations/profiles` | 내 평가 프로필 목록 조회 | `src/app/api/v1/evaluations.py:2897`. 로그인한 사용자의 `BidEvaluationProfile` 레코드만 SELECT 조회하여 반환함. |
+| `evaluations_snapshots` | `GET /api/v1/evaluations/snapshots` | 내 분석 스냅샷 목록 조회 | `src/app/api/v1/evaluations.py:3062`. 로그인한 사용자의 `BidEvaluationSnapshot` 레코드만 SELECT 조회하여 반환함. |
 
 ### 4.2 제외 대상 엔드포인트 및 경로별 판단 근거
 
 | HTTP 메서드 및 경로 | 제외 사유 및 상세 판단 근거 | 근거 위치 |
 | --- | --- | --- |
-| `POST /api/v1/bids/collect` | 나라장터 OpenAPI 외부 실시간 수집(`collect_bids`)을 트리거하고 DB에 대량 쓰기를 수행하므로 절대 측정 불가. | `src/app/api/v1/bids.py:243` |
-| `POST /api/v1/evaluations/analyze` | 적격심사 통합 분석 완료 시 `_save_snapshot_async`가 호출되어 `BidEvaluationSnapshot` 및 `BidEvaluationEvidence`를 DB에 `db.add()` 및 `db.commit()` 하므로 동시성 측정 시 DB 쓰기 누적 부작용이 발생함. | `src/app/api/v1/evaluations.py:569, 686` |
-| `POST /api/v1/evaluations/profiles` | 새로운 평가 프로필을 DB에 INSERT 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:780` |
-| `PUT /api/v1/evaluations/profiles/{profile_id}` | 기존 평가 프로필을 DB에 UPDATE 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:843` |
-| `DELETE /api/v1/evaluations/profiles/{profile_id}` | 평가 프로필을 DB에서 DELETE 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:895` |
-| `GET /api/v1/evaluations/profiles/{profile_id}` | 단건 조회를 위해 특정 ID에 의존하며, ID가 존재하지 않으면 404를 반환하므로 범용 하니스 경로로 부적합 (목록 경로로 대체). | `src/app/api/v1/evaluations.py:821` |
-| `POST /api/v1/evaluations/snapshots` | 분석 스냅샷을 DB에 직접 INSERT 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:950` |
-| `GET /api/v1/evaluations/snapshots/{snapshot_id}` | 특정 스냅샷 ID에 의존하며 미존재 시 404를 반환하므로 범용 하니스 경로로 부적합 (목록 경로로 대체). | `src/app/api/v1/evaluations.py:1016` |
-| `DELETE /api/v1/evaluations/snapshots/{snapshot_id}` | 스냅샷을 DB에서 DELETE 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:1052` |
-| `POST /api/v1/automation/run/*` | 수집/KB갱신/예측검증/재학습 등 백그라운드 아르크(Arq) 작업 생성 및 DB 쓰기 발생. | `src/app/api/v1/automation.py:104-147` |
-| `POST /api/v1/automation/job/{job_id}/confirm` | 확인 토큰 소비 및 작업 확정 처리 DB 쓰기 발생. | `src/app/api/v1/automation.py:150` |
-| `GET /api/v1/automation/job/{job_id}/status` | `sync_automation_status` 호출로 DB 상태 동기화 쓰기가 발생할 수 있으며 동적 ID에 의존함. | `src/app/api/v1/automation.py:173` |
-| `POST /api/v1/automation/job/{job_id}/cancel` | 작업 취소 상태 갱신 DB 쓰기 발생. | `src/app/api/v1/automation.py:201` |
-| `POST /api/v1/automation/job/{job_id}/callback` | 워커 콜백 데이터 반영 DB 쓰기 발생. | `src/app/api/v1/automation.py:211` |
-| `POST /api/v1/accounts/signup` | 신규 사용자 등록 DB 쓰기 발생. | `src/app/api/v1/accounts.py:198` |
-| `POST /api/v1/accounts/logout` | Redis 세션 저장소에서 세션을 파기하여 이후 요청의 인증을 무효화하는 부작용 발생. | `src/app/api/v1/accounts.py:250` |
+| `POST /api/v1/bids/collect` | 나라장터 OpenAPI 외부 실시간 수집(`collect_bids`)을 트리거하고 DB에 대량 쓰기를 수행하므로 절대 측정 불가. | `src/app/api/v1/bids.py:287` |
+| `POST /api/v1/evaluations/analyze` | 적격심사 통합 분석 완료 시 `_save_snapshot_async`가 호출되어 `BidEvaluationSnapshot` 및 `BidEvaluationEvidence`를 DB에 `db.add()` 및 `db.commit()` 하므로 동시성 측정 시 DB 쓰기 누적 부작용이 발생함. | `src/app/api/v1/evaluations.py:2251, 2301` |
+| `POST /api/v1/evaluations/profiles` | 새로운 평가 프로필을 DB에 INSERT 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:2933` |
+| `PUT /api/v1/evaluations/profiles/{profile_id}` | 기존 평가 프로필을 DB에 UPDATE 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:2997` |
+| `DELETE /api/v1/evaluations/profiles/{profile_id}` | 평가 프로필을 DB에서 DELETE 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:3042` |
+| `GET /api/v1/evaluations/profiles/{profile_id}` | 단건 조회를 위해 특정 ID에 의존하며, ID가 존재하지 않으면 404를 반환하므로 범용 하니스 경로로 부적합 (목록 경로로 대체). | `src/app/api/v1/evaluations.py:2975` |
+| `POST /api/v1/evaluations/snapshots` | 분석 스냅샷을 DB에 직접 INSERT 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:3112` |
+| `GET /api/v1/evaluations/snapshots/{snapshot_id}` | 특정 스냅샷 ID에 의존하며 미존재 시 404를 반환하므로 범용 하니스 경로로 부적합 (목록 경로로 대체). | `src/app/api/v1/evaluations.py:3179` |
+| `DELETE /api/v1/evaluations/snapshots/{snapshot_id}` | 스냅샷을 DB에서 DELETE 및 `db.commit()` 수행. | `src/app/api/v1/evaluations.py:3211` |
+| `POST /api/v1/automation/run/*` | 수집/KB갱신/예측검증/재학습 등 백그라운드 아르크(Arq) 작업 생성 및 DB 쓰기 발생. | `src/app/api/v1/automation.py:96-140` |
+| `POST /api/v1/automation/job/{job_id}/confirm` | 확인 토큰 소비 및 작업 확정 처리 DB 쓰기 발생. | `src/app/api/v1/automation.py:142` |
+| `GET /api/v1/automation/job/{job_id}/status` | `sync_automation_status` 호출로 DB 상태 동기화 쓰기가 발생할 수 있으며 동적 ID에 의존함. | `src/app/api/v1/automation.py:165` |
+| `POST /api/v1/automation/job/{job_id}/cancel` | 작업 취소 상태 갱신 DB 쓰기 발생. | `src/app/api/v1/automation.py:193` |
+| `POST /api/v1/automation/job/{job_id}/callback` | 워커 콜백 데이터 반영 DB 쓰기 발생. | `src/app/api/v1/automation.py:203` |
+| `POST /api/v1/accounts/signup` | 신규 사용자 등록 DB 쓰기 발생. | `src/app/api/v1/accounts.py:539` |
+| `POST /api/v1/accounts/logout` | Redis 세션 저장소에서 세션을 파기하여 이후 요청의 인증을 무효화하는 부작용 발생. | `src/app/api/v1/accounts.py:589` |
 
 ---
 

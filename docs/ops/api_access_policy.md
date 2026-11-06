@@ -34,8 +34,15 @@
 않습니다. Redis 장애 시에는 관측 장치가 요청 자체를 중단하지 않도록 쿼터를
 건너뛰고 요청을 계속 처리합니다.
 
-쿼터는 인증 사용자에게 적용하지 않습니다. 인증 사용자는 세션별 사용량 제한이
-필요할 수 있으므로 별도 정책으로 판단해야 합니다.
+로그인 사용자의 요청은 같은 `enforce_anonymous_api_quota` 가 사용자 축 인증 쿼터로
+전환해 검사합니다(`src/app/core/security.py:937`). 한도는 사용자당 60초 120회이며
+코드 상수(`AUTHENTICATED_API_RATE_LIMIT_MAX_REQUESTS`,
+`AUTHENTICATED_API_RATE_LIMIT_WINDOW_SECONDS`)로 고정되어 환경변수로 조정하지
+않습니다. 챗봇·예측 API 와 함께 비용이 큰
+`POST /api/v1/evaluations/analyze`, `POST /api/v1/evaluations/recommend`,
+`POST /api/v1/evaluations/snapshots` 도 같은 버킷을 씁니다. `recommend` 는 내부에서
+predict-price 경로를 호출해 쿼터를 한 번만 차감합니다(이중 차감 방지). Redis 장애 시
+동작은 익명 쿼터와 같습니다.
 
 ## 공고 JSON API 공개 정책
 
