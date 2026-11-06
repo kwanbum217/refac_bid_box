@@ -45,6 +45,8 @@ from src.app.services.api_collector import (
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PREVIOUS_HEAD = "b7c8d9e0f1a2"
 NEW_TABLE = "bid_openg_results"
+# head 까지 올리면 이 리비전 뒤의 마이그레이션이 만드는 테이블도 함께 생긴다.
+LATER_TABLES = frozenset({"bid_announcement_regime"})
 EXPECTED_COLUMNS = (
     "id",
     "bid_ntce_no",
@@ -181,7 +183,11 @@ def test_migration_upgrade_and_downgrade_on_sqlite(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "DATABASE_URL", url, raising=False)
 
     engine = create_engine(url)
-    legacy_tables = [table for name, table in Base.metadata.tables.items() if name != NEW_TABLE]
+    legacy_tables = [
+        table
+        for name, table in Base.metadata.tables.items()
+        if name != NEW_TABLE and name not in LATER_TABLES
+    ]
     Base.metadata.create_all(engine, tables=legacy_tables)
     with engine.begin() as conn:
         conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
@@ -203,7 +209,7 @@ def test_migration_upgrade_and_downgrade_on_sqlite(tmp_path, monkeypatch):
         command.upgrade(config, "head")
 
         inspector = inspect(engine)
-        assert set(inspector.get_table_names()) - before_tables == {NEW_TABLE}
+        assert set(inspector.get_table_names()) - before_tables == {NEW_TABLE, *LATER_TABLES}
         assert tuple(c["name"] for c in inspector.get_columns(NEW_TABLE)) == EXPECTED_COLUMNS
         assert (
             _table_columns(engine, "bid_announcements") + _table_columns(engine, "bid_results")
