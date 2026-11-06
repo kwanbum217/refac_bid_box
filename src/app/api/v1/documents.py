@@ -182,7 +182,8 @@ async def extract_document(
     """로그인 회원의 PDF 에서 등급·평가일을 추출해 미리 채우기용으로 돌려줍니다."""
     if not settings.DOCUMENT_EXTRACTION_ENABLED:
         raise HTTPException(status_code=404, detail=DOCUMENT_EXTRACTION_DISABLED_DETAIL)
-    enforce_document_extraction_quota(request, user)
+    # 쿼터 검사는 Redis 를 동기 호출하므로 이벤트 루프 밖으로 넘깁니다.
+    await asyncio.to_thread(enforce_document_extraction_quota, request, user)
     if _media_type(request.headers.get("content-type", "")) != PDF_MEDIA_TYPE:
         raise HTTPException(status_code=415, detail=UNSUPPORTED_MEDIA_TYPE_DETAIL)
 

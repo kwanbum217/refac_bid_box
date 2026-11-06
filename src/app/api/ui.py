@@ -719,8 +719,9 @@ async def signup_submit(request: Request):
     )
 
     try:
-        signup_rate_limiter.check_rate_limit(ip)
-        signup_rate_limiter.record_attempt(ip)
+        # 회원가입 제한기는 Redis 를 동기 호출하므로 이벤트 루프 밖으로 넘깁니다.
+        await asyncio.to_thread(signup_rate_limiter.check_rate_limit, ip)
+        await asyncio.to_thread(signup_rate_limiter.record_attempt, ip)
         signup_payload = SignUpRequest.model_validate(payload)
         response = RedirectResponse(url="/", status_code=303)
         # register_user 는 동기 DB 트랜잭션과 PBKDF2 해싱을 함께 수행합니다.
@@ -846,7 +847,8 @@ async def login_submit(
     )
 
     try:
-        login_rate_limiter.check_rate_limit(ip, username)
+        # 로그인 제한기는 Redis 를 동기 호출하므로 이벤트 루프 밖으로 넘깁니다.
+        await asyncio.to_thread(login_rate_limiter.check_rate_limit, ip, username)
     except HTTPException as exc:
         context = {
             "hide_sidebar": True,
@@ -865,7 +867,7 @@ async def login_submit(
     auth_result = await asyncio.to_thread(_authenticate_and_update_login, username, password)
 
     if auth_result["status"] in ("not_found", "invalid_password"):
-        login_rate_limiter.record_failure(ip, username)
+        await asyncio.to_thread(login_rate_limiter.record_failure, ip, username)
         context = {
             "hide_sidebar": True,
             "form": login_form(
@@ -879,7 +881,7 @@ async def login_submit(
         return response
 
     if auth_result["status"] == "inactive":
-        login_rate_limiter.record_failure(ip, username)
+        await asyncio.to_thread(login_rate_limiter.record_failure, ip, username)
         context = {
             "hide_sidebar": True,
             "form": login_form(
@@ -892,7 +894,7 @@ async def login_submit(
         response.status_code = 403
         return response
 
-    login_rate_limiter.record_success(ip, username)
+    await asyncio.to_thread(login_rate_limiter.record_success, ip, username)
 
     try:
         token = await asyncio.to_thread(

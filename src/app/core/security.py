@@ -770,6 +770,7 @@ anonymous_api_rate_limiter = AnonymousAPIRateLimiter()
 class AuthenticatedAPIRateLimiter:
     """로그인 사용자 API 요청 제한기 (user 축).
 
+    챗봇·예측·평가 API 처럼 비용이 큰 경로가 같은 버킷과 같은 한도를 공유합니다.
     Redis 장애 시에는 익명 제한기와 같이 요청을 차단하지 않고 제한을 건너뜁니다.
     한도와 윈도우는 모듈 상수로 고정합니다.
     """
@@ -934,6 +935,7 @@ def enforce_document_extraction_quota(request: Any, user: Any) -> None:
 
 
 def enforce_anonymous_api_quota(request: Any, user: Any) -> None:
+    """API 요청 쿼터를 적용합니다. 로그인 사용자는 인증 제한기, 아니면 익명 제한기를 씁니다."""
     if user is not None:
         user_id = getattr(user, "id", None)
         authenticated_api_rate_limiter.check_rate_limit(user_id)
