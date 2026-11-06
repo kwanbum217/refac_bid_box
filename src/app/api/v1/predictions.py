@@ -33,6 +33,7 @@ from src.app.schemas.predictions import (
     PredictPriceResponse,
     PredictPriceScoreVerdict,
 )
+from src.app.services.band_regime_lookup import lookup_attachment_regime_for_bid
 from src.app.services.bid_queries import (
     DEFAULT_PREDICTION_MODEL,
     DEFAULT_PREDICTION_MODEL_BY_CATEGORY,
@@ -324,6 +325,7 @@ def _score_verdict(
     institution = _demand_institution_for_bid(db, bid)
     sido_code, sido_name = institution_sido(institution)
     rule_result: RuleResolutionResult | None
+    attachment_regime = lookup_attachment_regime_for_bid(db, bid)
     try:
         rule_result = resolve_evaluation_rule_from_raw_data(
             category=bid.category,
@@ -335,6 +337,7 @@ def _score_verdict(
             region_name=sido_name,
             estimated_price=_band_estimated_price(bid),
             education_institution=is_education_institution(institution),
+            attachment_regime=attachment_regime,
         )
     except Exception as exc:
         rule_result = None

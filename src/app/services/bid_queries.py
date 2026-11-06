@@ -7,7 +7,7 @@ src/app/services/bid_queries.py
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -28,6 +28,11 @@ from src.app.models.bids import (
     preload_matching_announcements,
 )
 from src.app.models.demand_institutions import G2BDemandInstitution
+from src.app.services.band_regime_lookup import (
+    RegimeKey,
+    attachment_regime_key,
+    lookup_attachment_regimes,
+)
 from src.app.services.demand_institutions import describe_contract_regime
 from src.app.services.evaluation_rules import (
     METHOD_NAME_PLACEHOLDER,
@@ -508,24 +513,39 @@ def _paginate_without_count(db: Session, stmt, page_number: int) -> OffsetPage:
     )
 
 
-def is_qualification_analyzable(bid: BidAnnouncement) -> bool:
+def is_qualification_analyzable(bid: BidAnnouncement, attachment_regime: str | None = None) -> bool:
     """공고 상세의 적격심사 분석(점수와 입찰가격 보완)이 계산되는지 단건 판정합니다.
 
     분석 API 와 같은 두 조건을 봅니다. 규칙 판별이 차단되지 않고 예정가격 기준액이
     있어야 합니다. DB 를 조회하지 않으므로 목록 한 페이지분이나 검색 문서 생성에
     쓸 수 있습니다. 목록 뱃지와 qual 필터와 검색 문서가 모두 이 함수 하나를 씁니다.
+    DB 세션이 있는 호출부는 저장된 첨부 판별 갈래를 attachment_regime 으로 넘기고,
+    없는 호출부는 넘기지 않습니다(None).
     """
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
-    rule = resolve_evaluation_rule_from_raw_data(category=bid.category, raw_data=raw_data)
+    rule = resolve_evaluation_rule_from_raw_data(
+        category=bid.category, raw_data=raw_data, attachment_regime=attachment_regime
+    )
     if rule.is_blocked:
         return False
     reference = bid.prediction_reference_amount
     return reference is not None and reference > 0
 
 
-def qualification_analyzable_ids(bids: Iterable[BidAnnouncement]) -> set[int]:
-    """적격심사 분석이 계산되는 공고의 id 집합입니다. 판정은 단건 함수에 위임합니다."""
-    return {bid.id for bid in bids if is_qualification_analyzable(bid)}
+def qualification_analyzable_ids(
+    bids: Iterable[BidAnnouncement],
+    attachment_regimes: Mapping[RegimeKey, str] | None = None,
+) -> set[int]:
+    """적격심사 분석이 계산되는 공고의 id 집합입니다. 판정은 단건 함수에 위임합니다.
+
+    attachment_regimes 는 공고 키별 첨부 판별 갈래이며, 없는 공고는 판별 없이 판정합니다.
+    """
+    regimes = attachment_regimes or {}
+    return {
+        bid.id
+        for bid in bids
+        if is_qualification_analyzable(bid, regimes.get(attachment_regime_key(bid)))
+    }
 
 
 # DB 대체 경로는 판정이 파이썬 함수라 SQL 조건으로 밀어 넣을 수 없어, 정렬 순서대로
@@ -566,8 +586,9 @@ def _paginate_qualification_only(db: Session, stmt, page_number: int) -> OffsetP
             break
         scanned += len(rows)
         offset += len(rows)
+        regimes = lookup_attachment_regimes(db, (attachment_regime_key(row) for row in rows))
         for row in rows:
-            if not is_qualification_analyzable(row):
+            if not is_qualification_analyzable(row, regimes.get(attachment_regime_key(row))):
                 continue
             if skip_remaining > 0:
                 skip_remaining -= 1
