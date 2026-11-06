@@ -19,11 +19,11 @@ totals:
       announcements: 1856
       ratio: 0.059206
     PPS_DEFAULT:
-      announcements: 19554
-      ratio: 0.623772
+      announcements: 19599
+      ratio: 0.625207
     BLOCKED:
-      announcements: 9856
-      ratio: 0.314406
+      announcements: 9811
+      ratio: 0.312971
     ERROR:
       announcements: 0
       ratio: 0.0
@@ -31,8 +31,8 @@ tail:
   institutions: 2305
   announcements: 4023
   applied_scope:
-    PPS_DEFAULT: 2689
-    BLOCKED: 1334
+    PPS_DEFAULT: 2691
+    BLOCKED: 1332
 regions:
 - region_name: 서울특별시
   rule_ids:
@@ -257,15 +257,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 107
-    BLOCKED: 60
+    PPS_DEFAULT: 108
+    BLOCKED: 59
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_QUAL_MOE_CDW_ATTACH_04
   block_codes:
     MANUAL_EVALUATION: 59
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 167
   registry_status: unregistered
   manifest_sources: null
@@ -321,8 +320,8 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 87
-    BLOCKED: 57
+    PPS_DEFAULT: 88
+    BLOCKED: 56
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
@@ -330,7 +329,6 @@ institutions:
   block_codes:
     MANUAL_EVALUATION: 49
     NON_PRED_PRICE: 7
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 144
   registry_status: unregistered
   manifest_sources: null
@@ -399,15 +397,15 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 85
-    BLOCKED: 50
+    PPS_DEFAULT: 86
+    BLOCKED: 49
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
   block_codes:
     MANUAL_EVALUATION: 29
-    LOCAL_RULE_NOT_FOUND: 13
+    LOCAL_RULE_NOT_FOUND: 12
     NON_PRED_PRICE: 8
   announcements: 135
   registry_status: unregistered
@@ -1173,15 +1171,15 @@ institutions:
   contract_regime: LOCAL
   applied_scope: BLOCKED
   scope_counts:
-    PPS_DEFAULT: 29
-    BLOCKED: 43
+    PPS_DEFAULT: 30
+    BLOCKED: 42
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_QUAL_MOE_CDW_ATTACH_04
   block_codes:
     MANUAL_EVALUATION: 41
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 2
+    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 72
   registry_status: unregistered
   manifest_sources: null
@@ -1324,15 +1322,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 52
-    BLOCKED: 17
+    PPS_DEFAULT: 53
+    BLOCKED: 16
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_QUAL_MOE_CDW_ATTACH_04
   block_codes:
     MANUAL_EVALUATION: 16
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 69
   registry_status: unregistered
   manifest_sources: null
@@ -1365,14 +1362,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 41
-    BLOCKED: 26
+    PPS_DEFAULT: 42
+    BLOCKED: 25
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 25
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 67
   registry_status: unregistered
   manifest_sources: null
@@ -1403,14 +1400,15 @@ institutions:
   contract_regime: LOCAL
   applied_scope: BLOCKED
   scope_counts:
-    PPS_DEFAULT: 30
-    BLOCKED: 37
+    PPS_DEFAULT: 32
+    BLOCKED: 35
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 29
-    LOCAL_RULE_NOT_FOUND: 8
+    LOCAL_RULE_NOT_FOUND: 6
   announcements: 67
   registry_status: unregistered
   manifest_sources: null
@@ -1517,14 +1515,15 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 35
-    BLOCKED: 29
+    PPS_DEFAULT: 38
+    BLOCKED: 26
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 23
-    LOCAL_RULE_NOT_FOUND: 6
+    LOCAL_RULE_NOT_FOUND: 3
   announcements: 64
   registry_status: unregistered
   manifest_sources: null
@@ -1536,15 +1535,15 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 56
-    BLOCKED: 8
+    PPS_DEFAULT: 57
+    BLOCKED: 7
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_LOCAL_MOIS_ACADEMIC_20250701_OVER_2E
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 6
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 2
+    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 64
   registry_status: unregistered
   manifest_sources: null
@@ -1660,15 +1659,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 54
-    BLOCKED: 8
+    PPS_DEFAULT: 55
+    BLOCKED: 7
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_QUAL_MOE_CDW_ATTACH_03
   block_codes:
     MANUAL_EVALUATION: 7
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 62
   registry_status: unregistered
   manifest_sources:
@@ -1758,15 +1756,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 32
-    BLOCKED: 28
+    PPS_DEFAULT: 33
+    BLOCKED: 27
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
   block_codes:
     MANUAL_EVALUATION: 27
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 60
   registry_status: unregistered
   manifest_sources:
@@ -1896,14 +1893,15 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 33
-    BLOCKED: 24
+    PPS_DEFAULT: 34
+    BLOCKED: 23
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 22
-    LOCAL_RULE_NOT_FOUND: 2
+    LOCAL_RULE_NOT_FOUND: 1
   announcements: 57
   registry_status: unregistered
   manifest_sources: null
@@ -2091,14 +2089,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 44
-    BLOCKED: 11
+    PPS_DEFAULT: 46
+    BLOCKED: 9
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 9
-    LOCAL_RULE_NOT_FOUND: 2
   announcements: 55
   registry_status: unregistered
   manifest_sources: null
@@ -2636,14 +2634,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 31
-    BLOCKED: 18
+    PPS_DEFAULT: 32
+    BLOCKED: 17
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 17
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 49
   registry_status: unregistered
   manifest_sources: null
@@ -2947,15 +2945,15 @@ institutions:
   contract_regime: LOCAL
   applied_scope: BLOCKED
   scope_counts:
-    PPS_DEFAULT: 17
-    BLOCKED: 29
+    PPS_DEFAULT: 18
+    BLOCKED: 28
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 24
     NON_PRED_PRICE: 4
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 46
   registry_status: unregistered
   manifest_sources: null
@@ -3155,15 +3153,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 31
-    BLOCKED: 13
+    PPS_DEFAULT: 33
+    BLOCKED: 11
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_QUAL_PRE_20250901_ATTACH_02
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 11
-    RULE_NOT_FOUND: 2
   announcements: 44
   registry_status: unregistered
   manifest_sources: null
@@ -3228,15 +3225,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 25
-    BLOCKED: 18
+    PPS_DEFAULT: 26
+    BLOCKED: 17
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
   block_codes:
     MANUAL_EVALUATION: 17
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 43
   registry_status: unregistered
   manifest_sources: null
@@ -3454,15 +3450,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 39
-    BLOCKED: 3
+    PPS_DEFAULT: 41
+    BLOCKED: 1
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E
   block_codes:
-    RULE_NOT_FOUND: 2
-    LOCAL_RULE_NOT_FOUND: 1
+    RULE_NOT_FOUND: 1
   announcements: 42
   registry_status: unregistered
   manifest_sources: null
@@ -3563,15 +3558,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 35
-    BLOCKED: 6
+    PPS_DEFAULT: 36
+    BLOCKED: 5
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_QUAL_MOE_CDW_ATTACH_03
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   block_codes:
     MANUAL_EVALUATION: 5
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 1
   announcements: 41
   registry_status: unregistered
   manifest_sources: null
@@ -3602,15 +3596,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 23
-    BLOCKED: 18
+    PPS_DEFAULT: 26
+    BLOCKED: 15
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_QUAL_MOE_CDW_ATTACH_04
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 14
-    LOCAL_SERVICE_TYPE_UNRESOLVED: 3
     NON_PRED_PRICE: 1
   announcements: 41
   registry_status: unregistered
@@ -4396,14 +4389,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 25
-    BLOCKED: 10
+    PPS_DEFAULT: 26
+    BLOCKED: 9
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 9
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 35
   registry_status: unregistered
   manifest_sources: null
@@ -4528,14 +4521,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 26
-    BLOCKED: 8
+    PPS_DEFAULT: 27
+    BLOCKED: 7
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 7
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 34
   registry_status: unregistered
   manifest_sources: null
@@ -4814,14 +4807,15 @@ institutions:
   contract_regime: LOCAL
   applied_scope: BLOCKED
   scope_counts:
-    PPS_DEFAULT: 9
-    BLOCKED: 23
+    PPS_DEFAULT: 14
+    BLOCKED: 18
   rule_ids:
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   block_codes:
     MANUAL_EVALUATION: 17
-    LOCAL_RULE_NOT_FOUND: 6
+    LOCAL_RULE_NOT_FOUND: 1
   announcements: 32
   registry_status: unregistered
   manifest_sources: null
@@ -6559,14 +6553,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 16
-    BLOCKED: 8
+    PPS_DEFAULT: 17
+    BLOCKED: 7
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 7
-    LOCAL_RULE_NOT_FOUND: 1
   announcements: 24
   registry_status: unregistered
   manifest_sources: null
@@ -6690,14 +6684,12 @@ institutions:
   contract_regime: null
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 23
-    BLOCKED: 1
+    PPS_DEFAULT: 24
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_QUAL_MOE_CDW_ATTACH_04
-  block_codes:
-    RULE_NOT_FOUND: 1
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
+  block_codes: {}
   announcements: 24
   registry_status: unregistered
   manifest_sources: null
@@ -8257,15 +8249,14 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 9
-    BLOCKED: 8
+    PPS_DEFAULT: 11
+    BLOCKED: 6
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  - SERVC_QUAL_PRE_20250901_ATTACH_02
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
     MANUAL_EVALUATION: 6
-    LOCAL_RULE_NOT_FOUND: 2
   announcements: 17
   registry_status: unregistered
   manifest_sources: null
@@ -12591,13 +12582,12 @@ institutions:
   contract_regime: null
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 8
-    BLOCKED: 2
+    PPS_DEFAULT: 10
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
-  block_codes:
-    RULE_NOT_FOUND: 2
+  block_codes: {}
   announcements: 10
   registry_status: unregistered
   manifest_sources: null
@@ -16076,12 +16066,13 @@ institutions:
   contract_regime: LOCAL
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 4
-    BLOCKED: 2
+    PPS_DEFAULT: 5
+    BLOCKED: 1
   rule_ids:
   - SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
-    LOCAL_RULE_NOT_FOUND: 2
+    LOCAL_RULE_NOT_FOUND: 1
   announcements: 6
   registry_status: unregistered
   manifest_sources: null
@@ -18893,13 +18884,14 @@ institutions:
   contract_regime: null
   applied_scope: PPS_DEFAULT
   scope_counts:
-    PPS_DEFAULT: 3
-    BLOCKED: 2
+    PPS_DEFAULT: 4
+    BLOCKED: 1
   rule_ids:
   - SERVC_QUAL_PRE_20250901_ATTACH_06
   - SERVC_QUAL_PRE_20250901_ATTACH_01
+  - SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E
   block_codes:
-    RULE_NOT_FOUND: 2
+    RULE_NOT_FOUND: 1
   announcements: 5
   registry_status: unregistered
   manifest_sources: null
