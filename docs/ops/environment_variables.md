@@ -225,6 +225,15 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 
 OCR 은 `rapidocr`(onnxruntime)로 로컬에서만 수행합니다. 인식 모델은 실행 중에 내려받지 않으며, `uv run python scripts/fetch_ocr_models.py` 로 고정 URL 에서 미리 받아 해시를 대조합니다(불일치면 실패). Docker 이미지는 빌드 단계에서 이 스크립트를 실행해 모델을 굽고 `DOCUMENT_OCR_MODEL_DIR=/opt/ocr_models` 로 읽습니다. compose 가 `./data` 를 `/app/data` 로 덮어써서 이미지에 구운 `data/ocr_models` 가 가려지기 때문입니다. 모델 파일이 없거나 해시가 다르면 `DOCUMENT_OCR_ENABLED` 가 켜져 있어도 OCR 을 건너뛰고 경고 로그만 남기며, API 는 그대로 `status=unrecognized` 를 돌려줍니다. OCR 로 얻은 값의 `confidence` 는 `medium` 을 넘지 않고, 앞쪽 최대 3쪽만 읽습니다. 업로드 원본·렌더링 이미지·인식 텍스트는 디스크·Redis·DB·로그 어디에도 남기지 않습니다.
 
+### 2.11 Alertmanager (알람 라우팅)
+
+| 변수 | 필수 | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `ALERTMANAGER_SLACK_WEBHOOK_URL` | 운영 알람 발송 시 **예** | (없음) | `severity=critical` 알람용 Slack Incoming Webhook URL. `make render-alertmanager-secret` 이 `docker/secrets/alertmanager_slack_url` 로 렌더링합니다 |
+| `ALERTMANAGER_SLACK_WARNING_WEBHOOK_URL` | 아니오 | (없음) | `severity=warning` 알람용 Slack Incoming Webhook URL. 비어 있으면 critical 웹훅 값으로 `docker/secrets/alertmanager_slack_warning_url` 을 대신 만들고 경고를 출력합니다 |
+
+두 키는 애플리케이션이 아니라 호스트의 `scripts/render_alertmanager_secret.py` 만 읽는 인프라 전용 값입니다. 파일 경로·권한·마운트 규약은 [`docs/ops/alerting.md`](alerting.md) 3장을 참조하십시오. 실제 값은 `.env` 와 배포 시크릿에만 두고 문서·코드에 기록하지 않습니다.
+
 ---
 
 ## 3. 기본값 차이 각주
