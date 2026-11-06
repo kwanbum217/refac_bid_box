@@ -4,8 +4,24 @@ import ScoreFormulaCard, {
   type ScoreTableField,
   type ScoreTableInputs,
 } from './components/ScoreFormulaCard';
+import {
+  BIDS_EMPTY_MESSAGE,
+  loadBids,
+  loadCompareStats,
+  loadStats,
+  type BidNotice,
+  type CompareStats,
+  type DashboardStats,
+} from './dashboardData';
 
-const hasVisualizations = (vis: any): boolean => {
+interface PredictionResult extends Record<string, unknown> {
+  model_version: string;
+  predicted_price: number;
+  predicted_rate: number;
+  features_used?: unknown;
+}
+
+const hasVisualizations = (vis: unknown): boolean => {
   if (!vis) return false;
   if (Array.isArray(vis)) return vis.length > 0;
   if (typeof vis === 'object') return Object.keys(vis).length > 0;
@@ -22,40 +38,6 @@ interface HealthStatus {
   task_queue: string;
 }
 
-interface BidNotice {
-  id: number;
-  bid_ntce_no: string;
-  bid_ntce_ord: string;
-  bid_ntce_nm: string;
-  dminstt_nm: string;
-  ntce_instt_nm: string;
-  category: string;
-  presmpt_prce: number;
-  base_amount: number;
-  bid_ntce_dt: string;
-  category_label?: string;
-  prediction_reference_amount?: number | null;
-}
-
-interface DashboardStats {
-  scope_label: string;
-  total_count: number;
-  total_amount: number;
-  avg_rate: number;
-  latest_collected: string | null;
-  by_agency: { name: string; total_amt: number; count: number }[];
-  by_company: { name: string; total_amt: number; count: number }[];
-  by_month: { month: string; count: number }[];
-}
-
-interface CompareStats {
-  announce_count: number;
-  result_count: number;
-  matched_count: number;
-  announce_total_base_amount: number;
-  result_total_amt: number;
-}
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'prediction' | 'chatbot'>('dashboard');
   const [health, setHealth] = useState<HealthStatus | null>(null);
@@ -64,19 +46,22 @@ export default function App() {
   // 대시보드 실집계 (원본 bids/api/stats, api/compare-stats 대응)
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [compareStats, setCompareStats] = useState<CompareStats | null>(null);
+  const [statsError, setStatsError] = useState<string>('');
+  const [compareStatsError, setCompareStatsError] = useState<string>('');
 
   // 공고 목록 및 필터 상태
   const [bids, setBids] = useState<BidNotice[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isLoadingBids, setIsLoadingBids] = useState<boolean>(false);
+  const [bidsError, setBidsError] = useState<string>('');
 
   // AI 예측 상태
   const [selectedBid, setSelectedBid] = useState<BidNotice | null>(null);
   const [presumedPrice, setPresumedPrice] = useState<number>(500000000);
   const [basePrice, setBasePrice] = useState<number>(495000000);
   const [categoryCode, setCategoryCode] = useState<string>('Thng');
-  const [predictionResult, setPredictionResult] = useState<any>(null);
+  const [predictionResult, setPredictionResult] = useState<PredictionResult | null>(null);
   const [isPredicting, setIsPredicting] = useState<boolean>(false);
 
   // 적격심사 배점표 값. 공고 데이터에 없어 사용자가 입력하며 기본값을 넣지 않는다.
@@ -92,13 +77,21 @@ export default function App() {
   };
 
   // 챗봇 스트리밍 상태
-  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; text: string; docs?: any[]; visualizations?: any }[]>([]);
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'assistant'; text: string; docs?: unknown[]; visualizations?: unknown }[]>([]);
   const [chatInput, setChatInput] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
   const [currentStreamText, setCurrentStreamText] = useState<string>('');
-  const [currentDocs, setCurrentDocs] = useState<any[]>([]);
+  const [currentDocs, setCurrentDocs] = useState<unknown[]>([]);
   const [sessionKey, setSessionKey] = useState<string | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  const refreshStats = async () => {
+    const [statsResult, compareResult] = await Promise.all([loadStats(), loadCompareStats()]);
+    setStats(statsResult.data);
+    setStatsError(statsResult.error);
+    setCompareStats(compareResult.data);
+    setCompareStatsError(compareResult.error);
+  };
 
   // 헬스체크, 대시보드 통계, 공고 목록 데이터 로드
   useEffect(() => {
@@ -115,39 +108,17 @@ export default function App() {
         setHealthError(String(err));
       });
 
-    fetch('/api/v1/bids/stats')
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((data) => setStats(data))
-      .catch((err) => console.error('Dashboard stats error:', err));
-
-    fetch('/api/v1/bids/compare-stats')
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
-      .then((data) => setCompareStats(data))
-      .catch((err) => console.error('Compare stats error:', err));
-
+    refreshStats();
     fetchBids();
   }, []);
 
-  const fetchBids = (cat: string = categoryFilter, search: string = searchQuery) => {
+  const fetchBids = async (cat: string = categoryFilter, search: string = searchQuery) => {
     setIsLoadingBids(true);
-    const params = new URLSearchParams({ page: '1' });
-    if (cat) params.set('cat', cat);
-    if (search) params.set('q', search);
-
-    fetch(`/api/v1/bids?${params.toString()}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
-      })
-      .then((data) => {
-        setBids(data.bids ?? []);
-        setIsLoadingBids(false);
-      })
-      .catch((err) => {
-        console.error('Fetch bids error:', err);
-        setBids([]);
-        setIsLoadingBids(false);
-      });
+    setBidsError('');
+    const result = await loadBids(cat, search);
+    setBids(result.bids);
+    setBidsError(result.error);
+    setIsLoadingBids(false);
   };
 
   const handleCategoryChange = (cat: string) => {
@@ -308,9 +279,9 @@ export default function App() {
           setCurrentDocs([]);
         }
       });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Chat request error:', err);
-      if (err.name !== 'AbortError') {
+      if (!(err instanceof Error && err.name === 'AbortError')) {
          setChatMessages((prev) => [
             ...prev,
             { role: 'assistant', text: '[오류] 요청을 처리하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주십시오.' }
@@ -369,12 +340,28 @@ export default function App() {
         )}
       </header>
 
+      {(statsError || compareStatsError) && (
+        <div
+          role="alert"
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', backgroundColor: '#3f1d1d', border: '1px solid #7f1d1d', borderRadius: '8px', padding: '10px 16px', marginBottom: '24px', color: '#fca5a5', fontSize: '13px' }}
+        >
+          <span>{[statsError, compareStatsError].filter(Boolean).join(' ')}</span>
+          <button
+            type="button"
+            onClick={refreshStats}
+            style={{ backgroundColor: '#7f1d1d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+          >
+            다시 시도
+          </button>
+        </div>
+      )}
+
       {/* 대시보드 통계 메트릭 카드 4종 (전부 실집계 API 값) */}
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' }}>
         <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '16px' }}>
           <div style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>수집된 입찰 공고</div>
           <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#38bdf8', marginTop: '4px' }}>
-            {compareStats ? `${formatNumber(compareStats.announce_count)} 건` : '집계 중...'}
+            {compareStats ? `${formatNumber(compareStats.announce_count)} 건` : compareStatsError ? '집계 실패' : '집계 중...'}
           </div>
           <div style={{ fontSize: '11px', color: '#4ade80', marginTop: '4px' }}>bid_announcements 실집계</div>
         </div>
@@ -382,7 +369,7 @@ export default function App() {
         <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '16px' }}>
           <div style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>낙찰 결과</div>
           <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#4ade80', marginTop: '4px' }}>
-            {stats ? `${formatNumber(stats.total_count)} 건` : '집계 중...'}
+            {stats ? `${formatNumber(stats.total_count)} 건` : statsError ? '집계 실패' : '집계 중...'}
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
             {stats ? stats.scope_label : 'bid_results'}
@@ -392,7 +379,7 @@ export default function App() {
         <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '16px' }}>
           <div style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>평균 낙찰률</div>
           <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f59e0b', marginTop: '4px' }}>
-            {stats ? `${stats.avg_rate} %` : '집계 중...'}
+            {stats ? `${stats.avg_rate} %` : statsError ? '집계 실패' : '집계 중...'}
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
             {stats ? `누적 낙찰액 ${formatEok(stats.total_amount)}` : 'sucsf_bid_rate 평균'}
@@ -402,7 +389,7 @@ export default function App() {
         <div style={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: '10px', padding: '16px' }}>
           <div style={{ color: '#94a3b8', fontSize: '12px', fontWeight: 600 }}>공고 대비 낙찰 매칭</div>
           <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#a78bfa', marginTop: '4px' }}>
-            {compareStats ? `${formatNumber(compareStats.matched_count)} 건` : '집계 중...'}
+            {compareStats ? `${formatNumber(compareStats.matched_count)} 건` : compareStatsError ? '집계 실패' : '집계 중...'}
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>최근 1년 공고번호 조인</div>
         </div>
@@ -596,10 +583,23 @@ export default function App() {
                       bid_announcements 데이터를 로딩 중입니다...
                     </td>
                   </tr>
+                ) : bidsError ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#fca5a5' }}>
+                      <span>{bidsError}</span>
+                      <button
+                        type="button"
+                        onClick={() => fetchBids()}
+                        style={{ marginLeft: '12px', backgroundColor: '#7f1d1d', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                      >
+                        다시 시도
+                      </button>
+                    </td>
+                  </tr>
                 ) : bids.length === 0 ? (
                   <tr>
                     <td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>
-                      검색 조건에 일치하는 입찰 공고가 없습니다.
+                      {BIDS_EMPTY_MESSAGE}
                     </td>
                   </tr>
                 ) : (

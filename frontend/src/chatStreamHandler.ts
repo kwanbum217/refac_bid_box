@@ -2,9 +2,9 @@ import { SSEParser } from './sseParser.ts';
 
 export interface ChatStreamCallbacks {
   onStage: (stage: string, message: string) => void;
-  onDocs: (docs: any[]) => void;
+  onDocs: (docs: unknown[]) => void;
   onToken: (accumulated: string) => void;
-  onFinal: (answer: string, docs: any[], visualizations: any, sessionKey?: string) => void;
+  onFinal: (answer: string, docs: unknown[], visualizations: unknown, sessionKey?: string) => void;
   onError: (message: string, traceId: string) => void;
   onAbort: () => void;
   onNetworkError: (message: string) => void;
@@ -16,6 +16,13 @@ export interface ChatRequestBody {
   message: string;
   session_key: string | null;
 }
+
+const readText = (record: Record<string, unknown>, key: string): string => {
+  const value = record[key];
+  return typeof value === 'string' ? value : '';
+};
+
+const readList = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 export function buildChatRequestBody(message: string, sessionKey?: string | null): ChatRequestBody {
   return {
@@ -31,7 +38,7 @@ export async function processChatStream(
   const decoder = new TextDecoder('utf-8');
   const parser = new SSEParser();
   let accumulated = '';
-  let accumulatedDocs: any[] = [];
+  let accumulatedDocs: unknown[] = [];
   let isFinished = false;
 
   try {
@@ -44,51 +51,56 @@ export async function processChatStream(
         const { event: eventName, data } = event;
 
         if (eventName === 'stage') {
-          callbacks.onStage(data.stage, data.message);
+          callbacks.onStage(readText(data, 'stage'), readText(data, 'message'));
         } else if (eventName === 'docs') {
-          accumulatedDocs = data.docs ?? [];
+          accumulatedDocs = readList(data.docs);
           callbacks.onDocs(accumulatedDocs);
         } else if (eventName === 'token') {
-          accumulated += data.text;
+          accumulated += readText(data, 'text');
           callbacks.onToken(accumulated);
         } else if (eventName === 'done') {
-          if (data.leak_blocked && (data.final_answer || data.corrected_answer)) {
-            accumulated = data.final_answer || data.corrected_answer;
+          const finalAnswer = readText(data, 'final_answer');
+          const correctedAnswer = readText(data, 'corrected_answer');
+          if (data.leak_blocked && (finalAnswer || correctedAnswer)) {
+            accumulated = finalAnswer || correctedAnswer;
             callbacks.onToken(accumulated);
-          } else if (data.corrected_answer) {
-            accumulated = data.corrected_answer;
+          } else if (correctedAnswer) {
+            accumulated = correctedAnswer;
             callbacks.onToken(accumulated);
-          } else if (data.final_answer) {
-            accumulated = data.final_answer;
+          } else if (finalAnswer) {
+            accumulated = finalAnswer;
             callbacks.onToken(accumulated);
           }
         } else if (eventName === 'final') {
-          const finalAnswer =
-            (data.leak_blocked ? (data.final_answer || data.corrected_answer || data.answer) : null) ||
-            data.corrected_answer ||
-            data.answer ||
+          const finalAnswer = readText(data, 'final_answer');
+          const correctedAnswer = readText(data, 'corrected_answer');
+          const answer = readText(data, 'answer');
+          const resolvedAnswer =
+            (data.leak_blocked ? (finalAnswer || correctedAnswer || answer) : '') ||
+            correctedAnswer ||
+            answer ||
             accumulated ||
             '분석이 완료되었습니다.';
           callbacks.onFinal(
-            finalAnswer,
+            resolvedAnswer,
             accumulatedDocs,
             data.visualizations,
-            data.session_key
+            readText(data, 'session_key') || undefined
           );
           isFinished = true;
           return;
         } else if (eventName === 'error') {
-          callbacks.onError(data.message, data.trace_id);
+          callbacks.onError(readText(data, 'message'), readText(data, 'trace_id'));
           isFinished = true;
           return;
         }
       }
     }
-  } catch (err: any) {
-    if (err.name === 'AbortError') {
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
       callbacks.onAbort();
     } else {
-      callbacks.onNetworkError(err.message || '알 수 없는 오류');
+      callbacks.onNetworkError(err instanceof Error ? err.message : '알 수 없는 오류');
     }
     isFinished = true;
   } finally {

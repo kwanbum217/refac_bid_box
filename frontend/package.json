@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "cd .. && npx --prefix frontend eslint -c frontend/eslint.config.js frontend src/app/static/js/",
+    "lint": "cd .. && npx --prefix frontend eslint --max-warnings=0 -c frontend/eslint.config.js frontend src/app/static/js/",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test src/*.test.ts"
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\""
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
