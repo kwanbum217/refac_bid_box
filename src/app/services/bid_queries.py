@@ -7,8 +7,6 @@ src/app/services/bid_queries.py
 
 from __future__ import annotations
 
-import re
-from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,7 +16,6 @@ from sqlalchemy import Integer, and_, case, func, or_, select, tuple_
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased
 
-from src.app.core.cache import cache
 from src.app.core.config import settings
 from src.app.core.timeutil import utcnow
 from src.app.models.bid_restrictions import (
@@ -39,11 +36,6 @@ from src.app.services.evaluation_rules import (
     resolve_method_name,
 )
 from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
-
-TOP_INDUSTRY_CHOICES_CACHE_KEY = "bid_queries:top_industry_choices:200"
-TOP_INDUSTRY_CHOICES_CACHE_TTL = 3600  # 1 hour
-_INDUSTRY_NAME_CODE_PATTERN = re.compile(r"([^\/\[\],]+)\/(\d{4})(?!\d)")
-
 
 # 매핑을 여기 다시 적으면 모델 교체 때 한쪽만 바뀝니다. 정본은 model_registry 입니다.
 DEFAULT_PREDICTION_MODEL_BY_CATEGORY = CATEGORY_DEFAULT_MODELS
@@ -248,59 +240,6 @@ def normalize_license_codes(lic: str | None) -> list[str]:
         if len(codes) >= MAX_LICENSE_FILTER_CODES:
             break
     return codes
-
-
-def get_top_industry_choices(db: Session, limit: int = 200) -> list[dict[str, Any]]:
-    cached = cache.get(TOP_INDUSTRY_CHOICES_CACHE_KEY)
-    if isinstance(cached, list):
-        return cached
-
-    rows = db.execute(
-        select(
-            BidAnnouncementLicenseLimit.bid_ntce_no,
-            BidAnnouncementLicenseLimit.lcns_lmt_nm,
-            BidAnnouncementLicenseLimit.permsn_indstryty_list,
-        ).where(
-            or_(
-                BidAnnouncementLicenseLimit.lcns_lmt_nm.is_not(None),
-                BidAnnouncementLicenseLimit.permsn_indstryty_list.is_not(None),
-            )
-        )
-    ).all()
-
-    code_notices: dict[str, set[str]] = {}
-    code_names: dict[str, Counter[str]] = {}
-
-    for ntce_no, lcns_nm, permsn_list in rows:
-        texts = [t for t in (lcns_nm, permsn_list) if t]
-        for text in texts:
-            for match in _INDUSTRY_NAME_CODE_PATTERN.finditer(text):
-                raw_name = match.group(1).strip()
-                code = match.group(2)
-                if not raw_name or not code:
-                    continue
-                code_notices.setdefault(code, set()).add(ntce_no)
-                code_names.setdefault(code, Counter())[raw_name] += 1
-
-    choices: list[dict[str, Any]] = []
-    for code, notices in code_notices.items():
-        count = len(notices)
-        names = code_names.get(code)
-        most_common_name = names.most_common(1)[0][0] if names else code
-        choices.append(
-            {
-                "code": code,
-                "name": most_common_name,
-                "count": count,
-                "label": f"{most_common_name} ({code})",
-            }
-        )
-
-    choices.sort(key=lambda item: (-item["count"], item["code"]))
-    top_choices = choices[:limit]
-
-    cache.set(TOP_INDUSTRY_CHOICES_CACHE_KEY, top_choices, TOP_INDUSTRY_CHOICES_CACHE_TTL)
-    return top_choices
 
 
 def _region_match_clause(aliases) -> Any:
