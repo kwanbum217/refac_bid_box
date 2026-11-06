@@ -46,7 +46,9 @@ from src.app.services.evaluation_rules_institution import (
     _SRC_INST_KOEM,  # noqa: F401
     _SRC_INST_KOGAS,  # noqa: F401
     _SRC_INST_RECOVER_A,  # noqa: F401
+    INSTITUTION_RULE_EXACT_CODES,
     INSTITUTION_RULES,
+    PREDECESSOR_INSTITUTION_RULES,
     QUANT_BASIS_INSTITUTION,
     _inst_band,  # noqa: F401
     _institution_band_bound,  # noqa: F401
@@ -1089,6 +1091,45 @@ POST_20260526_RULES: tuple[EvaluationRule, ...] = (
 
 POST_20260526_RULES = _with_score_table(POST_20260526_RULES)
 
+# 조달청 별표 3 SW 비대상의 '고시금액 이상' 열입니다. 배점한도 B 는 추정가격 5억원 경계
+# (미만 70/이상 60), 계수 k 는 고시금액 이상 공통 2 라서, 고시금액 미만 열인 기존
+# ATTACH_05(B 70·k 4·하한 86.245)와 값을 섞지 않도록 별도 보조 규칙으로 둡니다.
+# 제2026-260호와 제2026-390호의 별표 3 값이 같아 한 규칙이 두 벌에 함께 쓰입니다.
+# 표준 별표 20종의 선언 순서와 메타 목록 계약을 바꾸지 않도록 POST 벌에는 넣지 않고,
+# 규칙 배분(_allocate_rules_for_announcement)에서만 합칩니다.
+# 근거: docs/analysis/rule_not_found_32_source_20261106.md 2.2, 4.1
+SW_NON_SME_NOTICE_ABOVE_RULES: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_QUAL_POST_20260526_ATTACH_21",
+        service_type="SW_NON_SME",
+        table_name="소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 (고시금액 이상)",
+        description=(
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 "
+            "추정가격 5억원 미만-추정가격 고시금액이상 / 5억원 이상"
+        ),
+        effective_date="2026-05-26",
+        source="조달청 일반용역 적격심사 세부기준 (제2026-260호·제2026-390호 별표 3)",
+        patterns=(
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만-추정가격 고시금액이상",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 미만-추정가격 고시금액 이상",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원미만-추정가격 고시금액이상",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원미만-추정가격 고시금액 이상",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원 이상",
+            "소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 추정가격 5억원이상",
+        ),
+        lwlt_rate=Decimal("82.495"),
+        base_rate=Decimal("0.90"),
+        sample_count=11,
+        max_price_score_by_500m=(Decimal("70"), Decimal("60")),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("85"),
+        score_table_source=(
+            "docs/analysis/rule_not_found_32_source_20261106.md:2.2,4.1 "
+            f"(별표3 SW 비대상 고시금액 이상: k=2 고정·T=85; {_SCORE_NOTE_B_SPLIT})"
+        ),
+    ),
+)
+
 # 2026-07-27 개정 후 일반용역 적격심사 별표 1~9 (조달청 공고 제2026-390호).
 # 여객 육상운송용역(ATTACH_03)과 소프트웨어용역 중소기업자간 경쟁제품 대상(ATTACH_04)만
 # 기준비율과 낙찰하한율이 오르고, 나머지 18종은 제2026-260호 벌의 같은 객체를 재사용합니다.
@@ -1113,6 +1154,36 @@ POST_20260727_RULES: tuple[EvaluationRule, ...] = (
         base_rate=Decimal("0.93"),
     ),
     *POST_20260526_RULES[4:],
+)
+
+# 제2026-390호 별표 5 에는 제2026-260호에 없던 '추정가격 5억원이상' 열이 있습니다(배점한도
+# 60, 계수 4, 기준비율 93:100, 통과점수 88, 낙찰하한율 89.995%). 260호 규칙에는 이 표기를
+# 넣지 않아야 하므로 390판 전용 보조 규칙으로 두고, 390판 규칙 배분에서만 합칩니다.
+# 표준 별표 20종의 선언 순서와 메타 목록 계약을 바꾸지 않기 위한 분리입니다.
+# 근거: docs/analysis/rule_not_found_32_source_20261106.md 2.3, 4.1, 4.2
+PASSENGER_NOTICE_ABOVE_RULES: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_QUAL_POST_20260727_ATTACH_03_HIGH",
+        service_type="PASSENGER_TRANSPORT",
+        table_name="여객 육상운송용역 적격심사 (추정가격 5억원 이상)",
+        description="여객 육상운송용역 적격심사 추정가격 5억원이상",
+        effective_date="2026-07-27",
+        source="조달청 공고 제2026-390호 (2026-07-27 시행) 별표 5",
+        patterns=(
+            "여객 육상운송용역 적격심사 추정가격 5억원이상",
+            "여객 육상운송용역 적격심사 추정가격 5억원 이상",
+        ),
+        lwlt_rate=Decimal("89.995"),
+        base_rate=Decimal("0.93"),
+        sample_count=4,
+        max_price_score=Decimal("60"),
+        multiplier=Decimal("4"),
+        pass_threshold=Decimal("88"),
+        score_table_source=(
+            "docs/analysis/rule_not_found_32_source_20261106.md:2.3,4.1,4.2 "
+            "(제2026-390호 별표5 여객 5억원이상: B=60·k=4·T=88·기준비율 93:100)"
+        ),
+    ),
 )
 
 # 기술용역은 식별 문자열별 고정 규칙으로 환원하지 않고 공고 하한율만 사용합니다.
@@ -2392,7 +2463,7 @@ def _select_institution_rule(
     warnings: list[str] = []
     candidates = [
         rule
-        for rule in INSTITUTION_RULES
+        for rule in (*INSTITUTION_RULES, *PREDECESSOR_INSTITUTION_RULES)
         if _axis_matches(
             rule,
             institution_code=institution_code,
@@ -2826,11 +2897,15 @@ def _axis_matches(
         return False
     if rule.institution_scope == RULE_SCOPE_INSTITUTION:
         # 규칙과 공고 양쪽에 코드가 있으면 코드 일치로만 판정하고, 한쪽이라도 코드가 없으면
-        # 공백 제거 이름(또는 name_aliases) 일치로 판정합니다. 정확 일치가 실패하면 원문
+        # 공백 제거 이름(또는 name_aliases) 일치로 판정합니다. 기관 코드가 본청과 다른 지사·
+        # 사업소는 규칙별 정확 코드 목록(INSTITUTION_RULE_EXACT_CODES)도 코드 일치로 봅니다.
+        # 정확 일치가 실패하면 원문
         # 적용 범위 조항이 하위 조직 적용을 명시한 기관만 코드 대역·이름 접두로 2차
         # 판정합니다. 코드 대역을 선언한 규칙은 대역 밖 코드를 이름 접두로 되돌리지 않습니다.
         if rule.institution_code and institution_code:
             if rule.institution_code == institution_code:
+                return True
+            if institution_code.strip() in INSTITUTION_RULE_EXACT_CODES.get(rule.rule_id, ()):
                 return True
             if _institution_subunit_code_matches(rule, institution_code):
                 return True
@@ -2971,11 +3046,17 @@ def _allocate_rules_for_announcement(
     현행 별표로 매칭해 시행일 대조에서 기존과 같이 RULE_REGIME_MISMATCH 로 차단합니다.
     """
     regime_rules = _rules_for_announcement_date(announced)
-    if (
-        regime_rules is POST_20260526_RULES
-        or regime_rules is POST_20260727_RULES
-        or not method_name
-    ):
+    if regime_rules is POST_20260526_RULES:
+        # 별표 3 SW 비대상 고시금액 이상 보조 규칙은 표준 20종 벌 밖에서 함께 배분합니다.
+        return (*regime_rules, *SW_NON_SME_NOTICE_ABOVE_RULES)
+    if regime_rules is POST_20260727_RULES:
+        # 여객 5억원 이상 열은 제2026-390호에만 있으므로 390판 배분에만 더합니다.
+        return (
+            *regime_rules,
+            *SW_NON_SME_NOTICE_ABOVE_RULES,
+            *PASSENGER_NOTICE_ABOVE_RULES,
+        )
+    if not method_name:
         return regime_rules
     if match_rule_by_mthd_nm(method_name, rules=regime_rules) is not None:
         return regime_rules
@@ -4424,6 +4505,13 @@ QUANT_SCORE_TABLES: dict[str, QuantScoreTable] = {
     "ATTACH_17": _attachment_9_table(),
 }
 
+# 표준 별표 20종 벌 밖의 보조 규칙(같은 별표의 다른 띠)이 쓰는 배점표입니다. 표준 표
+# 색인(QUANT_SCORE_TABLES)의 계약을 바꾸지 않도록 별도로 둡니다.
+_SUPPLEMENTARY_QUANT_SCORE_TABLES: dict[str, QuantScoreTable] = {
+    SW_NON_SME_NOTICE_ABOVE_RULES[0].rule_id: _attachment_3_table(),
+    PASSENGER_NOTICE_ABOVE_RULES[0].rule_id: _attachment_5_table(),
+}
+
 
 def quant_score_table_for_rule(rule: EvaluationRule) -> QuantScoreTable | None:
     """규칙이 어느 별표인지에 따라 정량평가 배점표를 돌려줍니다.
@@ -4443,6 +4531,9 @@ def quant_score_table_for_rule(rule: EvaluationRule) -> QuantScoreTable | None:
         return INSTITUTION_QUANT_SCORE_TABLES.get(rule.rule_id)
     if rule.quant_basis != QUANT_BASIS_REGISTRY:
         return None
+    if rule.rule_id in _SUPPLEMENTARY_QUANT_SCORE_TABLES:
+        # 표준 20종 벌 밖 보조 규칙도 원문 별표의 같은 배점표를 씁니다.
+        return _SUPPLEMENTARY_QUANT_SCORE_TABLES[rule.rule_id]
     suffix = "_".join(rule.rule_id.rsplit("_", 2)[-2:])
     return QUANT_SCORE_TABLES.get(suffix)
 
