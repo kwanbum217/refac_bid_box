@@ -51,6 +51,16 @@ def test_default_compose_waits_for_shared_services_to_be_healthy():
     assert "json.load(response)['status'] in ('ready', 'degraded')" in compose
 
 
+def test_default_compose_worker_forwards_openg_result_collection_flag():
+    """worker 는 .env 를 읽지 않으므로 compose 가 전달해야 운영자가 .env 로 켤 수 있습니다."""
+    compose = COMPOSE_FILE.read_text(encoding="utf-8")
+    worker = _worker_service()
+    app = compose.split("\n  app:\n", maxsplit=1)[1].split("\n  worker:\n", maxsplit=1)[0]
+
+    assert "OPENG_RESULT_COLLECTION_ENABLED=${OPENG_RESULT_COLLECTION_ENABLED:-false}" in worker
+    assert "OPENG_RESULT_COLLECTION_ENABLED" not in app
+
+
 def test_default_compose_forwards_cors_settings_to_every_python_service():
     """이미지에 .env 가 없으므로 compose 가 전달하지 않으면 값이 사라집니다.
 
