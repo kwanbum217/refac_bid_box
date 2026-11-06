@@ -507,13 +507,19 @@ def _upsert_regime(db: Session, rows: list[dict[str, Any]]) -> None:
     """
     if not rows:
         return
+    # 다중 행 INSERT 는 첫 행의 키로 컬럼 목록을 만듭니다. 갱신 절은 _UPSERT_COLUMNS
+    # 전체를 참조하므로 행마다 같은 컬럼을 채우지 않으면 MySQL 이 new.<컬럼> 을 찾지
+    # 못합니다(2026-11-06 운영 실행에서 error 키 누락으로 1054 오류). ORM 모델로 만든
+    # INSERT 는 ORM 일괄 경로를 타 None 값 컬럼을 빼므로 Core 테이블로 만듭니다.
+    columns = ("bid_ntce_no", "bid_ntce_ord", "category", *_UPSERT_COLUMNS)
+    rows = [{name: row.get(name) for name in columns} for row in rows]
     if db.get_bind().dialect.name in ("mysql", "mariadb"):
-        mysql_stmt = mysql_insert(BidAnnouncementRegime)
+        mysql_stmt = mysql_insert(BidAnnouncementRegime.__table__)
         stmt = mysql_stmt.on_duplicate_key_update(
             **{name: mysql_stmt.inserted[name] for name in _UPSERT_COLUMNS}
         )
     else:
-        sqlite_stmt = sqlite_insert(BidAnnouncementRegime)
+        sqlite_stmt = sqlite_insert(BidAnnouncementRegime.__table__)
         stmt = sqlite_stmt.on_conflict_do_update(
             index_elements=["bid_ntce_no", "bid_ntce_ord", "category"],
             set_={name: sqlite_stmt.excluded[name] for name in _UPSERT_COLUMNS},
