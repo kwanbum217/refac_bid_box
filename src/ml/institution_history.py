@@ -179,6 +179,12 @@ RATE_COLUMN = "winning_rate"
 TIME_COLUMN = "openg_dt"
 INSTITUTION_COLUMN = "dminstt_nm"
 
+# 서빙 폴백 계산 정의. 기본값은 지금까지의 365일 창·실시간 집계이고,
+# "training" 은 attach_institution_history 와 같은 정의로 계산하는 비교용 변형입니다.
+FALLBACK_DEFINITION_CURRENT = "current"
+FALLBACK_DEFINITION_TRAINING = "training"
+_FALLBACK_DEFINITIONS = (FALLBACK_DEFINITION_CURRENT, FALLBACK_DEFINITION_TRAINING)
+
 # 명백한 오류값입니다. 낙찰률이 0 이거나 100 을 넘는 행은 이력에서 제외합니다.
 VALID_RATE_MIN = 50.0
 VALID_RATE_MAX = 120.0
@@ -261,6 +267,76 @@ def _frame_category(df: pd.DataFrame) -> str:
         return ""
     unique = df["category"].dropna().unique()
     return str(unique[0]) if len(unique) == 1 else ""
+
+
+def calculate_institution_win_rate_training_parity(
+    session: Any,
+    institution_name: str,
+    reference_date: datetime,
+    category: str,
+    min_samples: int = HISTORY_MIN_SAMPLES,
+) -> tuple[float, int, float]:
+    """학습 정의로 기관 이력 세 값을 계산합니다.
+
+    서빙 폴백(`calculate_institution_win_rate`)은 365일 창, 0~100 배타 이상치,
+    표본 수 0 을 씁니다. 학습(`attach_institution_history`)은 전 이력, 50~120
+    이상치, 실제 표본 수를 씁니다. 이 함수는 두 정의를 같은 공고에서 비교할 때만
+    쓰는 변형이며 서빙 기본 동작은 바꾸지 않습니다.
+
+    학습 데이터셋이 카테고리별로 만들어지므로 `category` 가 있으면 그 범위로
+    제한합니다. 기준일 이전 행만 쓰고, 표본이 `min_samples` 미만이면 낙찰률과
+    지수감쇠 값은 카테고리 기본값으로 채우되 표본 수는 실제 개수를 돌려줍니다
+    (`attach_institution_history` 와 같은 처리).
+
+    Returns:
+        (inst_hist_rate, inst_sample_cnt, inst_ewm_rate). 낙찰률은 0~1 비율입니다.
+    """
+    fallback = _default_institution_rate(category)
+    if not institution_name:
+        return fallback, 0, fallback
+
+    from sqlalchemy import select
+
+    from src.app.models.bids import BidResult
+
+    stmt = (
+        select(BidResult.sucsf_bid_rate)
+        .where(
+            BidResult.dminstt_nm == institution_name,
+            BidResult.rl_openg_dt < reference_date,
+            BidResult.sucsf_bid_rate.isnot(None),
+            BidResult.sucsf_bid_rate >= VALID_RATE_MIN,
+            BidResult.sucsf_bid_rate <= VALID_RATE_MAX,
+        )
+        .order_by(BidResult.rl_openg_dt, BidResult.id)
+    )
+    if category:
+        stmt = stmt.where(BidResult.category == category)
+
+    decay = 0.5 ** (1.0 / EWM_HALFLIFE)
+    count = 0
+    total = 0.0
+    numerator = denominator = 0.0
+    for value in session.execute(stmt).scalars():
+        rate = float(value)
+        count += 1
+        total += rate
+        numerator = rate + decay * numerator
+        denominator = 1.0 + decay * denominator
+
+    if count < min_samples:
+        return fallback, count, fallback
+    return total / count / 100.0, count, numerator / denominator / 100.0
+
+
+def _validate_fallback_definition(value: str) -> str:
+    """폴백 정의 이름이 지원되는 값인지 확인합니다."""
+    if value not in _FALLBACK_DEFINITIONS:
+        raise ValueError(
+            f"알 수 없는 fallback_definition 입니다: {value!r} "
+            f"(지원: {', '.join(_FALLBACK_DEFINITIONS)})"
+        )
+    return value
 
 
 def rebuild_institution_stats(session: Any, *, min_samples: int = HISTORY_MIN_SAMPLES) -> dict:
@@ -398,9 +474,20 @@ def _lookup_from_stats(
 
 
 def lookup_institution_stats(
-    features_dict: dict[str, Any], session: Any = None
+    features_dict: dict[str, Any],
+    session: Any = None,
+    *,
+    fallback_definition: str = FALLBACK_DEFINITION_CURRENT,
 ) -> dict[str, float]:
-    """학습과 서빙이 공유하는 기관 이력 특징 세 개를 반환합니다."""
+    """학습과 서빙이 공유하는 기관 이력 특징 세 개를 반환합니다.
+
+    `fallback_definition` 은 집계 표에 없는 기관의 폴백 계산만 바꿉니다.
+    기본값 "current" 는 기존 서빙 동작(365일 창·0~100 이상치·표본 0)이고,
+    "training" 은 `attach_institution_history` 와 같은 정의(전 이력·50~120
+    이상치·실제 표본 수)로 계산하는 비교용 변형입니다. 집계 표에 있는 기관은
+    두 정의 모두 표 값을 그대로 씁니다.
+    """
+    _validate_fallback_definition(fallback_definition)
     institution_name = _resolve_institution_name(features_dict)
     category = _resolve_category(features_dict)
     fallback = _default_institution_rate(category)
@@ -412,7 +499,8 @@ def lookup_institution_stats(
     if not institution_name or session is None:
         # 집계 표를 조회할 대상 자체가 없어 카테고리 기본값을 씁니다.
         # 이 폴백은 학습 경로에 없는 정의이므로 관측만 남기고 값은 바꾸지 않습니다.
-        record_institution_history_fallback("default")
+        if fallback_definition == FALLBACK_DEFINITION_CURRENT:
+            record_institution_history_fallback("default")
         return defaults
 
     cached = _lookup_from_stats(session, institution_name, category)
@@ -427,6 +515,19 @@ def lookup_institution_stats(
 
     # 집계 표에 없는 신규·비활성 기관입니다. 365일 실시간 집계로 내려가며,
     # 이 정의는 표 값과 다를 수 있습니다. 관측만 남기고 계산은 그대로 둡니다.
+    if fallback_definition == FALLBACK_DEFINITION_TRAINING:
+        history, sample_count, ewm_rate = calculate_institution_win_rate_training_parity(
+            session=session,
+            institution_name=institution_name,
+            reference_date=_resolve_reference_date(features_dict),
+            category=category,
+        )
+        return {
+            "inst_hist_rate": history,
+            "inst_sample_cnt": float(sample_count),
+            "inst_ewm_rate": ewm_rate,
+        }
+
     record_institution_history_fallback("recent_window")
     history = calculate_institution_win_rate(
         session=session,
@@ -437,18 +538,31 @@ def lookup_institution_stats(
     return {**defaults, "inst_hist_rate": history, "inst_ewm_rate": history}
 
 
-def lookup_institution_history(features_dict: dict[str, Any], session: Any = None) -> float:
+def lookup_institution_history(
+    features_dict: dict[str, Any],
+    session: Any = None,
+    *,
+    fallback_definition: str = FALLBACK_DEFINITION_CURRENT,
+) -> float:
     """features_dict 에서 기관명과 기준일을 추출해 이력 낙찰률을 반환합니다.
 
     사전 집계 표를 먼저 봅니다. 표에 없으면(신규 기관, 아직 갱신 전) 실시간
     집계로 내려가고, 그것도 안 되면 카테고리 기본값입니다.
 
     session 이 없으면(예: 모델 로드 시) 기본값을 반환합니다.
+    `fallback_definition="training"` 은 비교용 학습 정의 폴백을 씁니다.
     """
-    return lookup_institution_stats(features_dict, session)["inst_hist_rate"]
+    return lookup_institution_stats(
+        features_dict, session, fallback_definition=fallback_definition
+    )["inst_hist_rate"]
 
 
-def lookup_institution_sample_count(features_dict: dict[str, Any], session: Any = None) -> float:
+def lookup_institution_sample_count(
+    features_dict: dict[str, Any],
+    session: Any = None,
+    *,
+    fallback_definition: str = FALLBACK_DEFINITION_CURRENT,
+) -> float:
     """이력 표본 수를 집계 표에서 조회합니다.
 
     이 함수가 없던 동안 서빙은 이 특징을 **항상 0 으로** 넘겼습니다.
@@ -459,5 +573,9 @@ def lookup_institution_sample_count(features_dict: dict[str, Any], session: Any 
     2026-08-05 대조 실측에서 학습값과 서빙값의 평균절대차가 761 이었습니다.
     모델은 "표본이 많으면 이력을 믿어라" 를 배웠는데 운영에서는 늘 표본 0 을
     받고 있었습니다 (`servc_feature_parity_20260805.md`).
+
+    `fallback_definition="training"` 은 표에 없는 기관에 실제 표본 수를 씁니다.
     """
-    return lookup_institution_stats(features_dict, session)["inst_sample_cnt"]
+    return lookup_institution_stats(
+        features_dict, session, fallback_definition=fallback_definition
+    )["inst_sample_cnt"]
