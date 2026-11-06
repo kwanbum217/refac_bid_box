@@ -1231,6 +1231,28 @@ def _stmt_cache_key(prefix: str, stmt, db: Session | Engine | None = None) -> st
     return prefix + hashlib.sha256(f"{identity}\x00{compiled}".encode()).hexdigest()
 
 
+# 수집이 적재를 마치면 비우는 캐시 접두사입니다. 집계 결과(rag:agg:), 다행
+# 집계(rag:rows:), 순위(rag:top:)는 적재 직후 낡은 값이 됩니다. 기관명
+# 카탈로그(rag:inst_catalog:)와 기관명 해석(rag:inst:)은 수집 쪽에서 따로
+# 갱신하므로 여기서 지우지 않습니다.
+RAG_AGGREGATE_CACHE_PREFIXES = ("rag:agg:", "rag:rows:", "rag:top:")
+
+
+def invalidate_rag_aggregate_cache() -> int:
+    """정기 수집이 적재를 마친 뒤 RAG 집계 캐시를 무효화합니다.
+
+    접두사마다 SCAN 으로 찾은 키만 지우므로 다른 접두사의 캐시는 남습니다.
+    캐시를 쓸 수 없어도 예외를 올리지 않고, 지운 키 수를 돌려줍니다.
+    """
+    deleted = 0
+    for prefix in RAG_AGGREGATE_CACHE_PREFIXES:
+        try:
+            deleted += cache.delete_prefix(prefix)
+        except Exception as exc:
+            logger.warning("RAG 집계 캐시 무효화 실패 (%s): %s", prefix, exc)
+    return deleted
+
+
 def _drop_corrupted(rows, limit: int) -> tuple[list, int]:
     """인코딩이 깨진 값을 순위에서 제외합니다.
 

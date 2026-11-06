@@ -327,6 +327,21 @@ def _record_partial_failure(
     )
 
 
+def _invalidate_rag_cache_sync() -> None:
+    """적재가 끝난 뒤 RAG 집계 캐시를 무효화합니다.
+
+    캐시 삭제 실패는 수집 결과를 바꾸지 않도록 여기서 로그만 남깁니다.
+    """
+    try:
+        from src.rag.structured_data import invalidate_rag_aggregate_cache
+
+        deleted = invalidate_rag_aggregate_cache()
+        if deleted:
+            logger.info("RAG 집계 캐시 %s개를 무효화했습니다.", deleted)
+    except Exception as exc:
+        logger.warning("RAG 집계 캐시 무효화 실패: %s", mask_credentials(exc))
+
+
 def _warm_aggregates_and_caches_sync(datasets: list[str], bind=None) -> None:
     """대시보드 집계와 캐시 예열을 스레드 전용 세션에서 수행합니다."""
     session_factory = (
@@ -607,6 +622,11 @@ async def collect_bids(
             )
 
     metrics["total_records"] = metrics["announcement_count"] + metrics["result_count"]
+
+    # 적재가 있었으면 예열보다 먼저 RAG 집계 캐시를 비웁니다. 순서를 뒤집으면
+    # 예열이 남아 있던 옛 집계를 그대로 다시 읽습니다.
+    if metrics["total_records"] > 0:
+        await asyncio.to_thread(_invalidate_rag_cache_sync)
 
     # 장기 백필은 이 함수를 수십 번 호출합니다. 매번 300만 행을 훑어
     # 집계를 다시 만들면 수집보다 집계에 시간을 더 씁니다. 호출부가 끄고

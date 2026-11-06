@@ -13,11 +13,15 @@ from pydantic import BaseModel, Field
 
 from src.app.core.timeutil import utcnow
 
+# 사용자 입력 한 건의 길이 상한입니다. 챗봇 메시지와 단발 질의가 같은 값을
+# 쓰도록 스키마 모듈에 두고 재사용합니다.
+CHAT_MESSAGE_MAX_LENGTH = 4000
+
 
 class ChatRequest(BaseModel):
     """원본 chat_api POST 파라미터 대응."""
 
-    message: str = Field("", description="사용자 메시지")
+    message: str = Field("", max_length=CHAT_MESSAGE_MAX_LENGTH, description="사용자 메시지")
     session_key: str | None = Field(None, description="대화 세션 키")
     confirmation_token: str = Field("", description="자동화 실행 확인 토큰")
 
@@ -56,7 +60,9 @@ class ChatResponse(BaseModel):
 class ChatbotQueryRequest(BaseModel):
     """리팩토링 신규 간이 계약 (단발 질의)."""
 
-    query: str = Field(..., min_length=1, description="질문 내용")
+    query: str = Field(
+        ..., min_length=1, max_length=CHAT_MESSAGE_MAX_LENGTH, description="질문 내용"
+    )
     session_id: str | None = Field(None, description="세션 ID")
     stream: bool = Field(False, description="실시간 SSE 스트리밍 여부")
 
