@@ -312,21 +312,21 @@ def download_attachment(url: str) -> bytes:
 
 
 def _pdf_texts(data: bytes) -> DocumentTexts:
-    """PDF 첨부의 텍스트 레이어를 pypdf 로 읽습니다."""
+    """PDF 첨부의 텍스트 레이어를 pdfplumber 로 읽습니다."""
     try:
-        from pypdf import PdfReader
+        import pdfplumber
     except ImportError:
-        return DocumentTexts(reason="pypdf 미설치")
+        return DocumentTexts(reason="pdfplumber 미설치")
 
     try:
-        reader = PdfReader(io.BytesIO(data))
-        texts = tuple(
-            text.strip() for page in reader.pages if (text := page.extract_text()) and text.strip()
-        )
+        with pdfplumber.open(io.BytesIO(data)) as pdf:
+            texts = tuple(
+                text.strip() for page in pdf.pages if (text := page.extract_text()) and text.strip()
+            )
     except Exception as exc:  # 손상 PDF 는 사유만 남기고 실패로 처리합니다
         return DocumentTexts(reason=f"PDF 파싱 실패: {type(exc).__name__}")
     if not texts:
-        return DocumentTexts(reason="PDF 텍스트 레이어 없음")
+        return DocumentTexts(reason="텍스트 레이어 없음")
     return DocumentTexts(texts=texts)
 
 
@@ -334,7 +334,7 @@ def extract_document_texts(name: str, data: bytes) -> DocumentTexts:
     """첨부 바이트에서 판별용 텍스트를 뽑습니다.
 
     HWP·HWPX·HWPML 은 `extract_score_params.extract_document_text` 를 쓰고 PDF 만
-    pypdf 로 읽습니다. 표 행도 문단과 함께 판별 입력으로 넘깁니다.
+    pdfplumber 로 읽습니다. 표 행도 문단과 함께 판별 입력으로 넘깁니다.
     """
     if data[:5] == b"%PDF-":
         return _pdf_texts(data)

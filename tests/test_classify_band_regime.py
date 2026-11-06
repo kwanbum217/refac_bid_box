@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from datetime import date, datetime
 from typing import Any
 
+import pdfplumber
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -39,6 +40,7 @@ BID_DT = datetime(2026, 6, 1, 10, 0, 0)
 PERIOD = (date(2026, 5, 1), date(2026, 7, 1))
 ATTACHMENT_URL = "https://www.g2b.go.kr/download/1.hwp"
 CLASSIFIER_TEXT = "조달청 일반용역 적격심사 세부기준을 적용합니다."
+PDF_TEXT = "적격심사 세부기준 PDF 본문입니다."
 
 
 @pytest.fixture
@@ -229,3 +231,32 @@ def test_source_files_store_only_name_and_sha256(db: Session) -> None:
     assert entry["name"] == "적격심사.hwp"
     assert len(entry["sha256"]) == 64
     assert all(char in "0123456789abcdef" for char in entry["sha256"])
+
+
+def test_pdf_extraction_uses_pdfplumber(monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[Any] = []
+
+    class _FakePage:
+        def extract_text(self) -> str:
+            return PDF_TEXT
+
+    class _FakePdf:
+        pages = (_FakePage(),)
+
+        def __enter__(self) -> _FakePdf:
+            return self
+
+        def __exit__(self, *exc_info: object) -> None:
+            return None
+
+    def fake_open(source: Any, *args: Any, **kwargs: Any) -> _FakePdf:
+        opened.append(source)
+        return _FakePdf()
+
+    monkeypatch.setattr(pdfplumber, "open", fake_open)
+
+    result = script.extract_document_texts("공고문.pdf", b"%PDF-1.4 fake")
+
+    assert len(opened) == 1
+    assert result.reason is None
+    assert result.texts == (PDF_TEXT,)
