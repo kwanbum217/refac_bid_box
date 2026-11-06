@@ -1,7 +1,7 @@
 # 프로젝트 현재 운영 상태 정본 (CURRENT_STATE)
 
 > **updated_at**: 2026-11-05
-> **source_commit**: `773d10bb`
+> **source_commit**: `4bd4e92b`
 > **version**: 0.1.0rc1 (`pyproject.toml` 이 SSoT)
 > 코디네이터가 부트스트랩 시 가장 먼저 읽는 **현재 운영 상태 정본**입니다. 과거 handoff 는 증거이며, 즉시 판단과 정책 결정은 본 문서를 기준으로 합니다.
 
@@ -107,7 +107,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **drift_job**: 드리프트 감시는 Servc·Thng·Cnstwk 세 baseline을 모두 갖춰 전 카테고리 진행 중입니다(ML_DRIFT_MONITOR_ENABLED 기본값 True). Thng b_20260915_thng_post_regime(18,069건) 적재로 건너뛰기 예외는 없어졌고, ml_registry는 Git 미추적이라 운영 재생성이 필요합니다.
 
-- **rule_coverage**: 기관·지역 산식 규칙은 규칙 ID 206종이 evaluation_rules.py 에 있고 시·도 70종과 기관 78종까지 담고 있습니다. 최근 12개월 Servc 공고 31,305건 중 지역 1,872건·전국 기준 19,459건·기관 63건에 적용되고 9,911건은 차단됩니다. 남은 구판 원문 보완은 진행 중입니다.
+- **rule_coverage**: 기관·지역 산식 규칙은 규칙 ID 212종(기관 84종)이 있습니다. 2026-11-06 원장 기준 최근 12개월 Servc 공고 31,348건 중 지역 1,856건·전국 기준 19,554건·기관 82건에 적용되고 9,856건은 차단됩니다. 원문 보완은 진행 중입니다.
 
 ### blocked 사실
 

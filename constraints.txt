@@ -221,7 +221,7 @@ numpy==2.5.1 ; python_full_version >= '3.12'
     #   scipy
     #   shapely
     #   statsmodels
-oauthlib==4.0.0
+oauthlib==4.0.1
     # via requests-oauthlib
 omegaconf==2.4.0
     # via rapidocr

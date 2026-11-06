@@ -1,6 +1,6 @@
 version: "2.0"
 description: "CURRENT_STATE 부팅 판정에 쓰이는 기계 검증 사실 원장입니다. 상세 로그와 과거 경위는 current_state_history.md에 보존합니다."
-updated_at: "2026-10-20"
+updated_at: "2026-11-06"
 facts:
   - id: gate_g1
     status: closed
@@ -458,12 +458,12 @@ facts:
       - docs/ops/psi_drift_monitoring.md
   - id: rule_coverage
     status: active
-    decision_date: "2026-10-20"
-    claim: "기관·지역 산식 규칙은 규칙 ID 206종이 evaluation_rules.py 에 있고 시·도 70종과 기관 78종까지 담고 있습니다. 최근 12개월 Servc 공고 31,305건 중 지역 1,872건·전국 기준 19,459건·기관 63건에 적용되고 9,911건은 차단됩니다. 남은 구판 원문 보완은 진행 중입니다."
-    document_anchor: "기관·지역 산식 규칙은 규칙 ID 206종이"
+    decision_date: "2026-11-06"
+    claim: "기관·지역 산식 규칙은 규칙 ID 212종(기관 84종)이 있습니다. 2026-11-06 원장 기준 최근 12개월 Servc 공고 31,348건 중 지역 1,856건·전국 기준 19,554건·기관 82건에 적용되고 9,856건은 차단됩니다. 원문 보완은 진행 중입니다."
+    document_anchor: "기관·지역 산식 규칙은 규칙 ID 212종"
     evidence:
       - src/app/services/evaluation_rules.py
-      - docs/handoff/handoff_20261019_close.md
+      - data/reference/rule_coverage_ledger.yaml
     related_documents:
       - docs/context/CURRENT_STATE.md
       - docs/handoff/handoff_20261019_close.md

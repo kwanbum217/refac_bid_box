@@ -169,6 +169,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | `AUTOMATION_REUSE_RECENT` | 아니오 | `true` | 고비용 작업(`full_validation`)의 최근 72시간 성공 이력 재사용 |
 | `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | 아니오 | `false` | 매일 02:00 KST 개발 DB 수집·최근 24시간 KB 델타 upsert·집계 최신화. 예측 검증·재학습은 제외 |
 | `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | 아니오 | `true` | 매일 02:00 야간 번들 크론 사용 여부 (운영 compose 기본 true, 개발 기본 false) |
+| `OPENG_RESULT_COLLECTION_ENABLED` | 아니오 | `false` | 정기 수집(collect_bids)에서 개찰결과(유찰 포함)를 `bid_openg_results` 에 적재할지 여부. 코드·compose 기본 false |
 
 `AUTOMATION_CALLBACK_BASE_URL` 은 **워커가 도달할 수 있는 주소**여야 합니다. 컨테이너를 분리했다면 `http://app:8000` 처럼 서비스명을 쓰십시오. `http://localhost:8000` 은 워커 컨테이너 자기 자신을 가리키므로 거부됩니다.
 
@@ -234,6 +235,7 @@ OCR 은 `rapidocr`(onnxruntime)로 로컬에서만 수행합니다. 인식 모�
 | --- | --- | --- | --- |
 | `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | `false` | `true` | 개발 환경에서는 매일 DB 최신화를 켜두되, 운영 기본값은 끔 |
 | `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | `false` | `false` | 코드 기본값 및 개발 예시는 false, 운영 compose 기본 true |
+| `OPENG_RESULT_COLLECTION_ENABLED` | `false` | `false` | 동일. 운영자가 `.env` 로 켜면 두 compose worker 가 전달 |
 | `ML_WEEKLY_RETRAIN_ENABLED` | `true` | `false` | 코드 기본값은 주간 재학습 활성, 개발 예시는 끔 |
 | `MEILI_ENABLED` | `false` | `false` | 동일 (명시적 표기) |
 | `CORS_DEV_ALLOW_ALL` | `true` | `true` | 동일. `development` 에서만 효력이 있으며 `staging`·`production` 은 `CORS_ALLOWED_ORIGINS` 명시 필수 |

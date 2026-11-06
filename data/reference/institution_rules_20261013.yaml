@@ -337,10 +337,10 @@ institutions:
     standard: "(자체 용역적격심사 세부기준 원문 미확보. 나라장터 LH 일반용역 공고문은 조달청 일반용역 적격심사 세부기준을 준용)"
     effective_date: null
     service_types: []
-    note: "자체 세부기준 원문은 확보하지 못했다(ebid 자료실 보안모듈, 사규 목록 부재). 나라장터에 올라온 LH 일반용역 공고는 조달청 명의로 집행되며 조달청 기준을 적용한다. 규칙 3에 따라 조달청 별표 숫자를 이 기관 계수로 옮기지 않는다."
+    note: "자체 세부기준 원문은 확보하지 못했다(ebid 자료실 보안모듈, 사규 목록 부재). 나라장터에 올라온 LH 일반용역 공고는 조달청 명의로 집행되며 조달청 기준을 적용한다. 규칙 3에 따라 조달청 별표 숫자를 이 기관 계수로 옮기지 않는다. 2026-11-06 재조사에서 나라장터 LH 용역 적격심사 공고 13건의 첨부가 조달청 일반용역·기술용역 적격심사 세부기준 적용을 명시함을 확인했다(원문 미확보 상태 유지)."
     non_qual_methods: []
     bands: []
-    sources: ["docs/analysis/servc_formula_recover_a_20261005.md:6", "docs/analysis/servc_formula_collection_central_20261004.md:247-260"]
+    sources: ["docs/analysis/servc_formula_recover_a_20261005.md:6", "docs/analysis/servc_formula_collection_central_20261004.md:247-260", "docs/analysis/qual_missing_sources_retry_20261106.md:6.1"]
   - institution_name: "한국철도공사"
     name_aliases: ["한국철도공사", "코레일", "KORAIL"]
     institution_code: null
@@ -2147,10 +2147,10 @@ institutions:
     standard: "(자체 일반용역 적격심사 원문 미확보)"
     effective_date: null
     service_types: []
-    note: "나라장터 발주는 조달청 경유 협상계약이라 적격심사 단서가 없다. 자체 SRM 은 DNS 실패, 홈페이지에는 문서가 확인되지 않았다. 모회사 한전 본사 기준은 확보했으나 전력연구원 적용 근거가 확인되지 않아 그 계수를 옮기지 않는다."
+    note: "나라장터 발주는 조달청 경유 협상계약이라 적격심사 단서가 없다. 자체 SRM 은 DNS 실패, 홈페이지에는 문서가 확인되지 않았다. 모회사 한전 본사 기준은 확보했으나 전력연구원 적용 근거가 확인되지 않아 그 계수를 옮기지 않는다. 2026-11-06 재조사에서도 나라장터 용역 발주가 협상계약 1건뿐이라 공고 첨부 경로 조사를 종료했다."
     non_qual_methods: []
     bands: []
-    sources: ["docs/analysis/servc_formula_recover_b_20261005.md:6", "docs/analysis/servc_formula_collection_energy_20261004.md:5.3"]
+    sources: ["docs/analysis/servc_formula_recover_b_20261005.md:6", "docs/analysis/servc_formula_collection_energy_20261004.md:5.3", "docs/analysis/qual_missing_sources_retry_20261106.md:6.1"]
   - institution_name: "한전KPS"
     name_aliases: ["한전KPS", "한전케이피에스주식회사", "KPS"]
     institution_code: null
@@ -2159,10 +2159,10 @@ institutions:
     standard: "(자체 용역 적격심사 세부기준 원문 미확보)"
     effective_date: null
     service_types: []
-    note: "나라장터 Servc 공고 5건에 적격심사 첨부가 없고, 사규 목록 404·알리오 스크립트 렌더링으로 원문을 확보하지 못했다. 접속 실패는 문서 부재의 증거가 아니다(규칙 9)."
+    note: "나라장터 Servc 공고 5건에 적격심사 첨부가 없고, 사규 목록 404·알리오 스크립트 렌더링으로 원문을 확보하지 못했다. 접속 실패는 문서 부재의 증거가 아니다(규칙 9). 2026-11-06 재조사에서 공고 R25BK00765173 1건이 조달청 기술용역 적격심사 세부기준 적용을 명시함을 확인했다. 근거가 1건뿐이라 전사 상태는 올리지 않는다."
     non_qual_methods: []
     bands: []
-    sources: ["docs/analysis/servc_formula_recover_a_20261005.md:7", "docs/analysis/servc_formula_collection_energy_20261004.md:5.4"]
+    sources: ["docs/analysis/servc_formula_recover_a_20261005.md:7", "docs/analysis/servc_formula_collection_energy_20261004.md:5.4", "docs/analysis/qual_missing_sources_retry_20261106.md:6.1"]
   - institution_name: "인천국제공항공사"
     name_aliases: ["인천국제공항공사", "IIAC"]
     institution_code: null
