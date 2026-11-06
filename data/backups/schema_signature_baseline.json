@@ -1494,6 +1494,118 @@
       ],
       "hash": "5c661943772b6baf82ed0492577310ead3eed005d697e44fac910fea3ec2389b"
     },
+    "bid_announcement_regime": {
+      "name": "bid_announcement_regime",
+      "columns": [
+        {
+          "name": "bid_ntce_no",
+          "type": "VARCHAR(40) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "bid_ntce_ord",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "category",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "classified_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "classifier_version",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "error",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "evidence",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "matched_rules",
+          "type": "VARCHAR(255) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "regime",
+          "type": "VARCHAR(30) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "source_files",
+          "type": "JSON",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_bid_announcement_regime_regime",
+          "column_names": [
+            "regime"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_bid_announcement_regime",
+          "column_names": [
+            "bid_ntce_no",
+            "bid_ntce_ord",
+            "category"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "656be9eafe0497ee1db9687c242bf3c48a3df258a83ac267a90d72115a151cd8"
+    },
     "bid_announcements": {
       "name": "bid_announcements",
       "columns": [
@@ -4535,6 +4647,7 @@
     "automation_subscriptions": "643c95f2fa8501dc2375cedd58248611a366ffe9cfd049e0f1f234318335686b",
     "bid_announcement_license_limits": "a0871740bfc21f95c53509ddb5948275e2a07242da67acc0d845bc3effe258b5",
     "bid_announcement_participation_regions": "5c661943772b6baf82ed0492577310ead3eed005d697e44fac910fea3ec2389b",
+    "bid_announcement_regime": "656be9eafe0497ee1db9687c242bf3c48a3df258a83ac267a90d72115a151cd8",
     "bid_announcements": "88f4d9c9400043f8eac5da3afcfeb705ceddb95358f51b3bd7184532e3f26db9",
     "bid_compare_stats_snapshots": "d9e0fe67e1318a2cdf02ff0b2fc15dd89716a4495bde95d916749105311dac60",
     "bid_dataset_summaries": "db63132629b7fd7a107d4ef8dd88e3b75db7645da6e724d0df92115af9288501",
@@ -4564,7 +4677,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "24d6f236a937a45e842c9465e3828297a71596ce2824d039b93582583b13212b",
+  "overall_hash": "2a20a06cab7ee668803d2ce1d61441fb7ff3e5b8fe917180e110863d374eef11",
   "orm_tables": [
     "account_company_profiles",
     "account_consent_events",
@@ -4575,6 +4688,7 @@
     "automation_subscriptions",
     "bid_announcement_license_limits",
     "bid_announcement_participation_regions",
+    "bid_announcement_regime",
     "bid_announcements",
     "bid_compare_stats_snapshots",
     "bid_dataset_summaries",
@@ -4612,6 +4726,7 @@
     "automation_subscriptions",
     "bid_announcement_license_limits",
     "bid_announcement_participation_regions",
+    "bid_announcement_regime",
     "bid_announcements",
     "bid_compare_stats_snapshots",
     "bid_dataset_summaries",
@@ -4642,10 +4757,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-11-03T02:52:09.988893+00:00",
+    "generated_at": "2026-11-06T03:05:09.104782+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "30cd6901cf8370083c3a981692e2c3cc76444a0b"
+    "git_head": "a3a1ee944374b618091fe70f79dfc36950376265"
   }
 }
