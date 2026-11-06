@@ -1887,6 +1887,11 @@ MOIS_ACADEMIC_BAND_WARNING = (
     "학술연구용역 평가기준의 해당 열을 적용했습니다."
 )
 
+MOIS_ACADEMIC_ATTACHMENT_WARNING = (
+    "첨부 공고문이 행정안전부 예규 제2장의2 [별표 4] 학술연구용역 평가기준을 지정해 "
+    "그 2억미만 1억이상 열을 적용했습니다."
+)
+
 
 def select_mois_academic_band_rule(method_name: str | None) -> EvaluationRule | None:
     """낙찰방법명이 학술연구 띠 표기일 때 행안부 [별표 4] 해당 열 규칙을 돌려줍니다.
@@ -3120,6 +3125,7 @@ def resolve_evaluation_rule(
     announcement_institution_code: str | None = None,
     announcement_institution_name: str | None = None,
     education_institution: bool = False,
+    attachment_regime: str | None = None,
 ) -> RuleResolutionResult:
     """낙찰방법 출처를 정하고 별표를 판별한 뒤 공고일과 별표 시행일을 대조합니다.
 
@@ -3151,6 +3157,10 @@ def resolve_evaluation_rule(
     - 공고 하한율이 없으면 estimated_price 로 고른 구간의 하한율을 씁니다. 구간별
       하한율이 서로 다른데 추정가격이 없으면 하한율을 확정하지 않고(effective_lwlt_rate
       None) 호출부가 추정가격 입력을 요구합니다.
+    - attachment_regime == "MOIS_ACADEMIC" 이고 낙찰방법명이 '2억미만 1억이상' 띠를
+      담으며 국가계약이 아닌 공고만, 시·도·기관 규칙으로 확정하지 못해 차단된 경우
+      행안부 예규 제2장의2 [별표 4] 학술연구용역 2억미만 1억이상 열로 계산합니다.
+      첨부 판별이 없거나 다른 값이면 판정은 종전과 같습니다.
     """
     method_name, method_source, method_warnings = resolve_method_name(
         sucsfbid_mthd_nm, sucsfbid_mthd_cd
@@ -3330,6 +3340,30 @@ def resolve_evaluation_rule(
                 block_reason_code=None,
                 block_reason_message=None,
                 warnings=[*result.warnings, MOIS_ACADEMIC_BAND_WARNING],
+            )
+            scope_stage = RULE_SCOPE_ALL
+    if (
+        attachment_regime == "MOIS_ACADEMIC"
+        and all(marker in (method_name or "") for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS)
+        and contract_regime != "NATIONAL"
+        and result.is_blocked
+        and result.block_reason_code in _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES
+    ):
+        # 첨부 원문 판별이 학술연구용역을 확정한 '2억미만 1억이상' 띠 공고만 행안부
+        # 예규 제2장의2 [별표 4] 2억미만 1억이상 열로 계산합니다. 낙찰방법명만으로는
+        # 기준 문서가 갈려 확정하지 않으므로, 시·도·기관 규칙으로도 풀지 못한 공고만
+        # 대상으로 하고 국가계약에는 적용하지 않습니다.
+        attachment_band_rule = get_mois_academic_attachment_rule("1E_2E")
+        if attachment_band_rule is not None and (
+            announced is None
+            or announced >= date.fromisoformat(attachment_band_rule.effective_date)
+        ):
+            result = replace(
+                _apply_rule_lwlt(result, attachment_band_rule, sucsfbid_lwlt_rate, estimated_price),
+                is_blocked=False,
+                block_reason_code=None,
+                block_reason_message=None,
+                warnings=[*result.warnings, MOIS_ACADEMIC_ATTACHMENT_WARNING],
             )
             scope_stage = RULE_SCOPE_ALL
     if (
@@ -3638,6 +3672,7 @@ def resolve_evaluation_rule_from_raw_data(
     local_service_type: str | None = None,
     estimated_price: Decimal | str | float | int | None = None,
     education_institution: bool = False,
+    attachment_regime: str | None = None,
 ) -> RuleResolutionResult:
     """raw_data 딕셔너리에서 기관 필드를 추출하여 적격심사 규칙을 판별합니다.
 
@@ -3647,6 +3682,7 @@ def resolve_evaluation_rule_from_raw_data(
     estimated_price 는 구간별 낙찰하한율을 고르는 추정가격입니다.
     education_institution 은 수요기관이 교육 계열인지이며, 시·도를 산출하지 못한
     교육 계열 공고를 조달청 일반용역 세부기준으로 푸는 데 씁니다.
+    attachment_regime 은 첨부 원문 판별 갈래이며 resolve_evaluation_rule 로 넘깁니다.
     """
     if raw_data is None:
         raw_data = {}
@@ -3683,6 +3719,7 @@ def resolve_evaluation_rule_from_raw_data(
         local_service_type=local_service_type,
         estimated_price=estimated_price,
         education_institution=education_institution,
+        attachment_regime=attachment_regime,
     )
 
 
