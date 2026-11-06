@@ -174,6 +174,17 @@ BLOCK_SIGNALS: list[tuple[str, str, str, BlockKind]] = [
     ("status 502", "HTTP 502 업스트림 오류", FAILURE_REDEPLOY_FIX, "failure"),
     ("status code 502", "HTTP 502 업스트림 오류", FAILURE_REDEPLOY_FIX, "failure"),
     ("bad gateway", "HTTP 502 업스트림 오류", FAILURE_REDEPLOY_FIX, "failure"),
+    # cmd 공급자 포화: 2026-11-04 z-ai/glm-5.3-flash 가 화면에 이 문구를 남기고 멈췄습니다.
+    ("concurrent requests", "공급자 동시 요청 한도 초과", FAILURE_REDEPLOY_FIX, "failure"),
+    ("reached its limit", "공급자 동시 요청 한도 초과", FAILURE_REDEPLOY_FIX, "failure"),
+    ("http 500", "HTTP 500 서버 오류", FAILURE_REDEPLOY_FIX, "failure"),
+    ("error 500", "HTTP 500 서버 오류", FAILURE_REDEPLOY_FIX, "failure"),
+    ("status 500", "HTTP 500 서버 오류", FAILURE_REDEPLOY_FIX, "failure"),
+    ("status code 500", "HTTP 500 서버 오류", FAILURE_REDEPLOY_FIX, "failure"),
+    ("http 503", "HTTP 503 서비스 불가", FAILURE_REDEPLOY_FIX, "failure"),
+    ("error 503", "HTTP 503 서비스 불가", FAILURE_REDEPLOY_FIX, "failure"),
+    ("status 503", "HTTP 503 서비스 불가", FAILURE_REDEPLOY_FIX, "failure"),
+    ("status code 503", "HTTP 503 서비스 불가", FAILURE_REDEPLOY_FIX, "failure"),
     # 승인 대기: 키 입력으로 해제 가능
     (
         "Do you trust",
@@ -231,6 +242,16 @@ BLOCK_SIGNALS: list[tuple[str, str, str, BlockKind]] = [
         "Command Code 도구 승인 대화창",
         "자동 승인 감시기가 보류한 명령일 수 있음. 터미널 끝을 읽고 승인 여부를 판단",
         "prompt",
+    ),
+]
+
+# 재시도 횟수처럼 숫자가 가변이라 부분 문자열로 고정할 수 없는 실패 신호.
+FAILURE_PATTERNS: list[tuple[re.Pattern[str], str, str, BlockKind]] = [
+    (
+        re.compile(r"\bfailed after \d+ attempts?\b"),
+        "공급자 재시도 소진",
+        FAILURE_REDEPLOY_FIX,
+        "failure",
     ),
 ]
 
@@ -659,6 +680,10 @@ def detect_block(
         return done_block
 
     norm_text = normalize_text(cleaned_text)
+    # 숫자가 가변인 실패 신호를 먼저 봅니다. failure 우선 규칙을 유지합니다.
+    for pattern, reason, fix, kind in FAILURE_PATTERNS:
+        if kind == "failure" and pattern.search(norm_text):
+            return reason, fix, kind
     prompt_match: tuple[str, str, BlockKind] | None = None
     for needle, reason, fix, kind in BLOCK_SIGNALS:
         if normalize_text(needle) not in norm_text:
