@@ -395,6 +395,16 @@ def test_prod_worker_forwards_openg_result_collection_flag(compose: dict):
     assert "OPENG_RESULT_COLLECTION_ENABLED" not in app_env
 
 
+def test_prod_worker_forwards_band_regime_schedule_flag(compose: dict):
+    """운영 worker 가 첨부 판별 일일 크론 플래그를 .env 로부터 받아 전달하는지 단언합니다."""
+    worker_env = _environment(compose["services"]["worker"])
+    assert "BAND_REGIME_SCHEDULE_ENABLED" in worker_env
+    assert worker_env["BAND_REGIME_SCHEDULE_ENABLED"] == ("${BAND_REGIME_SCHEDULE_ENABLED:-false}")
+
+    app_env = _environment(compose["services"]["app"])
+    assert "BAND_REGIME_SCHEDULE_ENABLED" not in app_env
+
+
 def test_grafana_provisions_slo_alerts_dashboard():
     dashboard = json.loads(GRAFANA_SLO_DASHBOARD_PATH.read_text(encoding="utf-8"))
     assert dashboard["uid"] == "bidbox-slo-alerts"

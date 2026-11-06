@@ -48,6 +48,9 @@ from src.tasks.coverage_tasks import result_coverage_monitor_task
 from src.tasks.error_payload import summarize_error
 from src.tasks.retrain_task import run_retrain_pipeline_task
 from src.tasks.scheduled_tasks import (
+    BAND_REGIME_DAILY_HOUR,
+    BAND_REGIME_DAILY_JOB_TIMEOUT_SECONDS,
+    BAND_REGIME_DAILY_MINUTE,
     DRIFT_MONITOR_CATCHUP_JOB_NAME,
     DRIFT_MONITOR_JOB_TIMEOUT_SECONDS,
     PREARNG_DAILY_HOUR,
@@ -58,6 +61,7 @@ from src.tasks.scheduled_tasks import (
     WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
     WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS,
     backup_schedule_task,
+    band_regime_daily_task,
     development_data_refresh_task,
     drift_monitor_task,
     nightly_schedule_task,
@@ -497,6 +501,17 @@ class WorkerSettings:
             timeout=PREARNG_DAILY_JOB_TIMEOUT_SECONDS,
         ),
     ]
+    # 첨부 원문을 외부에서 내려받는 크론이라 플래그가 켜질 때만 등록합니다.
+    if settings.BAND_REGIME_SCHEDULE_ENABLED:
+        cron_jobs.append(
+            cron(
+                cast(Any, band_regime_daily_task),
+                hour=BAND_REGIME_DAILY_HOUR,
+                minute=BAND_REGIME_DAILY_MINUTE,
+                run_at_startup=False,
+                timeout=BAND_REGIME_DAILY_JOB_TIMEOUT_SECONDS,
+            )
+        )
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     # 무거운 태스크 동시 실행 제한 정책:
     # 1. max_jobs = 4 유지:

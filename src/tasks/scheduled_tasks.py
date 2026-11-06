@@ -2423,6 +2423,92 @@ def _persist_prearng_rows(rows: list[dict[str, Any]]) -> int:
         session.close()
 
 
+# --------------------------------------------------------------------------- #
+# 2억미만 1억이상 띠 용역 공고 첨부 판별 일일 증분
+#
+# 신규 공고를 수집 시점이 아니라 하루 한 번 모아 판별합니다. 외부 첨부 호출이
+# 있으므로 하루 상한을 두고, 남은 대상은 다음 날 14일 창에서 다시 잡힙니다.
+# 기본값은 꺼짐이며 운영자가 BAND_REGIME_SCHEDULE_ENABLED 로 켭니다.
+# --------------------------------------------------------------------------- #
+
+BAND_REGIME_DAILY_SCHEDULE_NAME = "band_regime_daily"
+BAND_REGIME_DAILY_JOB_TIMEOUT_SECONDS = 3600
+
+# 매일 도는 증분이라 최근 14일 공고만 봅니다. 이미 CLASSIFIED·NO_ATTACHMENT 로
+# 저장된 행은 스크립트의 대상 선정에서 제외되고 FAILED 행만 재시도됩니다.
+BAND_REGIME_DAILY_LOOKBACK_DAYS = 14
+
+# 하루 외부 첨부 다운로드 상한과 요청 사이 대기 초입니다. 상한을 넘긴 대상은
+# 다음 날 같은 창에서 다시 대상이 됩니다.
+BAND_REGIME_DAILY_MAX_CALLS = 60
+BAND_REGIME_DAILY_SLEEP_SECONDS = 1.0
+
+# 야간 수집(02:00)·예비가격 증분(06:00) 뒤에 둡니다.
+BAND_REGIME_DAILY_HOUR = 6
+BAND_REGIME_DAILY_MINUTE = 10
+
+
+def _run_band_regime_daily_thread() -> dict[str, Any]:
+    """판별 실행을 스레드 전용 세션에서 수행합니다.
+
+    스크립트의 세션·HTTP 는 동기이므로 이벤트 루프에서 직접 부르지 않습니다.
+    Session 은 생성 스레드 밖으로 나가면 안 되므로 이 함수 안에서 만들고 닫습니다.
+    """
+    # 스크립트는 mypy 정적 분석 대상이 아니므로 문자열 import 로 가져옵니다.
+    import importlib
+
+    classify = importlib.import_module("scripts.classify_band_regime")
+
+    end = utcnow().date()
+    start = end - timedelta(days=BAND_REGIME_DAILY_LOOKBACK_DAYS - 1)
+    session = SessionLocal()
+    try:
+        return classify.run_band_regime_classification(
+            session,
+            start=start,
+            end=end,
+            max_calls=BAND_REGIME_DAILY_MAX_CALLS,
+            sleep=BAND_REGIME_DAILY_SLEEP_SECONDS,
+            execute=True,
+        )
+    finally:
+        session.close()
+
+
+@traced_worker_task
+@_record_schedule(BAND_REGIME_DAILY_SCHEDULE_NAME)
+async def band_regime_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """최근 14일 '2억미만 1억이상' 띠 용역 공고 첨부를 판별해 적재합니다.
+
+    첨부 호출 상한(60회)에 걸려 남은 대상은 다음 날 다시 대상이 되므로 실패가
+    아니라 success 로 기록하고 truncated 로 드러냅니다. 예외는 알림 1회로
+    끝내고 결과를 돌려줘 다른 크론과 워커가 멈추지 않게 합니다.
+    """
+    if not settings.BAND_REGIME_SCHEDULE_ENABLED:
+        logger.info("첨부 판별 일일 스케줄이 비활성화되어 있어 건너뜁니다.")
+        return {"status": "skipped", "reason": "disabled"}
+
+    try:
+        summary = await asyncio.to_thread(_run_band_regime_daily_thread)
+    except Exception as exc:
+        logger.exception("첨부 판별 일일 스케줄 실패")
+        await notify_task_failure("첨부 판별 일일 스케줄", summarize_error(exc))
+        return {"status": "failed", **safe_error(exc)}
+
+    return {
+        "status": "success",
+        "start": summary.get("start"),
+        "end": summary.get("end"),
+        "targets": summary.get("targets", 0),
+        "calls_used": summary.get("calls_used", 0),
+        "classified": summary.get("classified", 0),
+        "no_attachment": summary.get("no_attachment", 0),
+        "failed": summary.get("failed", 0),
+        "skipped": summary.get("skipped", 0),
+        "truncated": summary.get("status") == "truncated",
+    }
+
+
 @traced_worker_task
 @_record_schedule(PREARNG_DAILY_SCHEDULE_NAME)
 async def prearng_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:

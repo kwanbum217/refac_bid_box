@@ -61,6 +61,16 @@ def test_default_compose_worker_forwards_openg_result_collection_flag():
     assert "OPENG_RESULT_COLLECTION_ENABLED" not in app
 
 
+def test_default_compose_worker_forwards_band_regime_schedule_flag():
+    """worker 는 .env 를 읽지 않으므로 compose 가 전달해야 운영자가 .env 로 켤 수 있습니다."""
+    compose = COMPOSE_FILE.read_text(encoding="utf-8")
+    worker = _worker_service()
+    app = compose.split("\n  app:\n", maxsplit=1)[1].split("\n  worker:\n", maxsplit=1)[0]
+
+    assert "BAND_REGIME_SCHEDULE_ENABLED=${BAND_REGIME_SCHEDULE_ENABLED:-false}" in worker
+    assert "BAND_REGIME_SCHEDULE_ENABLED" not in app
+
+
 def test_default_compose_pins_app_timezone_to_seoul_like_worker():
     """앱 컨테이너가 UTC 로 돌면 KST 00~09시에 date.today() 마감 창이 하루 밀립니다."""
     compose = COMPOSE_FILE.read_text(encoding="utf-8")

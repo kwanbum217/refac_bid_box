@@ -154,6 +154,8 @@ services:
       - RESULT_COVERAGE_ALERT_SUPPRESS=${RESULT_COVERAGE_ALERT_SUPPRESS:-}
       # 개찰결과(유찰) 정기 수집 스위치입니다. worker 는 .env 를 읽지 않으므로 여기서 전달해야 켜집니다.
       - OPENG_RESULT_COLLECTION_ENABLED=${OPENG_RESULT_COLLECTION_ENABLED:-false}
+      # '2억미만 1억이상' 띠 용역 공고 첨부 판별 일일 크론(매일 06:10) 스위치입니다.
+      - BAND_REGIME_SCHEDULE_ENABLED=${BAND_REGIME_SCHEDULE_ENABLED:-false}
       # 읽기 경로 A/B 실측 전용 스위치입니다. 기본값 true 가 운영 동작입니다.
       - READ_PATH_PRELOAD_ANNOUNCEMENTS=${READ_PATH_PRELOAD_ANNOUNCEMENTS:-true}
       - AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED=true
