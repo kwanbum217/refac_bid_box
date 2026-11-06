@@ -320,3 +320,17 @@ OCR 은 `rapidocr`(onnxruntime)로 로컬에서만 수행합니다. 인식 모�
 - 어떤 환경변수의 **실제 값도 문서에 기록하지 않습니다.**
 - 시크릿 순환 정책을 운영 환경에 적용합니다.
 - 상세는 [`src/app/core/security.py`](../../src/app/core/security.py) 참조.
+
+---
+
+## 6. 로컬 검증용 Makefile 변수
+
+애플리케이션 런타임이 아니라 루트 `Makefile` 의 대상을 실행할 때만 쓰는 값입니다. `.env` 에 넣지 않으며, 필요하면 명령행에서 덮어씁니다.
+
+| 변수 | 기본값 | 설명 |
+| --- | --- | --- |
+| `PYTHON` | `.venv` 인터프리터, 없으면 `python3` | Makefile 이 pytest·스크립트를 실행할 때 쓰는 인터프리터 |
+| `UV` | `uv` | 의존성 동기화와 `actionlint` 실행에 쓰는 uv 실행 파일 |
+| `GITLEAKS` | `gitleaks` | `make secret-scan` 이 실행할 gitleaks 실행 파일. CI 는 8.30.1 고정본의 체크섬을 검증한 뒤 사용합니다 |
+
+`make check-all` 의 전체 구성과 CI 대응 관계는 [`docs/ops/cross_platform_guide.md`](cross_platform_guide.md) 4.1 절을 참조하십시오.
