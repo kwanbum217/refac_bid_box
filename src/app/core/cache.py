@@ -166,5 +166,27 @@ class CacheLayer:
             return
         self._local.pop(key, None)
 
+    def delete_prefix(self, prefix: str) -> int:
+        """접두사로 시작하는 캐시 키를 지우고 삭제한 키 수를 돌려줍니다.
+
+        Redis 에서는 SCAN 만 쓰고 KEYS 는 쓰지 않습니다. KEYS 는 키 공간 전체를
+        한 번에 훑어 운영 Redis 를 멈추게 할 수 있습니다. Redis 를 쓸 수 없으면
+        프로세스 메모리 캐시에서 같은 접두사만 지웁니다.
+        """
+        deleted = 0
+        client = self._conn.client()
+        if client is not None:
+            try:
+                for key in client.scan_iter(match=f"{prefix}*", count=LOCAL_CACHE_MAX_ITEMS):
+                    deleted += int(client.delete(key) or 0)
+            except Exception as exc:
+                logger.warning("접두사 캐시 삭제 실패 (%s): %s", prefix, exc)
+                self._conn.invalidate(exc)
+
+        for key in [name for name in self._local if name.startswith(prefix)]:
+            self._local.pop(key, None)
+            deleted += 1
+        return deleted
+
 
 cache = CacheLayer()
