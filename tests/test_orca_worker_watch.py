@@ -186,6 +186,12 @@ def test_collect_adds_advice_note_on_blocked() -> None:
         ("model not found: gemini-foo", "모델"),
         ("HTTP 429 Too Many Requests", "rate limit"),
         ("upstream returned status 502", "502"),
+        (
+            'Error: 500 {"error":"shared hosted model reached its limit of 384 concurrent requests"}',
+            "동시 요청 한도",
+        ),
+        ("Failed after 3 attempts. Last error: 500", "재시도"),
+        ("Failed after 5 attempts. Last error: timeout", "재시도"),
     ],
 )
 def test_detect_block_classifies_failure_signals(
@@ -221,6 +227,12 @@ def test_detect_block_failure_takes_priority_over_prompt() -> None:
         "Editing 7.59k tokens 502 lines changed",
         "tests/test_foo.py:429: assert x",
         "Read(scripts/orca_taskctl.py) 1502 lines",
+        "2537 passed, 6 skipped in 500.31s",
+        "2537 passed, 6 skipped in 503.31s",
+        "tests/test_foo.py:500: assert x",
+        "tests/test_foo.py:503: assert y",
+        "500건 처리",
+        "limit 500",
     ],
 )
 def test_detect_block_ignores_bare_status_code_substrings(screen: str) -> None:
@@ -235,6 +247,14 @@ def test_detect_block_contextual_status_codes_still_match() -> None:
         ("HTTP 502 Bad Gateway", "502"),
         ("error 502 while contacting model", "502"),
         ("upstream returned status code 502", "502"),
+        ("HTTP 500 Internal Server Error", "HTTP 500"),
+        ("error 500 while contacting model", "HTTP 500"),
+        ("received status 500 from upstream", "HTTP 500"),
+        ("upstream returned status code 500", "HTTP 500"),
+        ("HTTP 503 Service Unavailable", "HTTP 503"),
+        ("error 503 while contacting model", "HTTP 503"),
+        ("received status 503 from upstream", "HTTP 503"),
+        ("upstream returned status code 503", "HTTP 503"),
     ]
     for screen, fragment in cases:
         found = watch.detect_block(screen)
