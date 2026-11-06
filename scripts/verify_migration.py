@@ -34,6 +34,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 EXPECTED_MODELS = ("v25", "quantum_leap_v25_pro", "ssh_hist_premium", "v13_hybrid")
 G1_TOOL_VERSION = "2.0.0"
+# 승격된 서빙 세대가 봉인하는 아티팩트 manifest 파일명입니다.
+ARTIFACT_MANIFEST_FILENAME = "artifact_manifest.json"
 # ORM에 포함되지 않는 외부 테이블은 이 목록에 명시적으로 승인해야 합니다.
 # 목록 밖의 테이블은 검증 보고서에 경고를 남기고 실패 처리합니다.
 # G1 은 기존 테이블을 삭제하지 않는다. Django 잔여 테이블과 Alembic 장부,
@@ -328,6 +330,156 @@ def verify_model_weights() -> tuple[bool, str]:
 
     print(f"      4종 모델 manifest 체크섬 일치: {', '.join(EXPECTED_MODELS)}")
     return True, "ML 가중치 4종 체크섬 일치"
+
+
+def _compare_serving_generation(model: str, slot: Path, tree: Path) -> dict:
+    """해석된 서빙 세대의 artifact manifest 와 실제 파일 해시를 대조합니다.
+
+    반환값은 보고서 항목이며 G1 판정에는 쓰이지 않습니다. manifest 가 없거나
+    읽을 수 없으면 FAIL 이 아니라 WARN 으로 남깁니다.
+    """
+    entry: dict[str, object] = {
+        "model": model,
+        "slot": _storage_relative_path(slot),
+        "generation": tree.name,
+        "serving_tree": _storage_relative_path(tree),
+        "manifest": "missing",
+        "files_checked": 0,
+        "mismatches": [],
+        "status": "WARN",
+        "detail": "",
+    }
+    manifest_path = tree / ARTIFACT_MANIFEST_FILENAME
+    if not manifest_path.is_file():
+        entry["detail"] = f"artifact manifest 없음: {manifest_path.name}"
+        return entry
+
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        entry["manifest"] = "invalid"
+        entry["detail"] = f"artifact manifest 읽기 실패: {exc}"
+        return entry
+
+    files = payload.get("files") if isinstance(payload, dict) else None
+    if not isinstance(files, dict) or not files:
+        entry["manifest"] = "invalid"
+        entry["detail"] = "artifact manifest files 항목 누락"
+        return entry
+
+    entry["manifest"] = "present"
+    mismatches: list[dict[str, str]] = []
+    checked = 0
+    for name in sorted(files):
+        meta = files[name]
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in {".", ".."}
+            or "/" in name
+            or "\\" in name
+        ):
+            mismatches.append({"file": str(name), "reason": "manifest 키가 디렉터리 밖을 가리킴"})
+            continue
+        expected = meta.get("sha256") if isinstance(meta, dict) else None
+        if not isinstance(expected, str) or not expected:
+            mismatches.append({"file": name, "reason": "manifest sha256 누락"})
+            continue
+        path = tree / name
+        if not path.is_file():
+            mismatches.append({"file": name, "reason": "파일 누락"})
+            continue
+        digest, _byte_count = _hash_file(path)
+        checked += 1
+        if digest != expected:
+            mismatches.append(
+                {
+                    "file": name,
+                    "reason": "체크섬 불일치",
+                    "expected": expected,
+                    "actual": digest,
+                }
+            )
+
+    entry["files_checked"] = checked
+    entry["mismatches"] = mismatches
+    if mismatches:
+        entry["status"] = "MISMATCH"
+        entry["detail"] = f"{len(mismatches)}건 불일치"
+    else:
+        entry["status"] = "PASS"
+        entry["detail"] = f"{checked}개 파일 해시 일치"
+    return entry
+
+
+def collect_serving_generations(
+    model_root: Path | None = None,
+    *,
+    models: tuple[str, ...] | None = None,
+) -> list[dict] | None:
+    """각 모델 슬롯의 서빙 세대를 해석해 artifact manifest 와 대조한 결과를 모읍니다.
+
+    원본 4종 대조(verify_model_weights)는 그대로 두고, 재학습 승격으로 교체된
+    실제 서빙 세대를 별도로 검증합니다. 세대 해석이나 manifest 확인이 실패해도
+    G1 판정과 종료 코드는 바꾸지 않으며 WARN 항목으로만 남깁니다.
+
+    세대가 하나도 해석되지 않으면(모두 레거시 슬롯) None 을 돌려줍니다.
+    이때는 보고서에 serving_generations 키를 만들지 않아 기존 보고 형식을 유지합니다.
+    """
+    root = model_root or Path(
+        os.environ.get("MODEL_FILES_DIR", ASSET_ROOT / "data" / "model_files")
+    )
+    target_models = models if models is not None else EXPECTED_MODELS
+
+    try:
+        from src.ml.model_registry import LIVE_FILENAME, resolve_serving_tree
+    except Exception as exc:
+        return [
+            {
+                "model": "*",
+                "status": "WARN",
+                "manifest": "unknown",
+                "detail": f"서빙 세대 해석기 로드 실패: {type(exc).__name__}: {exc}",
+            }
+        ]
+
+    entries: list[dict] = []
+    for model in target_models:
+        slot = root / model
+        if not slot.is_dir():
+            continue
+        if not (slot / LIVE_FILENAME).is_file():
+            # LIVE 이전의 레거시 슬롯입니다. 해석할 세대가 없으므로 건너뜁니다.
+            continue
+        try:
+            tree = resolve_serving_tree(slot)
+        except Exception as exc:
+            entries.append(
+                {
+                    "model": model,
+                    "slot": _storage_relative_path(slot),
+                    "generation": None,
+                    "status": "WARN",
+                    "manifest": "unknown",
+                    "detail": f"서빙 세대 해석 실패: {type(exc).__name__}: {exc}",
+                }
+            )
+            continue
+        if tree == slot:
+            entries.append(
+                {
+                    "model": model,
+                    "slot": _storage_relative_path(slot),
+                    "generation": None,
+                    "status": "WARN",
+                    "manifest": "unknown",
+                    "detail": "LIVE 가 유효한 세대를 가리키지 않음",
+                }
+            )
+            continue
+        entries.append(_compare_serving_generation(model, slot, tree))
+
+    return entries or None
 
 
 def verify_chroma_db() -> tuple[bool, str]:
@@ -1059,11 +1211,13 @@ def generate_verification_report(
     *,
     step_timings: dict[str, float] | None = None,
     segments: list[dict[str, object]] | None = None,
+    serving_generations: list[dict] | None = None,
 ) -> dict:
     """검증 결과를 날짜, HEAD 커밋, 항목별 판정이 담긴 보고서로 생성 및 저장합니다.
 
-    step_timings 와 segments 는 계측값입니다. 넘어온 경우에만 보고서에 추가
-    필드로 붙으며, 판정 키(overall_verdict, results)에는 관여하지 않습니다.
+    step_timings, segments, serving_generations 는 관측값입니다. 넘어온 경우에만
+    보고서에 추가 필드로 붙으며, 판정 키(overall_verdict, results)에는 관여하지
+    않습니다. serving_generations 가 None 이면 키를 만들지 않습니다.
     """
     from datetime import datetime
 
@@ -1093,6 +1247,8 @@ def generate_verification_report(
         report["step_timings"] = dict(step_timings)
     if segments is not None:
         report["segments"] = list(segments)
+    if serving_generations is not None:
+        report["serving_generations"] = list(serving_generations)
 
     target_path = output_path or DEFAULT_REPORT_PATH
     try:
@@ -1211,6 +1367,21 @@ def main() -> int:
     step1_ok, step1_msg = (
         _timed_step("weights", verify_model_weights) if _wanted("weights") else (True, "단계 생략")
     )
+    # 서빙 세대 대조는 관측 항목입니다. 어떤 예외도 G1 판정과 종료 코드를
+    # 바꾸지 않도록 여기서 흡수하고 WARN 항목으로만 남깁니다.
+    serving_generations: list[dict] | None = None
+    if _wanted("weights"):
+        try:
+            serving_generations = collect_serving_generations()
+        except Exception as exc:
+            serving_generations = [
+                {
+                    "model": "*",
+                    "status": "WARN",
+                    "manifest": "unknown",
+                    "detail": f"서빙 세대 대조 실패: {type(exc).__name__}: {exc}",
+                }
+            ]
     step2_ok, step2_msg = (
         _timed_step("chroma", verify_chroma_db) if _wanted("chroma") else (True, "단계 생략")
     )
@@ -1264,6 +1435,7 @@ def main() -> int:
         output_path=args.report_path,
         step_timings=_INSTRUMENTATION.step_timings,
         segments=_INSTRUMENTATION.segments,
+        serving_generations=serving_generations,
     )
 
     print("-" * 60)
