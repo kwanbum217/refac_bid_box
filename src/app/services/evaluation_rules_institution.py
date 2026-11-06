@@ -64,6 +64,45 @@ _SRC_INST_KDHC_PREDECESSOR = (
     "낙찰하한율 원문 미인쇄, 계산값: B70·k4: 필요 55, x<=3.75 -> 84.245; "
     "B60·k2: 필요 45, x<=7.5 -> 80.495"
 )
+# 한국지역난방공사 2023-07-19 시행판 별표 9 기타용역의 구간 근거입니다. 원문 파일은 위
+# _SRC_INST_KDHC_PREDECESSOR 와 같은 R25BK01166116 seq6 이며, 별표 9 는 고시금액 미만
+# B 80·k 5·84.995% / 고시금액 이상 B 50·k 2·80.495%, 기준비율 88, 통과점수 85 를 인쇄합니다.
+# 2026-01-01 시행판도 같은 값을 인쇄합니다(docs/analysis/rule_not_found_32_source_20261106.md 2.4).
+_SRC_INST_KDHC_PREDECESSOR_OTHER = (
+    "나라장터 공고 R25BK01166116 첨부 '4. 일반용역 적격심사세부기준(개정전문).hwp' "
+    "(.cache/kdhc/R25BK01166116/seq6_ord000.bin, sha256 132ff7b89ba5fdd782f3316bbe6d2dfdb156987c822826516643e549f8ee697b, 409600 bytes); "
+    "별표 9 기타용역: B 고시금액 미만 80/고시금액 이상 50, k 고시금액 미만 5/고시금액 이상 2, "
+    "기준비율 88, 통과점수 85, 낙찰하한율 84.995/80.495; "
+    "docs/analysis/rule_not_found_32_source_20261106.md 2.4 (2026-01-01판도 같은 값)"
+)
+# 한국지역난방공사 기타용역 공고의 수요기관(지사·사업소) 코드입니다. 2026-11-06 읽기 전용 DB
+# 조회로 RULE_NOT_FOUND 32건 중 기타용역 17건의 dminsttCd 를 확인해 정확 목록으로 넣었습니다.
+# 대역 접두가 아니라 명시 목록이므로 다른 기관 코드에는 적용되지 않습니다.
+# 근거: docs/analysis/rule_not_found_32_source_20261106.md 2.4, 3.1, 4.1
+_KDHC_BRANCH_CODES: frozenset[str] = frozenset(
+    {
+        "D325102",
+        "D325104",
+        "D325107",
+        "D325109",
+        "D325112",
+        "D325114",
+        "D325115",
+        "D325116",
+        "D325150",
+        "D325152",
+        "D325156",
+        "D325160",
+    }
+)
+
+# 규칙 ID 별 정확한 수요기관 코드 목록입니다. 코드가 있는 공고는 _axis_matches 가 이 목록을
+# 먼저 대조하고, 목록 밖 코드는 종전처럼 기관 코드 불일치로 봅니다.
+INSTITUTION_RULE_EXACT_CODES: dict[str, frozenset[str]] = {
+    "SERVC_INST_KDHC_20260101_OTHER": _KDHC_BRANCH_CODES,
+    "SERVC_INST_KDHC_20230719_OTHER": _KDHC_BRANCH_CODES,
+}
+
 # 한국공항공사의 수요기관 하위 조직 표기입니다. db_readonly_query.py 로 한국공항공사 적격심사
 # 용역 공고의 dminsttCd·dminsttNm 을 조회해 나온 정확 일치 이름만 담았고, 접두 확장은 쓰지
 # 않습니다. 하위 조직 공고는 코드가 Z0038xx·D067524 대역이라 규칙 코드(B551178)와 달라
@@ -3387,3 +3426,48 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         quant_table=False,
     ),
 )
+
+# 한국지역난방공사 2023-07-19 시행판 별표 9 기타용역입니다. 현행판(2026-01-01 시행)과 값이
+# 같지만, 2025-12 공고 3건은 시행일 경계 때문에 현행 규칙으로 계산할 수 없어 직전판을 따로
+# 둡니다. 정량 배점표는 직전판 별도 등록 전까지 기관 원문 미반영으로 두어 직접 입력을
+# 요구합니다. 표준 기관 규칙 벌(INSTITUTION_RULES)의 배점표 계약을 바꾸지 않도록 별도 벌로
+# 두고, 기관 규칙 선택(_select_institution_rule)에서만 합칩니다.
+# 근거: docs/analysis/rule_not_found_32_source_20261106.md 2.4, 4.1, 4.2
+KDHC_OTHER_PREDECESSOR_RULE = _institution_rule(
+    "SERVC_INST_KDHC_20230719_OTHER",
+    institution_name="한국지역난방공사",
+    institution_code="B550373",
+    institution_aliases=("KDHC",),
+    service_type="GENERAL",
+    table_name="한국지역난방공사 일반용역 적격심사 (기타용역, 2023.07.19판)",
+    description="한국지역난방공사 별표 9 기타용역 2구간 (2023.07.19판)",
+    effective_date="2023-07-19",
+    superseded_date="2026-01-01",
+    source=_SRC_INST_KDHC_PREDECESSOR_OTHER,
+    patterns=("기타용역", "기타"),
+    bands=(
+        _inst_band(
+            "고시금액",
+            "80",
+            "5",
+            "88",
+            "85",
+            "84.995",
+            "별표 9 기타용역 고시금액 미만",
+            _SRC_INST_KDHC_PREDECESSOR_OTHER,
+        ),
+        _inst_band(
+            None,
+            "50",
+            "2",
+            "88",
+            "85",
+            "80.495",
+            "별표 9 기타용역 고시금액 이상",
+            _SRC_INST_KDHC_PREDECESSOR_OTHER,
+        ),
+    ),
+    quant_table=False,
+)
+
+PREDECESSOR_INSTITUTION_RULES: tuple[EvaluationRule, ...] = (KDHC_OTHER_PREDECESSOR_RULE,)
