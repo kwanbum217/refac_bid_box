@@ -1,4 +1,6 @@
+import ipaddress
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,8 @@ PROMETHEUS_RULES_PATH = REPO_ROOT / "docker" / "prometheus_rules.yml"
 ALERTMANAGER_CONFIG_PATH = REPO_ROOT / "docker" / "alertmanager.yml"
 GRAFANA_SLO_DASHBOARD_PATH = REPO_ROOT / "docker" / "grafana" / "dashboards" / "slo_alerts.json"
 
+INTERPOLATED_PASSWORD_PATTERN = re.compile(r"\$\{[A-Z0-9_]*PASSWORD")
+
 
 @pytest.fixture(scope="module")
 def compose() -> dict:
@@ -49,6 +53,13 @@ def _environment(service: dict) -> dict[str, str]:
 def _healthcheck_command(service: dict) -> str:
     test = service["healthcheck"]["test"]
     return " ".join(str(part) for part in test)
+
+
+def _command_string(service: dict) -> str:
+    command = service.get("command", "")
+    if isinstance(command, list):
+        return " ".join(str(part) for part in command)
+    return str(command)
 
 
 def _depends_on_names(service: dict) -> set[str]:
@@ -424,3 +435,54 @@ def test_all_prod_compose_services_pin_image_digest(compose: dict):
     assert pinned_count > 0, (
         "digest 가 고정된 이미지를 사용하는 서비스가 최소 1개 이상이어야 합니다."
     )
+
+
+def test_egress_network_uses_fixed_subnet(compose: dict):
+    """프록시가 붙는 egress 네트워크가 고정 서브넷을 가져야 합니다.
+
+    TRUSTED_PROXY_IPS 를 CIDR 로 안내하려면 컨테이너 IP 대역이 재기동 사이에
+    바뀌지 않아야 합니다. 브리지 기본 대역은 자동 할당이라 재생성 시 값이
+    달라지고, 그때 IP 축 로그인 제한이 전체 사용자 잠금으로 번집니다.
+    """
+    egress = compose["networks"]["egress"]
+    assert egress["driver"] == "bridge"
+    assert egress.get("internal", False) is False
+
+    configs = egress.get("ipam", {}).get("config", [])
+    assert configs, "egress 네트워크에 ipam 고정 서브넷이 선언되어야 합니다."
+    subnets = [entry.get("subnet") for entry in configs]
+    assert all(subnets), f"ipam config 에 subnet 이 없습니다: {configs}"
+
+    internal_configs = compose["networks"]["internal"].get("ipam", {}).get("config", [])
+    internal_networks = [ipaddress.ip_network(entry["subnet"]) for entry in internal_configs]
+    for subnet in subnets:
+        network = ipaddress.ip_network(subnet)
+        for internal_network in internal_networks:
+            assert not network.overlaps(internal_network), (
+                f"egress 서브넷 {subnet} 이 internal 서브넷 {internal_network} 과 겹칩니다."
+            )
+
+
+def test_healthchecks_and_commands_do_not_interpolate_passwords(compose: dict):
+    """healthcheck·command 에 Compose 가 보간한 비밀번호가 남으면 안 됩니다.
+
+    보간된 값은 docker inspect 와 컨테이너 내부 ps 에 남습니다. 컨테이너 안에서
+    해석되는 환경변수 참조($$)만 써야 하며, Redis 는 REDISCLI_AUTH 로
+    redis-cli 인자에 비밀번호를 싣지 않습니다.
+    """
+    for name, service in compose["services"].items():
+        candidates = [_command_string(service)]
+        if service.get("healthcheck"):
+            candidates.append(_healthcheck_command(service))
+        for candidate in candidates:
+            assert not INTERPOLATED_PASSWORD_PATTERN.search(candidate), (
+                f"서비스 '{name}'의 명령 또는 healthcheck 가 보간된 비밀번호를 포함합니다: "
+                f"{candidate}"
+            )
+
+    db = compose["services"]["db"]
+    assert "$$MYSQL_PASSWORD" in _healthcheck_command(db)
+
+    redis = compose["services"]["redis"]
+    assert "REDISCLI_AUTH" in _healthcheck_command(redis)
+    assert "$$REDIS_PASSWORD" in _command_string(redis)
