@@ -16,11 +16,12 @@ from types import SimpleNamespace
 import pytest
 
 from src.app.api.v1 import evaluations
-from src.app.api.v1.accounts import require_current_user
+from src.app.api.v1.accounts import get_current_user, require_current_user
 from src.app.core.security import (
     AUTHENTICATED_API_RATE_LIMIT_EXCEEDED_DETAIL,
     AUTHENTICATED_API_RATE_LIMIT_PREFIX,
     authenticated_api_rate_limiter,
+    enforce_anonymous_api_quota,
 )
 from src.app.main import app
 from src.app.schemas.predictions import PredictPriceResponse
@@ -60,10 +61,11 @@ class _OverLimitRedis:
 
 
 class _UnderLimitRedis:
-    """한도 안 상태를 흉내내며 접근 키를 기록하는 최소 대역."""
+    """한도 안 상태를 흉내내며 접근 키와 증가 횟수를 기록하는 최소 대역."""
 
     def __init__(self) -> None:
         self.keys: list[str] = []
+        self.increments: list[str] = []
 
     def get(self, key: str) -> None:
         self.keys.append(key)
@@ -75,6 +77,7 @@ class _UnderLimitRedis:
         class _Pipe:
             def incr(self, key: str):
                 outer.keys.append(key)
+                outer.increments.append(key)
                 return self
 
             def expire(self, key: str, ttl: int):
@@ -97,11 +100,29 @@ def as_user():
     app.dependency_overrides.pop(require_current_user, None)
 
 
+@pytest.fixture
+def as_predict_user():
+    """예측 API 의 get_current_user 를 인증 사용자로 바꾸는 대역."""
+
+    def _set_user(user_id: int) -> None:
+        app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=user_id)
+
+    yield _set_user
+    app.dependency_overrides.pop(get_current_user, None)
+
+
 @pytest.fixture(autouse=True)
 def _stub_prediction(monkeypatch):
-    """실제 모델 가중치를 로드하지 않도록 예측 API 를 대역으로 덮습니다."""
+    """실제 모델 가중치를 로드하지 않도록 예측 API 를 대역으로 덮습니다.
+
+    /recommend 는 라우트 진입에서 쿼터를 차감하지 않고 내부 predict_price_api 의
+    차감 한 번에 맡깁니다. 대역도 실제 엔드포인트처럼 인증 사용자일 때 쿼터를
+    한 번 적용해야 버킷 증가 횟수를 그대로 검증할 수 있습니다.
+    """
 
     def _fake_predict(payload, request, db, user=None):
+        if user is not None:
+            enforce_anonymous_api_quota(request, user)
         return PredictPriceResponse(
             status="success",
             optimal_price=440_000_000,
@@ -146,7 +167,6 @@ def _snapshot_payload(bid_id: int) -> dict:
     ("url", "payload_factory"),
     [
         (ANALYZE_URL, lambda bid_id: _analysis_payload(bid_id, score_table=SCORE_TABLE)),
-        (RECOMMEND_URL, _recommend_payload),
         (SNAPSHOTS_URL, _snapshot_payload),
     ],
 )
@@ -164,6 +184,49 @@ def test_over_limit_evaluation_route_returns_429(
     assert response.status_code == 429, response.text
     assert response.json()["detail"] == AUTHENTICATED_API_RATE_LIMIT_EXCEEDED_DETAIL
     assert fake.keys == [f"{AUTHENTICATED_API_RATE_LIMIT_PREFIX}{USER_ID}"]
+
+
+def test_over_limit_recommend_returns_429(client, isolated_db, as_user, monkeypatch):
+    """recommend 는 내부 예측의 차감이 한도를 넘으면 429 로 응답한다."""
+    as_user(USER_ID)
+    bid = _create_bid(isolated_db)
+    fake = _OverLimitRedis()
+    monkeypatch.setattr(authenticated_api_rate_limiter._conn, "client", lambda: fake)
+
+    response = client.post(RECOMMEND_URL, json=_recommend_payload(bid.id))
+
+    assert response.status_code == 429, response.text
+    assert response.json()["detail"] == AUTHENTICATED_API_RATE_LIMIT_EXCEEDED_DETAIL
+    assert fake.keys == [f"{AUTHENTICATED_API_RATE_LIMIT_PREFIX}{USER_ID}"]
+
+
+def test_recommend_increments_authenticated_bucket_once(client, isolated_db, as_user, monkeypatch):
+    """/recommend 1회는 같은 인증 사용자 버킷을 정확히 1 증가시킨다."""
+    as_user(USER_ID)
+    bid = _create_bid(isolated_db)
+    fake = _UnderLimitRedis()
+    monkeypatch.setattr(authenticated_api_rate_limiter._conn, "client", lambda: fake)
+
+    response = client.post(RECOMMEND_URL, json=_recommend_payload(bid.id))
+
+    assert response.status_code == 200, response.text
+    assert fake.increments == [f"{AUTHENTICATED_API_RATE_LIMIT_PREFIX}{USER_ID}"]
+
+
+def test_predict_price_increments_authenticated_bucket_once(client, as_predict_user, monkeypatch):
+    """/predict-price 1회도 같은 인증 사용자 버킷을 정확히 1 증가시킨다."""
+    as_predict_user(USER_ID)
+    fake = _UnderLimitRedis()
+    monkeypatch.setattr(authenticated_api_rate_limiter._conn, "client", lambda: fake)
+
+    # 공고가 없어도 쿼터 차감은 조회보다 먼저 일어나므로 증가 횟수를 볼 수 있다.
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": 987_654, "user_price": "1000000"},
+    )
+
+    assert response.status_code == 404, response.text
+    assert fake.increments == [f"{AUTHENTICATED_API_RATE_LIMIT_PREFIX}{USER_ID}"]
 
 
 def _comparable(payload: dict) -> dict:
