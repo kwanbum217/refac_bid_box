@@ -3290,10 +3290,10 @@ def resolve_evaluation_rule(
       하한율이 서로 다른데 추정가격이 없으면 하한율을 확정하지 않고(effective_lwlt_rate
       None) 호출부가 추정가격 입력을 요구합니다.
     - attachment_regime == "MOIS_ACADEMIC" 또는 "MOIS_TECH" 이고 낙찰방법명이
-      '2억미만 1억이상' 띠를 담으며 국가계약이 아닌 공고만, 시·도·기관 규칙으로
-      확정하지 못해 차단된 경우 행안부 예규 제2장의2 [별표 4] 학술연구용역 또는
-      [별표 2] 4. 기술용역의 2억미만 1억이상 열로 계산합니다. 첨부 판별이 없거나
-      다른 값이면 판정은 종전과 같습니다.
+      '2억미만 1억이상' 띠를 담으며 국가계약이 아닌 공고는, 조달청 기본 경로에서
+      규칙을 확정하지 못한 경우 기관 규칙 다음, 시·도 규칙보다 먼저 행안부 예규
+      제2장의2 [별표 4] 학술연구용역 또는 [별표 2] 4. 기술용역의 2억미만 1억이상
+      열로 계산합니다. 첨부 판별이 없거나 다른 값이면 판정은 종전과 같습니다.
     """
     method_name, method_source, method_warnings = resolve_method_name(
         sucsfbid_mthd_nm, sucsfbid_mthd_cd
@@ -3337,6 +3337,29 @@ def resolve_evaluation_rule(
         )
         if institution_block_code is not None:
             institution_block = (institution_block_code, institution_block_message)
+    attachment_band: tuple[EvaluationRule, str] | None = None
+    if (
+        attachment_regime in ("MOIS_ACADEMIC", "MOIS_TECH")
+        and all(marker in (method_name or "") for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS)
+        and contract_regime != "NATIONAL"
+        and result.is_blocked
+        and result.block_reason_code in _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES
+    ):
+        # 첨부 원문 판별이 학술연구용역·기술용역을 확정한 '2억미만 1억이상' 띠 공고는
+        # 기관 규칙 다음, 시·도 규칙보다 먼저 행안부 예규 제2장의2 해당 별표의
+        # 2억미만 1억이상 열로 계산합니다. 낙찰방법명만으로는 기준 문서가 갈려 확정하지
+        # 않으므로 조달청 기본 경로에서 풀지 못한 공고만 대상으로 하고 국가계약에는
+        # 적용하지 않습니다.
+        if attachment_regime == "MOIS_TECH":
+            candidate_band_rule = get_mois_tech_attachment_rule("1E_2E")
+            candidate_warning = MOIS_TECH_ATTACHMENT_WARNING
+        else:
+            candidate_band_rule = get_mois_academic_attachment_rule("1E_2E")
+            candidate_warning = MOIS_ACADEMIC_ATTACHMENT_WARNING
+        if candidate_band_rule is not None and (
+            announced is None or announced >= date.fromisoformat(candidate_band_rule.effective_date)
+        ):
+            attachment_band = (candidate_band_rule, candidate_warning)
     if institution_selected is not None:
         # 수요기관 기관 규칙을 확정했으므로 조달청 매칭 단계의 차단·경고를 기관 규칙 기준으로
         # 다시 적용합니다. 공고 하한율이 있으면 언제나 공고값이 우선합니다.
@@ -3358,6 +3381,16 @@ def resolve_evaluation_rule(
             rate_source=None,
         )
         scope_stage = RULE_SCOPE_INSTITUTION
+    elif attachment_band is not None:
+        attachment_band_rule, attachment_warning = attachment_band
+        result = replace(
+            _apply_rule_lwlt(result, attachment_band_rule, sucsfbid_lwlt_rate, estimated_price),
+            is_blocked=False,
+            block_reason_code=None,
+            block_reason_message=None,
+            warnings=[*result.warnings, attachment_warning],
+        )
+        scope_stage = RULE_SCOPE_ALL
     elif (
         contract_regime == "LOCAL"
         and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
@@ -3473,35 +3506,6 @@ def resolve_evaluation_rule(
                 block_reason_code=None,
                 block_reason_message=None,
                 warnings=[*result.warnings, MOIS_ACADEMIC_BAND_WARNING],
-            )
-            scope_stage = RULE_SCOPE_ALL
-    if (
-        attachment_regime in ("MOIS_ACADEMIC", "MOIS_TECH")
-        and all(marker in (method_name or "") for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS)
-        and contract_regime != "NATIONAL"
-        and result.is_blocked
-        and result.block_reason_code in _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES
-    ):
-        # 첨부 원문 판별이 학술연구용역·기술용역을 확정한 '2억미만 1억이상' 띠 공고만
-        # 행안부 예규 제2장의2 해당 별표의 2억미만 1억이상 열로 계산합니다. 낙찰방법명만으로는
-        # 기준 문서가 갈려 확정하지 않으므로, 시·도·기관 규칙으로도 풀지 못한 공고만
-        # 대상으로 하고 국가계약에는 적용하지 않습니다.
-        if attachment_regime == "MOIS_TECH":
-            attachment_band_rule = get_mois_tech_attachment_rule("1E_2E")
-            attachment_warning = MOIS_TECH_ATTACHMENT_WARNING
-        else:
-            attachment_band_rule = get_mois_academic_attachment_rule("1E_2E")
-            attachment_warning = MOIS_ACADEMIC_ATTACHMENT_WARNING
-        if attachment_band_rule is not None and (
-            announced is None
-            or announced >= date.fromisoformat(attachment_band_rule.effective_date)
-        ):
-            result = replace(
-                _apply_rule_lwlt(result, attachment_band_rule, sucsfbid_lwlt_rate, estimated_price),
-                is_blocked=False,
-                block_reason_code=None,
-                block_reason_message=None,
-                warnings=[*result.warnings, attachment_warning],
             )
             scope_stage = RULE_SCOPE_ALL
     if (
