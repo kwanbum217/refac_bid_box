@@ -168,6 +168,36 @@ async def notify_collection_window_clamped(event: dict[str, Any]) -> None:
     )
 
 
+async def notify_collection_partial_failure(failed_ranges: list[dict[str, Any]]) -> None:
+    """수집 부분 실패로 남은 재수집 대상 구간을 알립니다.
+
+    체크포인트가 MAX(date) 기준이라 실패 구간이 중간에 끼면 다음 실행이 그
+    구간을 다시 보지 않습니다. 자동 회수 범위(MAX_CATCHUP_DAYS) 밖으로 밀리면
+    영구 누락이므로, 실패 구간은 로그가 아니라 사람에게 닿아야 합니다.
+    원문 응답이나 서비스 키는 담지 않고 분류·종류·구간·건수만 남깁니다.
+    """
+    if not failed_ranges:
+        return
+
+    max_lines = 20
+    lines = [f"자동 회수되지 않는 실패 구간이 {len(failed_ranges)}건 있습니다."]
+    for item in failed_ranges[:max_lines]:
+        lines.append(
+            f"{item.get('kind', 'unknown')} / {item.get('category') or '공통'}: "
+            f"{item.get('start_date', '?')} ~ {item.get('end_date', '?')}"
+        )
+    if len(failed_ranges) > max_lines:
+        lines.append(f"외 {len(failed_ranges) - max_lines}건")
+    lines.extend(
+        [
+            "",
+            "체크포인트가 최신일 기준이라 다음 실행에서 이 구간을 다시 보지 않습니다.",
+            "  uv run python scripts/backfill_from_g2b.py",
+        ]
+    )
+    await notify("수집 부분 실패: 재수집이 필요한 구간이 있습니다", lines, level="warning")
+
+
 async def notify_collection_gap(elapsed_hours: float, latest_collected_at: str | None) -> None:
     """수집 실행 공백이 알림 임계(72시간) 이상일 때 발신합니다."""
     lines = [f"마지막 수집 후 {elapsed_hours:.1f}시간 경과했습니다."]
