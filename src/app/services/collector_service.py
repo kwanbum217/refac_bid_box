@@ -231,7 +231,14 @@ def _ignore_prefix(db: Session) -> str:
 
 
 def _bulk_insert(db: Session, model, rows: list[dict[str, Any]]) -> int:
-    """유니크 제약 위반은 무시하고 적재합니다 (원본 bulk_create ignore_conflicts 대응)."""
+    """유니크 제약 위반은 무시하고 적재한 뒤 실제 반영 행 수를 돌려줍니다.
+
+    INSERT IGNORE/OR IGNORE 는 중복을 오류 없이 버리므로 시도 건수를 그대로
+    세면 재실행·중복 구간에서 적재 건수가 과대 보고됩니다. 이 함수가 돌려주는
+    값은 따라서 시도 건수가 아니라 실제 삽입된 행 수이며, announcement_count
+    같은 수집 지표도 이 의미로 기록됩니다. 드라이버가 rowcount 를 -1 로 돌리면
+    (지원하지 않는 경우) 시도 건수로 대체합니다.
+    """
     if not rows:
         return 0
     stmt = insert(model.__table__).prefix_with(_ignore_prefix(db))
@@ -243,9 +250,10 @@ def _bulk_insert(db: Session, model, rows: list[dict[str, Any]]) -> int:
                 continue
             for row in chunk:
                 row.setdefault("collected_at", utcnow())
-            db.execute(stmt, chunk)
+            result = db.execute(stmt, chunk)
+            rowcount = getattr(result, "rowcount", -1)
             db.commit()
-            inserted += len(chunk)
+            inserted += rowcount if rowcount is not None and rowcount >= 0 else len(chunk)
         return inserted
     except Exception:
         try:
@@ -653,4 +661,15 @@ async def collect_bids(
     # 수집 실행이 끝나는 지점에서 한 번만 지표로 옮깁니다. metrics 딕셔너리는
     # 그대로 반환하므로 기존 수집 동작과 반환값은 바뀌지 않습니다.
     record_collection_metrics(metrics)
+
+    # 실패 구간은 체크포인트가 MAX(date) 라 다음 실행이 다시 보지 않습니다.
+    # 로그·반환값만으로는 사람이 모르므로 여기서 한 번 알립니다. 알림 실패가
+    # 수집 결과나 체크포인트를 바꾸지 않도록 예외는 삼킵니다.
+    if metrics["failed_ranges"]:
+        try:
+            from src.tasks import notifier
+
+            await notifier.notify_collection_partial_failure(metrics["failed_ranges"])
+        except Exception as exc:
+            logger.warning("수집 부분 실패 알림 발신 실패: %s", mask_credentials(exc))
     return metrics
