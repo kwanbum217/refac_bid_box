@@ -13,10 +13,11 @@ Alertmanager Slack 수신기 및 비밀값 파일 주입 배선 테스트.
 7. scripts/render_alertmanager_secret.py 가 값이 없을 때 파일을 생성하지 않음.
 8. 렌더 스크립트가 값을 출력(stdout/stderr)에 절대 노출하지 않음.
 9. 렌더 스크립트가 생성한 파일의 권한이 0600 으로 설정됨.
-10. 도커가 생성한 빈 디렉터리 함정을 렌더 스크립트가 안전하게 방어함.
-11. 저장소 추적 파일 어디에도 실제 Slack webhook 토큰 경로가 커밋되지 않음.
-12. .gitignore 에 docker/secrets/ 가 포함되어 있음.
-13. docker-compose.prod.yml 의 alertmanager 서비스에 비밀 파일 볼륨 마운트가 명시됨.
+10. 렌더 스크립트가 ALERTMANAGER_SLACK_WARNING_WEBHOOK_URL 로 warning 비밀 파일도 생성함.
+11. 도커가 생성한 빈 디렉터리 함정을 렌더 스크립트가 안전하게 방어함.
+12. 저장소 추적 파일 어디에도 실제 Slack webhook 토큰 경로가 커밋되지 않음.
+13. .gitignore 에 docker/secrets/ 가 포함되어 있음.
+14. docker-compose.prod.yml 의 alertmanager 서비스에 비밀 파일 볼륨 마운트가 명시됨.
 """
 
 from __future__ import annotations
@@ -195,6 +196,31 @@ def test_render_script_creates_file_with_0600_permissions(tmp_path: Path) -> Non
     if os.name == "posix":
         mode = oct(out_file.stat().st_mode & 0o777)
         assert mode == "0o600", f"파일 권한이 0600 이어야 합니다: {mode}"
+
+
+def test_render_script_creates_warning_secret_file(tmp_path: Path) -> None:
+    """warning 전용 키가 있으면 warning 비밀 파일도 별도 값으로 생성하는지 검증합니다."""
+    critical_url = "https://example.invalid/slack/critical"
+    warning_url = "https://example.invalid/slack/warning"
+    test_env = tmp_path / ".env.warning"
+    test_env.write_text(
+        f"ALERTMANAGER_SLACK_WEBHOOK_URL={critical_url}\n"
+        f"ALERTMANAGER_SLACK_WARNING_WEBHOOK_URL={warning_url}\n",
+        encoding="utf-8",
+    )
+
+    out_file = tmp_path / "secrets" / "alertmanager_slack_url"
+    warning_file = tmp_path / "secrets" / "alertmanager_slack_warning_url"
+    success = render_alertmanager_secret(env_file_path=test_env, output_file_path=out_file)
+
+    assert success, "두 키가 있으면 True 를 반환해야 합니다."
+    assert out_file.read_text(encoding="utf-8").strip() == critical_url
+    assert warning_file.is_file(), "warning 비밀 파일도 생성되어야 합니다."
+    assert warning_file.read_text(encoding="utf-8").strip() == warning_url
+
+    if os.name == "posix":
+        mode = oct(warning_file.stat().st_mode & 0o777)
+        assert mode == "0o600", f"warning 파일 권한이 0600 이어야 합니다: {mode}"
 
 
 def test_render_script_does_not_leak_secret(

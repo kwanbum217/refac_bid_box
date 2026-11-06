@@ -37,6 +37,7 @@ INFRA_ONLY_KEYS = frozenset(
         "GF_SECURITY_ADMIN_PASSWORD",
         "G2B_SERVICE_KEY",
         "ALERTMANAGER_SLACK_WEBHOOK_URL",
+        "ALERTMANAGER_SLACK_WARNING_WEBHOOK_URL",
         "WORKER_HEARTBEAT_MAX_AGE_SECONDS",
     }
 )
@@ -316,7 +317,7 @@ def test_settings_and_env_example_parity():
     """Settings 모델 필드와 .env.example 키 대응을 동적으로 전수 검증합니다.
 
     새로운 필드가 Settings 에 추가되었는데 .env.example 에 반영되지 않으면 이 테스트는 즉시 실패합니다.
-    컨테이너 전용 인프라 키(INFRA_ONLY_KEYS) 6개는 명시적 예외로 허용됩니다.
+    컨테이너 전용 인프라 키(INFRA_ONLY_KEYS) 7개는 명시적 예외로 허용됩니다.
     """
     env_path = Path(".env.example")
     assert env_path.exists(), ".env.example 파일이 존재해야 합니다."
@@ -346,7 +347,7 @@ def test_settings_and_env_example_parity():
         f".env.example 에 정의되었으나 Settings 및 INFRA_ONLY_KEYS 에 존재하지 않는 키가 있습니다: {sorted(extra_in_env)}"
     )
 
-    # 3. 인프라 전용 키 6개가 .env.example 에 모두 존재하는지 검증
+    # 3. 인프라 전용 키 7개가 .env.example 에 모두 존재하는지 검증
     missing_infra = INFRA_ONLY_KEYS - env_keys
     assert not missing_infra, (
         f"컨테이너 인프라 전용 필수 키가 .env.example 에 누락되었습니다: {sorted(missing_infra)}"

@@ -2,8 +2,10 @@
 """
 scripts/render_alertmanager_secret.py
 
-.env 의 ALERTMANAGER_SLACK_WEBHOOK_URL 을 읽어
-docker/secrets/alertmanager_slack_url 파일로 생성합니다.
+.env 의 ALERTMANAGER_SLACK_WEBHOOK_URL 과
+ALERTMANAGER_SLACK_WARNING_WEBHOOK_URL 을 읽어
+docker/secrets/alertmanager_slack_url 과
+docker/secrets/alertmanager_slack_warning_url 파일로 생성합니다.
 
 Alertmanager 는 설정 파일(alertmanager.yml) 내에서 환경변수 치환(${VAR})을
 지원하지 않으므로 api_url_file 지시자를 통해 비밀값 파일을 직접 참조합니다.
@@ -13,6 +15,7 @@ Alertmanager 는 설정 파일(alertmanager.yml) 내에서 환경변수 치환($
 2. 생성된 비밀 파일은 소유자 읽기/쓰기 전용 권한(0600)으로 제한합니다.
 3. 값이 없거나 비어 있으면 파일을 생성하지 않고 안전하게 종료합니다.
 4. Docker 가 부재 중인 마운트 대상을 디렉터리로 자동 생성한 경우 이를 정리합니다.
+5. warning 전용 웹훅이 비어 있으면 critical 웹훅 값으로 대체하고 경고를 남깁니다.
 """
 
 from __future__ import annotations
@@ -22,6 +25,11 @@ import contextlib
 import os
 import sys
 from pathlib import Path
+
+CRITICAL_WEBHOOK_ENV_VAR = "ALERTMANAGER_SLACK_WEBHOOK_URL"
+WARNING_WEBHOOK_ENV_VAR = "ALERTMANAGER_SLACK_WARNING_WEBHOOK_URL"
+CRITICAL_FILENAME = "alertmanager_slack_url"
+WARNING_FILENAME = "alertmanager_slack_warning_url"
 
 
 def _parse_env_file(env_file_path: Path) -> dict[str, str]:
@@ -54,62 +62,60 @@ def _parse_env_file(env_file_path: Path) -> dict[str, str]:
     return env_vars
 
 
-def get_webhook_url(env_file_path: Path | None = None) -> str:
-    """ALERTMANAGER_SLACK_WEBHOOK_URL 값을 조회합니다.
+def _get_env_value(key: str, env_file_path: Path | None = None) -> str:
+    """지정 키의 값을 조회합니다.
 
     .env 파일 조회를 우선하며 시스템 환경변수를 보조로 참조합니다.
     """
     if env_file_path is not None and env_file_path.is_file():
         parsed = _parse_env_file(env_file_path)
-        if "ALERTMANAGER_SLACK_WEBHOOK_URL" in parsed:
-            return parsed["ALERTMANAGER_SLACK_WEBHOOK_URL"].strip()
+        if key in parsed:
+            return parsed[key].strip()
 
     # 기본 .env 파일 확인
     default_env = Path(__file__).resolve().parent.parent / ".env"
     if default_env.is_file():
         parsed = _parse_env_file(default_env)
-        if "ALERTMANAGER_SLACK_WEBHOOK_URL" in parsed:
-            return parsed["ALERTMANAGER_SLACK_WEBHOOK_URL"].strip()
+        if key in parsed:
+            return parsed[key].strip()
 
     # 시스템 환경변수 확인
-    return os.environ.get("ALERTMANAGER_SLACK_WEBHOOK_URL", "").strip()
+    return os.environ.get(key, "").strip()
 
 
-def render_alertmanager_secret(
-    env_file_path: Path | None = None,
-    output_file_path: Path | None = None,
-) -> bool:
-    """비밀 파일을 렌더링합니다.
+def get_webhook_url(env_file_path: Path | None = None) -> str:
+    """ALERTMANAGER_SLACK_WEBHOOK_URL(critical) 값을 조회합니다."""
+    return _get_env_value(CRITICAL_WEBHOOK_ENV_VAR, env_file_path)
 
-    Returns:
-        bool: 파일이 생성되었으면 True, 값이 없어 생성되지 않았으면 False
-    """
-    project_root = Path(__file__).resolve().parent.parent
-    if output_file_path is None:
-        output_file_path = project_root / "docker" / "secrets" / "alertmanager_slack_url"
 
-    webhook_url = get_webhook_url(env_file_path)
+def get_warning_webhook_url(env_file_path: Path | None = None) -> str:
+    """ALERTMANAGER_SLACK_WARNING_WEBHOOK_URL(warning) 값을 조회합니다."""
+    return _get_env_value(WARNING_WEBHOOK_ENV_VAR, env_file_path)
 
-    # 도커가 바인드 마운트 대상 부재 시 디렉터리를 자동 생성하는 함정 방어
-    if output_file_path.is_dir():
-        try:
-            output_file_path.rmdir()
-        except OSError as err:
-            sys.stderr.write(f"경고: 기존 디렉터리 정리 실패 ({output_file_path}): {err}\n")
 
-    if not webhook_url:
-        # 값이 없을 때는 파일을 생성하지 않고 안전하게 안내만 출력
-        sys.stdout.write(
-            "ALERTMANAGER_SLACK_WEBHOOK_URL 이 설정되지 않았거나 비어 있어 비밀 파일을 생성하지 않습니다.\n"
-        )
-        return False
+def _remove_directory_trap(output_file_path: Path) -> None:
+    """도커가 바인드 마운트 대상 부재 시 디렉터리를 자동 생성하는 함정을 방어합니다."""
+    if not output_file_path.is_dir():
+        return
+    try:
+        output_file_path.rmdir()
+    except OSError as err:
+        sys.stderr.write(f"경고: 기존 디렉터리 정리 실패 ({output_file_path}): {err}\n")
 
+
+def _write_secret_file(
+    output_file_path: Path,
+    value: str,
+    project_root: Path,
+    label: str,
+) -> None:
+    """비밀 파일을 0600 권한으로 쓰고 경로만 출력합니다."""
     # 부모 디렉터리 생성 (0700 권한)
     secrets_dir = output_file_path.parent
     secrets_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
 
     # 비밀 파일 쓰기 (개행 포함)
-    output_file_path.write_text(webhook_url + "\n", encoding="utf-8")
+    output_file_path.write_text(value + "\n", encoding="utf-8")
 
     # 파일 권한 0600 (소유자 읽기/쓰기 전용)
     os.chmod(output_file_path, 0o600)
@@ -119,8 +125,51 @@ def render_alertmanager_secret(
     with contextlib.suppress(ValueError):
         rel_path = output_file_path.relative_to(project_root)
 
-    sys.stdout.write(
-        f"Alertmanager Slack 웹훅 비밀 파일이 생성되었습니다: {rel_path} (권한: 0600)\n"
+    sys.stdout.write(f"{label} 비밀 파일이 생성되었습니다: {rel_path} (권한: 0600)\n")
+
+
+def render_alertmanager_secret(
+    env_file_path: Path | None = None,
+    output_file_path: Path | None = None,
+    warning_output_file_path: Path | None = None,
+) -> bool:
+    """critical·warning 비밀 파일을 렌더링합니다.
+
+    Returns:
+        bool: 파일이 하나라도 생성되었으면 True, 값이 모두 없어 생성되지 않았으면 False
+    """
+    project_root = Path(__file__).resolve().parent.parent
+    if output_file_path is None:
+        output_file_path = project_root / "docker" / "secrets" / CRITICAL_FILENAME
+    if warning_output_file_path is None:
+        warning_output_file_path = output_file_path.parent / WARNING_FILENAME
+
+    webhook_url = get_webhook_url(env_file_path)
+    warning_webhook_url = get_warning_webhook_url(env_file_path)
+
+    _remove_directory_trap(output_file_path)
+
+    if not webhook_url:
+        # 값이 없을 때는 critical 파일을 생성하지 않고 안전하게 안내만 출력
+        sys.stdout.write(
+            "ALERTMANAGER_SLACK_WEBHOOK_URL 이 설정되지 않았거나 비어 있어 비밀 파일을 생성하지 않습니다.\n"
+        )
+    else:
+        _write_secret_file(output_file_path, webhook_url, project_root, "Alertmanager Slack 웹훅")
+
+    if not warning_webhook_url:
+        if not webhook_url:
+            # 두 키가 모두 비어 있으면 기존과 같이 실패 동작을 유지
+            return False
+        sys.stderr.write("경고: warning 전용 웹훅이 없어 critical 웹훅으로 대체했습니다\n")
+        warning_webhook_url = webhook_url
+
+    _remove_directory_trap(warning_output_file_path)
+    _write_secret_file(
+        warning_output_file_path,
+        warning_webhook_url,
+        project_root,
+        "Alertmanager Slack 웹훅(warning)",
     )
     return True
 
@@ -137,13 +186,23 @@ def main() -> int:
         "--output-file",
         type=Path,
         default=None,
-        help="생성할 비밀 파일 경로 (기본값: docker/secrets/alertmanager_slack_url)",
+        help="생성할 critical 비밀 파일 경로 (기본값: docker/secrets/alertmanager_slack_url)",
+    )
+    parser.add_argument(
+        "--warning-output-file",
+        type=Path,
+        default=None,
+        help=(
+            "생성할 warning 비밀 파일 경로 "
+            "(기본값: critical 비밀 파일과 같은 디렉터리의 alertmanager_slack_warning_url)"
+        ),
     )
 
     args = parser.parse_args()
     render_alertmanager_secret(
         env_file_path=args.env_file,
         output_file_path=args.output_file,
+        warning_output_file_path=args.warning_output_file,
     )
     return 0
 
