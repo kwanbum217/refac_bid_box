@@ -260,3 +260,45 @@ def test_pdf_extraction_uses_pdfplumber(monkeypatch: pytest.MonkeyPatch) -> None
     assert len(opened) == 1
     assert result.reason is None
     assert result.texts == (PDF_TEXT,)
+
+
+def test_upsert_normalizes_rows_so_mysql_update_columns_exist(monkeypatch):
+    """행마다 키가 달라도 MySQL INSERT 컬럼 목록에 갱신 절의 모든 컬럼이 들어가야 합니다."""
+    from sqlalchemy.dialects import mysql
+
+    import scripts.classify_band_regime as mod
+
+    captured: dict = {}
+
+    class _Bind:
+        dialect = mysql.dialect()
+
+    class _Db:
+        def get_bind(self):
+            return _Bind()
+
+        def execute(self, stmt, rows):
+            captured["sql"] = str(stmt.compile(dialect=mysql.dialect()))
+            captured["table"] = stmt.table
+            captured["rows"] = rows
+
+        def commit(self):
+            captured["committed"] = True
+
+    row_without_error = {
+        "bid_ntce_no": "R1",
+        "bid_ntce_ord": "000",
+        "category": "Servc",
+        "regime": "PPS",
+        "status": "CLASSIFIED",
+    }
+    mod._upsert_regime(_Db(), [row_without_error])
+
+    for name in mod._UPSERT_COLUMNS:
+        assert all(name in row for row in captured["rows"])
+        assert f"new.{name}" in captured["sql"] or f"VALUES({name})" in captured["sql"]
+    # ORM 모델로 만든 INSERT 는 ORM 일괄 경로에서 None 컬럼을 빼 MySQL 1054 를 냅니다.
+    from sqlalchemy import Table
+
+    assert isinstance(captured["table"], Table)
+    assert captured["committed"] is True
