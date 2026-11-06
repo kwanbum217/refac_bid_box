@@ -1974,6 +1974,16 @@ MOIS_ACADEMIC_ATTACHMENT_WARNING = (
     "그 2억미만 1억이상 열을 적용했습니다."
 )
 
+# 첨부 판별이 조달청 기준(PPS)으로 확정된 '2억미만 1억이상' 띠 공고의 구제 분기입니다.
+# 조달청 일반용역 적격심사 세부기준 원문에는 1억~2억 띠가 없고, 첨부가 [별표 1]
+# 학술연구용역을 지목하면 공고일 판본의 학술연구용역 고시금액 미만 규칙이 그 띠를
+# 담당합니다. 근거: docs/analysis/pps_band_1e2e_check_20261106.md 2.2, 4.3
+_PPS_ATTACHMENT_BAND_MARKERS = ("2억미만", "1억이상")
+PPS_ACADEMIC_BAND_ATTACHMENT_WARNING = (
+    "첨부 공고문이 조달청 [별표 1] 학술연구용역을 지정해, 추정가격 2억미만 1억이상 "
+    "표기를 조달청 학술연구용역 고시금액 미만 규칙으로 계산했습니다."
+)
+
 # 첨부 판별로 기술용역이 확인된 공고에만 쓴다. 낙찰방법명 매칭에 쓰지 않는다.
 # '추정가격 2억미만 1억이상' 표기는 공고마다 기준 문서가 갈려 낙찰방법명만으로는 확정하지
 # 않으므로, 첨부 문서로 [별표 2] 4. 기술용역이 확인된 공고의 조회에만 이 규칙을 씁니다.
@@ -3149,6 +3159,45 @@ def _allocate_rules_for_announcement(
     return regime_rules
 
 
+def _attachment_annex_is_academic(raw_data: dict[str, Any] | None) -> bool:
+    """첨부 판별과 공고 근거가 조달청 [별표 1] 학술연구용역을 지목하는지 확인합니다.
+
+    PPS 갈래는 별표 번호까지 전달하지 않으므로, 판별 근거(matched_rules·evidence)와
+    공고의 낙찰방법 적용 기준·공고명에서 학술연구 표기를 확인합니다. 어느 것도 확인되지
+    않으면 별표 유형을 정하지 못한 것으로 보고 구제하지 않습니다.
+    """
+    if not raw_data:
+        return False
+    matched = raw_data.get("matched_rules", raw_data.get("matchedRules"))
+    if isinstance(matched, str):
+        if "R7" in {token.strip() for token in matched.split(",")}:
+            return True
+    elif isinstance(matched, (list, tuple)) and "R7" in matched:
+        return True
+    for key in ("evidence", "sucsfbidMthdAppStd", "bidNtceNm"):
+        value = raw_data.get(key)
+        if isinstance(value, str) and "학술연구" in value:
+            return True
+    return False
+
+
+def _select_pps_academic_under_notice_rule(announced: date | None) -> EvaluationRule | None:
+    """공고일 판본의 조달청 학술연구용역 고시금액 미만 규칙을 고릅니다.
+
+    공고일이 없거나 가장 이른 판본보다 앞서면 규칙을 확정하지 않고 None 을 돌려
+    종전 차단을 유지합니다.
+    """
+    if announced is None:
+        return None
+    for rule in _rules_for_announcement_date(announced):
+        if rule.service_type != "ACADEMIC" or "고시금액 미만" not in rule.table_name:
+            continue
+        if announced < date.fromisoformat(rule.effective_date):
+            continue
+        return rule
+    return None
+
+
 def _narrow_rule_scope(
     result: RuleResolutionResult,
     *,
@@ -3334,6 +3383,11 @@ def resolve_evaluation_rule(
       규칙을 확정하지 못한 경우 기관 규칙 다음, 시·도 규칙보다 먼저 행안부 예규
       제2장의2 [별표 4] 학술연구용역 또는 [별표 2] 4. 기술용역의 2억미만 1억이상
       열로 계산합니다. 첨부 판별이 없거나 다른 값이면 판정은 종전과 같습니다.
+    - attachment_regime == "PPS" 이고 낙찰방법명이 '2억미만 1억이상' 띠를 담으며
+      조달청 기본 매칭이 RULE_NOT_FOUND 로 끝난 공고는, 판별 근거(matched_rules·
+      evidence)나 공고의 낙찰방법 적용 기준·공고명이 [별표 1] 학술연구용역을
+      지목한 경우에만 공고일 판에 맞는 조달청 학술연구용역 고시금액 미만 규칙으로
+      계산합니다. 별표 유형을 확인하지 못하면 종전처럼 차단합니다.
     """
     method_name, method_source, method_warnings = resolve_method_name(
         sucsfbid_mthd_nm, sucsfbid_mthd_cd
@@ -3379,6 +3433,20 @@ def resolve_evaluation_rule(
             institution_block = (institution_block_code, institution_block_message)
     attachment_band: tuple[EvaluationRule, str] | None = None
     if (
+        attachment_regime == "PPS"
+        and all(marker in (method_name or "") for marker in _PPS_ATTACHMENT_BAND_MARKERS)
+        and result.is_blocked
+        and result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND
+        and _attachment_annex_is_academic(raw_data)
+    ):
+        # 조달청 기준(PPS) 첨부가 [별표 1] 학술연구용역을 지목한 '2억미만 1억이상' 띠
+        # 공고는 조달청 원문에 그 띠가 없어 낙찰방법명 매칭이 RULE_NOT_FOUND 로 끝납니다.
+        # 이때만 공고일 판본의 학술연구용역 고시금액 미만 규칙으로 계산합니다. 별표 유형을
+        # 확인하지 못한 PPS 공고와 띠 표기가 없는 공고는 종전 차단을 유지합니다.
+        candidate_band_rule = _select_pps_academic_under_notice_rule(announced)
+        if candidate_band_rule is not None:
+            attachment_band = (candidate_band_rule, PPS_ACADEMIC_BAND_ATTACHMENT_WARNING)
+    elif (
         attachment_regime in ("MOIS_ACADEMIC", "MOIS_TECH")
         and all(marker in (method_name or "") for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS)
         and contract_regime != "NATIONAL"
