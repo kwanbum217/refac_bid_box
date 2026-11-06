@@ -1857,6 +1857,31 @@ MOIS_ACADEMIC_BAND_RULES: tuple[EvaluationRule, ...] = (
     ),
 )
 
+# 첨부 판별로 학술연구가 확인된 공고에만 쓴다. 낙찰방법명 매칭에 쓰지 않는다.
+# '추정가격 2억미만 1억이상' 표기는 공고마다 기준 문서가 갈려 낙찰방법명만으로는 확정하지
+# 않으므로, 첨부 문서로 학술연구용역이 확인된 공고의 조회에만 이 규칙을 씁니다.
+MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E",
+        service_type="ACADEMIC",
+        table_name="행안부 예규 제2장의2 [별표 4] 학술연구용역 (추정가격 2억미만 1억이상)",
+        description="추정가격 2억미만 1억이상 학술연구용역 평가기준 (행안부 예규 제2장의2 [별표 4])",
+        effective_date="2025-07-01",
+        source=(
+            "행정안전부 예규 제325호(시행 2025-07-01)·제373호(시행 2026-07-01) "
+            "제2장의2 [별표 4] 학술연구용역 평가기준 2억미만 1억이상 열"
+        ),
+        patterns=("추정가격 2억미만 1억이상", "추정가격 2억 미만 1억 이상"),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        max_price_score=Decimal("60"),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("85"),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=_SRC_MOIS_ACADEMIC_BAND,
+    ),
+)
+
 MOIS_ACADEMIC_BAND_WARNING = (
     "낙찰방법명이 추정가격 띠만 적은 지방계약 공고라 행정안전부 예규 제2장의2 [별표 4] "
     "학술연구용역 평가기준의 해당 열을 적용했습니다."
@@ -1874,6 +1899,16 @@ def select_mois_academic_band_rule(method_name: str | None) -> EvaluationRule | 
     for rule in MOIS_ACADEMIC_BAND_RULES:
         if match_rule_by_mthd_nm(name, rules=(rule,)) is not None:
             return rule
+    return None
+
+
+def get_mois_academic_attachment_rule(band: str) -> EvaluationRule | None:
+    """첨부 판별로 학술연구가 확인된 공고의 띠 열 규칙을 돌려줍니다.
+
+    band 가 '1E_2E' 일 때만 행안부 [별표 4] 2억미만 1억이상 열 규칙을 돌려줍니다.
+    """
+    if band == "1E_2E":
+        return MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES[0]
     return None
 
 
