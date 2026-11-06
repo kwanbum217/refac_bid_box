@@ -46,16 +46,23 @@ import pandas as pd  # noqa: E402
 
 from scripts.eval_servc_year_holdout import build_frame  # noqa: E402
 from src.ml.features import apply_categorical_dtypes  # noqa: E402
+from src.ml.model_registry import resolve_serving_tree  # noqa: E402
 
 SERVING_DIR = PROJECT_ROOT / "data" / "model_files" / "servc_institution_v1"
+
+
+def serving_tree() -> Path:
+    """LIVE 세대가 가리키는 실제 서빙 트리를 돌려줍니다."""
+    return resolve_serving_tree(SERVING_DIR)
 
 
 def load_serving_model() -> tuple[lgb.LGBMRegressor, list[str], dict[str, list[str]]]:
     """서빙 아티팩트와 그것이 요구하는 특징 목록·범주 수준을 함께 읽습니다."""
     import json
 
-    metadata = json.loads((SERVING_DIR / "metadata.json").read_text(encoding="utf-8"))
-    model = cast(lgb.LGBMRegressor, joblib.load(SERVING_DIR / "model.bin"))
+    tree = serving_tree()
+    metadata = json.loads((tree / "metadata.json").read_text(encoding="utf-8"))
+    model = cast(lgb.LGBMRegressor, joblib.load(tree / "model.bin"))
     features = metadata.get("required_features") or []
     levels = metadata.get("category_levels") or metadata.get("categorical_levels") or {}
     return model, list(features), levels if isinstance(levels, dict) else {}
@@ -83,8 +90,9 @@ def main() -> int:
     if not path.exists():
         print(f"데이터셋이 없습니다: {path}")
         return 1
-    if not (SERVING_DIR / "model.bin").exists():
-        print(f"서빙 모델이 없습니다: {SERVING_DIR}")
+    tree = serving_tree()
+    if not (tree / "model.bin").exists():
+        print(f"서빙 모델이 없습니다: {tree}")
         return 1
 
     frame = build_frame(path, args.train_end)

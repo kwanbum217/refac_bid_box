@@ -96,6 +96,10 @@ HEAVY_TASK_NAMES: frozenset[str] = frozenset(
         # nightly_schedule_task 는 여기에 넣지 않는다. cron 등록에서 timeout=10800 을
         # 직접 받고 있으며 WorkerSettings.functions 에는 없어 이 목록의 적용 대상이 아니다.
         "run_schedule_catchup_task",
+        # 주간 재학습 따라잡기는 본문이 heavy_task_guard 안에서 돌아 잠금 대기가
+        # job_timeout 안에서 흐른다. 기본 1800초로는 앞선 무거운 작업이 길 때 대기 중
+        # 타임아웃되므로 원 태스크와 같은 3시간 상한을 받게 한다.
+        "run_weekly_retrain_catchup_task",
     }
 )
 
