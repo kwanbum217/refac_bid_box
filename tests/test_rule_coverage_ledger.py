@@ -621,3 +621,13 @@ def test_to_record_passes_education_flag(monkeypatch: pytest.MonkeyPatch) -> Non
         },
     )
     assert captured[1]["education_institution"] is False
+
+
+def test_institution_rule_ids_keep_institution_rules_beyond_top_three() -> None:
+    from collections import Counter
+
+    rule_ids = Counter({"PPS_A": 9, "PPS_B": 5, "PPS_C": 4, "INST_X": 2})
+    inst_rule_ids = Counter({"INST_X": 2})
+    result = ledger_script._institution_rule_ids(rule_ids, inst_rule_ids)
+    assert result == ["PPS_A", "PPS_B", "PPS_C", "INST_X"]
+    assert ledger_script._institution_rule_ids(Counter({"INST_X": 3}), inst_rule_ids) == ["INST_X"]
