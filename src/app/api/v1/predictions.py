@@ -517,16 +517,16 @@ def build_serving_features(
     db: Session,
     reference_amount: float,
     *,
-    feature_amount_basis: str = FEATURE_AMOUNT_BASIS_REFERENCE,
+    feature_amount_basis: str = FEATURE_AMOUNT_BASIS_PRESMPT,
 ) -> dict[str, Any]:
     """예측 모델에 넘길 서빙 특징을 만듭니다.
 
     금액 특징(log_price, notice_amt_ratio, is_over_notice_amt 등)은
     features.py 가 real_budget 을 우선해 계산합니다. 학습은 추정가격을 쓰므로
     기준금액을 그대로 넣으면 같은 공고라도 학습과 다른 금액을 보게 됩니다.
-    'presmpt' 는 그 차이를 쌍대 실측하기 위한 갈래이며, 기본값 'reference' 는
-    기존 API 동작을 그대로 유지합니다. 추정가격이 없거나 0 이하이면 기준금액으로
-    대체하고 그 사실을 '_feature_amount_fallback' 으로 남깁니다.
+    기본값 'presmpt' 는 학습과 같은 추정가격 기준이며, 'reference' 는 쌍대
+    실측 스크립트가 두 기준을 비교할 때만 씁니다. 추정가격이 없거나 0 이하이면
+    기준금액으로 대체하고 그 사실을 '_feature_amount_fallback' 으로 남깁니다.
     """
     if feature_amount_basis == FEATURE_AMOUNT_BASIS_REFERENCE:
         feature_amount = reference_amount
@@ -634,9 +634,15 @@ def predict_price_api(
         )
 
     # 금액 기준을 바꿔 쌍대 실측할 수 있도록 특징 생성을 함수로 분리했습니다.
-    # API 는 종전과 같은 'reference' 기준을 씁니다(응답 동작 불변).
+    # 학습과 같은 추정가격(presmpt_prce) 기준을 씁니다. 추천 투찰가 곱셈은
+    # 아래 estimated_price = reference_amount 그대로입니다.
     t_feature_start = time.perf_counter()
-    features = build_serving_features(bid, db, reference_amount)
+    features = build_serving_features(
+        bid,
+        db,
+        reference_amount,
+        feature_amount_basis=FEATURE_AMOUNT_BASIS_PRESMPT,
+    )
     t_feature_build = max(0.0, time.perf_counter() - t_feature_start)
 
     # 후보 순회는 함수 안에서 끝납니다. 여기서 다시 fallback 을 시도하면 같은
