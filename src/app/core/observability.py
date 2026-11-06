@@ -58,6 +58,12 @@ RAG_LLM_GENERATION_MS: str = "rag_llm_generation_ms"
 RAG_LLM_TOKENS: str = "rag_llm_tokens"
 RAG_LLM_REQUESTS: str = "rag_llm_requests"
 
+# 정기 수집(collect_bids) 관측성 메트릭 명칭.
+# Prometheus 노출 시 카운터 접미사가 붙어 각각
+# bid_collection_saved_rows_total, bid_collection_failed_ranges_total 이 됩니다.
+BID_COLLECTION_SAVED_ROWS: str = "bid_collection_saved_rows"
+BID_COLLECTION_FAILED_RANGES: str = "bid_collection_failed_ranges"
+
 # OTLP 메트릭 exporter 기본 경로. opentelemetry-exporter-otlp-proto-http 1.45.1
 # 에서 _append_metrics_path 가 제거되어 1.44.0 구현과 동일하게 내장합니다.
 DEFAULT_METRICS_EXPORT_PATH: str = "v1/metrics"
@@ -366,6 +372,8 @@ class ObservabilityRegistry:
     llm_generation_histogram: Histogram | None = None
     llm_tokens_counter: Counter | None = None
     llm_requests_counter: Counter | None = None
+    collection_saved_rows_counter: Counter | None = None
+    collection_failed_ranges_counter: Counter | None = None
     fastapi_instrumented: bool = False
     sqlalchemy_instrumented: bool = False
     arq_instrumented: bool = False
@@ -405,6 +413,8 @@ def get_metric_instruments() -> dict[str, Any]:
         "rag_llm_generation_ms": _registry.llm_generation_histogram,
         "rag_llm_tokens": _registry.llm_tokens_counter,
         "rag_llm_requests": _registry.llm_requests_counter,
+        "bid_collection_saved_rows": _registry.collection_saved_rows_counter,
+        "bid_collection_failed_ranges": _registry.collection_failed_ranges_counter,
     }
 
 
@@ -574,6 +584,19 @@ def setup_observability(
             name=RAG_LLM_REQUESTS,
             description="Count of RAG LLM generation requests.",
             unit="{request}",
+        )
+
+        # 정기 수집 관측성 계측기 등록.
+        # 속성은 저카디널리티 값(kind, category)만 사용합니다.
+        _registry.collection_saved_rows_counter = meter.create_counter(
+            name=BID_COLLECTION_SAVED_ROWS,
+            description="Count of rows saved by the scheduled bid collection.",
+            unit="{row}",
+        )
+        _registry.collection_failed_ranges_counter = meter.create_counter(
+            name=BID_COLLECTION_FAILED_RANGES,
+            description="Count of failed collection ranges by kind.",
+            unit="{range}",
         )
 
         _registry.safe_metric_exporter = safe_metric_exporter
@@ -880,6 +903,8 @@ def reset_observability_for_testing() -> None:
     _registry.llm_generation_histogram = None
     _registry.llm_tokens_counter = None
     _registry.llm_requests_counter = None
+    _registry.collection_saved_rows_counter = None
+    _registry.collection_failed_ranges_counter = None
     _registry.fastapi_instrumented = False
     _registry.sqlalchemy_instrumented = False
     _registry.arq_instrumented = False
@@ -956,3 +981,71 @@ def record_llm_tokens(
             )
     except Exception as exc:
         logger.warning("LLM 토큰 수 기록 예외: %s", exc)
+
+
+COLLECTION_SAVED_KINDS: tuple[str, ...] = ("announcement", "result", "openg_result")
+
+
+def record_collection_saved_rows(
+    kind: str,
+    count: int,
+    category: str | None = None,
+) -> None:
+    """수집으로 적재한 행 수를 kind·category 속성으로 기록합니다.
+
+    공고번호·기관명 같은 고유값은 속성에 넣지 않습니다(카디널리티 폭발 방지).
+    메트릭이 비활성이거나 계측기가 없으면 아무것도 하지 않습니다.
+    """
+    if not _registry.metrics_enabled or _registry.collection_saved_rows_counter is None:
+        return
+    try:
+        if not isinstance(count, (int, float)) or count <= 0:
+            return
+        attrs: dict[str, Any] = {"kind": kind}
+        if category:
+            attrs["category"] = category
+        _registry.collection_saved_rows_counter.add(int(count), attrs)
+    except Exception as exc:
+        logger.warning("수집 적재 행 수 기록 예외: %s", exc)
+
+
+def record_collection_failed_ranges(kind: str, count: int) -> None:
+    """재수집이 필요한 실패 구간 수를 kind 속성으로 기록합니다."""
+    if not _registry.metrics_enabled or _registry.collection_failed_ranges_counter is None:
+        return
+    try:
+        if not isinstance(count, (int, float)) or count <= 0:
+            return
+        _registry.collection_failed_ranges_counter.add(int(count), {"kind": kind})
+    except Exception as exc:
+        logger.warning("수집 실패 구간 기록 예외: %s", exc)
+
+
+def record_collection_metrics(metrics: dict[str, Any]) -> None:
+    """collect_bids 가 만든 metrics 딕셔너리를 OpenTelemetry 지표로 옮깁니다.
+
+    수집 실행이 끝나는 지점에서 한 번 호출합니다. 지표 기록 실패가 수집
+    결과에 영향을 주지 않도록 예외를 밖으로 던지지 않습니다.
+    """
+    if not metrics:
+        return
+    try:
+        categories = metrics.get("categories") or {}
+        for cat_code, cat_metrics in categories.items():
+            if not isinstance(cat_metrics, dict):
+                continue
+            for kind in COLLECTION_SAVED_KINDS:
+                count = cat_metrics.get(f"{kind}_count", 0)
+                record_collection_saved_rows(kind, count, str(cat_code))
+        failed_counts: dict[str, int] = {}
+        for entry in metrics.get("failed_ranges") or []:
+            if not isinstance(entry, dict):
+                continue
+            failed_kind = entry.get("kind")
+            if not failed_kind:
+                continue
+            failed_counts[str(failed_kind)] = failed_counts.get(str(failed_kind), 0) + 1
+        for failed_kind, count in failed_counts.items():
+            record_collection_failed_ranges(failed_kind, count)
+    except Exception as exc:
+        logger.warning("수집 지표 기록 예외: %s", exc)

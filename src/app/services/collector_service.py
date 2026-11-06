@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql.dml import Insert
 
 from src.app.core.db import SessionLocal
+from src.app.core.observability import record_collection_metrics
 from src.app.core.timeutil import utcnow
 from src.app.models.bid_restrictions import (
     BidAnnouncementLicenseLimit,
@@ -649,4 +650,7 @@ async def collect_bids(
         metrics["status"] = "failed"
     else:
         metrics["status"] = "partial_success"
+    # 수집 실행이 끝나는 지점에서 한 번만 지표로 옮깁니다. metrics 딕셔너리는
+    # 그대로 반환하므로 기존 수집 동작과 반환값은 바뀌지 않습니다.
+    record_collection_metrics(metrics)
     return metrics
