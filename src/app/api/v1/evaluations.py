@@ -87,6 +87,7 @@ from src.app.schemas.evaluations import (
     ScenarioEvaluationResult,
 )
 from src.app.schemas.predictions import PredictPriceRequest
+from src.app.services.band_regime_lookup import lookup_attachment_regime_for_bid
 from src.app.services.demand_institutions import (
     classify_contract_regime,
     describe_contract_regime,
@@ -1829,12 +1830,14 @@ def _resolve_evaluation_inputs(
     institution_regime: str | None,
     estimated_price: Decimal | None,
     estimated_price_source: str,
+    attachment_regime: str | None = None,
 ) -> _EvaluationInputs:
     """규칙 판별·정량 점수·배점표를 확정합니다. 막히면 단계와 사유를 담아 돌려줍니다.
 
     /analyze 와 /recommend 가 같은 함수를 쓰며, 판별은 evaluation_rules, 정량 입력 검증은
     _resolve_quant_inputs, 배점표 확정은 _score_table 이 정본입니다. 이 계층은 값을 만들지
-    않고 위임 결과를 조립만 합니다.
+    않고 위임 결과를 조립만 합니다. attachment_regime 은 호출부가 한 번 조회한 첨부 판별
+    갈래이며, 여기서 다시 DB 를 보지 않습니다.
     """
     sido_code, sido_name = institution_sido(institution)
     rule_result = resolve_evaluation_rule_from_raw_data(
@@ -1848,6 +1851,7 @@ def _resolve_evaluation_inputs(
         local_service_type=qualification.local_service_type,
         estimated_price=estimated_price,
         education_institution=is_education_institution(institution),
+        attachment_regime=attachment_regime,
     )
     user_input_lwlt_unknown = False
     effective_lwlt: Decimal | None
@@ -2174,11 +2178,13 @@ def _analyze_bid(
     db: Session,
     institution: G2BDemandInstitution | None = None,
     institution_loaded: bool = False,
+    attachment_regime: str | None = None,
 ) -> EvaluationResponse:
     """규칙 판별과 점수 계산을 도메인 모듈에 위임한 채 분석 응답을 조립합니다.
 
     판별은 evaluation_rules, 계산은 evaluation_scoring, 모델 출처는 predict_price_api 가 정본이며,
-    그들이 값을 주지 못하는 구간은 추측하지 않고 차단합니다.
+    그들이 값을 주지 못하는 구간은 추측하지 않고 차단합니다. attachment_regime 은 호출부가
+    한 번 조회해 넘긴 첨부 판별 갈래이며, 여기서 다시 조회하지 않습니다.
     """
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
     estimated_price, estimated_price_source = _effective_estimated_price(
@@ -2212,6 +2218,7 @@ def _analyze_bid(
         institution_regime=institution_regime,
         estimated_price=estimated_price,
         estimated_price_source=estimated_price_source,
+        attachment_regime=attachment_regime,
     )
     if inputs.is_blocked:
         return with_contract_regime(
@@ -2269,7 +2276,17 @@ def analyze_evaluation(
     enforce_anonymous_api_quota(request, user)
     bid = _get_bid_or_404(db, payload.bid_id)
     institution = _demand_institution_for_bid(db, bid)
-    response = _analyze_bid(bid, payload, request, db, institution, institution_loaded=True)
+    # 같은 요청에서 분석과 스냅샷 문맥이 같은 공고를 두 번 해석하므로 조회는 한 번만 합니다.
+    attachment_regime = lookup_attachment_regime_for_bid(db, bid)
+    response = _analyze_bid(
+        bid,
+        payload,
+        request,
+        db,
+        institution,
+        institution_loaded=True,
+        attachment_regime=attachment_regime,
+    )
 
     # 차단된 경우도 스냅샷으로 남깁니다. 저장 실패가 응답을 막지는 못합니다.
     if response.status in ("success", "blocked"):
@@ -2286,6 +2303,7 @@ def analyze_evaluation(
             region_name=sido_name,
             local_service_type=payload.qualification_input.local_service_type,
             education_institution=is_education_institution(institution),
+            attachment_regime=attachment_regime,
         )
         input_json = {
             "bid_id": payload.bid_id,
@@ -2689,6 +2707,7 @@ def recommend_evaluation(
         institution_regime=institution_regime,
         estimated_price=estimated_price,
         estimated_price_source=estimated_price_source,
+        attachment_regime=lookup_attachment_regime_for_bid(db, bid),
     )
     warnings = list(built.warnings)
     if ignored_user_price:
@@ -2874,6 +2893,7 @@ def list_evaluation_rules_meta(
             region_code=sido_code,
             region_name=sido_name,
             education_institution=is_education_institution(institution),
+            attachment_regime=lookup_attachment_regime_for_bid(db, bid),
         )
         matched = resolution.rule
         if matched is not None:

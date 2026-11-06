@@ -36,6 +36,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.app.services.band_regime_lookup import (  # noqa: E402
+    attachment_regime_key,
+    lookup_attachment_regimes,
+)
 from src.app.services.demand_institutions import (  # noqa: E402
     classify_contract_regime,
     institution_sido,
@@ -369,7 +373,15 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return {}
 
 
-def _to_record(row: Any, institutions: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _to_record(
+    row: Any,
+    institutions: dict[str, dict[str, Any]],
+    attachment_regime: str | None = None,
+) -> dict[str, Any]:
+    """공고 한 건을 원장 레코드로 바꿉니다.
+
+    attachment_regime 은 collect_records 가 bulk 로 조회한 첨부 판별 갈래입니다.
+    """
     raw_data = _as_dict(row.raw_data)
     institution_code = str(raw_data.get("dminsttCd") or "").strip()
     institution = institutions.get(institution_code)
@@ -386,6 +398,7 @@ def _to_record(row: Any, institutions: dict[str, dict[str, Any]]) -> dict[str, A
             region_name=sido_name,
             estimated_price=row.presmpt_prce,
             education_institution=is_education_institution(institution),
+            attachment_regime=attachment_regime,
         )
         error_type = None
     except Exception as exc:  # 판정 실패는 ERROR 로 세고 예외 형식 이름만 남깁니다.
@@ -438,6 +451,7 @@ def collect_records(
         current_key: tuple[str, str] | None = None
         best_row: Any = None
         best_ord = -1
+        best_rows: list[Any] = []
         for row in result:
             raw_data = _as_dict(row.raw_data)
             if method_code and str(raw_data.get("sucsfbidMthdCd") or "").strip() != method_code:
@@ -445,7 +459,7 @@ def collect_records(
             key = (row.bid_ntce_no, row.category)
             if key != current_key:
                 if best_row is not None:
-                    records.append(_to_record(best_row, institutions))
+                    best_rows.append(best_row)
                 current_key = key
                 best_row = None
                 best_ord = -1
@@ -454,7 +468,11 @@ def collect_records(
                 best_row = row
                 best_ord = ord_key
         if best_row is not None:
-            records.append(_to_record(best_row, institutions))
+            best_rows.append(best_row)
+        result.close()
+        regimes = lookup_attachment_regimes(conn, (attachment_regime_key(row) for row in best_rows))
+    for row in best_rows:
+        records.append(_to_record(row, institutions, regimes.get(attachment_regime_key(row))))
     return records
 
 
