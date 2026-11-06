@@ -87,6 +87,9 @@ HEAVY_TASK_NAMES: frozenset[str] = frozenset(
         "manual_full_task",
         "refresh_data_task",
         "manual_retrain_task",
+        # 주간 크론이 카테고리마다 직접 부르고 수동 디스패치도 가능하다. 기본 1800초로는
+        # 카테고리 fan-out 학습이 끝나기 전에 잡이 잘리므로 3시간 타임아웃을 받게 한다.
+        "run_retrain_pipeline_task",
         # 스스로 무거운 일을 하지 않고 run_automation_pipeline 을 부른다. 그 하위 호출에서
         # run_mode 기반 잠금이 이미 걸리므로 동시 실행은 막힌다. 그럼에도 목록에 넣는 이유는
         # _apply_heavy_task_settings 의 3시간 타임아웃이 이 목록을 기준으로 적용되기 때문이다.

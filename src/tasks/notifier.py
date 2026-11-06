@@ -185,6 +185,18 @@ async def notify_task_failure(task_name: str, error: str, *, detail: str = "") -
     await notify(f"{task_name} 실패", lines, level="warning")
 
 
+async def notify_followup_failures(failed_keys: list[str], *, detail: str = "") -> None:
+    """야간 파이프라인은 성공했지만 파생 집계가 낡은 채 남았음을 알립니다.
+
+    결과 상태를 partial_success 로 바꾸는 것만으로는 담당자에게 닿지 않습니다.
+    """
+    await notify_task_failure(
+        "nightly_followups",
+        f"후속 집계 실패: {', '.join(failed_keys)}",
+        detail=detail,
+    )
+
+
 async def notify_empty_training_data(trigger_source: str, category: str | None) -> None:
     """학습 데이터가 비었음을 알립니다. 수집 파이프라인 이상 신호입니다."""
     await notify(
