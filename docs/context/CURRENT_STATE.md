@@ -55,7 +55,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 
 - **history_preservation**: CURRENT_STATE의 상세 로그와 과거 경위는 current_state_history.md로 보존하고 분리 상태를 통과 기준으로 유지합니다.
 
-- **supply_chain_gate**: 공급망 스캔은 모두 차단 모드로 운영하며, chromadb 3건(만료일 2026-12-31)의 allowlist 한시 예외를 두고 CRITICAL 및 HIGH 차단 게이트를 통과 기준으로 유지합니다.
+- **supply_chain_gate**: 공급망 스캔은 모두 차단 모드로 운영하며, chromadb 3건(만료일 2027-03-31)의 allowlist 한시 예외를 두고 CRITICAL 및 HIGH 차단 게이트를 통과 기준으로 유지합니다.
 
 - **ci_windows**: CI Windows job은 continue-on-error 없이 정규 게이트로 통과 상태를 유지합니다 (GHA Run 33947859707, fa1202f 실측).
 
@@ -126,7 +126,7 @@ G1~G3의 세부 근거와 수치는 아래 기계 원장 및 보존 이력을 �
 - **Windows Docker Desktop 실기 (2026-09-03, 미검증)**: 장비 확보 후 Compose healthy, 예측 API, 마이그레이션을 확인합니다.
 - **손상 탐침 제거 (2026-09-11, 구조적 제거 확정·효과 크기 미확정)**: corrupted_probe 0ms 달성을 확정했습니다. 잔여 분산으로 효과 크기는 미확정입니다.
 - **측정 설계와 실행계획 조사 (2026-09-20, 종결)**: 단일 EXISTS 는 compare_stats_snapshots 매칭 집계로 특정했고 전환 원인은 세미조인 비용 역전 경계와 인덱스 다이브 과대추정의 결합입니다. 운영 경로는 스냅샷으로 격리되어 영향이 없습니다 ([exists_plan_flip_investigation_20260920.md](../analysis/exists_plan_flip_investigation_20260920.md)).
-- **ChromaDB 1.x 업그레이드 (2026-09-13, 보류)**: 1.5.9 까지 CVE 미수정, 1.x 는 1건 추가. 서버 미노출로 예외 유지, 12-31 재확인 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).
+- **ChromaDB 1.x 업그레이드 (2026-09-13, 보류)**: 1.5.9 까지 CVE 미수정, 1.x 는 1건 추가. 서버 미노출로 예외 유지, 2027-03-31 재확인 ([chromadb_1x_upgrade_plan.md](../analysis/chromadb_1x_upgrade_plan.md)).
 ### 6.2 정본 갱신 규약 (Update Protocol)
 
 - 운영 지표·게이트·불변 사실이 바뀌면 같은 커밋에서 [CURRENT_STATE.md](CURRENT_STATE.md)와 [current_state_facts.yaml](current_state_facts.yaml)을 함께 갱신합니다.

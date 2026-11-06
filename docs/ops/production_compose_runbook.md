@@ -11,10 +11,12 @@
 
 | 네트워크 | 설정 | 연결 서비스 | 용도 |
 | --- | --- | --- | --- |
-| `internal` | `driver: bridge`, `internal: true` | `app`, `worker`, `db`, `redis`, `meilisearch` | 데이터 계층 접근 및 서비스 간 내부 통신 |
-| `egress` | `driver: bridge` | `proxy`, `app`, `worker` | 프록시 수신과 인터넷 송신 |
+| `internal` | `driver: bridge`, `internal: true` | `app`, `worker`, `backup`, `db`, `redis`, `meilisearch`, `otel-collector`, `tempo`, `prometheus`, `alertmanager`, `grafana` | 데이터 계층 접근, 백업, 서비스 간 내부 통신 |
+| `egress` | `driver: bridge`, `ipam.config.subnet: 172.30.0.0/24` | `proxy`, `app`, `worker`, `backup` | 프록시 수신과 인터넷 송신 |
 
-`db`, `redis`, `meilisearch`는 `internal`에만 연결합니다. 따라서 데이터 계층에는 외부 네트워크 경로가 없고, Compose가 새 호스트 포트를 열지 않습니다. `app`과 `worker`는 두 네트워크에 모두 연결되어 내부 데이터 계층과 외부 통신을 함께 사용할 수 있으며, `proxy`는 `egress`에서 `app`으로 요청을 전달합니다.
+`db`, `redis`, `meilisearch`는 `internal`에만 연결합니다. 따라서 데이터 계층에는 외부 네트워크 경로가 없고, Compose가 새 호스트 포트를 열지 않습니다. `app`과 `worker`는 두 네트워크에 모두 연결되어 내부 데이터 계층과 외부 통신을 함께 사용할 수 있으며, `proxy`는 `egress`에서 `app`으로 요청을 전달합니다. `backup`은 DB·Redis에 접근해야 하고 백업 실패 알림을 외부 webhook으로 보내야 하므로 두 네트워크에 모두 속합니다. 관측 5개 서비스(`otel-collector`, `tempo`, `prometheus`, `alertmanager`, `grafana`)는 `internal` 전용이며 호스트 포트를 열지 않습니다. `proxy`만 호스트 `443`을 게시합니다.
+
+`egress`는 컨테이너 IP가 재기동 사이에 바뀌지 않도록 `172.30.0.0/24`로 고정합니다. `TRUSTED_PROXY_IPS`에 이 CIDR을 넣으면 Caddy가 보낸 `X-Forwarded-For`를 신뢰하면서도 단일 컨테이너 IP를 하드코딩하지 않아도 됩니다. 같은 네트워크에 붙은 컨테이너는 헤더를 위조할 수 있으므로 `egress`에는 프록시와 송신이 필요한 서비스만 둡니다.
 
 다음 외부 통신은 `app` 또는 `worker`의 `egress` 경로를 사용합니다.
 
@@ -31,10 +33,12 @@
 
 ```text
 READINESS_REQUIRE_WARMUP=true
-READINESS_REQUIRE_LLM=true
+READINESS_REQUIRE_LLM=false
 ```
 
-따라서 `/api/v1/health/ready`는 MySQL, Redis, 모델 레지스트리뿐 아니라 warmup 완료와 LLM 가용성을 모두 확인합니다. 어떤 필수 조건이 실패하면 HTTP 503과 `status: not_ready`를 반환하고, 비필수 확인만 실패해도 `status: degraded`를 반환합니다. 운영 `app` healthcheck는 `status == 'ready'`만 성공으로 인정하므로 `degraded` 상태에서는 `proxy`가 의존 서비스를 healthy로 판단하지 않습니다.
+따라서 `/api/v1/health/ready`의 필수 조건은 MySQL, Redis, 모델 레지스트리, warmup 완료 네 가지입니다. 이 중 하나라도 실패하면 HTTP 503과 `status: not_ready`를 반환합니다. 반면 LLM은 필수가 아니므로 LLM이 내려가도 200과 `status: degraded`를 반환하며, 앱은 결정론적 폴백 응답으로 서비스를 유지합니다. Meilisearch·ChromaDB 확인 실패도 같은 `degraded` 경로입니다.
+
+운영 `app` healthcheck는 `status`가 `ready` 또는 `degraded`이면 성공입니다. 그래서 LLM 장애 시에도 `proxy`가 `app`을 healthy로 보고 트래픽을 계속 전달합니다. `degraded`를 503으로 오판해 롤백하거나, 반대로 "프록시가 막아 준다"고 믿으면 안 됩니다. LLM 장애 대응은 알람과 `llm` 확인 항목으로 판단합니다.
 
 워커 healthcheck는 Redis ping에 더해 `bidbox:worker:heartbeat`의 `last_seen_at`을 읽습니다. 마지막 heartbeat가 `WORKER_HEARTBEAT_MAX_AGE_SECONDS`를 넘겼거나 누락·파싱 불가이면 실패합니다. 기본 임계값은 90초이며, heartbeat 주기(`WORKER_HEARTBEAT_INTERVAL_SECONDS`, 기본 30초)의 3배 이상을 권장합니다.
 
@@ -55,7 +59,7 @@ python3 scripts/validate_agent_rules.py --quiet
 ```bash
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml exec app python -c "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=5); payload = json.load(response); assert payload['status'] == 'ready', payload"
+docker compose -f docker-compose.prod.yml exec app python -c "import json, urllib.request; response = urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=5); payload = json.load(response); assert payload['status'] in ('ready', 'degraded'), payload; print(payload['status'])"
 docker compose -f docker-compose.prod.yml exec worker python -c "import redis, os; r = redis.from_url(os.environ['REDIS_URL']); r.ping(); print('redis reachable')"
 ```
 

@@ -20,7 +20,7 @@ PSI(Population Stability Index) 드리프트 모니터링은 프로덕션 서빙
 
 ### 2.1 윈도우 필터링 계약
 
-모니터링 대상 데이터는 전체 이력이 아닌 최근 지정된 기간(`evaluation_window_days`, 기본값 7일)의 데이터로 한정됩니다.
+모니터링 대상 데이터는 전체 이력이 아닌 최근 지정된 기간(`evaluation_window_days`, 기본값 28일)의 데이터로 한정됩니다. 정본 상수는 `src/ml/drift_verdict.py` 의 `DRIFT_EVALUATION_WINDOW_DAYS` 이며 `drift_monitor_task` 기본 인자가 이 값을 씁니다.
 
 - **기준 시각**: `now = utcnow()`
 - **구간 계산**: `start_at = now - timedelta(days=evaluation_window_days)`, `end_at = now`
@@ -65,7 +65,7 @@ def build_training_dataset(
 
 ## 4. 표본 유효성 및 부족 처리
 
-평가 윈도우가 좁아지면(예: 최근 7일) 특정 카테고리의 공고/낙찰 건수가 부족할 수 있습니다. 시스템은 표본 부족을 정상(STABLE)으로 오인하지 않고 명시적인 상태로 기록합니다.
+평가 윈도우가 짧아지면(예: 기본 28일보다 줄일 때) 특정 카테고리의 공고/낙찰 건수가 부족할 수 있습니다. 시스템은 표본 부족을 정상(STABLE)으로 오인하지 않고 명시적인 상태로 기록합니다.
 
 | 상황 | 판정 상태 | 처리 내용 |
 | --- | --- | --- |

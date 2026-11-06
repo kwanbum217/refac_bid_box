@@ -71,19 +71,24 @@
 
 백업 도구인 [`../../scripts/backup_recovery.py`](../../scripts/backup_recovery.py)는 **사전 점검(dry-run)이 기본값**이며, 실제 데이터 쓰기는 `--execute` 명시 플래그를 요구합니다.
 
+절차는 실행 위치에 따라 둘로 나뉩니다. 운영은 `docker-compose.prod.yml`의 `backup` 서비스 컨테이너 안에서 실행하고, 개발 머신은 호스트에서 Make 타깃이나 스크립트를 직접 실행합니다. 운영 `db`는 `internal` 네트워크 전용이고 호스트 포트를 열지 않으므로, 호스트의 `DATABASE_URL=localhost`로 접속하는 명령은 운영에서 실패합니다.
+
 ### 3.1 사전 점검 (dry-run)
 
 백업 대상 경로, DB 접속 설정, 아카이브 대상 디렉토리를 확인합니다:
 
 ```bash
-# Makefile 타깃 이용
+# 개발 머신(호스트)
 make backup-dry-run
+# 또는 uv run python scripts/backup_recovery.py backup
 
-# 또는 직접 실행
-uv run python scripts/backup_recovery.py backup
+# 운영 서버(backup 컨테이너 안)
+docker compose -f docker-compose.prod.yml exec backup python3 scripts/backup_recovery.py backup
 ```
 
 ### 3.2 실제 백업 실행
+
+#### 3.2.1 개발 머신
 
 ```bash
 # Makefile 타깃 이용
@@ -98,6 +103,17 @@ uv run python scripts/backup_recovery.py backup --execute --allow-partial
 # 특정 디렉토리에 스냅샷 저장 시
 uv run python scripts/backup_recovery.py backup --execute --output-dir data/backups/snapshots/snapshot_custom
 ```
+
+#### 3.2.2 운영 서버
+
+정기 백업은 `backup` 서비스의 Arq 크론이 매일 03:00에 자동 수행합니다. 배포 직후나 복원 리허설 전에 즉시 1회 만들려면 백업 컨테이너 안에서 실행합니다. 호스트에서 `make backup`을 실행하면 `internal` 전용 DB에 접속하지 못합니다.
+
+```bash
+docker compose -f docker-compose.prod.yml exec backup \
+  python3 scripts/backup_recovery.py backup --execute
+```
+
+기본 산출물 경로는 컨테이너 작업 디렉토리 기준 `data/backups/snapshots/`이며, `./data` 볼륨이 마운트되어 있어 호스트의 같은 경로에서 확인할 수 있습니다. `--output-dir`도 컨테이너 경로 기준입니다.
 
 ### 3.3 백업 스냅샷 산출물 구조
 
@@ -204,24 +220,37 @@ uv run python scripts/backup_recovery.py verify --snapshot-dir data/backups/snap
 ### 4.1 복원 전 사전 점검 (dry-run)
 
 ```bash
-# 최신 스냅샷 기준 점검
+# 개발 머신(호스트): 최신 스냅샷 기준 점검
 make restore-dry-run
 
-# 특정 스냅샷 지정 점검
+# 개발 머신(호스트): 특정 스냅샷 지정 점검
 uv run python scripts/backup_recovery.py restore --snapshot-dir data/backups/snapshots/snapshot_20260902_153000
+
+# 운영 서버(backup 컨테이너 안): 덮어쓸 대상을 먼저 확인
+docker compose -f docker-compose.prod.yml exec backup \
+  python3 scripts/backup_recovery.py restore --snapshot-dir data/backups/snapshots/snapshot_20260902_153000
 ```
 
 ### 4.2 실제 복원 실행
 
-실제 복원을 수행하려면 `--execute`와 함께 `--confirm` 플래그(또는 대화형 터미널에서 `yes` 입력)를 지정해야 합니다:
+실제 복원을 수행하려면 `--execute`와 함께 `--confirm` 플래그(또는 대화형 터미널에서 `yes` 입력)를 지정해야 합니다. 운영 복원은 `db`가 `internal` 전용이므로 `backup` 컨테이너 안에서 실행합니다.
 
 ```bash
-# 특정 스냅샷으로 복원 실행
+# 개발 머신(호스트): 특정 스냅샷으로 복원 실행
 uv run python scripts/backup_recovery.py restore \
   --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
   --execute \
   --confirm
+
+# 운영 서버(backup 컨테이너 안): 비대화형이므로 --confirm 을 반드시 붙입니다
+docker compose -f docker-compose.prod.yml exec backup \
+  python3 scripts/backup_recovery.py restore \
+  --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
+  --execute \
+  --confirm
 ```
+
+복원은 덤프와 달리 대상 DB에 쓰기 권한이 필요합니다. `backup` 서비스의 계정은 덤프 전용 최소권한(`BACKUP_DB_USER`)이므로, 복원 전에 그 계정이 스키마 변경과 대량 INSERT 를 수행할 수 있는지 확인하십시오. 권한이 없으면 복원 권한을 가진 계정으로 백업 컨테이너의 DB 접속 환경을 맞춘 뒤 실행합니다.
 
 ### 4.3 복원 후 자동 무손실 검증
 
@@ -238,15 +267,17 @@ uv run python scripts/backup_recovery.py restore \
 
 Meilisearch 색인은 백업 대상이 아닙니다. Meilisearch 는 MySQL 에서 파생되는 공고·낙찰 목록 읽기 모델이므로, 복원 후 MySQL 데이터에서 다시 만들어야 합니다. 재색인이 끝나기 전에는 검색·목록 조회가 정상 결과를 내지 않습니다.
 
-컨테이너 안에서 타임아웃을 30초로 지정해 실행합니다:
+완료 판정은 스크립트 종료가 아니라 Meilisearch 의 미완료 작업이 0 이 되는 것입니다. 클라이언트 적재가 끝나 스크립트가 종료된 뒤에도 서버 색인은 계속 진행되므로, `enqueued`·`processing` 작업이 0 인지까지 확인합니다.
+
+#### 4.3.1.1 개발 머신
+
+개발 compose 는 Meilisearch 호스트 포트를 게시하므로 재색인은 앱 컨테이너에서, 완료 확인은 호스트에서 할 수 있습니다.
 
 ```bash
-docker compose exec -e MEILI_TIMEOUT_SECONDS=30 app python3 scripts/sync_search_index.py
+docker compose exec app env MEILI_TIMEOUT_SECONDS=30 python3 scripts/sync_search_index.py
 ```
 
-완료 판정은 스크립트 종료가 아니라 Meilisearch 의 미완료 작업이 0 이 되는 것입니다. 클라이언트 적재가 끝나 스크립트가 종료된 뒤에도 서버 색인은 계속 진행되므로, 호스트에서 다음으로 `enqueued`·`processing` 작업이 0 인지 확인합니다:
-
-이 키는 `.env` 에만 있고 호스트 셸에는 기본으로 없으므로 저장소 루트에서 다음으로 값을 먼저 읽어 오며, 읽은 값은 화면에 출력하거나 문서·셸 이력에 남기지 않습니다:
+`MEILI_MASTER_KEY` 는 `.env` 에만 있고 호스트 셸에는 기본으로 없으므로 저장소 루트에서 값을 먼저 읽어 오며, 읽은 값은 화면에 출력하거나 문서·셸 이력에 남기지 않습니다:
 
 ```bash
 export MEILI_MASTER_KEY="$(grep '^MEILI_MASTER_KEY=' .env | cut -d= -f2-)"
@@ -255,6 +286,22 @@ export MEILI_MASTER_KEY="$(grep '^MEILI_MASTER_KEY=' .env | cut -d= -f2-)"
 ```bash
 curl -s -H "Authorization: Bearer $MEILI_MASTER_KEY" \
   "http://127.0.0.1:7700/tasks?statuses=enqueued,processing&limit=1"
+```
+
+응답의 `total` 이 0 이면 재색인이 완료된 것입니다.
+
+#### 4.3.1.2 운영 서버
+
+운영 `meilisearch` 는 호스트 포트를 열지 않습니다. 재색인과 완료 확인을 모두 `-f docker-compose.prod.yml` 컨테이너 안에서 실행합니다. 마스터 키는 두 컨테이너의 환경변수에 이미 주입되어 있으므로 호스트 셸에서 `.env` 를 다시 읽지 않습니다.
+
+```bash
+docker compose -f docker-compose.prod.yml exec app \
+  env MEILI_TIMEOUT_SECONDS=30 python3 scripts/sync_search_index.py
+```
+
+```bash
+docker compose -f docker-compose.prod.yml exec meilisearch sh -c \
+  'curl -s -H "Authorization: Bearer $MEILI_MASTER_KEY" "http://localhost:7700/tasks?statuses=enqueued,processing&limit=1"'
 ```
 
 응답의 `total` 이 0 이면 재색인이 완료된 것입니다.
@@ -298,6 +345,16 @@ uv run python scripts/backup_recovery.py drill \
   --target-dir /tmp/refac_bid_box_restore_drill \
   --db-name procurement_drill_manual \
   --keep-artifacts \
+  --report-path data/backups/restore_drill_report.json
+```
+
+운영 데이터로 리허설하려면 격리 DB를 만들 수 있는 DB 접근이 필요하므로 drill 도 `backup` 컨테이너 안에서 실행합니다. `backup` 스테이지에는 `mysql` 클라이언트가 들어 있어 위 `MYSQL_CLIENT_CONTAINER` 우회가 필요 없습니다. `--target-dir`은 컨테이너 안의 빈 경로(예: `/tmp/refac_bid_box_restore_drill`)를 쓰고, 스냅샷과 보고서 경로는 마운트된 `data/` 아래를 씁니다.
+
+```bash
+docker compose -f docker-compose.prod.yml exec backup \
+  python3 scripts/backup_recovery.py drill \
+  --snapshot-dir data/backups/snapshots/snapshot_20260902_153000 \
+  --target-dir /tmp/refac_bid_box_restore_drill \
   --report-path data/backups/restore_drill_report.json
 ```
 
@@ -355,12 +412,12 @@ uv run python scripts/backup_recovery.py prune --retain-count 7 --delete
 
 ## 7. 운영 점검 체크리스트
 
-- [ ] `make backup-dry-run`으로 백업 대상 경로 및 설정 사전 점검
-- [ ] `make backup`으로 통합 백업 스냅샷 정상 생성 확인
+- [ ] 개발 머신은 `make backup-dry-run`, 운영 서버는 `docker compose -f docker-compose.prod.yml exec backup python3 scripts/backup_recovery.py backup`으로 백업 대상 경로 및 설정 사전 점검
+- [ ] 개발 머신은 `make backup`, 운영 서버는 `docker compose -f docker-compose.prod.yml exec backup python3 scripts/backup_recovery.py backup --execute`로 통합 백업 스냅샷 정상 생성 확인
 - [ ] 실행 환경에서 ChromaDB와 `data/model_files` 필수 자산이 존재하고 0바이트가 아닌지 확인
 - [ ] `backup_manifest.json` 내 `partial_backup: false`, `recovery_trusted: true` 확인
 - [ ] `backup_manifest.json` 내 컴포넌트 체크섬, DB 행 수, `consistency_window` 기록 확인
-- [ ] `make backup-verify`로 생성된 스냅샷 아카이브 무결성 검증
-- [ ] 복원 모의 훈련 시 `restore-dry-run`으로 덮어쓸 대상 목록 확인
+- [ ] `make backup-verify`로 생성된 스냅샷 아카이브 무결성 검증 (운영은 `docker compose -f docker-compose.prod.yml exec backup python3 scripts/backup_recovery.py verify --snapshot-dir <스냅샷 경로>`)
+- [ ] 복원 모의 훈련 시 `restore-dry-run`으로 덮어쓸 대상 목록 확인 (운영은 `docker compose -f docker-compose.prod.yml exec backup python3 scripts/backup_recovery.py restore --snapshot-dir <스냅샷 경로>`)
 - [ ] 복원 완료 후 `scripts/verify_migration.py` 5단계 검증 전량 통과 확인
 - [ ] 복원 후 4.3.1절 재색인을 `MEILI_TIMEOUT_SECONDS=30` 으로 실행하고 `/tasks` 의 enqueued·processing 이 0 인지 확인
