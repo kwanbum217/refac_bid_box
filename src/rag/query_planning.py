@@ -1960,7 +1960,12 @@ def _is_void_outcome_scope(query: str) -> bool:
         return False
     if "건수" in lowered or COUNT_QUERY_PATTERN.search(lowered):
         return True
-    return is_announcement_list_query(query)
+    if is_announcement_list_query(query):
+        return True
+    # "요즘 유찰된 용역 공고 보여줘" 처럼 개수·목록 표지 없이 요청 동사만 붙은
+    # 유찰 질의도 유찰 목록 요청입니다. 요청 동사가 없으면 기존 의미 검색
+    # 경로를 그대로 씁니다.
+    return bool(RESULT_LIST_REQUEST_VERB_PATTERN.search(lowered))
 
 
 # 기관·지역 범위와 요청 동사가 함께 있는 공고 질의는 개수·목록·신선도 표지가
@@ -2839,6 +2844,35 @@ def _parse_time_window(query: str) -> tuple[str, str, str, bool]:
     return "", "", "", False
 
 
+# 숫자 없는 "최근"·"요즘" 표지는 위 기간 해석의 마지막 분기에서 오늘 포함 7일
+# 창을 만듭니다. 유찰 목록은 이 창만 30일로 넓히기 위한 판정 재료입니다.
+VAGUE_RECENT_MARKERS = ("최근", "요즘")
+VAGUE_RECENT_WINDOW_DAYS = 7
+VAGUE_RECENT_WEEK_MARKERS = ("이번 주", "이번주")
+# "최근 7일", "지난 2주", "최근 1년" 처럼 숫자로 기간을 지정한 표지입니다.
+VAGUE_RECENT_NUMERIC_PERIOD_PATTERN = re.compile(r"(?:최근|지난)\s*\d+\s*(?:일|주|개월|달|년|해)")
+
+
+def _is_vague_recent_window(query: str, date_from: str, date_to: str) -> bool:
+    """확정된 공고일 창이 숫자 없는 "최근"·"요즘" 표지에서 나왔는지 판정합니다.
+
+    "최근 7일", "이번 주", "2026년" 처럼 기간을 명시한 질의는 앞 분기가 창을
+    확정하므로 거짓입니다. 파싱된 창이 마지막 분기의 7일 창일 때만 참입니다.
+    """
+    lowered = _query_lower(query)
+    if not any(marker in lowered for marker in VAGUE_RECENT_MARKERS):
+        return False
+    if any(marker in lowered for marker in VAGUE_RECENT_WEEK_MARKERS):
+        return False
+    if VAGUE_RECENT_NUMERIC_PERIOD_PATTERN.search(lowered):
+        return False
+    today = date.today()
+    return (
+        date_from == (today - timedelta(days=VAGUE_RECENT_WINDOW_DAYS - 1)).isoformat()
+        and date_to == today.isoformat()
+    )
+
+
 def _requested_group_limit(lowered: str) -> int:
     """축 표에 요청된 행 수를 읽습니다. 없으면 기본 상한입니다.
 
@@ -3288,6 +3322,21 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
         use_sql = True
         if not has_semantic_keywords and not is_entity:
             use_vector = False
+
+    # 유찰은 개찰 뒤에 생겨 7일 안에 적습니다. 숫자 없는 "최근"·"요즘" 표지로
+    # 7일 창이 걸린 유찰 목록만 오늘 포함 30일 창으로 넓힙니다. 명시 기간과
+    # 그 밖의 질의 창은 그대로 두고, "기간을 지정하지 않아" 안내가 붙지 않도록
+    # recent_days 는 세우지 않습니다.
+    if filters.get("outcome") == VOID_STATUS_MARKER and _is_vague_recent_window(
+        normalized_query,
+        str(filters.get("date_from") or ""),
+        str(filters.get("date_to") or ""),
+    ):
+        today = date.today()
+        filters["date_from"] = (
+            today - timedelta(days=RECENT_ANNOUNCEMENT_WINDOW_DAYS - 1)
+        ).isoformat()
+        filters["date_to"] = today.isoformat()
 
     # 적격심사 조건 목록·건수 질문은 공고 원문 낙찰방법명 조건으로 조회합니다.
     # 정의 질문은 extract_award_method 가 걸러 기존 의미 검색 경로에 남깁니다.

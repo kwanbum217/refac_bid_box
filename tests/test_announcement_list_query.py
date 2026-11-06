@@ -4,7 +4,7 @@ tests/test_announcement_list_query.py
 낙찰 표지 없는 공고 목록 질의의 판정, 정형 조회 필터, 직접 표 답변을 검증합니다.
 """
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -134,6 +134,51 @@ def test_void_count_question_keeps_void_outcome():
     assert plan.use_sql is True
     assert plan.filters.get("outcome") == "유찰"
     assert "bid_query_tool" in execution_plan.requested_capabilities
+
+
+def _announcement_window(days: int) -> tuple[str, str]:
+    today = date.today()
+    return (today - timedelta(days=days - 1)).isoformat(), today.isoformat()
+
+
+def test_void_announcement_list_widens_vague_recent_window_to_thirty_days():
+    plan = build_retrieval_plan("유찰된 공사 공고 최근 5건 보여줘")
+
+    assert plan.filters.get("outcome") == "유찰"
+    assert (
+        plan.filters.get("date_from"),
+        plan.filters.get("date_to"),
+    ) == _announcement_window(30)
+    assert "recent_days" not in plan.filters
+
+
+def test_non_void_announcement_list_keeps_seven_day_recent_window():
+    plan = build_retrieval_plan("공사 공고 최근 5건 보여줘")
+
+    assert "outcome" not in plan.filters
+    assert (
+        plan.filters.get("date_from"),
+        plan.filters.get("date_to"),
+    ) == _announcement_window(7)
+
+
+def test_void_announcement_list_keeps_explicit_seven_day_window():
+    plan = build_retrieval_plan("최근 7일 유찰 공고 보여줘")
+
+    assert (
+        plan.filters.get("date_from"),
+        plan.filters.get("date_to"),
+    ) == _announcement_window(7)
+
+
+def test_void_announcement_list_widens_vague_yojum_window_to_thirty_days():
+    plan = build_retrieval_plan("요즘 유찰된 용역 공고 보여줘")
+
+    assert plan.filters.get("outcome") == "유찰"
+    assert (
+        plan.filters.get("date_from"),
+        plan.filters.get("date_to"),
+    ) == _announcement_window(30)
 
 
 def _sample(index: int) -> dict:
