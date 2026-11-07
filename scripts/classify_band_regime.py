@@ -54,7 +54,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from scripts.extract_score_params import extract_document_text  # noqa: E402
 from src.app.core.db import SessionLocal  # noqa: E402
-from src.app.core.timeutil import utcnow  # noqa: E402
+from src.app.core.timeutil import kst_today, utcnow  # noqa: E402
 from src.app.models.announcement_regime import (  # noqa: E402
     REGIME_STATUS_CLASSIFIED,
     REGIME_STATUS_FAILED,
@@ -219,7 +219,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _resolve_period(start_value: str | None, end_value: str | None) -> tuple[date, date]:
-    today = utcnow().date()
+    today = kst_today(utcnow())
     try:
         start = (
             datetime.strptime(start_value, "%Y%m%d").date()

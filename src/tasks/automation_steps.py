@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from src.app.core.config import settings
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services.automation_orchestrator import (
     STATUS_FAILED,
@@ -237,26 +237,33 @@ def _step_inspect(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
     경고 문구만 남긴 채 통과로 승격됩니다.
     """
     now = utcnow()
-    week_ago = now - timedelta(days=7)
+    kst_week_ago = kst_now(now) - timedelta(days=7)
+    utc_week_ago = now - timedelta(days=7)
     today_start = datetime.combine(now.date(), datetime.min.time())
 
     recent_bid_announcements = int(
         db.scalar(
-            select(func.count(BidAnnouncement.id)).where(BidAnnouncement.bid_ntce_dt >= week_ago)
+            select(func.count(BidAnnouncement.id)).where(
+                BidAnnouncement.bid_ntce_dt >= kst_week_ago
+            )
         )
         or 0
     )
     recent_bid_results = int(
-        db.scalar(select(func.count(BidResult.id)).where(BidResult.rl_openg_dt >= week_ago)) or 0
+        db.scalar(select(func.count(BidResult.id)).where(BidResult.rl_openg_dt >= kst_week_ago))
+        or 0
     )
     fresh_ingest_announcements = int(
         db.scalar(
-            select(func.count(BidAnnouncement.id)).where(BidAnnouncement.collected_at >= week_ago)
+            select(func.count(BidAnnouncement.id)).where(
+                BidAnnouncement.collected_at >= utc_week_ago
+            )
         )
         or 0
     )
     fresh_ingest_results = int(
-        db.scalar(select(func.count(BidResult.id)).where(BidResult.collected_at >= week_ago)) or 0
+        db.scalar(select(func.count(BidResult.id)).where(BidResult.collected_at >= utc_week_ago))
+        or 0
     )
 
     latest_notice_at = db.scalar(select(func.max(BidAnnouncement.bid_ntce_dt)))

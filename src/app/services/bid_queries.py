@@ -18,7 +18,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased
 
 from src.app.core.config import settings
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bid_restrictions import (
     BidAnnouncementLicenseLimit,
     BidAnnouncementParticipationRegion,
@@ -1114,16 +1114,6 @@ def _past_result_candidates(db: Session, bid: BidAnnouncement, now: datetime) ->
     return results
 
 
-def _kst_now() -> datetime:
-    """나라장터 원문 시각(KST naive)과 비교할 현재 시각입니다.
-
-    bid_announcements.bid_clse_dt 등은 원문 시각을 그대로 저장하므로 UTC naive 인
-    utcnow() 를 그대로 비교하면 마감 후 9시간 동안 마감된 공고가 남습니다.
-    한국은 일광절약시간이 없어 고정 +9시간으로 계산합니다.
-    """
-    return utcnow() + timedelta(hours=9)
-
-
 def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
     """공고 상세 + 비슷한 진행 중 공고 + 같은 분야 과거 낙찰 이력."""
     instance = db.get(BidAnnouncement, pk)
@@ -1135,7 +1125,7 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
     institution_code = str(raw_data.get("dminsttCd") or "").strip()
     institution = db.get(G2BDemandInstitution, institution_code) if institution_code else None
 
-    now = _kst_now()
+    now = kst_now(utcnow())
     similar_bids = _recommended_announcements(db, bid, now)
     past_results = _past_result_candidates(db, bid, now)
 
@@ -1209,7 +1199,9 @@ def get_announcement_restrictions(db: Session, bid: BidAnnouncement) -> dict[str
         clse_dt = (
             bid.bid_clse_dt.replace(tzinfo=None) if bid.bid_clse_dt.tzinfo else bid.bid_clse_dt
         )
-        uncollected_legacy = (ntce_dt < datetime(2025, 7, 1, 0, 0)) and (clse_dt >= utcnow())
+        uncollected_legacy = (ntce_dt < datetime(2025, 7, 1, 0, 0)) and (
+            clse_dt >= kst_now(utcnow())
+        )
 
     return {
         "license_groups": [

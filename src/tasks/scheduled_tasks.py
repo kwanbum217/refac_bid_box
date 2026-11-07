@@ -36,7 +36,7 @@ from src.app.core.cache import RedisConnection
 from src.app.core.config import settings
 from src.app.core.db import SessionLocal
 from src.app.core.observability import traced_worker_task
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, kst_today, utcnow
 from src.app.models.bids import BidAnnouncement
 from src.app.models.chatbot import PipelineExecution
 from src.app.models.prearng_prices import BidPrearngPrice
@@ -925,7 +925,7 @@ async def _run_drift_monitor(
                 # 최근 데이터셋 수집 (Single Source of Truth features.py 사용)
                 # 평가 윈도우 [now - evaluation_window_days, now) 반열림 구간 적용 (개찰일 기준 start_at 이상, end_at 미만)
                 # 모니터링 경로는 persist=False 로 운영 Parquet 덮어쓰기 방지
-                now = utcnow()
+                now = kst_now(utcnow())
                 start_at = now - timedelta(days=evaluation_window_days)
                 end_at = now
 
@@ -2377,7 +2377,7 @@ def select_new_servc_notices(
     """
     from sqlalchemy import select
 
-    reference = now or utcnow()
+    reference = now or kst_now(utcnow())
     since = reference - timedelta(days=lookback_days)
     already_collected = select(BidPrearngPrice.bid_ntce_no).where(
         BidPrearngPrice.category == "Servc"
@@ -2459,7 +2459,7 @@ def _run_band_regime_daily_thread() -> dict[str, Any]:
 
     classify = importlib.import_module("scripts.classify_band_regime")
 
-    end = utcnow().date()
+    end = kst_today(utcnow())
     start = end - timedelta(days=BAND_REGIME_DAILY_LOOKBACK_DAYS - 1)
     session = SessionLocal()
     try:

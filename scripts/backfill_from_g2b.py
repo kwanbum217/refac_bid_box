@@ -19,7 +19,7 @@ import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_today, utcnow
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -67,7 +67,7 @@ async def _backfill(
     sync_downstream: bool = False,
 ) -> int:
     started_at = utcnow()
-    today = utcnow().date()
+    today = kst_today(utcnow())
     session = SessionLocal()
     total_announcements = 0
     total_results = 0

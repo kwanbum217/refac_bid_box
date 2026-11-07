@@ -31,7 +31,7 @@ from dotenv import load_dotenv  # noqa: E402
 from sqlalchemy import func, select  # noqa: E402
 
 from src.app.core.db import SessionLocal  # noqa: E402
-from src.app.core.timeutil import utcnow  # noqa: E402
+from src.app.core.timeutil import kst_now, utcnow  # noqa: E402
 from src.app.models.bid_restrictions import (  # noqa: E402
     BidAnnouncementLicenseLimit,
     BidAnnouncementParticipationRegion,
@@ -68,7 +68,7 @@ def _parse_day(value: str) -> date:
 def open_bids_start(db, since: date) -> date | None:
     first = db.scalar(
         select(func.min(BidAnnouncement.bid_ntce_dt)).where(
-            BidAnnouncement.bid_clse_dt >= utcnow(),
+            BidAnnouncement.bid_clse_dt >= kst_now(utcnow()),
             BidAnnouncement.bid_ntce_dt >= datetime.combine(since, datetime.min.time()),
         )
     )
