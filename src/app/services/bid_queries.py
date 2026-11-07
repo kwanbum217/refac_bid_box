@@ -7,9 +7,10 @@ src/app/services/bid_queries.py
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import Integer, and_, case, func, or_, select, tuple_
@@ -861,8 +862,260 @@ def describe_award_method(raw_data: Any) -> dict[str, Any]:
     return {"label": "공고서 참조", "source": None}
 
 
+RECOMMENDATION_LIMIT = 5
+SAME_INSTITUTION_POOL_LIMIT = 200
+RECENT_CATEGORY_POOL_LIMIT = 500
+RECENT_CATEGORY_WINDOW_DAYS = 30
+PAST_SAME_INSTITUTION_POOL_LIMIT = 200
+PAST_RELATED_POOL_LIMIT = 1_000
+PAST_RELATED_WINDOW_DAYS = 365
+PAST_RELATED_MIN_SIMILARITY = 0.5
+SAME_INSTITUTION_BONUS = 0.2
+
+# 괄호 안 표기는 사업명이 아니라 표기 부가정보라 유사도 계산에서 뺍니다.
+_BRACKET_CONTENT_PATTERN = re.compile(r"\([^)]*\)|\[[^\]]*\]|\{[^}]*\}")
+# 2026, 2026년, 2026학년도, 26년 같은 연도 표기를 뺍니다.
+_YEAR_PATTERN = re.compile(r"(?:19|20)\d{2}\s*(?:학년도|년도|년)?|\b\d{2}\s*년")
+# 1차, 2단계 같은 차수 표기를 뺍니다.
+_ORDINAL_PATTERN = re.compile(r"\d+\s*(?:차|단계)")
+_TOKEN_PATTERN = re.compile(r"[0-9A-Za-z가-힣]+")
+_TITLE_NORMALIZE_PATTERN = re.compile(r"[\s()\[\]{}·,.;:/\-]+")
+_GENERIC_NAME_TOKENS = frozenset(
+    {
+        "용역",
+        "공사",
+        "구매",
+        "구입",
+        "입찰",
+        "공고",
+        "긴급",
+        "재공고",
+        "위탁",
+        "사업",
+        "연간",
+        "단가",
+        "물품",
+        "건설",
+        "외자",
+        "계약",
+        "제조",
+        "납품",
+        "설치",
+        "교체",
+        "선정",
+        "안내",
+        "모집",
+        "공모",
+        "시행",
+        "규격",
+        "가격",
+        "동시",
+        "소액",
+        "수의",
+        "전자",
+        "견적",
+        "제출",
+        "유찰",
+        "일반",
+        "지역",
+        "제한",
+        "업체",
+        "대행",
+    }
+)
+
+
+def announcement_name_tokens(name: str | None) -> set[str]:
+    """공고명에서 유사도 비교용 핵심어만 남깁니다.
+
+    괄호 표기, 연도, 차수, 조달 일반어를 빼고 2자 이상 토큰만 남깁니다. 두 목록이
+    같은 함수를 공유해야 추천과 과거 사례의 유사도 기준이 어긋나지 않습니다.
+    """
+    if not name:
+        return set()
+    text = _BRACKET_CONTENT_PATTERN.sub(" ", str(name))
+    text = _YEAR_PATTERN.sub(" ", text)
+    text = _ORDINAL_PATTERN.sub(" ", text)
+    return {
+        token
+        for token in _TOKEN_PATTERN.findall(text)
+        if len(token) >= 2 and token not in _GENERIC_NAME_TOKENS
+    }
+
+
+def announcement_name_similarity(left: str | None, right: str | None) -> float:
+    """두 공고명 핵심어 집합의 겹침 비율(교집합 / 작은 집합 크기)입니다."""
+    left_tokens = announcement_name_tokens(left)
+    right_tokens = announcement_name_tokens(right)
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / min(len(left_tokens), len(right_tokens))
+
+
+def _normalized_announcement_title(name: str | None) -> str:
+    """공백과 괄호 표기를 지워 같은 제목을 하나로 묶는 키를 만듭니다."""
+    text = _BRACKET_CONTENT_PATTERN.sub(" ", str(name or ""))
+    return _TITLE_NORMALIZE_PATTERN.sub("", text).casefold()
+
+
+def _institution_stable_filter(stmt):
+    """차수에서 기관이 바뀐 공고 그룹을 후보에서 뺍니다.
+
+    similar_announcement_latest_filter 는 최신 차수만 남기지만, 최신 차수의
+    기관이 다른 기관으로 바뀐 경우 그 공고는 원래 기관의 공고가 아닙니다.
+    다른 기관까지 후보로 보는 추천 목록에서도 이 의미를 유지합니다.
+    """
+    other = aliased(BidAnnouncement)
+    has_changed_institution = (
+        select(1)
+        .where(
+            other.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+            other.category == BidAnnouncement.category,
+            other.dminstt_nm.is_not(None),
+            other.dminstt_nm != BidAnnouncement.dminstt_nm,
+        )
+        .exists()
+    )
+    return stmt.where(~has_changed_institution)
+
+
+def _open_announcement_query(bid: BidAnnouncement, now: datetime):
+    return _institution_stable_filter(
+        similar_announcement_latest_filter(
+            select(BidAnnouncement).where(
+                BidAnnouncement.category == bid.category,
+                BidAnnouncement.id != bid.id,
+                BidAnnouncement.bid_clse_dt.is_not(None),
+                BidAnnouncement.bid_clse_dt >= now,
+            )
+        ).order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
+    )
+
+
+def _recommended_announcements(
+    db: Session, bid: BidAnnouncement, now: datetime
+) -> list[BidAnnouncement]:
+    """분야가 같고 아직 마감 전인 공고를 공고명 유사도와 기관 일치로 고릅니다."""
+    same_institution = (
+        _open_announcement_query(bid, now)
+        .where(BidAnnouncement.dminstt_nm == bid.dminstt_nm)
+        .limit(SAME_INSTITUTION_POOL_LIMIT)
+    )
+    recent_category = (
+        _open_announcement_query(bid, now)
+        .where(BidAnnouncement.bid_ntce_dt >= now - timedelta(days=RECENT_CATEGORY_WINDOW_DAYS))
+        .limit(RECENT_CATEGORY_POOL_LIMIT)
+    )
+
+    scored: dict[int, tuple[BidAnnouncement, float]] = {}
+    for row in db.execute(same_institution).scalars().all():
+        score = (
+            announcement_name_similarity(bid.bid_ntce_nm, row.bid_ntce_nm) + SAME_INSTITUTION_BONUS
+        )
+        scored[row.id] = (row, score)
+
+    for row in db.execute(recent_category).scalars().all():
+        similarity = announcement_name_similarity(bid.bid_ntce_nm, row.bid_ntce_nm)
+        if similarity <= 0:
+            continue
+        score = similarity
+        if row.dminstt_nm == bid.dminstt_nm:
+            score += SAME_INSTITUTION_BONUS
+        current = scored.get(row.id)
+        if current is None or score > current[1]:
+            scored[row.id] = (row, score)
+
+    ordered = sorted(
+        scored.values(),
+        key=lambda item: (item[1], item[0].bid_ntce_dt or datetime.min, item[0].id),
+        reverse=True,
+    )
+
+    picked: list[BidAnnouncement] = []
+    seen_titles: set[str] = set()
+    for row, _score in ordered:
+        title_key = _normalized_announcement_title(row.bid_ntce_nm)
+        if title_key and title_key in seen_titles:
+            continue
+        if title_key:
+            seen_titles.add(title_key)
+        picked.append(row)
+        if len(picked) >= RECOMMENDATION_LIMIT:
+            break
+    return picked
+
+
+def _past_result_candidates(db: Session, bid: BidAnnouncement, now: datetime) -> list[BidResult]:
+    """같은 분야 낙찰 이력을 고르고, 부족하면 유사한 다른 기관 결과로 채웁니다."""
+    same_institution = (
+        db.execute(
+            select(BidResult)
+            .where(
+                BidResult.dminstt_nm == bid.dminstt_nm,
+                BidResult.category == bid.category,
+            )
+            .order_by(BidResult.rl_openg_dt.desc(), BidResult.id.desc())
+            .limit(PAST_SAME_INSTITUTION_POOL_LIMIT)
+        )
+        .scalars()
+        .all()
+    )
+
+    scored = [
+        (row, announcement_name_similarity(bid.bid_ntce_nm, row.bid_ntce_nm))
+        for row in same_institution
+    ]
+    scored.sort(
+        key=lambda item: (item[1], item[0].rl_openg_dt or datetime.min, item[0].id),
+        reverse=True,
+    )
+    picked: list[tuple[BidResult, str]] = [
+        (row, "같은 기관") for row, _score in scored[:RECOMMENDATION_LIMIT]
+    ]
+
+    if len(picked) < RECOMMENDATION_LIMIT:
+        picked_ids = {row.id for row, _label in picked}
+        related_rows = (
+            db.execute(
+                select(BidResult)
+                .where(
+                    BidResult.category == bid.category,
+                    BidResult.dminstt_nm != bid.dminstt_nm,
+                    BidResult.rl_openg_dt.is_not(None),
+                    BidResult.rl_openg_dt >= now - timedelta(days=PAST_RELATED_WINDOW_DAYS),
+                )
+                .order_by(BidResult.rl_openg_dt.desc(), BidResult.id.desc())
+                .limit(PAST_RELATED_POOL_LIMIT)
+            )
+            .scalars()
+            .all()
+        )
+
+        related = []
+        for row in related_rows:
+            if row.id in picked_ids:
+                continue
+            similarity = announcement_name_similarity(bid.bid_ntce_nm, row.bid_ntce_nm)
+            if similarity >= PAST_RELATED_MIN_SIMILARITY:
+                related.append((row, similarity))
+        related.sort(
+            key=lambda item: (item[1], item[0].rl_openg_dt or datetime.min, item[0].id),
+            reverse=True,
+        )
+        for row, _score in related:
+            picked.append((row, "유사 기관"))
+            if len(picked) >= RECOMMENDATION_LIMIT:
+                break
+
+    results = []
+    for row, label in picked:
+        row.institution_match_label = label  # type: ignore[attr-defined]
+        results.append(row)
+    return results
+
+
 def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
-    """공고 상세 + 유사 공고 + 기관 과거 낙찰 이력 (원본 BidDetailView 이식)."""
+    """공고 상세 + 비슷한 진행 중 공고 + 같은 분야 과거 낙찰 이력."""
     instance = db.get(BidAnnouncement, pk)
     if instance is None:
         return None
@@ -872,27 +1125,9 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
     institution_code = str(raw_data.get("dminsttCd") or "").strip()
     institution = db.get(G2BDemandInstitution, institution_code) if institution_code else None
 
-    similar_stmt = similar_announcement_latest_filter(
-        select(BidAnnouncement).where(
-            BidAnnouncement.category == bid.category,
-            BidAnnouncement.dminstt_nm == bid.dminstt_nm,
-        )
-    ).where(BidAnnouncement.id != bid.id)
-    # 최신 공고순 정렬. (dminstt_nm, category, bid_ntce_dt) 인덱스가 이 정렬을 받칩니다
-    # (migrations/versions/f5a6b7c8d9e0).
-    similar_stmt = similar_stmt.order_by(
-        BidAnnouncement.bid_ntce_dt.desc(),
-        BidAnnouncement.id.desc(),
-    )
-    similar_bids = db.execute(similar_stmt.limit(5)).scalars().all()
-
-    past_results = (
-        db.query(BidResult)
-        .filter(BidResult.dminstt_nm == bid.dminstt_nm)
-        .order_by(BidResult.rl_openg_dt.desc())
-        .limit(5)
-        .all()
-    )
+    now = utcnow()
+    similar_bids = _recommended_announcements(db, bid, now)
+    past_results = _past_result_candidates(db, bid, now)
 
     return {
         "bid": bid,

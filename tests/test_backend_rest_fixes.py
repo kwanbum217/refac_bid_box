@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -264,6 +265,7 @@ def _make_announcement(**overrides: Any) -> BidAnnouncement:
         "base_amount": 110000000,
         "presmpt_prce": 100000000,
         "bid_ntce_dt": utcnow(),
+        "bid_clse_dt": utcnow() + timedelta(days=1),
         "category": "Thng",
         "raw_data": None,
     }

@@ -604,7 +604,7 @@
                         <a href="{{ url('bids:result_detail', result.id) }}" class="block p-3 rounded-sm hover:bg-slate-50 transition-colors group">
                             <div class="flex justify-between items-center mb-1">
                                 <span class="text-[9px] text-slate-400 font-bold uppercase">{{ result.rl_openg_dt|date("Y-m-d") }}</span>
-                                <span class="badge badge-green text-[9px] px-1.5 py-0">완료</span>
+                                <span class="badge {% if result.institution_match_label == '유사 기관' %}badge-gray{% else %}badge-green{% endif %} text-[9px] px-1.5 py-0">{{ result.institution_match_label or '같은 기관' }}</span>
                             </div>
                             <p class="text-xs font-bold text-slate-800 group-hover:text-primary transition-colors truncate">{{ result.bid_ntce_nm }}</p>
                             <div class="mt-2 flex justify-between items-center text-[10px]">
@@ -623,7 +623,7 @@
                 <!-- Recommended -->
                 <div class="h-card">
                     <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                        <h3 class="text-[11px] font-bold text-slate-900 uppercase tracking-widest">추천 공고</h3>
+                        <h3 class="text-[11px] font-bold text-slate-900 uppercase tracking-widest">비슷한 진행 중 공고</h3>
                         <i class="fas fa-star text-amber-400 text-xs"></i>
                     </div>
                     <div class="p-2 space-y-1">
@@ -631,6 +631,7 @@
                         <a href="{{ url('bids:bid_detail', sim.id) }}" class="block p-3 rounded-sm hover:bg-slate-50 transition-colors group">
                             <span class="text-[9px] font-bold text-primary uppercase mb-1 block">{{ sim.category_label }}</span>
                             <p class="text-xs font-bold text-slate-800 group-hover:text-primary transition-colors line-clamp-2 leading-snug">{{ sim.bid_ntce_nm }}</p>
+                            <p class="mt-1 text-[9px] text-slate-400">마감 {{ sim.bid_clse_dt|date("Y-m-d H:i") }}</p>
                             <div class="mt-2 flex justify-between items-center">
                                 <span class="text-[9px] text-slate-400">{{ sim.dminstt_nm|truncatechars(12) }}</span>
                                 <span class="text-[11px] font-bold text-slate-900">
