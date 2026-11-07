@@ -63,6 +63,9 @@ class BidResultResponse(BaseModel):
     display_bidwinnr_nm: str = Field("", description="정제된 낙찰업체명")
     has_corrupted_display_text: bool = Field(False, description="원문 인코딩 손상 여부")
     display_winning_rate: float | None = Field(None, description="기초금액 기준 재계산 낙찰률")
+    institution_match_label: str = Field(
+        "", description="과거 사례 기관 일치 표지 (같은 기관/유사 기관)"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

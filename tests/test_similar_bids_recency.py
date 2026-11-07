@@ -28,6 +28,7 @@ def _add_announcement(db, **overrides) -> BidAnnouncement:
         "base_amount": 10000000,
         "presmpt_prce": 10000000,
         "bid_ntce_dt": now,
+        "bid_clse_dt": now + timedelta(days=30),
         "collected_at": now,
     }
     payload.update(overrides)
@@ -81,12 +82,14 @@ def test_similar_bids_tie_break_by_id_desc(isolated_db):
     older_id = _add_announcement(
         isolated_db,
         bid_ntce_no="TIE-01",
+        bid_ntce_nm="기본 공고명 1",
         bid_ntce_dt=same_dt,
         collected_at=same_dt,
     )
     newer_id = _add_announcement(
         isolated_db,
         bid_ntce_no="TIE-02",
+        bid_ntce_nm="기본 공고명 2",
         bid_ntce_dt=same_dt,
         collected_at=same_dt,
     )
