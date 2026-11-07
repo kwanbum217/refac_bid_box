@@ -267,6 +267,43 @@ def is_sido_rule_excluded(
     return _name_matches_sido_rule_excluded(name)
 
 
+# 공고문이 조달청 일반용역 적격심사 세부기준을 직접 인용한 지방공기업입니다. 해석기는
+# 실행 시 공고문을 읽지 않으므로 기관 단위로 옮기고, 시·도 매핑이 있어도 시·도 세부기준
+# 후보를 만들지 않고 조달청 기본 규칙으로 해석합니다(사용자 결정 3, 2026-11-06).
+# 근거: docs/analysis/local_entity_69_citation_check_20261106.md 2·3절. 2절 119건 가운데
+# 해당 기관의 모든 공고 라벨이 (A) 조달청 세부기준 인용 또는 (E) 판독 불가이고 (A)가
+# 1건 이상인 기관만 담았습니다. 수요기관 코드(dminstt_cd)로 명시하며 이름 패턴은 쓰지
+# 않습니다. 라벨이 (B)·(C)·(D)와 섞인 제주특별자치도개발공사·거제해양관광개발공사·
+# 대구공공시설관리공단은 넣지 않습니다.
+PPS_CITED_LOCAL_INSTITUTION_CODES: frozenset[str] = frozenset(
+    {
+        "Z003836",  # 구리농수산물공사
+        "Z004979",  # 대전광역시 시설관리공단
+        "B552519",  # 대전도시공사
+        "Z003824",  # 부산환경공단
+        "B552625",  # 부산환경공단
+        "Z005642",  # 서울시 강남구도시관리공단
+        "B553733",  # 세종도시교통공사
+        "Z028316",  # 아산시시설관리공단
+        "B552542",  # 양산시시설관리공단
+        "B552147",  # 울주군시설관리공단
+        "Z033569",  # 인천광역시 연수구 시설안전관리공단
+        "Z003991",  # 인천교통공사
+        "B555480",  # 전남광주통합특별시북구시설관리공단
+        "B552701",  # 제주관광공사
+        "Z017752",  # 제주관광공사
+        "Z020113",  # 제주관광공사
+        "B552915",  # 제주에너지공사
+    }
+)
+
+
+def is_pps_cited_local_institution(institution_code: str | None) -> bool:
+    """공고문이 조달청 세부기준을 인용한 지방공기업인지 수요기관 코드로 판정합니다."""
+    code = (institution_code or "").strip()
+    return code in PPS_CITED_LOCAL_INSTITUTION_CODES
+
+
 def classify_contract_regime(
     institution: G2BDemandInstitution | dict[str, Any] | None,
 ) -> str | None:
