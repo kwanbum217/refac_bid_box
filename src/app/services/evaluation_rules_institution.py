@@ -114,7 +114,7 @@ _SRC_INST_KDHC_20260818 = (
 # 한국지역난방공사 세부기준 원문(data/sources/qualification/files/kdhc, 2023-07-19·2026-01-01·
 # 2026-08-18판)에는 폐기물처리용역 정의·적용 범위에 '건설폐기물' 제외 문구가 없습니다
 # (grep '건설폐기물' 0건). 다만 건설폐기물처리용역 공고문이 환경부고시를 직접 인용하므로,
-# 그 공고에는 공사 별표 4 대신 환경부고시 경로를 씁니다(cdw_exclusion="named").
+# 그 공고에는 공사 별표 4 대신 환경부고시 경로를 씁니다(cdw_exclusion="notice_cited").
 # 공고문 인용:
 # - R26BK01621293 첨부 '1. 입찰공고문(불연성).pdf'(sha256 3f91db9ef432defae2e3ca22a94112227a12010b8babe82bd39a10acfa3ad910, 1132801 bytes):
 #   "가. 기후에너지환경부 “건설폐기물처리용역 적격업체 평가기준”에 의하여 낙찰자를
@@ -1702,7 +1702,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("폐기물처리용역", "폐기물처리"),
-        cdw_exclusion="named",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
+        cdw_exclusion="notice_cited",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
         bands=(
             _inst_band(
                 "고시금액",
@@ -2154,7 +2154,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2026-08-18",
         source=_SRC_INST_KDHC_20260818,
         patterns=("폐기물처리용역", "폐기물처리"),
-        cdw_exclusion="named",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
+        cdw_exclusion="notice_cited",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
         bands=(
             _inst_band(
                 "고시금액",
@@ -2434,7 +2434,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         superseded_date="2026-01-01",
         source=_SRC_INST_KDHC_PREDECESSOR,
         patterns=("폐기물처리용역", "폐기물처리"),
-        cdw_exclusion="named",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
+        cdw_exclusion="notice_cited",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
         bands=(
             _inst_band(
                 "고시금액",

@@ -129,10 +129,15 @@ class EvaluationRule:
     subunit_code_prefixes: tuple[str, ...] = ()
     region_code: str | None = None
     region_name: str | None = None
-    # 대구 세부기준 원문은 '폐기물처리용역 … 이 경우 건설폐기물 처리용역은 제외한다' 고 정의한다.
-    # 낙찰방법명이 환경부고시 건설폐기물 띠 표기에 맞는 공고에는 대구 폐기물 규칙을 적용하지
-    # 않도록 _select_local_rule 에서 select_moe_cdw_rule(method_name) 이 None 이 아닐 때 후보에서
-    # 뺀다. 기본값 False 이며 대구 폐기물 두 규칙만 True 로 둔다.
+    # 세부기준 원문이 '폐기물처리용역 … 건설폐기물 처리용역은 제외한다' 고 정의했거나, 공고문이
+    # 환경부고시 「건설폐기물처리용역 적격업체 평가기준」을 인용하는 규칙은 아래 값 하나로
+    # 선언합니다. _select_local_rule 은 낙찰방법명이 고시 띠 표기에 맞고 건설폐기물 신호가
+    # 확인될 때 그 규칙을 후보에서 빼 환경부고시 경로로 넘깁니다.
+    # - "band": 낙찰방법명 일치만으로 제외(대구, 원문에 제외 조항 명시)
+    # - "named": 공고명(bidNtceNm)에 '건설폐기물' 또는 조달분류에 '건설폐기물처리서비스'
+    # - "named_except_haul": "named" 신호에 더해 공고명에 '처리' 가 있을 때만 제외(울산)
+    # - "notice_cited": 원문 제외 문구는 없으나 공고문이 고시를 인용하는 시·도(서울·부산·
+    #   제주·경남·충남). 신호 판정은 "named" 와 같고 선언 근거만 다릅니다.
     cdw_exclusion: str | None = None
 
     def __post_init__(self) -> None:
