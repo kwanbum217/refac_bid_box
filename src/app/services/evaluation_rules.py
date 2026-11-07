@@ -1399,6 +1399,27 @@ def select_moe_cdw_rule(method_name: str | None) -> EvaluationRule | None:
     return None
 
 
+def _is_cdw_excluded(rule: EvaluationRule, bid_name: str) -> bool:
+    """cdw_exclusion 선언과 공고명으로 건설폐기물 배제 여부를 판정합니다.
+
+    'band': 낙찰방법명이 환경부고시 건설폐기물 띠 표기에 맞으면 제외합니다.
+    'named': 위 조건에 더해 공고명(bidNtceNm)에 '건설폐기물' 이 있을 때만 제외합니다.
+    'named_except_haul': 'named' 조건에 더해 공고명에 '처리' 가 있을 때만 제외합니다.
+    """
+    mode = rule.cdw_exclusion
+    if not mode:
+        return False
+    if mode == "band":
+        return True
+    if "건설폐기물" not in bid_name:
+        return False
+    if mode == "named":
+        return True
+    if mode == "named_except_haul":
+        return "처리" in bid_name
+    return False
+
+
 # 2025-09-01 시행 개정 전 규칙 14종 (제2025-257호·제2026-15호).
 # 하한율은 2025-09-01 이상 2026-05-26 미만 구간 공고의 실측 최빈값입니다.
 PRE_20250901_RULES: tuple[EvaluationRule, ...] = (
@@ -2368,23 +2389,9 @@ def _select_local_rule(
         if isinstance(raw_data, dict):
             bid_name = str(raw_data.get("bidNtceNm") or "")
 
-        def _cdw_excluded(rule: EvaluationRule) -> bool:
-            mode = rule.cdw_exclusion
-            if not mode:
-                return False
-            if mode == "band":
-                return True
-            if "건설폐기물" not in bid_name:
-                return False
-            if mode == "named":
-                return True
-            if mode == "named_except_haul":
-                return "처리" in bid_name
-            return False
-
-        removed = [rule for rule in base_candidates if _cdw_excluded(rule)]
+        removed = [rule for rule in base_candidates if _is_cdw_excluded(rule, bid_name)]
         cdw_excluded_any = len(removed) > 0
-        base_candidates = [rule for rule in base_candidates if not _cdw_excluded(rule)]
+        base_candidates = [rule for rule in base_candidates if not _is_cdw_excluded(rule, bid_name)]
 
     region_rules = _narrow_to_current_regime(base_candidates, announced)
     if cdw_excluded_any:
@@ -2568,6 +2575,20 @@ def _select_institution_rule(
             ["공고기관이 조달청 대행이라 수요기관 기관 규칙을 배제하고 조달청 기준을 적용합니다."],
         )
     data = raw_data if isinstance(raw_data, dict) else {}
+    # 공사 세부기준 원문에는 건설폐기물 제외 문구가 없습니다. 대신 건설폐기물처리용역
+    # 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」을 인용하므로
+    # (evaluation_rules_institution._KDHC_CDW_CITATION), 그 공고에는 기관 폐기물 규칙을
+    # 적용하지 않고 아래 환경부고시 경로로 넘깁니다.
+    if select_moe_cdw_rule(method_name) is not None:
+        bid_name = str(data.get("bidNtceNm") or "")
+        if any(_is_cdw_excluded(rule, bid_name) for rule in candidates):
+            candidates = [rule for rule in candidates if not _is_cdw_excluded(rule, bid_name)]
+            warnings.append(
+                "공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」을 인용해 "
+                "기관 폐기물 규칙을 적용하지 않았습니다."
+            )
+            if not candidates:
+                return None, None, "", warnings
     text = f"{method_name or ''} {data.get('bidNtceNm') or ''}"
     scored = [(rule, _institution_match_score(rule, text)) for rule in candidates]
     best = max(score for _, score in scored)

@@ -1,6 +1,7 @@
 # 기관 규칙 판본·구간 축·매칭 결정 회귀 (D07·D08·D09·D22·D29)
 
 > **작성일**: 2026-11-07
+> **개정**: 2026-11-07 반려 재작업 Orca Task `task_32d52bd4f706` (건설폐기물처리용역 환경부고시 배제, 9절)
 > **작업**: Orca Task `task_6de32c1c5fbf` (builder, Run `run_d3fa8d51ba74`)
 > **정본 사양**: `.orca/capsules/task_inst_versions_20261107/capsule.yaml` (`ORCA_TASK_CAPSULE_V2`)
 > **선행 문서**: [`decision_backlog_20261107.md`](decision_backlog_20261107.md) D07·D08·D09·D22·D29, [`inst_band_mismatch_13_20261107.md`](inst_band_mismatch_13_20261107.md), [`kdhc_krc_sources_20261107.md`](kdhc_krc_sources_20261107.md), [`not_computable_9_trace_20261107.md`](not_computable_9_trace_20261107.md), [`regime_lag_65_check_20261107.md`](regime_lag_65_check_20261107.md)
@@ -27,23 +28,23 @@
 | 항목 | 값 |
 | --- | ---: |
 | 비교 공고 수 | 31,325 |
-| 판정(적용 범위·규칙 ID·차단 코드)이 바뀐 공고 | 60 |
+| 판정(적용 범위·규칙 ID·차단 코드)이 바뀐 공고 | 47 |
 | 그중 새로 차단된 공고 | 0 |
 | 대상 집합 밖 판정 변화 | 0 |
-| 변경 후 규칙 구간값 = 공고값 | 46 |
-| 변경 후 규칙 구간값 != 공고값 | 14 (전부 건설폐기물, 공고값 우선이라 계산 결과 변화 없음) |
+| 변경 후 규칙 구간값 = 공고값 | 47 |
+| 변경 후 규칙 구간값 != 공고값 | 0 |
 
-바뀐 60건은 모두 한국지역난방공사 본사·지사·사업소 공고입니다. 한국농어촌공사 5건은 규칙 ID 가 그대로이고 구간값만 바뀌므로 1.2의 판정 변경 수에 들어가지 않습니다(3.3절).
+바뀐 47건은 모두 한국지역난방공사 본사·지사·사업소 공고입니다. 한국농어촌공사 5건은 규칙 ID 가 그대로이고 구간값만 바뀌므로 1.2의 판정 변경 수에 들어가지 않습니다(3.3절). 반려 재작업으로 건설폐기물처리용역 14건이 종전 환경부고시 판정으로 돌아가고 `R26BK01369593` 1건이 추가로 환경부고시 규칙을 쓰게 되어, 변경 수가 60건에서 47건으로 줄었습니다(9절).
 
 ### 1.3 대상 집합 결과
 
 | 묶음 | 대상 | 변경 | 규칙 구간값 = 공고값 | 남은 불일치 |
 | --- | ---: | ---: | ---: | ---: |
-| inst_band_mismatch_13 | 13 | 12 (KDHC 7 + KRC 5) | 12 | 1 (`R26BK01369593`, D10) |
+| inst_band_mismatch_13 | 13 | 13 (KDHC 8 + KRC 5) | 13 | 0 |
 | not_computable_9 KDHC 여객 | 1 | 1 | 1 | 0 |
 | regime_lag_65 4.3 공기업 | 10 | 8 (KDHC 8) | 8 | 2 (KAC·KRC, 규칙 기본값 89.995 대 공고 87.995) |
 
-`inst_band_mismatch_13` 의 한국농어촌공사 5건은 규칙 ID 가 바뀌지 않아 1.2의 60건에는 없지만, 구간값이 86.245에서 82.495로 바뀌어 공고값과 일치합니다.
+`inst_band_mismatch_13` 의 한국농어촌공사 5건은 규칙 ID 가 바뀌지 않아 1.2의 47건에는 없지만, 구간값이 86.245에서 82.495로 바뀌어 공고값과 일치합니다.
 
 ---
 
@@ -129,10 +130,10 @@
 
 - 비교 공고: 31,325건
 - 변경 전 스냅샷과 변경 후 스냅샷의 키 집합은 같습니다.
-- 변경 60건, 전부 한국지역난방공사(본사 8, 지사·사업소 52)입니다.
+- 변경 47건, 전부 한국지역난방공사(본사 9, 지사·사업소 38)입니다.
 - 새로 차단된 공고는 0건입니다. 변경 전 차단 1건(`R25BK01166116`, `RULE_REGIME_MISMATCH`)은 해소되었습니다.
 
-### 3.2 판정이 바뀐 공고 60건
+### 3.2 판정이 바뀐 공고 47건
 
 | # | 공고번호(차수) | 공고일 | 수요기관(코드) | 변경 전 | 변경 후 | 규칙 구간값 | 공고값 | 일치 |
 | ---: | --- | --- | --- | --- | --- | ---: | ---: | :---: |
@@ -148,83 +149,68 @@
 | 10 | `R26BK01339675`(000) | 2026-02-13 | 한국지역난방공사 광주전남지사(D325105) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
 | 11 | `R26BK01358920`(000) | 2026-02-26 | 한국지역난방공사 광주전남지사(D325105) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
 | 12 | `R26BK01360583`(000) | 2026-02-27 | 한국지역난방공사 광주전남지사(D325105) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 13 | `R26BK01394326`(000) | 2026-03-13 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 14 | `R26BK01397306`(000) | 2026-03-16 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_03 | INSTITUTION/SERVC_INST_KDHC_20260101_PASSENGER | 87.995 | 87.995 | O |
-| 15 | `R26BK01399835`(001) | 2026-03-19 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_08 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 84.245 | O |
-| 16 | `R26BK01408405`(000) | 2026-03-19 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_08 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 84.245 | O |
-| 17 | `R26BK01408776`(000) | 2026-03-19 | 한국지역난방공사 동탄지사(D325152) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 18 | `R26BK01424140`(000) | 2026-03-26 | 한국지역난방공사 청주지사(D325103) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
-| 19 | `R26BK01426219`(000) | 2026-03-27 | 한국지역난방공사 화성지사(D325156) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 20 | `R26BK01494599`(000) | 2026-04-28 | 한국지역난방공사 김해사업소(D325107) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_08 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 84.245 | O |
-| 21 | `R26BK01542739`(000) | 2026-05-26 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
-| 22 | `R26BK01560111`(000) | 2026-06-04 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
-| 23 | `R26BK01583538`(000) | 2026-06-16 | 한국지역난방공사 김해사업소(D325107) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_SW_TARGET | 87.995 | 87.995 | O |
-| 24 | `R26BK01589006`(000) | 2026-06-18 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 25 | `R26BK01589351`(000) | 2026-06-18 | 한국지역난방공사 청주지사(D325103) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 26 | `R26BK01596070`(000) | 2026-06-22 | 한국지역난방공사 삼송지사(D325115) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 27 | `R26BK01599265`(000) | 2026-06-24 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 28 | `R26BK01607658`(000) | 2026-06-29 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 29 | `R26BK01621293`(000) | 2026-07-07 | 한국지역난방공사 동탄지사(D325152) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 30 | `R26BK01624792`(000) | 2026-07-09 | 한국지역난방공사 김해사업소(D325107) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 31 | `R26BK01629748`(000) | 2026-07-13 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_03 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 86.745 | X |
-| 32 | `R26BK01631533`(000) | 2026-07-14 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
-| 33 | `R26BK01633123`(000) | 2026-07-14 | 한국지역난방공사 세종지사(D325104) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 34 | `R26BK01633356`(000) | 2026-07-14 | 한국지역난방공사 화성지사(D325156) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 35 | `R26BK01633843`(000) | 2026-07-15 | 한국지역난방공사 삼송지사(D325115) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 36 | `R26BK01638207`(000) | 2026-07-16 | 한국지역난방공사 서울중앙지사(D325109) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 37 | `R26BK01644144`(000) | 2026-07-22 | 한국지역난방공사 평택지사(D325160) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 38 | `R26BK01645094`(000) | 2026-07-22 | 한국지역난방공사 수원사업소(D325112) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 39 | `R26BK01648695`(000) | 2026-07-24 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 40 | `R26BK01649356`(000) | 2026-07-24 | 한국지역난방공사 청주지사(D325103) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 41 | `R26BK01649977`(000) | 2026-07-24 | 한국지역난방공사 동탄지사(D325152) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 42 | `R26BK01655100`(000) | 2026-07-28 | 한국지역난방공사 판교지사(D325114) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 43 | `R26BK01656148`(000) | 2026-07-29 | 한국지역난방공사 광주전남지사(D325105) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
-| 44 | `R26BK01656556`(000) | 2026-07-29 | 한국지역난방공사 서울중앙지사(D325109) | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 87.745 | X |
-| 45 | `R26BK01660419`(000) | 2026-07-31 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
-| 46 | `R26BK01674466`(000) | 2026-08-10 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
-| 47 | `R26BK01681756`(000) | 2026-08-13 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_POST_20260727_ATTACH_03 | INSTITUTION/SERVC_INST_KDHC_20260101_PASSENGER | 87.995 | 87.995 | O |
-| 48 | `R26BK01708025`(000) | 2026-09-01 | 한국지역난방공사 수원사업소(D325112) | INSTITUTION/SERVC_INST_KDHC_20260101_OTHER | INSTITUTION/SERVC_INST_KDHC_20260818_OTHER | 82.495 | 82.495 | O |
-| 49 | `R26BK01730527`(001) | 2026-09-22 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
-| 50 | `R26BK01745985`(000) | 2026-09-28 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
-| 51 | `R26BK01747872`(000) | 2026-09-29 | 한국지역난방공사 화성지사(D325156) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260818_REPAIR | 86.245 | 86.245 | O |
-| 52 | `R26BK01761398`(000) | 2026-10-07 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_LEASE | INSTITUTION/SERVC_INST_KDHC_20260818_LEASE | 82.495 | 82.495 | O |
-| 53 | `R26BK01764999`(000) | 2026-10-12 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
-| 54 | `R26BK01766196`(000) | 2026-10-12 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
-| 55 | `R26BK01792264`(000) | 2026-10-26 | 한국지역난방공사 김해사업소(D325107) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260818_REPAIR | 86.245 | 86.245 | O |
-| 56 | `R26BK01793057`(000) | 2026-10-27 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
-| 57 | `R26BK01793122`(000) | 2026-10-27 | 한국지역난방공사 서울중앙지사(D325109) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260818_REPAIR | 86.245 | 86.245 | O |
-| 58 | `R26BK01798610`(000) | 2026-10-29 | 한국지역난방공사 수원사업소(D325112) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260818_FACILITY | 89.995 | 89.995 | O |
-| 59 | `R26BK01812771`(000) | 2026-11-05 | 한국지역난방공사 광주전남지사(D325105) | PPS_DEFAULT/SERVC_QUAL_POST_20260727_ATTACH_03 | INSTITUTION/SERVC_INST_KDHC_20260818_PASSENGER | 87.995 | 87.995 | O |
-| 60 | `R26BK01813749`(000) | 2026-11-05 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_SW | INSTITUTION/SERVC_INST_KDHC_20260818_SW | 82.495 | 82.495 | O |
+| 13 | `R26BK01369593`(000) | 2026-03-04 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | PPS_DEFAULT/SERVC_QUAL_MOE_CDW_ATTACH_04 | 87.745 | 87.745 | O |
+| 14 | `R26BK01394326`(000) | 2026-03-13 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 15 | `R26BK01397306`(000) | 2026-03-16 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_03 | INSTITUTION/SERVC_INST_KDHC_20260101_PASSENGER | 87.995 | 87.995 | O |
+| 16 | `R26BK01399835`(001) | 2026-03-19 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_08 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 84.245 | O |
+| 17 | `R26BK01408405`(000) | 2026-03-19 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_08 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 84.245 | O |
+| 18 | `R26BK01408776`(000) | 2026-03-19 | 한국지역난방공사 동탄지사(D325152) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 19 | `R26BK01424140`(000) | 2026-03-26 | 한국지역난방공사 청주지사(D325103) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
+| 20 | `R26BK01426219`(000) | 2026-03-27 | 한국지역난방공사 화성지사(D325156) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 21 | `R26BK01494599`(000) | 2026-04-28 | 한국지역난방공사 김해사업소(D325107) | PPS_DEFAULT/SERVC_QUAL_PRE_20250901_ATTACH_08 | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | 84.245 | 84.245 | O |
+| 22 | `R26BK01542739`(000) | 2026-05-26 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
+| 23 | `R26BK01560111`(000) | 2026-06-04 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
+| 24 | `R26BK01583538`(000) | 2026-06-16 | 한국지역난방공사 김해사업소(D325107) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_04 | INSTITUTION/SERVC_INST_KDHC_20260101_SW_TARGET | 87.995 | 87.995 | O |
+| 25 | `R26BK01589006`(000) | 2026-06-18 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 26 | `R26BK01589351`(000) | 2026-06-18 | 한국지역난방공사 청주지사(D325103) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 27 | `R26BK01596070`(000) | 2026-06-22 | 한국지역난방공사 삼송지사(D325115) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 28 | `R26BK01599265`(000) | 2026-06-24 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 29 | `R26BK01607658`(000) | 2026-06-29 | 한국지역난방공사 양산지사(D325117) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 30 | `R26BK01631533`(000) | 2026-07-14 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
+| 31 | `R26BK01656148`(000) | 2026-07-29 | 한국지역난방공사 광주전남지사(D325105) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260101_FACILITY | 87.995 | 87.995 | O |
+| 32 | `R26BK01660419`(000) | 2026-07-31 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
+| 33 | `R26BK01674466`(000) | 2026-08-10 | 한국지역난방공사 강남지사(D325150) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260101_REPAIR | 84.245 | 84.245 | O |
+| 34 | `R26BK01681756`(000) | 2026-08-13 | 한국지역난방공사 대구지사(D325102) | PPS_DEFAULT/SERVC_QUAL_POST_20260727_ATTACH_03 | INSTITUTION/SERVC_INST_KDHC_20260101_PASSENGER | 87.995 | 87.995 | O |
+| 35 | `R26BK01708025`(000) | 2026-09-01 | 한국지역난방공사 수원사업소(D325112) | INSTITUTION/SERVC_INST_KDHC_20260101_OTHER | INSTITUTION/SERVC_INST_KDHC_20260818_OTHER | 82.495 | 82.495 | O |
+| 36 | `R26BK01730527`(001) | 2026-09-22 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
+| 37 | `R26BK01745985`(000) | 2026-09-28 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
+| 38 | `R26BK01747872`(000) | 2026-09-29 | 한국지역난방공사 화성지사(D325156) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260818_REPAIR | 86.245 | 86.245 | O |
+| 39 | `R26BK01761398`(000) | 2026-10-07 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_LEASE | INSTITUTION/SERVC_INST_KDHC_20260818_LEASE | 82.495 | 82.495 | O |
+| 40 | `R26BK01764999`(000) | 2026-10-12 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
+| 41 | `R26BK01766196`(000) | 2026-10-12 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
+| 42 | `R26BK01792264`(000) | 2026-10-26 | 한국지역난방공사 김해사업소(D325107) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260818_REPAIR | 86.245 | 86.245 | O |
+| 43 | `R26BK01793057`(000) | 2026-10-27 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_WASTE | INSTITUTION/SERVC_INST_KDHC_20260818_WASTE | 82.495 | 82.495 | O |
+| 44 | `R26BK01793122`(000) | 2026-10-27 | 한국지역난방공사 서울중앙지사(D325109) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_15 | INSTITUTION/SERVC_INST_KDHC_20260818_REPAIR | 86.245 | 86.245 | O |
+| 45 | `R26BK01798610`(000) | 2026-10-29 | 한국지역난방공사 수원사업소(D325112) | PPS_DEFAULT/SERVC_QUAL_POST_20260526_ATTACH_01 | INSTITUTION/SERVC_INST_KDHC_20260818_FACILITY | 89.995 | 89.995 | O |
+| 46 | `R26BK01812771`(000) | 2026-11-05 | 한국지역난방공사 광주전남지사(D325105) | PPS_DEFAULT/SERVC_QUAL_POST_20260727_ATTACH_03 | INSTITUTION/SERVC_INST_KDHC_20260818_PASSENGER | 87.995 | 87.995 | O |
+| 47 | `R26BK01813749`(000) | 2026-11-05 | 한국지역난방공사(B550373) | INSTITUTION/SERVC_INST_KDHC_20260101_SW | INSTITUTION/SERVC_INST_KDHC_20260818_SW | 82.495 | 82.495 | O |
 
 ### 3.3 기관별 집계
 
 | 기관(코드) | 변경 | 규칙값 = 공고값 | 규칙값 != 공고값 |
 | --- | ---: | ---: | ---: |
-| 한국지역난방공사(B550373) | 8 | 8 | 0 |
-| 한국지역난방공사 강남지사(D325150) | 7 | 7 | 0 |
+| 한국지역난방공사(B550373) | 9 | 9 | 0 |
 | 한국지역난방공사 광주전남지사(D325105) | 7 | 7 | 0 |
-| 한국지역난방공사 대구지사(D325102) | 6 | 6 | 0 |
+| 한국지역난방공사 강남지사(D325150) | 6 | 6 | 0 |
 | 한국지역난방공사 양산지사(D325117) | 6 | 6 | 0 |
-| 한국지역난방공사 서울중앙지사(D325109) | 5 | 4 | 1 |
-| 한국지역난방공사 김해사업소(D325107) | 4 | 3 | 1 |
-| 한국지역난방공사 동탄지사(D325152) | 3 | 1 | 2 |
-| 한국지역난방공사 수원사업소(D325112) | 3 | 3 | 0 |
-| 한국지역난방공사 청주지사(D325103) | 3 | 2 | 1 |
-| 한국지역난방공사 화성지사(D325156) | 3 | 2 | 1 |
-| 한국지역난방공사 삼송지사(D325115) | 2 | 1 | 1 |
-| 한국지역난방공사 세종지사(D325104) | 1 | 0 | 1 |
-| 한국지역난방공사 판교지사(D325114) | 1 | 0 | 1 |
-| 한국지역난방공사 평택지사(D325160) | 1 | 0 | 1 |
-| **합계** | **60** | **46** | **14** |
+| 한국지역난방공사 대구지사(D325102) | 5 | 5 | 0 |
+| 한국지역난방공사 김해사업소(D325107) | 3 | 3 | 0 |
+| 한국지역난방공사 서울중앙지사(D325109) | 3 | 3 | 0 |
+| 한국지역난방공사 수원사업소(D325112) | 2 | 2 | 0 |
+| 한국지역난방공사 청주지사(D325103) | 2 | 2 | 0 |
+| 한국지역난방공사 화성지사(D325156) | 2 | 2 | 0 |
+| 한국지역난방공사 동탄지사(D325152) | 1 | 1 | 0 |
+| 한국지역난방공사 삼송지사(D325115) | 1 | 1 | 0 |
+| **합계** | **47** | **47** | **0** |
 
-규칙값 != 공고값 14건은 모두 건설폐기물처리용역입니다. KDHC 별표 4 구간값은 84.245이고 공고는 환경부 고시 값을 87.745(일부 86.745)로 인쇄합니다. 공고값 우선 원칙에 따라 유효 하한율은 공고값 그대로이며 계산 결과는 바뀌지 않습니다. 규칙 귀속(환경부 고시 대 KDHC 별표 4)은 이번 결정 범위 밖입니다.
+
+규칙값 != 공고값 0건입니다. 반려 전 표에 있던 건설폐기물처리용역 14건은 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」을 인용하므로 KDHC 별표 4 대신 고시 경로로 돌아갔고, 규칙 구간값과 공고값이 모두 일치합니다(9절).
 
 ### 3.4 inst_band_mismatch_13 (13건)
 
 | # | 공고번호 | 기관 | 변경 후 규칙 | 규칙값 | 공고값 | 일치 |
 | ---: | --- | --- | --- | ---: | ---: | :---: |
-| 1 | `R26BK01369593` | 한국지역난방공사 | `SERVC_INST_KDHC_20260101_WASTE` | 84.245 | 87.745 | X |
+| 1 | `R26BK01369593` | 한국지역난방공사 | `SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
 | 2 | `R26BK01634862` | 한국농어촌공사 | `SERVC_INST_KRC_20260624_LEASE` | 82.495 | 82.495 | O |
 | 3 | `R26BK01730527` | 한국지역난방공사 | `SERVC_INST_KDHC_20260818_WASTE` | 82.495 | 82.495 | O |
 | 4 | `R26BK01745985` | 한국지역난방공사 | `SERVC_INST_KDHC_20260818_WASTE` | 82.495 | 82.495 | O |
@@ -238,8 +224,8 @@
 | 12 | `R26BK01793641` | 한국농어촌공사 | `SERVC_INST_KRC_20260624_ACADEMIC` | 82.495 | 82.495 | O |
 | 13 | `R26BK01813749` | 한국지역난방공사 | `SERVC_INST_KDHC_20260818_SW` | 82.495 | 82.495 | O |
 
-- 12/13 일치. 남은 1건은 D10(낙찰방법명에 세부유형이 없어 공고명으로 유형 추론)이며 이번 결정 범위 밖입니다.
-- 한국농어촌공사 5건은 규칙 ID 가 그대로이고 밴드값만 86.245에서 82.495로 바뀌었습니다. 3.1의 판정 축(규칙 ID)이 바뀌지 않아 60건 표에는 없습니다.
+- 13/13 일치. `R26BK01369593` 은 공고명이 `건설폐기물 처리용역`이고 첨부 `5. (환경부고시) 건설폐기물처리용역 적격업체 평가기준(2025.10.01).pdf` 를 붙이며 하한율이 87.745% 라, 9절의 배제 규칙으로 고시 제4호를 씁니다.
+- 한국농어촌공사 5건은 규칙 ID 가 그대로이고 밴드값만 86.245에서 82.495로 바뀌었습니다. 3.1의 판정 축(규칙 ID)이 바뀌지 않아 47건 표에는 없습니다.
 
 ### 3.5 not_computable_9 (9건)
 
@@ -278,7 +264,7 @@
 
 없습니다.
 
-- 60건 모두 한국지역난방공사 본사·지사·사업소 공고입니다.
+- 47건 모두 한국지역난방공사 본사·지사·사업소 공고입니다.
 - 다른 기관(한국농어촌공사·한국공항공사 포함)의 적용 범위·규칙 ID·차단 코드는 바뀌지 않았습니다.
 - 2026-01-01판 이전 지사 공고 10건은 지사 코드가 새로 붙기 전과 같이 PPS 기본값을 유지합니다. 2.4절의 시행 전 판본 제외 규칙 때문입니다.
 - 새로 차단된 공고는 0건입니다.
@@ -292,9 +278,10 @@
 | `tests/test_institution_rules.py` | 186행 | `assert code_total == 137` | `assert code_total == 143` | D08 로 한국농어촌공사 6개 별표에 구간이 6개 늘었습니다. YAML·코드 구간 수를 함께 맞췄습니다. |
 | `tests/test_evaluation_quant_institution.py` | 50행 | `KDHC_NO_TABLE_IDS = ("SERVC_INST_KDHC_20230719_WASTE",)` | 2026-08-18판 11개 ID 추가 | D07 로 새 규칙 ID 가 생겼고 2026-08-18판 배점표 명세가 없어 `quant_table=False`(정량점수 직접 입력)입니다. |
 | `tests/test_evaluation_rules_split_invariance.py` | 43행 | `"INSTITUTION_RULES": "d7cabe0e33a1e8cf"` | `"8a8c340f61ca94b1"` | D07·D08·D22·D29 로 기관 규칙 벌이 의도적으로 바뀌었습니다. 다른 규칙 상수 지문과 `list_all_rules()` 지문은 그대로입니다. |
+| `tests/test_evaluation_rules_split_invariance.py` | 45행 | `"INSTITUTION_RULES": "8a8c340f61ca94b1"` | `"0b25ba9cff246172"` | 반려 재작업으로 한국지역난방공사 폐기물 규칙 3개에 `cdw_exclusion="named"` 를 선언했습니다. 다른 규칙 상수 지문과 `list_all_rules()` 지문은 그대로입니다. |
 | `tests/test_institution_rules.py` | `test_kac_subunit_alias_matches_only_without_code` | 코드 `Z013741` 이면 기관 규칙 미선택 | 변경 없음 | D29 는 지사·사업소(한국지역난방공사)만 넓혔고 한국공항공사 코드는 넣지 않았습니다. 2.4절 이유. |
 
-새 시험 `tests/test_inst_versions_20261107.py` 는 (a) 2026-08-18 경계, (b) 농어촌 고시금액 축, (c) 2023-07-19 여객, (d) 지사 코드 매칭, (e) 목록 밖 코드 미매칭을 단언합니다. 기존 `tests/test_kdhc_band_axis.py`, `tests/test_kdhc_predecessor.py`, `tests/test_rule_not_found_32_fix.py` 는 단언을 바꾸지 않고 통과합니다.
+새 시험 `tests/test_inst_versions_20261107.py` 는 (a) 2026-08-18 경계, (b) 농어촌 고시금액 축, (c) 2023-07-19 여객, (d) 지사 코드 매칭, (e) 목록 밖 코드 미매칭, (f) 공고문이 환경부고시를 인용한 건설폐기물처리용역의 고시 규칙 적용, (g) 공고명에 건설폐기물이 없을 때 공사 별표 4 유지를 단언합니다. 기존 `tests/test_kdhc_band_axis.py`, `tests/test_kdhc_predecessor.py`, `tests/test_rule_not_found_32_fix.py`, `tests/test_cdw_exclusion_regions.py` 는 단언을 바꾸지 않고 통과합니다.
 
 ---
 
@@ -312,6 +299,7 @@
 | KRC 별표 1·3·4·5의1·7 | B 60/70, k 4(고시금액 미만)/2(이상), 기준 90, T 85, 하한 86.245/82.495 | `kdhc_krc_sources_20261107.md` 3.3.1·3.3.2·3.5, `servc_formula_userfiles_agency_20261004.md:4.2` |
 | KRC 별표 8 | B 70, k 4(고시금액 미만)/2(이상), 기준 90, T 85, 하한 86.245/82.495 | 같은 문서 3.3.1·3.3.2·3.5 |
 | KDHC 지사 코드 `D325103`·`D325105`·`D325117` | 명시 코드 | `regime_lag_65_check_20261107.md` 3.1·3.2, `uv run python scripts/db_readonly_query.py` 읽기 전용 조회 |
+| KDHC 폐기물 규칙 3개의 `cdw_exclusion="named"` | 선언값(수치 아님) | 공고문 R26BK01621293·R26BK01629748·R26BK01644144 인용문과 sha256, 9.1절. KDHC 원문에는 건설폐기물 제외 문구가 없습니다 |
 | 고시금액 경계 | 2026년 230,000,000원 | `src/ml/notice_amount.py` `notice_amount_for_year(2026)`, 기존 기관 규칙과 같은 상수 |
 
 역산·대입으로 얻은 하한율은 원문에 인쇄된 값이 아니며, 2.1·2.2·2.3절의 계산식을 그대로 따랐습니다. 원문에 없는 값을 추정해 넣은 상수는 없습니다.
@@ -323,9 +311,9 @@
 ### 7.1 남은 일
 
 1. **한국지역난방공사 2026-08-18판 정량평가 배점표**: 11개 규칙이 `quant_table=False` 라 정량점수 직접 입력이 필요합니다. `institution_quant_tables_20261013.yaml` 에 2026-08-18판 명세를 추가하는 후속 작업이 필요합니다.
-2. **건설폐기물 처리용역 귀속**: 3.3절의 14건은 KDHC 별표 4 가 아니라 환경부 고시를 적용한 공고입니다. 규칙 귀속은 D10·D03 계열 후속 결정입니다.
-3. **KAC 김포공항·KRC 토지개발사업단 코드**: 2.4절 이유로 넣지 않았습니다. 2026-03-02판·2025-10-01판 시설분야 규칙을 먼저 등록해야 합니다.
-4. **`R26BK01369593`**: D10(세부유형 추론) 그대로입니다.
+2. **KAC 김포공항·KRC 토지개발사업단 코드**: 2.4절 이유로 넣지 않았습니다. 2026-03-02판·2025-10-01판 시설분야 규칙을 먼저 등록해야 합니다.
+
+건설폐기물처리용역 귀속(반려 전 3.3절의 14건)과 `R26BK01369593` 은 9절의 환경부고시 배제 규칙으로 해소되었습니다.
 
 ### 7.2 검증 명령
 
@@ -340,7 +328,7 @@
 
 | 명령 | 결과 |
 | --- | --- |
-| `uv run pytest tests/ -q -m 'not data_assets'` | 10,537 passed, 41 skipped, 3 deselected, 2 xfailed (274.83s) |
+| `uv run pytest tests/ -q -m 'not data_assets'` | 10,539 passed, 41 skipped, 3 deselected, 2 xfailed (272.24s) |
 | `python3 scripts/validate_agent_rules.py --quiet` | 검증 통과: 22/22 건 |
 
 ---
@@ -389,3 +377,139 @@ PY
 uv run pytest tests/test_inst_versions_20261107.py -q
 uv run pytest tests/test_kdhc_band_axis.py tests/test_kdhc_predecessor.py tests/test_rule_not_found_32_fix.py -q
 ```
+
+```sh
+# 반려 재작업 회귀(9.3절). 기관 규칙의 cdw_exclusion 만 끈 판정과 현재 판정을 같은 수집에서 비교합니다.
+uv run python - <<'PY'
+from dataclasses import replace
+from datetime import date
+import scripts.report_rule_coverage as rc
+from src.app.services import evaluation_rules
+
+after_rules = evaluation_rules.INSTITUTION_RULES
+before_rules = tuple(
+    replace(rule, cdw_exclusion=None) if rule.cdw_exclusion else rule
+    for rule in after_rules
+)
+original = rc._to_record
+
+
+def judge(result):
+    outcome = rc.classify_result(result)
+    return (outcome.applied_scope, outcome.rule_id, outcome.block_code)
+
+
+def patched(row, institutions, attachment_regime=None):
+    key = f"{row.bid_ntce_no}-{row.bid_ntce_ord}"
+    evaluation_rules.INSTITUTION_RULES = before_rules
+    try:
+        before = original(row, institutions, attachment_regime)
+    finally:
+        evaluation_rules.INSTITUTION_RULES = after_rules
+    after = original(row, institutions, attachment_regime)
+    record = dict(after)
+    record["key"] = key
+    record["before"] = judge(before["result"])
+    record["after"] = judge(after["result"])
+    return record
+
+
+rc._to_record = patched
+records = rc.collect_records(
+    months=12,
+    category="Servc",
+    method_code="낙030001",
+    today=date(2026, 11, 7),
+)
+changed = {r["key"]: (r["before"], r["after"]) for r in records if r["before"] != r["after"]}
+print(len(records), len(changed))
+for key, (before, after) in sorted(changed.items()):
+    print(key, before, "->", after)
+PY
+```
+
+---
+
+## 9. 반려 재작업: 건설폐기물처리용역 환경부고시 경로 복원
+
+반려 사유는 이전 시도의 전수 판정 비교에서 변경 60건 중 14건이 환경부고시 건설폐기물 규칙(`SERVC_QUAL_MOE_CDW_ATTACH_03`·`_04`)에서 한국지역난방공사 폐기물 규칙(`SERVC_INST_KDHC_*_WASTE`)으로 넘어간 것입니다. 2026-10-19 결정은 건설폐기물에 환경부 고시 경로를 쓰도록 정하고 있습니다.
+
+### 9.1 근거 확인
+
+#### 9.1.1 한국지역난방공사 세부기준 원문
+
+`data/sources/qualification/files/kdhc` 의 2023-07-19·2026-01-01·2026-08-18판 텍스트 추출본에서 `건설폐기물` 을 찾은 결과는 0건입니다. 폐기물처리용역 정의와 적용 범위에 제외 문구가 없습니다.
+
+- `e2313784645a_kdhc_yongyeok_2026-01-01.txt:16` — "5. “폐기물처리용역”이란 쓰레기, 연소재, 오니(汚泥: 오염된 침전물), 폐유, 폐산, 폐알카리 및 동물의 사체 등으로서 사람의 생활이나 산업활동에 필요하지 아니하게 된 물질(폐기물)을 폐기물관리법 제25조에 의한 환경부장관 또는 시·도지사의 ‘폐기물처리업’ 허가를 받은 ‘폐기물처리업자’가 폐기물을 수집, 운반, 보관, 재활용, 처분(소각, 중화, 파쇄, 고형화 등) 등의 방법으로 처리하는 영업을 말한다."
+- `762d7992a046_kdhc_eq.txt:12` (2026-08-18판 추출) — 같은 문장.
+- `e2313784645a_kdhc_yongyeok_2026-01-01.txt:63` — "4. 폐기물처리용역 평가기준 : 별표 4". 건설폐기물 예외 없음.
+
+따라서 원문만으로는 배제 근거가 없습니다. 아래 공고문이 환경부고시를 직접 인용하므로 그 공고에 한해 고시 경로를 씁니다.
+
+#### 9.1.2 공고문 인용과 하한율
+
+반려 목록 14건은 모두 낙찰방법명이 환경부고시 [별표] 구간명(`적격심사제-추정가격 2억원 미만인 용역`, `적격심사제-추정가격 5억원 미만 2억원 이상인 용역`)이고, 첨부에 환경부고시 `건설폐기물처리용역 적격업체 평가기준` 이 있습니다. 그중 4개 파일을 1초 간격으로 내려받아(`.cache/cdw14`, 커밋 제외) 인용문과 하한율을 확인했습니다.
+
+| 공고번호 | 내려받은 첨부 | sha256 | 인용문 | 공고 하한율 |
+| --- | --- | --- | --- | ---: |
+| `R26BK01621293` | `1. 입찰공고문(불연성).pdf` (1132801 bytes) | `3f91db9ef432defae2e3ca22a94112227a12010b8babe82bd39a10acfa3ad910` | "가. 기후에너지환경부 “건설폐기물처리용역 적격업체 평가기준”에 의하여 낙찰자를 결정하므로 동 기준을 반드시 사전에 열람하여야 합니다." | 87.745 |
+| `R26BK01629748` | `0.입찰공고문.pdf` (943668 bytes) | `0f294575cdcfd854b6a851c4f98134f72da5da121a533f9075370145ee82be78` | "가. 적격심사 낙찰제로서 환경부고시 “건설폐기물처리용역 적격업체 평가기준”에 의하여 낙찰자를 결정하므로 동 기준을 반드시 사전 열람하여야 합니다." | 86.745 |
+| `R26BK01644144` | `1. 입찰공고문(PDF).pdf` (834112 bytes) | `3e129290cb3d74106fc325b6a94b0761668a896783d82a76fbab47e1a98a3262` | "가. 적격심사 낙찰제로서 건설폐기물처리용역 적격업체 평가기준(환경부고시 제2025-165호)에 의하여 낙찰자를 결정하므로 동 기준을 반드시 사전 열람하여야 합니다." | 87.745 |
+| `R26BK01633356` | `5. 건설폐기물처리용역 적격업체 평가기준(환경부고시)(제2025-165호)(20251007).pdf` (882831 bytes) | `2c39ad6ae811d2ffe47a3b2d3701d39cfc17f9924dd72596fd9541d1b3db003b` | "[시행 2025. 10. 7.] [환경부고시 제2025-165호, 2025. 10. 1., 일부개정]" / "제1조(목적) ... 건설폐기물처리용역의 적격업체를 선정하기 위한 평가기준" | 87.745 |
+
+- 인용문은 환경부고시가 적용 기준임을 밝히고, 하한율은 고시 제4호(2억원 미만) 87.745%·제3호(5억원 미만 2억원 이상) 86.745% 와 같습니다.
+- 나머지 10건도 첨부 파일명이 `(환경부고시) 건설폐기물처리용역 적격업체 평가기준` 또는 `건설폐기물처리용역 적격업체 평가기준(환경부고시 제2025-165호)` 이고 하한율이 같은 값입니다.
+
+### 9.2 수정 내용
+
+| 파일 | 수정 |
+| --- | --- |
+| `src/app/services/evaluation_rules_institution.py` | `_institution_rule` 에 `cdw_exclusion` 인자를 추가하고, `SERVC_INST_KDHC_20230719_WASTE`·`SERVC_INST_KDHC_20260101_WASTE`·`SERVC_INST_KDHC_20260818_WASTE` 에 `cdw_exclusion="named"` 를 선언했습니다. 인용문·sha256 은 `_KDHC_CDW_CITATION` 상수와 주석에 남겼습니다. |
+| `src/app/services/evaluation_rules.py` | 시·도 경로의 인라인 `_cdw_excluded` 를 모듈 함수 `_is_cdw_excluded(rule, bid_name)` 로 옮겼습니다. `_select_institution_rule` 은 낙찰방법명이 환경부고시 띠 표기이고 공고명에 `건설폐기물` 이 있으면 그 기관 폐기물 규칙을 후보에서 빼고, 후보가 없으면 종전 조달청·환경부고시 경로로 넘깁니다. |
+| `tests/test_inst_versions_20261107.py` | (f) 건설폐기물처리용역이 고시 제4호로 계산되는지, (g) 공고명에 건설폐기물이 없으면 공사 별표 4 를 유지하는지 시험을 추가했습니다. |
+| `tests/test_evaluation_rules_split_invariance.py` | `INSTITUTION_RULES` 지문을 `0b25ba9cff246172` 로 갱신했습니다(5절). |
+| `docs/analysis/inst_versions_regression_20261107.md` | 1.2·1.3·3.2·3.3·3.4·4·5·6·7.1절 수치를 재작업 결과로 갱신하고 9절을 추가했습니다. |
+
+- 시·도 규칙의 `cdw_exclusion` 판정은 값과 순서가 그대로입니다(`LOCAL_RULES` 지문 불변, `tests/test_cdw_exclusion_regions.py` 통과).
+- 이름 패턴으로 지사·기관을 고르는 코드는 추가하지 않았습니다. 배제 판정은 공고명의 `건설폐기물` 표기와 낙찰방법명 띠 표기만 봅니다.
+
+### 9.3 재작업 후 전수 판정 회귀
+
+기관 규칙의 `cdw_exclusion` 만 끈 판정(반려 전 상태)과 현재 판정을 같은 31,325건 수집에서 비교했습니다. 재현은 9.4절입니다.
+
+| # | 공고번호(차수) | 변경 전(반려 전) | 변경 후 | 규칙 구간값 | 공고값 | 일치 |
+| ---: | --- | --- | --- | ---: | ---: | :---: |
+| 1 | `R26BK01369593`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 2 | `R26BK01621293`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 3 | `R26BK01624792`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 4 | `R26BK01629748`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_03` | 86.745 | 86.745 | O |
+| 5 | `R26BK01633123`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 6 | `R26BK01633356`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 7 | `R26BK01633843`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 8 | `R26BK01638207`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 9 | `R26BK01644144`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 10 | `R26BK01645094`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 11 | `R26BK01648695`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 12 | `R26BK01649356`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 13 | `R26BK01649977`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 14 | `R26BK01655100`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+| 15 | `R26BK01656556`(000) | INSTITUTION/`SERVC_INST_KDHC_20260101_WASTE` | PPS_DEFAULT/`SERVC_QUAL_MOE_CDW_ATTACH_04` | 87.745 | 87.745 | O |
+
+- 반려 목록 `.orca/cdw14.txt` 의 14건이 모두 변경 후 환경부고시 판정으로 돌아왔습니다(키 집합 일치 확인).
+- 15번째 `R26BK01369593` 은 `inst_band_mismatch_13` 의 한국지역난방공사 1건으로, 공고명이 `건설폐기물 처리용역(건설오니)` 이고 첨부가 `5. (환경부고시) 건설폐기물처리용역 적격업체 평가기준(2025.10.01).pdf`, 하한율이 87.745% 입니다. 반려 전 공사 별표 4(84.245%)와 불일치하던 값이 고시 제4호와 일치하게 되었습니다.
+- 전수 변경은 60건에서 47건이 되었습니다(14건 복귀 + 1건 추가). 1.2·3.2·3.3절 표를 이 값으로 갱신했습니다.
+- 새로 차단된 공고 0건, 대상 집합 밖 판정 변화 0건입니다.
+- 시·도(`REGION`)·다른 기관 판정은 바뀌지 않았습니다. 반려 전 변경 60건 중 남은 46건의 변경 전·후 값도 3.2절 그대로입니다.
+
+### 9.4 재현
+
+8절 마지막 코드 블록이 9.3절 비교를 그대로 재현합니다.
+
+### 9.5 반려 사유 대응 요약
+
+| 반려 지시 | 처리 |
+| --- | --- |
+| (1) KDHC 원문의 건설폐기물 제외 문구 확인 | 3개 판본 추출문 `건설폐기물` 0건. 제외 문구 없음(9.1.1). |
+| (2) 14건 중 3건 이상 공고 첨부 확인 | 4개 파일 내려받아 인용문·하한율 확인(9.1.2). 모두 환경부고시 인용, 하한율 87.745·86.745. |
+| (3) `cdw_exclusion="named"` 선언 또는 고시 우선 경로 수정 | KDHC 폐기물 규칙 3개에 `cdw_exclusion="named"` 선언, 기관 규칙 선택에서 배제(9.2). |
+| (4) 전수 회귀 재실행, 14건 복귀·변경 건수 확인 | 변경 47건(60-14+1), 14건 복귀 확인(9.3). 추가 1건은 대상 집합 안이며 규칙값이 공고값과 일치. |

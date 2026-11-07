@@ -111,6 +111,33 @@ _SRC_INST_KDHC_20260818 = (
     "2026-04-13판 폐지; 기준비율 90(별표 2·3의2·5·6 제외), "
     "docs/analysis/kdhc_krc_sources_20261107.md 3.2.1, 3.2.2"
 )
+# 한국지역난방공사 세부기준 원문(data/sources/qualification/files/kdhc, 2023-07-19·2026-01-01·
+# 2026-08-18판)에는 폐기물처리용역 정의·적용 범위에 '건설폐기물' 제외 문구가 없습니다
+# (grep '건설폐기물' 0건). 다만 건설폐기물처리용역 공고문이 환경부고시를 직접 인용하므로,
+# 그 공고에는 공사 별표 4 대신 환경부고시 경로를 씁니다(cdw_exclusion="named").
+# 공고문 인용:
+# - R26BK01621293 첨부 '1. 입찰공고문(불연성).pdf'(sha256 3f91db9ef432defae2e3ca22a94112227a12010b8babe82bd39a10acfa3ad910, 1132801 bytes):
+#   "가. 기후에너지환경부 “건설폐기물처리용역 적격업체 평가기준”에 의하여 낙찰자를
+#   결정하므로 동 기준을 반드시 사전에 열람하여야 합니다."
+# - R26BK01629748 첨부 '0.입찰공고문.pdf'(sha256 0f294575cdcfd854b6a851c4f98134f72da5da121a533f9075370145ee82be78, 943668 bytes):
+#   "가. 적격심사 낙찰제로서 환경부고시 “건설폐기물처리용역 적격업체 평가기준”에 의하여
+#   낙찰자를 결정하므로 동 기준을 반드시 사전 열람하여야 합니다."
+# - R26BK01644144 첨부 '1. 입찰공고문(PDF).pdf'(sha256 3e129290cb3d74106fc325b6a94b0761668a896783d82a76fbab47e1a98a3262, 834112 bytes):
+#   "가. 적격심사 낙찰제로서 건설폐기물처리용역 적격업체 평가기준(환경부고시 제2025-165호)
+#   에 의하여 낙찰자를 결정하므로 동 기준을 반드시 사전 열람하여야 합니다."
+# 위 공고의 sucsfbidLwltRate 는 87.745·86.745 로 환경부고시 제4호·제3호 값과 같습니다.
+_KDHC_CDW_CITATION = (
+    "공고문 R26BK01621293 '1. 입찰공고문(불연성).pdf'"
+    "(sha256 3f91db9ef432defae2e3ca22a94112227a12010b8babe82bd39a10acfa3ad910): "
+    "'가. 기후에너지환경부 \"건설폐기물처리용역 적격업체 평가기준\"에 의하여 낙찰자를 결정'; "
+    "R26BK01629748 '0.입찰공고문.pdf'"
+    "(sha256 0f294575cdcfd854b6a851c4f98134f72da5da121a533f9075370145ee82be78): "
+    "'적격심사 낙찰제로서 환경부고시 \"건설폐기물처리용역 적격업체 평가기준\"에 의하여 낙찰자를 결정'; "
+    "R26BK01644144 '1. 입찰공고문(PDF).pdf'"
+    "(sha256 3e129290cb3d74106fc325b6a94b0761668a896783d82a76fbab47e1a98a3262): "
+    "'건설폐기물처리용역 적격업체 평가기준(환경부고시 제2025-165호)에 의하여 낙찰자를 결정'; "
+    "공고 sucsfbidLwltRate 87.745·86.745 는 환경부고시 제4호·제3호 값과 일치"
+)
 # 한국지역난방공사 지사·사업소 수요기관 코드입니다. 2026-11-06 읽기 전용 DB 조회로
 # RULE_NOT_FOUND 32건 중 기타용역 17건의 dminsttCd 를 확인했고, 2026-11-07 결정 D29 로
 # regime_lag_65 4.3절 지사 공고의 코드(D325103·D325105·D325117)를 더했습니다. 대역 접두가
@@ -245,6 +272,7 @@ def _institution_rule(
     subunit_code_prefixes: tuple[str, ...] = (),
     quant_table: bool = True,
     superseded_date: str | None = None,
+    cdw_exclusion: str | None = None,
 ) -> EvaluationRule:
     """기관 규칙 하나를 구간별 price_bands·threshold_bands 로 만듭니다.
 
@@ -304,6 +332,7 @@ def _institution_rule(
         subunit_name_prefixes=subunit_name_prefixes,
         subunit_code_prefixes=subunit_code_prefixes,
         superseded_date=superseded_date,
+        cdw_exclusion=cdw_exclusion,
     )
 
 
@@ -1673,6 +1702,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("폐기물처리용역", "폐기물처리"),
+        cdw_exclusion="named",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
         bands=(
             _inst_band(
                 "고시금액",
@@ -2124,6 +2154,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2026-08-18",
         source=_SRC_INST_KDHC_20260818,
         patterns=("폐기물처리용역", "폐기물처리"),
+        cdw_exclusion="named",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
         bands=(
             _inst_band(
                 "고시금액",
@@ -2403,6 +2434,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         superseded_date="2026-01-01",
         source=_SRC_INST_KDHC_PREDECESSOR,
         patterns=("폐기물처리용역", "폐기물처리"),
+        cdw_exclusion="named",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
         bands=(
             _inst_band(
                 "고시금액",

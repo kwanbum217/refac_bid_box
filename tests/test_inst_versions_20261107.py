@@ -10,7 +10,9 @@
 규칙을 쓰고 2026-04-13판은 2026-01-01판과 같은 규칙으로 계산되는지, (b) 한국농어촌공사
 5억원 미만 밴드가 고시금액 경계로 갈려 k=4/2 로 계산되는지, (c) 한국지역난방공사
 2023-07-19판 여객 규칙이 2026-01-01판 시행 전 공고에 적용되는지, (d) 지사·사업소 코드가
-명시 목록으로 매칭되는지, (e) 목록 밖 코드는 매칭되지 않는지 단언합니다.
+명시 목록으로 매칭되는지, (e) 목록 밖 코드는 매칭되지 않는지, (f) 공고문이 환경부고시를
+인용한 건설폐기물처리용역이 고시 규칙으로 계산되는지, (g) 공고명에 건설폐기물이 없으면
+공사 별표 4 를 그대로 쓰는지 단언합니다.
 """
 
 from __future__ import annotations
@@ -47,6 +49,7 @@ def _raw(
     method: str,
     price: int,
     announcement_lwlt: str | None = None,
+    bid_name: str | None = None,
 ) -> dict[str, str]:
     raw = {
         "dminsttCd": code,
@@ -56,7 +59,7 @@ def _raw(
         "bidNtceDt": announced,
         "sucsfbidMthdNm": method,
         "presmptPrce": str(price),
-        "bidNtceNm": name,
+        "bidNtceNm": bid_name if bid_name is not None else name,
     }
     if announcement_lwlt is not None:
         raw["sucsfbidLwltRate"] = announcement_lwlt
@@ -298,3 +301,49 @@ def test_kdhc_unlisted_institution_code_does_not_match() -> None:
     assert result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND
     assert result.rule is None
     assert result.scope_stage != RULE_SCOPE_INSTITUTION
+
+
+def test_kdhc_construction_waste_uses_moe_notice_rule() -> None:
+    """(f) 공고문이 환경부고시를 인용한 건설폐기물처리용역은 공사 별표 4 를 쓰지 않는다.
+
+    R26BK01621293 첨부 '1. 입찰공고문(불연성).pdf' 는 "기후에너지환경부
+    '건설폐기물처리용역 적격업체 평가기준'에 의하여 낙찰자를 결정"한다고 적고,
+    하한율도 환경부고시 제4호 값 87.745% 를 인쇄합니다.
+    """
+    result = _resolve(
+        _raw(
+            code="D325152",
+            name="한국지역난방공사 동탄지사",
+            announced="2026-07-07",
+            method="적격심사제-추정가격 2억원 미만인 용역",
+            price=82_000_000,
+            announcement_lwlt="87.745",
+            bid_name="2026년 동탄지사 열수송관공사 불연성 건설폐기물처리용역 단가계약",
+        ),
+        82_000_000,
+    )
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_QUAL_MOE_CDW_ATTACH_04"
+    assert result.scope_stage != RULE_SCOPE_INSTITUTION
+    assert result.effective_lwlt_rate == Decimal("87.745")
+
+
+def test_kdhc_waste_without_construction_word_keeps_institution_rule() -> None:
+    """(g) 공고명에 건설폐기물이 없으면 같은 띠 표기라도 공사 별표 4 를 그대로 쓴다."""
+    result = _resolve(
+        _raw(
+            code="D325152",
+            name="한국지역난방공사 동탄지사",
+            announced="2026-07-07",
+            method="적격심사제-추정가격 2억원 미만인 용역",
+            price=82_000_000,
+            bid_name="2026년 동탄지사 생활폐기물처리용역 단가계약",
+        ),
+        82_000_000,
+    )
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == f"{KDHC_OLD}WASTE"
+    assert result.scope_stage == RULE_SCOPE_INSTITUTION
+    assert result.effective_lwlt_rate == Decimal("84.245")
