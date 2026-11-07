@@ -2165,7 +2165,9 @@ def _narrow_to_current_regime(
     """같은 세부유형에 구판·현행이 함께 있으면 공고일이 효력 구간에 드는 규칙만 남깁니다.
 
     구판(예: 전라남도 예규 제1075호)과 현행(통합 지침)이 같은 시·도·세부유형으로 함께
-    걸리면, 공고일이 구간에 드는 하나만 남겨 구판과 현행을 가립니다. 구간에 드는 규칙이
+    걸리면, 공고일이 구간에 드는 하나만 남겨 구판과 현행을 가립니다. 기관 규칙도 판본마다
+    규칙 ID 를 두므로(D09 A, 예: 한국지역난방공사 2023-07-19·2026-01-01·2026-08-18판)
+    같은 원리로 공고일이 드는 판본 하나를 고릅니다. 구간에 드는 규칙이
     없으면(모두 시행 전) 시행일이 가장 늦은 현행 규칙을 남겨, 종전처럼 시행일 대조에서
     RULE_REGIME_MISMATCH 로 막습니다. 공고일이 없으면 폐지되지 않은 현행 규칙을 남겨
     종전 판정을 유지합니다.
@@ -2538,6 +2540,21 @@ def _select_institution_rule(
     # (지방계약 _narrow_to_current_regime 와 같은 원리)
     data_for_date = raw_data if isinstance(raw_data, dict) else {}
     announced = _parse_announcement_date(data_for_date.get("bidNtceDt"))
+    if announced is not None:
+        # 지사·사업소 정확 코드 목록으로만 걸린 후보 가운데 아직 시행되지 않은 판본은
+        # 후보에서 뺍니다. 본청 코드·이름으로 직접 맞은 기관은 종전처럼 남겨
+        # RULE_REGIME_MISMATCH 로 차단합니다(시행일 불일치 차단 유지). 이렇게 해야
+        # 2026-01-01판 이전 지사 공고가 새 판본과 코드만 맞아 차단으로 뒤집히지 않습니다.
+        candidates = [
+            rule
+            for rule in candidates
+            if not (
+                institution_code
+                and rule.institution_code != institution_code
+                and rule.rule_id in INSTITUTION_RULE_EXACT_CODES
+                and date.fromisoformat(rule.effective_date) > announced
+            )
+        ]
     candidates = _narrow_to_current_regime(candidates, announced)
     if not candidates:
         return None, None, "", warnings
@@ -3014,6 +3031,8 @@ def _axis_matches(
         # 규칙과 공고 양쪽에 코드가 있으면 코드 일치로만 판정하고, 한쪽이라도 코드가 없으면
         # 공백 제거 이름(또는 name_aliases) 일치로 판정합니다. 기관 코드가 본청과 다른 지사·
         # 사업소는 규칙별 정확 코드 목록(INSTITUTION_RULE_EXACT_CODES)도 코드 일치로 봅니다.
+        # 이 목록은 이름 접두나 코드 대역이 아니라 읽기 전용 DB 조회로 확인한 명시 코드만
+        # 담고, 판본마다 규칙 ID 가 달라 같은 코드를 판본별 규칙 ID 에 모두 붙입니다(D29).
         # 정확 일치가 실패하면 원문
         # 적용 범위 조항이 하위 조직 적용을 명시한 기관만 코드 대역·이름 접두로 2차
         # 판정합니다. 코드 대역을 선언한 규칙은 대역 밖 코드를 이름 접두로 되돌리지 않습니다.
