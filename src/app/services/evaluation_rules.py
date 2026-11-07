@@ -4083,7 +4083,10 @@ def _resolve_by_method_name(
         return RuleResolutionResult(
             is_blocked=True,
             block_reason_code=BLOCK_CODE_NON_PRED_PRICE,
-            block_reason_message="비예가 공고는 예정가격이 없어 가격점수 산출 분모가 부재합니다.",
+            block_reason_message=(
+                "비예가 공고는 예정가격(기초금액)이 공고에 공개되지 않아 "
+                "가격점수 산출 분모를 확정할 수 없습니다."
+            ),
             warnings=warnings,
         )
 
