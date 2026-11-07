@@ -32,7 +32,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # d7cabe0e33a1e8cf -> 8a8c340f61ca94b1 로 갱신했고, 반려 재작업으로 한국지역난방공사
 # 폐기물 규칙 3개에 cdw_exclusion="named" 를 선언해 8a8c340f61ca94b1 ->
 # 0b25ba9cff246172 로 다시 갱신했습니다(회귀 문서
-# docs/analysis/inst_versions_regression_20261107.md 5절·9절).
+# docs/analysis/inst_versions_regression_20261107.md 5절·9절). 이어서 D07 (A) 연장으로
+# 한국지역난방공사 2026-08-18판 규칙 11개의 quant_table 을 False -> True 로 바꿔
+# quant_basis 가 INSTITUTION 이 되면서 0b25ba9cff246172 -> 05814ed65e4b5fa1 로
+# 갱신했습니다(같은 문서 9.6절).
 EXPECTED_FINGERPRINTS: dict[str, str] = {
     "POST_20260526_RULES": "92dfb7c194d68e3f",
     "POST_20260727_RULES": "dfad0fcd3f7e9987",
@@ -42,7 +45,7 @@ EXPECTED_FINGERPRINTS: dict[str, str] = {
     "PRE_20260526_RULES": "a09f80a6e80bf80d",
     "LOCAL_RULES": "48d29a0c7a15e957",
     "MOIS_ACADEMIC_BAND_RULES": "e7e2960460553ba0",
-    "INSTITUTION_RULES": "0b25ba9cff246172",
+    "INSTITUTION_RULES": "05814ed65e4b5fa1",
 }
 
 # main 의 vars(evaluation_rules) 이름 목록. 비공개 이름(_ 로 시작)도 포함합니다.

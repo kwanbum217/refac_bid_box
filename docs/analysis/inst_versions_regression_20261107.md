@@ -276,9 +276,13 @@
 | 파일 | 위치 | 변경 전 | 변경 후 | 이유 |
 | --- | --- | --- | --- | --- |
 | `tests/test_institution_rules.py` | 186행 | `assert code_total == 137` | `assert code_total == 143` | D08 로 한국농어촌공사 6개 별표에 구간이 6개 늘었습니다. YAML·코드 구간 수를 함께 맞췄습니다. |
-| `tests/test_evaluation_quant_institution.py` | 50행 | `KDHC_NO_TABLE_IDS = ("SERVC_INST_KDHC_20230719_WASTE",)` | 2026-08-18판 11개 ID 추가 | D07 로 새 규칙 ID 가 생겼고 2026-08-18판 배점표 명세가 없어 `quant_table=False`(정량점수 직접 입력)입니다. |
+| `tests/test_evaluation_quant_institution.py` | 50행 | `KDHC_NO_TABLE_IDS = ("SERVC_INST_KDHC_20230719_WASTE",)` | 2026-08-18판 11개 ID 추가 (9.6절에서 다시 축소) | D07 로 새 규칙 ID 가 생겼고 2026-08-18판 배점표 명세가 없어 `quant_table=False`(정량점수 직접 입력)입니다. |
 | `tests/test_evaluation_rules_split_invariance.py` | 43행 | `"INSTITUTION_RULES": "d7cabe0e33a1e8cf"` | `"8a8c340f61ca94b1"` | D07·D08·D22·D29 로 기관 규칙 벌이 의도적으로 바뀌었습니다. 다른 규칙 상수 지문과 `list_all_rules()` 지문은 그대로입니다. |
 | `tests/test_evaluation_rules_split_invariance.py` | 45행 | `"INSTITUTION_RULES": "8a8c340f61ca94b1"` | `"0b25ba9cff246172"` | 반려 재작업으로 한국지역난방공사 폐기물 규칙 3개에 `cdw_exclusion="named"` 를 선언했습니다. 다른 규칙 상수 지문과 `list_all_rules()` 지문은 그대로입니다. |
+| `tests/test_evaluation_quant_institution.py` | 50행 | 2026-08-18판 11개 ID 포함 | `KDHC_NO_TABLE_IDS = ("SERVC_INST_KDHC_20230719_WASTE",)` | D07 (A) 연장으로 2026-08-18판 별표 1~9 배점표를 등록해 정량표 없음이 해소됐습니다(9.6절). |
+| `tests/test_evaluation_quant_institution.py` | 85행 | `assert len(table_ids) == 65` | `assert len(table_ids) == 76` | 위 등록으로 기관 배점표가 11개 늘었습니다(9.6절). |
+| `tests/test_inst_versions_20261107.py` | 150행 | `assert rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED` | `assert rule.quant_basis == QUANT_BASIS_INSTITUTION` | 2026-08-18판 11개 규칙이 기관 배점표를 쓰게 됐습니다(9.6절). |
+| `tests/test_evaluation_rules_split_invariance.py` | 48행 | `"INSTITUTION_RULES": "0b25ba9cff246172"` | `"05814ed65e4b5fa1"` | 2026-08-18판 11개 규칙의 `quant_table` 을 False -> True 로 바꿔 `quant_basis` 가 INSTITUTION 이 되었습니다. 다른 규칙 상수 지문과 `list_all_rules()` 지문은 그대로입니다(9.6절). |
 | `tests/test_institution_rules.py` | `test_kac_subunit_alias_matches_only_without_code` | 코드 `Z013741` 이면 기관 규칙 미선택 | 변경 없음 | D29 는 지사·사업소(한국지역난방공사)만 넓혔고 한국공항공사 코드는 넣지 않았습니다. 2.4절 이유. |
 
 새 시험 `tests/test_inst_versions_20261107.py` 는 (a) 2026-08-18 경계, (b) 농어촌 고시금액 축, (c) 2023-07-19 여객, (d) 지사 코드 매칭, (e) 목록 밖 코드 미매칭, (f) 공고문이 환경부고시를 인용한 건설폐기물처리용역의 고시 규칙 적용, (g) 공고명에 건설폐기물이 없을 때 공사 별표 4 유지를 단언합니다. 기존 `tests/test_kdhc_band_axis.py`, `tests/test_kdhc_predecessor.py`, `tests/test_rule_not_found_32_fix.py`, `tests/test_cdw_exclusion_regions.py` 는 단언을 바꾸지 않고 통과합니다.
@@ -513,3 +517,75 @@ PY
 | (2) 14건 중 3건 이상 공고 첨부 확인 | 4개 파일 내려받아 인용문·하한율 확인(9.1.2). 모두 환경부고시 인용, 하한율 87.745·86.745. |
 | (3) `cdw_exclusion="named"` 선언 또는 고시 우선 경로 수정 | KDHC 폐기물 규칙 3개에 `cdw_exclusion="named"` 선언, 기관 규칙 선택에서 배제(9.2). |
 | (4) 전수 회귀 재실행, 14건 복귀·변경 건수 확인 | 변경 47건(60-14+1), 14건 복귀 확인(9.3). 추가 1건은 대상 집합 안이며 규칙값이 공고값과 일치. |
+
+---
+
+## 9.6 D07 (A) 연장: 한국지역난방공사 2026-08-18판 정량평가 배점표 등록
+
+2.1절에서 `quant_table=False`(정량점수 직접 입력)로 남겨 둔 2026-08-18판 규칙 11개의
+정량표 없음 상태를 해소했습니다. 상세 근거는 별도 문서
+[`docs/analysis/kdhc_quant_20260818_20261107.md`](kdhc_quant_20260818_20261107.md) 에 있고,
+이 절은 이 과업이 바꾼 규칙 상수와 시험 단언만 정리합니다.
+
+### 9.6.1 변경 요약
+
+| 파일 | 변경 |
+| --- | --- |
+| `data/reference/institution_quant_tables_20261013.yaml` | 한국지역난방공사 항목에 `SERVC_INST_KDHC_20260818_*` 규칙 11개를 추가했습니다. 근거 `kdhc_2608`(60ea20722555_kdhc_20260818.txt) 줄 번호를 `sources` 와 각 항목 `source` 에 적었습니다. |
+| `src/app/services/evaluation_quant_institution.py` | 생성기 `scripts/build_institution_quant_tables.py` 로 재생성했습니다(표 65 -> 76). 손으로 고치지 않았습니다. |
+| `src/app/services/evaluation_rules_institution.py` | 2026-08-18판 규칙 11곳의 `quant_table` 만 `False` -> `True` 로 바꿨습니다. 2023-07-19판 규칙은 그대로 `False` 입니다. |
+| `tests/test_evaluation_quant_institution.py` | 50행 `KDHC_NO_TABLE_IDS` 를 구판 1개로 축소하고, 85행 표 개수를 76 으로 맞췄습니다. |
+| `tests/test_inst_versions_20261107.py` | 150행 `quant_basis` 단언을 `AGENCY_DOCUMENT_NOT_LOADED` -> `INSTITUTION` 으로 바꿨습니다. |
+| `tests/test_kdhc_quant_20261107.py` | 새 시험. 규칙 11개가 모두 표를 조회하는지, 구간별 항목 배점한도가 원문 표와 같은지 단언합니다. |
+| `tests/test_evaluation_rules_split_invariance.py` | `INSTITUTION_RULES` 지문만 `0b25ba9cff246172` -> `05814ed65e4b5fa1` 로 갱신했습니다. |
+
+### 9.6.2 판단 근거: 배점표가 두 판본에서 같은 이유
+
+2026-08-18판 별표 1~9 의 심사항목 배점한도는 원문 표에서 2026-01-01판과 같습니다.
+두 판본에서 달라진 것은 배점표가 아니라 입찰가격 기준비율과 별표 6 등급 경계입니다.
+
+| 항목 | 2026-01-01판 | 2026-08-18판 | 근거 |
+| --- | --- | --- | --- |
+| 입찰가격 기준비율 | 88(별표 2는 93, 별표 3의2·5는 91, 별표 6은 88) | 90(별표 2는 93, 별표 3의2·5는 91, 별표 6은 88) | 2.1절에서 이미 규칙에 반영 |
+| 별표 6 지급여력비율 A 기준선 | 150% 이상 | 130% 이상 | `kdhc_2608:1488-1490` |
+
+별표 2 만 표에 실린 항목 구성이 다릅니다. 2026-08-18판 원문은 결격사유 -20 행을
+인쇄하는데(`kdhc_2608:610-616`) 2026-01-01판 명세가 그 행을 싣지 않았습니다. 원문에
+있는 값만 쓴다는 원칙에 따라 새 표는 원문을 따랐고, 2026-01-01판 항목은 건드리지
+않았습니다. 결격사유는 배점 합계 검산에서 제외되므로 합계 100 은 그대로입니다.
+
+### 9.6.3 지문 변경이 이 변경 때문임을 확인한 방법
+
+`INSTITUTION_RULES` 지문이 바뀐 원인이 `quant_table` 플래그 변경뿐임을 아래처럼
+확인했습니다. 플래그만 되돌리면 지문이 종전 값으로 정확히 복원됩니다.
+
+| 상태 | `sha256(repr(INSTITUTION_RULES))[:16]` |
+| --- | --- |
+| `quant_table=True` (11개, 현재) | `05814ed65e4b5fa1` |
+| `quant_table=False` (11개, 변경 전) | `0b25ba9cff246172` |
+
+재현은 아래 두 줄입니다. 첫 줄은 11개 플래그를 다시 `False` 로 되돌린 사본을 만들어
+지문을 재고, 둘째 줄은 현재 상태의 지문을 잽니다.
+
+```sh
+sed 's/quant_table=True,/quant_table=False,/' src/app/services/evaluation_rules_institution.py \
+  > /tmp/_probe_inst.py && cp src/app/services/evaluation_rules_institution.py /tmp/_backup_inst.py \
+  && cp /tmp/_probe_inst.py src/app/services/evaluation_rules_institution.py \
+  && uv run python -c "import hashlib, src.app.services.evaluation_rules as e; print(hashlib.sha256(repr(e.INSTITUTION_RULES).encode()).hexdigest()[:16])" \
+  ; cp /tmp/_backup_inst.py src/app/services/evaluation_rules_institution.py
+uv run python -c "import hashlib, src.app.services.evaluation_rules as e; print(hashlib.sha256(repr(e.INSTITUTION_RULES).encode()).hexdigest()[:16])"
+```
+
+`quant_basis` 는 `EvaluationRule` 의 필드라 값이 바뀌면 `repr` 이 바뀌고, 다른 규칙
+상수(`POST_20260526_RULES`·`POST_20260727_RULES`·`MOE_CDW_RULES`·`PRE_*`·`LOCAL_RULES`·
+`MOIS_ACADEMIC_BAND_RULES`)와 `list_all_rules()` 지문은 그대로입니다.
+
+### 9.6.4 검증
+
+| 명령 | 결과 |
+| --- | --- |
+| `uv run pytest tests/test_kdhc_quant_20261107.py tests/test_evaluation_quant_institution.py tests/test_inst_versions_20261107.py -q` | 27 passed |
+| `uv run python scripts/build_institution_quant_tables.py --check` | 생성본이 YAML 과 일치 |
+| `uv run mypy src` | Success: no issues found in 145 source files |
+| `python3 scripts/validate_agent_rules.py --quiet` | 검증 통과 22/22 |
+| `uv run pytest tests/ -q -m 'not data_assets'` | 전량 통과 |
