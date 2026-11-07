@@ -98,6 +98,7 @@ def _serialize_result(db: Session, result: BidResult) -> dict[str, Any]:
         "display_bidwinnr_nm": result.display_bidwinnr_nm,
         "has_corrupted_display_text": result.has_corrupted_display_text,
         "display_winning_rate": float(winning_rate) if winning_rate is not None else None,
+        "institution_match_label": getattr(result, "institution_match_label", ""),
     }
 
 

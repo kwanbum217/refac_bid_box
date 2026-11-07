@@ -27,6 +27,7 @@ def _add_announcement(db, **overrides) -> BidAnnouncement:
         "base_amount": 10000000,
         "presmpt_prce": 10000000,
         "bid_ntce_dt": now,
+        "bid_clse_dt": now + timedelta(days=30),
         "collected_at": now,
     }
     payload.update(overrides)
