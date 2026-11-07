@@ -35,7 +35,9 @@ EXPECTED_FINGERPRINTS: dict[str, str] = {
     "PRE_20250901_RULES": "8462974964f16d17",
     "PRE_20230501_RULES": "77a16139ea892a07",
     "PRE_20260526_RULES": "a09f80a6e80bf80d",
-    "LOCAL_RULES": "48d29a0c7a15e957",
+    # 2026-11-07 D34(A) 시·도 세부유형 5건 추가로 갱신했습니다. 변경 이유와 영향은
+    # docs/analysis/local_annex_30_regression_20261107.md 4절 표에 적었습니다.
+    "LOCAL_RULES": "b691d7e0ab031574",
     "MOIS_ACADEMIC_BAND_RULES": "e7e2960460553ba0",
     "INSTITUTION_RULES": "d7cabe0e33a1e8cf",
 }
