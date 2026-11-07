@@ -279,6 +279,14 @@
                                     <div class="font-bold">계산 차단</div>
                                     <div id="recommend-blocked-reason" class="text-sm mt-0.5"></div>
                                     <div id="recommend-blocked-guidance" class="text-xs mt-1 text-rose-600"></div>
+                                    <div id="recommend-blocked-public" class="hidden mt-2 rounded-lg border border-red-200 bg-white p-3">
+                                        <div class="text-xs font-bold text-red-700">공고 공개값</div>
+                                        <ul class="mt-1 space-y-1 text-xs text-slate-700">
+                                            <li id="recommend-public-lwlt-row" class="hidden">낙찰하한율 <span id="recommend-public-lwlt" class="font-semibold tabular-nums text-slate-900"></span></li>
+                                            <li id="recommend-public-estimated-row" class="hidden">추정가격 <span id="recommend-public-estimated" class="font-semibold tabular-nums text-slate-900"></span></li>
+                                        </ul>
+                                        <p class="mt-1 text-[11px] leading-relaxed text-slate-600">이 값으로 투찰가를 계산하지 않습니다. 예정가격이 공개된 가격입찰 공고에서 확인하십시오.</p>
+                                    </div>
                                     <a id="blocked-attachment-link" href="#announcement-attachments" class="hidden mt-1 inline-block text-xs font-semibold text-primary hover:underline">공고 첨부파일 카드로 이동</a>
                                     <div id="recommend-blocked-gap" class="hidden mt-2">
                                         <div id="recommend-blocked-gap-deficit" class="text-xs font-semibold text-red-700"></div>
@@ -691,6 +699,13 @@ $(document).ready(function() {
     const bidCategory = '{{ bid.category|default("", true)|escapejs }}';
     const bidId = Number('{{ bid.id }}');
     const noticeEstimatedPrice = {{ bid.presmpt_prce if bid.presmpt_prce is not none else 'null' }};
+    const noticeLwltRateRaw = '{{ (bid.raw_data.get('sucsfbidLwltRate') if bid and bid.raw_data else '')|default('', true)|escapejs }}';
+    const noticeLwltRate = (function() {
+        const raw = String(noticeLwltRateRaw || '').trim();
+        if (!raw) return null;
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? parsed : null;
+    })();
     const categoryLabels = {
         Thng: '물품',
         Cnstwk: '건설',
@@ -900,7 +915,7 @@ $(document).ready(function() {
     function getBlockedReasonText(code) {
         const reasons = {
             'NOT_SERVC': '일반용역 공고가 아님',
-            'NON_PRED_PRICE': '비예가라 예정가격이 없음',
+            'NON_PRED_PRICE': '비예가라 예정가격(기초금액)이 공개되지 않음',
             'MANUAL_EVALUATION': '발주기관 자체 심사기준표를 적용하는 수기심사 공고',
             'RULE_NOT_FOUND': '낙찰방법으로 적격심사 별표를 특정할 수 없음',
             'NOT_QUALIFICATION_METHOD': '적격심사 공고가 아니라 점수 산식을 적용하지 않음',
@@ -923,7 +938,7 @@ $(document).ready(function() {
     function getBlockedGuidanceText(code) {
         const guidance = {
             'NOT_SERVC': '이 계산기는 일반용역 적격심사 공고만 지원합니다. 물품·공사 공고는 발주기관의 적격심사 기준을 확인하십시오.',
-            'NON_PRED_PRICE': '예정가격이 없는 공고입니다. 공고문의 낙찰자 결정방법과 가격 평가 방식을 확인하십시오.',
+            'NON_PRED_PRICE': '예정가격(기초금액)이 공고에 공개되지 않아 사전 계산이 불가합니다. 아래 공고 공개값은 참고용이며, 공고문의 낙찰자 결정방법과 가격 평가 방식을 확인하십시오.',
             'MANUAL_EVALUATION': '발주기관이 정한 자체 심사기준표를 아래 공고 첨부파일 카드에서 확인하고, 가격배점한도(B)·평점계수(k)·기준비율·통과점수를 입력하면 계산합니다. 자체 배점표가 미반영이라 비가격 정량점수도 함께 입력해야 합니다.',
             'RULE_NOT_FOUND': '공고문의 낙찰방법과 적용 별표를 직접 확인하십시오.',
             'NOT_QUALIFICATION_METHOD': '공고문에 기재된 낙찰자 결정방법(최저가, 수의계약 등)을 확인하십시오.',
@@ -1888,6 +1903,21 @@ $(document).ready(function() {
         gap.removeClass('hidden');
     }
 
+    // 비예가(NON_PRED_PRICE) 차단이면 공고에 공개된 낙찰하한율·추정가격을 그대로 보여 주고,
+    // 이 값으로 투찰가를 계산하지 않는다는 점을 함께 알린다. 곱셈 같은 계산값은 만들지 않는다.
+    function renderBlockedPublicValues(data) {
+        const $block = $('#recommend-blocked-public');
+        const isNonPred = blockedCodeOf(data.blocked_reason) === 'NON_PRED_PRICE';
+        const estimated = Number(noticeEstimatedPrice);
+        const hasRate = Number.isFinite(noticeLwltRate) && noticeLwltRate > 0;
+        const hasEstimated = Number.isFinite(estimated) && estimated > 0;
+        $('#recommend-public-lwlt').text(hasRate ? noticeLwltRate.toFixed(3) + '%' : '');
+        $('#recommend-public-lwlt-row').toggleClass('hidden', !hasRate);
+        $('#recommend-public-estimated').text(hasEstimated ? estimated.toLocaleString('ko-KR') + '원' : '');
+        $('#recommend-public-estimated-row').toggleClass('hidden', !hasEstimated);
+        $block.toggleClass('hidden', !isNonPred || (!hasRate && !hasEstimated));
+    }
+
     function renderRecommendAmounts(data) {
         const prediction = data.prediction || {};
         const bounds = data.price_bounds || {};
@@ -1912,10 +1942,12 @@ $(document).ready(function() {
             const showMemberGap = blockedCodeOf(data.blocked_reason) === 'PRICE_BOUNDS_UNRESOLVED'
                 && !hasMemberQuantData(data);
             $('#recommend-member-missing').toggleClass('hidden', !showMemberGap);
+            renderBlockedPublicValues(data);
             renderBlockedGap(data);
             return;
         }
         $('#recommend-blocked-guidance').text('');
+        $('#recommend-blocked-public').addClass('hidden');
         $('#blocked-attachment-link').addClass('hidden');
         $('#recommend-blocked-gap').addClass('hidden');
 
