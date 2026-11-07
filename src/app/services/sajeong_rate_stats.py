@@ -21,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import delete, select
 
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.prearng_prices import BidPrearngPrice, InstitutionSajeongRateStat
 from src.app.services.demand_institutions import SIDO_ALIASES, SIDO_CODES
 
@@ -114,7 +114,7 @@ def rebuild_institution_sajeong_rate_stats(
     표본이 최소치 미만인 institution/region 은 행을 만들지 않아 조회가 다음
     순위로 대체됩니다. category scope 는 최소 표본 없이 만듭니다.
     """
-    cutoff = utcnow() - timedelta(days=window_days)
+    cutoff = kst_now(utcnow()) - timedelta(days=window_days)
     stmt = (
         select(
             BidPrearngPrice.dminstt_nm,

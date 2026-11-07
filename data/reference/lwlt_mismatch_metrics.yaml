@@ -1,0 +1,497 @@
+schema: LWLT_MISMATCH_METRICS_V1
+generated_at: '2026-11-07'
+generated_by: scripts/report_lwlt_mismatch.py
+window:
+  from: '2025-11-07'
+  to: '2026-11-07'
+totals:
+  rule_applied: 21594
+  compared: 9968
+  match: 9130
+  mismatch: 838
+  mismatch_ratio: 0.084069
+by_scope:
+  REGION:
+    rule_applied: 642
+    compared: 642
+    match: 187
+    mismatch: 455
+    mismatch_ratio: 0.708723
+  ALL:
+    rule_applied: 20816
+    compared: 9206
+    match: 8824
+    mismatch: 382
+    mismatch_ratio: 0.041495
+  INSTITUTION:
+    rule_applied: 136
+    compared: 120
+    match: 119
+    mismatch: 1
+    mismatch_ratio: 0.008333
+by_rule:
+  SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4:
+    rule_id: SERVC_LOCAL_JEONNAM_20230302_ATTACH_5_1_4
+    edition: '2023-03-02'
+    scope: REGION
+    declared_rate: '85.495'
+    rule_applied: 138
+    compared: 138
+    match: 1
+    mismatch: 137
+    mismatch_ratio: 0.992754
+    top_diffs:
+    - diff: 2.5
+      count: 137
+  SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4:
+    rule_id: SERVC_LOCAL_JEONNAM_20230302_ATTACH_4_1_4
+    edition: '2023-03-02'
+    scope: REGION
+    declared_rate: '87.745'
+    rule_applied: 159
+    compared: 159
+    match: 67
+    mismatch: 92
+    mismatch_ratio: 0.578616
+    top_diffs:
+    - diff: -1.0
+      count: 69
+    - diff: 2.5
+      count: 18
+    - diff: 7.5
+      count: 3
+  SERVC_QUAL_PRE_20250901_ATTACH_15:
+    rule_id: SERVC_QUAL_PRE_20250901_ATTACH_15
+    edition: '2025-09-01'
+    scope: ALL
+    declared_rate: '84.245'
+    rule_applied: 276
+    compared: 276
+    match: 197
+    mismatch: 79
+    mismatch_ratio: 0.286232
+    top_diffs:
+    - diff: -3.75
+      count: 76
+    - diff: 3.75
+      count: 2
+    - diff: 3.5
+      count: 1
+  SERVC_QUAL_PRE_20250901_ATTACH_16:
+    rule_id: SERVC_QUAL_PRE_20250901_ATTACH_16
+    edition: '2025-09-01'
+    scope: ALL
+    declared_rate: '84.245'
+    rule_applied: 184
+    compared: 184
+    match: 128
+    mismatch: 56
+    mismatch_ratio: 0.304348
+    top_diffs:
+    - diff: -3.75
+      count: 47
+    - diff: 3.5
+      count: 5
+    - diff: 3.75
+      count: 2
+  SERVC_QUAL_PRE_20250901_ATTACH_03:
+    rule_id: SERVC_QUAL_PRE_20250901_ATTACH_03
+    edition: '2025-09-01'
+    scope: ALL
+    declared_rate: '87.995'
+    rule_applied: 1101
+    compared: 1101
+    match: 1049
+    mismatch: 52
+    mismatch_ratio: 0.04723
+    top_diffs:
+    - diff: -0.25
+      count: 34
+    - diff: -3.75
+      count: 5
+    - diff: 0.005
+      count: 4
+  SERVC_LOCAL_GN_20230105_ATTACH_01:
+    rule_id: SERVC_LOCAL_GN_20230105_ATTACH_01
+    edition: '2023-01-05'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 41
+    compared: 41
+    match: 1
+    mismatch: 40
+    mismatch_ratio: 0.97561
+    top_diffs:
+    - diff: -39.75
+      count: 16
+    - diff: -38.75
+      count: 6
+    - diff: -37.5
+      count: 5
+  SERVC_LOCAL_JNGJ_20260716_ATTACH_03:
+    rule_id: SERVC_LOCAL_JNGJ_20260716_ATTACH_03
+    edition: '2026-07-16'
+    scope: REGION
+    declared_rate: '84.245'
+    rule_applied: 72
+    compared: 72
+    match: 32
+    mismatch: 40
+    mismatch_ratio: 0.555556
+    top_diffs:
+    - diff: -1.0
+      count: 28
+    - diff: 2.5
+      count: 10
+    - diff: 5.0
+      count: 2
+  SERVC_QUAL_PRE_20250901_ATTACH_01:
+    rule_id: SERVC_QUAL_PRE_20250901_ATTACH_01
+    edition: '2025-09-01'
+    scope: ALL
+    declared_rate: '87.995'
+    rule_applied: 1287
+    compared: 1287
+    match: 1252
+    mismatch: 35
+    mismatch_ratio: 0.027195
+    top_diffs:
+    - diff: -0.25
+      count: 35
+  SERVC_QUAL_PRE_20250901_ATTACH_17:
+    rule_id: SERVC_QUAL_PRE_20250901_ATTACH_17
+    edition: '2025-09-01'
+    scope: ALL
+    declared_rate: '84.245'
+    rule_applied: 113
+    compared: 113
+    match: 82
+    mismatch: 31
+    mismatch_ratio: 0.274336
+    top_diffs:
+    - diff: -3.75
+      count: 17
+    - diff: 3.75
+      count: 9
+    - diff: 3.5
+      count: 2
+  SERVC_QUAL_PRE_20250901_ATTACH_05:
+    rule_id: SERVC_QUAL_PRE_20250901_ATTACH_05
+    edition: '2025-09-01'
+    scope: ALL
+    declared_rate: '84.245'
+    rule_applied: 101
+    compared: 101
+    match: 79
+    mismatch: 22
+    mismatch_ratio: 0.217822
+    top_diffs:
+    - diff: -3.75
+      count: 21
+    - diff: 3.75
+      count: 1
+  SERVC_LOCAL_GG_20250808_ATTACH_1_6:
+    rule_id: SERVC_LOCAL_GG_20250808_ATTACH_1_6
+    edition: '2025-08-08'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 23
+    compared: 23
+    match: 2
+    mismatch: 21
+    mismatch_ratio: 0.913043
+    top_diffs:
+    - diff: -7.25
+      count: 9
+    - diff: 1.25
+      count: 4
+    - diff: 0.25
+      count: 3
+  SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_5:
+    rule_id: SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_5
+    edition: '2022-11-15'
+    scope: REGION
+    declared_rate: '85.495'
+    rule_applied: 19
+    compared: 19
+    match: 0
+    mismatch: 19
+    mismatch_ratio: 1.0
+    top_diffs:
+    - diff: 2.5
+      count: 19
+  SERVC_QUAL_POST_20260526_ATTACH_01:
+    rule_id: SERVC_QUAL_POST_20260526_ATTACH_01
+    edition: '2026-05-26'
+    scope: ALL
+    declared_rate: '89.995'
+    rule_applied: 377
+    compared: 377
+    match: 360
+    mismatch: 17
+    mismatch_ratio: 0.045093
+    top_diffs:
+    - diff: -2.0
+      count: 13
+    - diff: -2.25
+      count: 4
+  SERVC_LOCAL_GANGWON_20230611_ATTACH_01:
+    rule_id: SERVC_LOCAL_GANGWON_20230611_ATTACH_01
+    edition: '2023-06-11'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 22
+    compared: 22
+    match: 6
+    mismatch: 16
+    mismatch_ratio: 0.727273
+    top_diffs:
+    - diff: -39.75
+      count: 9
+    - diff: -38.75
+      count: 3
+    - diff: 1.0
+      count: 2
+  SERVC_LOCAL_INCHEON_20251224_ATTACH_01:
+    rule_id: SERVC_LOCAL_INCHEON_20251224_ATTACH_01
+    edition: '2025-12-24'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 13
+    compared: 13
+    match: 0
+    mismatch: 13
+    mismatch_ratio: 1.0
+    top_diffs:
+    - diff: -39.75
+      count: 6
+    - diff: -38.75
+      count: 6
+    - diff: 0.25
+      count: 1
+  SERVC_LOCAL_JEONBUK_20240118_ATTACH_01:
+    rule_id: SERVC_LOCAL_JEONBUK_20240118_ATTACH_01
+    edition: '2024-01-18'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 13
+    compared: 13
+    match: 0
+    mismatch: 13
+    mismatch_ratio: 1.0
+    top_diffs:
+    - diff: -39.75
+      count: 5
+    - diff: -38.75
+      count: 3
+    - diff: -30.0
+      count: 3
+  SERVC_QUAL_POST_20260526_ATTACH_17:
+    rule_id: SERVC_QUAL_POST_20260526_ATTACH_17
+    edition: '2026-05-26'
+    scope: ALL
+    declared_rate: '86.245'
+    rule_applied: 135
+    compared: 135
+    match: 123
+    mismatch: 12
+    mismatch_ratio: 0.088889
+    top_diffs:
+    - diff: 1.5
+      count: 10
+    - diff: -2.0
+      count: 2
+  SERVC_QUAL_PRE_20250901_ATTACH_08:
+    rule_id: SERVC_QUAL_PRE_20250901_ATTACH_08
+    edition: '2025-09-01'
+    scope: ALL
+    declared_rate: '84.245'
+    rule_applied: 329
+    compared: 329
+    match: 317
+    mismatch: 12
+    mismatch_ratio: 0.036474
+    top_diffs:
+    - diff: 3.5
+      count: 9
+    - diff: 15.755
+      count: 2
+    - diff: 2.5
+      count: 1
+  SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4:
+    rule_id: SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4
+    edition: '2023-03-02'
+    scope: REGION
+    declared_rate: '87.745'
+    rule_applied: 11
+    compared: 11
+    match: 0
+    mismatch: 11
+    mismatch_ratio: 1.0
+    top_diffs:
+    - diff: 0.25
+      count: 9
+    - diff: 0.5
+      count: 2
+  SERVC_QUAL_POST_20260526_ATTACH_19:
+    rule_id: SERVC_QUAL_POST_20260526_ATTACH_19
+    edition: '2026-05-26'
+    scope: ALL
+    declared_rate: '86.245'
+    rule_applied: 102
+    compared: 102
+    match: 91
+    mismatch: 11
+    mismatch_ratio: 0.107843
+    top_diffs:
+    - diff: 0.005
+      count: 3
+    - diff: 1.5
+      count: 3
+    - diff: -3.75
+      count: 2
+  SERVC_LOCAL_DAEJEON_20260101_ATTACH_01:
+    rule_id: SERVC_LOCAL_DAEJEON_20260101_ATTACH_01
+    edition: '2026-01-01'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 8
+    compared: 8
+    match: 0
+    mismatch: 8
+    mismatch_ratio: 1.0
+    top_diffs:
+    - diff: -39.75
+      count: 3
+    - diff: -37.5
+      count: 3
+    - diff: -38.75
+      count: 2
+  SERVC_LOCAL_GB_20260108_ATTACH_04:
+    rule_id: SERVC_LOCAL_GB_20260108_ATTACH_04
+    edition: '2026-01-08'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 8
+    compared: 8
+    match: 0
+    mismatch: 8
+    mismatch_ratio: 1.0
+    top_diffs:
+    - diff: -39.75
+      count: 6
+    - diff: -1.5
+      count: 1
+    - diff: 0.25
+      count: 1
+  SERVC_QUAL_POST_20260526_ATTACH_08:
+    rule_id: SERVC_QUAL_POST_20260526_ATTACH_08
+    edition: '2026-05-26'
+    scope: ALL
+    declared_rate: '86.245'
+    rule_applied: 130
+    compared: 130
+    match: 123
+    mismatch: 7
+    mismatch_ratio: 0.053846
+    top_diffs:
+    - diff: -2.0
+      count: 3
+    - diff: 1.5
+      count: 3
+    - diff: 0.5
+      count: 1
+  SERVC_LOCAL_BUSAN_20250626_ATTACH_01:
+    rule_id: SERVC_LOCAL_BUSAN_20250626_ATTACH_01
+    edition: '2025-06-26'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 8
+    compared: 8
+    match: 2
+    mismatch: 6
+    mismatch_ratio: 0.75
+    top_diffs:
+    - diff: -39.75
+      count: 3
+    - diff: 2.25
+      count: 2
+    - diff: -38.75
+      count: 1
+  SERVC_LOCAL_JEJU_20240101_ATTACH_01:
+    rule_id: SERVC_LOCAL_JEJU_20240101_ATTACH_01
+    edition: '2024-01-01'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 6
+    compared: 6
+    match: 0
+    mismatch: 6
+    mismatch_ratio: 1.0
+    top_diffs:
+    - diff: -6.25
+      count: 2
+    - diff: 1.25
+      count: 2
+    - diff: -38.75
+      count: 1
+  SERVC_QUAL_POST_20260526_ATTACH_06:
+    rule_id: SERVC_QUAL_POST_20260526_ATTACH_06
+    edition: '2026-05-26'
+    scope: ALL
+    declared_rate: '86.245'
+    rule_applied: 114
+    compared: 114
+    match: 108
+    mismatch: 6
+    mismatch_ratio: 0.052632
+    top_diffs:
+    - diff: -2.0
+      count: 4
+    - diff: -6.245
+      count: 2
+  SERVC_LOCAL_INCHEON_20241204_ATTACH_01:
+    rule_id: SERVC_LOCAL_INCHEON_20241204_ATTACH_01
+    edition: '2024-12-04'
+    scope: REGION
+    declared_rate: '87.995'
+    rule_applied: 5
+    compared: 5
+    match: 0
+    mismatch: 5
+    mismatch_ratio: 1.0
+    top_diffs:
+    - diff: -6.25
+      count: 2
+    - diff: 2.5
+      count: 2
+    - diff: -39.75
+      count: 1
+  SERVC_QUAL_MOE_CDW_ATTACH_04:
+    rule_id: SERVC_QUAL_MOE_CDW_ATTACH_04
+    edition: '2025-01-02'
+    scope: ALL
+    declared_rate: '87.745'
+    rule_applied: 1619
+    compared: 1619
+    match: 1614
+    mismatch: 5
+    mismatch_ratio: 0.003088
+    top_diffs:
+    - diff: -1.5
+      count: 4
+    - diff: 1.0
+      count: 1
+  SERVC_QUAL_POST_20260727_ATTACH_03:
+    rule_id: SERVC_QUAL_POST_20260727_ATTACH_03
+    edition: '2026-07-27'
+    scope: ALL
+    declared_rate: '89.995'
+    rule_applied: 75
+    compared: 75
+    match: 70
+    mismatch: 5
+    mismatch_ratio: 0.066667
+    top_diffs:
+    - diff: -2.0
+      count: 5

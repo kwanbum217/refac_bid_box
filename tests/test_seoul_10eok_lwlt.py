@@ -277,8 +277,10 @@ def test_seoul_simple_labor_is_87_745() -> None:
 # 2026-10-19 인천광역시 예규 제484호 일반용역 별표 구판 1종 추가. 추가분을 뺀 다이제스트는 직전 값(458dac088600e0c785270c76292124c64a47147ab71b077d5909882504073ed5)과 같다.
 # 2026-10-19 대구광역시 예규 제223호 별표 4 폐기물·별표 1 단순노무 구판 2종과 현행 별표 4 1종 추가. 추가분을 뺀 다이제스트는 직전 값(64974e358450e1b325ffe37e1a837eb184d7d357492458c395e6679e13623f95)과 같다.
 # 2026-11-06 경북 폐기물(GB ATTACH_03) 대표값 84.245 를 원문 산식값 87.745 로, 구간 하한율을 87.745/86.745 로 정정했습니다.
+# 2026-11-07 D34(A) 시·도 세부유형 별표 4종과 대전 구판 폐기물 1종을 추가하며 재생성했습니다.
+# 추가분을 뺀 다이제스트는 직전 값(990fdee3a52df73829d8f86b8c5e2cd2b8d9e2d325a5b2706529b4f6fd5eb08a)과 같습니다.
 LOCAL_RULES_EXCLUDING_SEOUL_DIGEST = (
-    "990fdee3a52df73829d8f86b8c5e2cd2b8d9e2d325a5b2706529b4f6fd5eb08a"
+    "52b90ead4ec41c015d9c692117b8ce1e87088e8bbfbb19ee24519a8d085c9263"
 )
 # 2026-10-17 조달청 별표 7·8·9 6종 추가. 추가분을 뺀 다이제스트는 이전 값(3436d7f5…)과 같다.
 NATIONAL_RULES_DIGEST = "c56ccd81fe131183d3d0de1d3ed80e48e408ef7e6a0493f91fb0ba4b2291935e"
@@ -317,7 +319,7 @@ def _digest(rules: tuple[EvaluationRule, ...]) -> str:
 
 
 def test_other_local_rules_unchanged() -> None:
-    """서울 GENERAL 을 뺀 49개 LOCAL 규칙은 main 과 같은 동작 필드를 유지한다."""
+    """서울 GENERAL 을 뺀 74개 LOCAL 규칙은 main 과 같은 동작 필드를 유지한다."""
     rules = tuple(rule for rule in LOCAL_RULES if rule.rule_id != SEOUL_GENERAL_ID)
     assert _digest(rules) == LOCAL_RULES_EXCLUDING_SEOUL_DIGEST
 

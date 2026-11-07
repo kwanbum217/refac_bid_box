@@ -248,20 +248,23 @@ def test_ulsan_processing_goes_moe():
 
 def test_outside_region_unchanged():
     raw = {
-        "dminsttNm": "서울특별시",
-        "bidNtceDt": "2025-10-21 10:58:47",
+        "dminsttNm": "전남광주통합특별시",
+        "bidNtceDt": "2026-09-01 10:00:00",
+        "sucsfbidMthdCd": "낙030001",
         "sucsfbidMthdNm": "적격심사제-추정가격 2억원 미만인 용역",
-        "presmptPrce": "172200000",
+        "presmptPrce": "150000000",
         "bidNtceNm": "건설폐기물 처리용역",
+        "pubPrcrmntClsfcNm": "건설폐기물처리서비스",
     }
     result = resolve_evaluation_rule_from_raw_data(
         "Servc",
         raw,
         institution_regime="LOCAL",
-        region_code="11",
-        region_name="서울특별시",
-        estimated_price=Decimal("172200000"),
+        region_code="12",
+        region_name="전남광주통합특별시",
+        estimated_price=Decimal("150000000"),
     )
-    # 서울은 cdw_exclusion 이 없어 시·도 규칙 경로를 유지한다(차단/규칙 어느 쪽이든 MOE 가 아님).
-    if result.rule is not None:
-        assert not result.rule.rule_id.startswith("SERVC_QUAL_MOE_CDW_")
+    # 서울·부산·제주·경남·충남은 2026-11-07 결정(D02)으로 notice_cited 를 선언했고,
+    # 선언이 없는 전남광주통합특별시는 시·도 규칙 경로를 그대로 유지한다.
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_LOCAL_JNGJ_20260716_ATTACH_03"

@@ -82,7 +82,7 @@ def test_all_confirmed_rules_have_a_table_and_partial_rules_do_not() -> None:
         rule.rule_id for rule in INSTITUTION_RULES if rule.quant_basis == QUANT_BASIS_INSTITUTION
     }
     assert table_ids == basis_ids
-    assert len(table_ids) == 65
+    assert len(table_ids) == 76
     other_ids = {rule.rule_id for rule in INSTITUTION_RULES} - table_ids
     assert other_ids == {
         "SERVC_INST_KOGAS_20260709_GENERAL",

@@ -28,7 +28,7 @@ from sqlalchemy.sql.dml import Insert
 
 from src.app.core.db import SessionLocal
 from src.app.core.observability import record_collection_metrics
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_today, utcnow
 from src.app.models.bid_restrictions import (
     BidAnnouncementLicenseLimit,
     BidAnnouncementParticipationRegion,
@@ -129,7 +129,7 @@ def resolve_collection_window(
     Returns:
         (resolved_start, resolved_end, is_catchup)
     """
-    yesterday: date = (utcnow() - timedelta(days=1)).date()
+    yesterday: date = kst_today(utcnow()) - timedelta(days=1)
     yesterday_str = yesterday.strftime("%Y%m%d")
 
     if start_date is not None:

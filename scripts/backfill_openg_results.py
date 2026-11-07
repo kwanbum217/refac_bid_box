@@ -47,7 +47,7 @@ from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from src.app.core.db import SessionLocal  # noqa: E402
-from src.app.core.timeutil import utcnow  # noqa: E402
+from src.app.core.timeutil import kst_today, utcnow  # noqa: E402
 from src.app.models.openg_results import BidOpengResult  # noqa: E402
 from src.app.services.api_collector import (  # noqa: E402
     BID_CATEGORIES,
@@ -239,7 +239,7 @@ def _resolve_categories(values: Sequence[str]) -> tuple[str, ...]:
 
 
 def _resolve_period(start_value: str | None, end_value: str | None) -> tuple[date, date]:
-    today = utcnow().date()
+    today = kst_today(utcnow())
     try:
         start = (
             datetime.strptime(start_value, "%Y%m%d").date()

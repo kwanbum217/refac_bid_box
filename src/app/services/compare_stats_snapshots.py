@@ -34,7 +34,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bids import (
     BidAnnouncement,
     BidCompareStatsSnapshot,
@@ -212,7 +212,7 @@ def _compute_result_by_month_payload(db: Session, one_year_ago: datetime) -> lis
 def rebuild_compare_stats_snapshots(db: Session) -> dict[str, Any]:
     """네 스냅샷을 다시 계산해 upsert 합니다. 야간과 수집 직후 경로에서 부릅니다."""
     started = utcnow()
-    one_year_ago = started - timedelta(days=COMPARE_STATS_WINDOW_DAYS)
+    one_year_ago = kst_now(started) - timedelta(days=COMPARE_STATS_WINDOW_DAYS)
     agency_payload = _compute_agency_top10_payload(db, one_year_ago)
     matched_payload = _compute_matched_count_payload(db, one_year_ago)
     announce_by_month_payload = _compute_announce_by_month_payload(db, one_year_ago)

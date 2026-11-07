@@ -1,4 +1,4 @@
-"""대전광역시 일반용역 적격심사 구판(공고 제2024-2호, 시행 2024-01-20) 적용 시험.
+"""대전광역시 적격심사 구판(공고 제2024-2호, 시행 2024-01-20) 적용 시험.
 
 정본:
  - docs/analysis/regime_mismatch_predecessor_a_20261018.md
@@ -17,9 +17,9 @@ from src.app.services.evaluation_rules import (
     resolve_evaluation_rule_from_raw_data,
 )
 
-PREDECESSOR_GENERAL_ID = "SERVC_LOCAL_DAEJEON_20240120_ATTACH_01"
+PREDECESSOR_WASTE_ID = "SERVC_LOCAL_DAEJEON_20240120_ATTACH_1_3"
 PREDECESSOR_SIMPLE_LABOR_ID = "SERVC_LOCAL_DAEJEON_20240120_SIMPLE_LABOR"
-CURRENT_GENERAL_ID = "SERVC_LOCAL_DAEJEON_20260101_ATTACH_01"
+CURRENT_WASTE_ID = "SERVC_LOCAL_DAEJEON_20260101_ATTACH_1_3"
 
 
 def _raw(bid_ntce_dt: str, method: str, price: str, **extra) -> dict[str, str]:
@@ -28,7 +28,10 @@ def _raw(bid_ntce_dt: str, method: str, price: str, **extra) -> dict[str, str]:
         "bidNtceDt": bid_ntce_dt,
         "sucsfbidMthdNm": method,
         "presmptPrce": price,
-        "pubPrcrmntClsfcNm": "건설폐기물처리서비스",
+        # 이 파일은 구판·현행 시행일 선택을 봅니다. 건설폐기물 신호를 넣으면 2026-11-07
+        # 결정(D04)의 고시 경로가 먼저 잡히므로, 건설폐기물이 아닌 폐기물 분류를 씁니다
+        # (D34 대전 폐기물 별표 규칙이 잡히도록).
+        "pubPrcrmntClsfcNm": "생활폐기물처리서비스",
     }
     base.update(extra)
     return base
@@ -46,7 +49,7 @@ def _resolve(raw: dict, estimated_price: Decimal | None = None, **kwargs):
     )
 
 
-def test_predecessor_period_general_uses_predecessor_rule() -> None:
+def test_predecessor_period_waste_uses_predecessor_rule() -> None:
     raw = _raw(
         "2025-10-22 14:23:59",
         "적격심사제-추정가격 30억원 미만 15억원 이상인 용역",
@@ -54,7 +57,7 @@ def test_predecessor_period_general_uses_predecessor_rule() -> None:
     )
     result = _resolve(raw, estimated_price=Decimal("1606410000"))
     assert result.rule is not None
-    assert result.rule.rule_id == PREDECESSOR_GENERAL_ID
+    assert result.rule.rule_id == PREDECESSOR_WASTE_ID
     assert result.is_blocked is False
     assert result.block_reason_code is None
 
@@ -67,7 +70,7 @@ def test_predecessor_period_5eok_2eok_band_lower_bound() -> None:
     )
     result = _resolve(raw, estimated_price=Decimal("204400000"))
     assert result.rule is not None
-    assert result.rule.rule_id == PREDECESSOR_GENERAL_ID
+    assert result.rule.rule_id == PREDECESSOR_WASTE_ID
     assert result.is_blocked is False
     band = next(
         (b for b in (result.rule.price_bands or ()) if b.label == "5억원 미만 2억원 이상"),
@@ -91,11 +94,11 @@ def test_predecessor_period_under_2eok_band_lower_bound() -> None:
     )
     result = _resolve(raw, estimated_price=Decimal("175028182"))
     assert result.rule is not None
-    assert result.rule.rule_id == PREDECESSOR_GENERAL_ID
+    assert result.rule.rule_id == PREDECESSOR_WASTE_ID
     assert result.is_blocked is False
 
 
-def test_after_cutoff_uses_current_rule() -> None:
+def test_after_cutoff_uses_current_waste_rule() -> None:
     raw = _raw(
         "2026-01-05 10:00:00",
         "적격심사제-추정가격 30억원 미만 15억원 이상인 용역",
@@ -103,7 +106,7 @@ def test_after_cutoff_uses_current_rule() -> None:
     )
     result = _resolve(raw, estimated_price=Decimal("1606410000"))
     assert result.rule is not None
-    assert result.rule.rule_id == CURRENT_GENERAL_ID
+    assert result.rule.rule_id == CURRENT_WASTE_ID
     assert result.is_blocked is False
 
 
@@ -139,7 +142,7 @@ def test_predecessor_band_1606410000_lwlt() -> None:
     )
     result = _resolve(raw, estimated_price=Decimal("1606410000"))
     assert result.rule is not None
-    assert result.rule.rule_id == PREDECESSOR_GENERAL_ID
+    assert result.rule.rule_id == PREDECESSOR_WASTE_ID
     band = next(
         (
             b
@@ -160,7 +163,7 @@ def test_predecessor_band_175028182_lwlt() -> None:
     )
     result = _resolve(raw, estimated_price=Decimal("175028182"))
     assert result.rule is not None
-    assert result.rule.rule_id == PREDECESSOR_GENERAL_ID
+    assert result.rule.rule_id == PREDECESSOR_WASTE_ID
     # find band with lwlt 87.745
     bands = [b for b in (result.rule.price_bands or ()) if b.lwlt_rate == Decimal("87.745")]
     assert bands

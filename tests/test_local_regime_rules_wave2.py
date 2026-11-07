@@ -73,6 +73,11 @@ NEW_RULE_IDS = (
     JEONBUK_GENERAL_ID,
     JEONBUK_SIMPLE_ID,
     "SERVC_LOCAL_DAEGU_20260511_ATTACH_04",
+    # 2026-11-07 D34(A) 시·도 세부유형 별표 4건. 기존 규칙 뒤에 추가됩니다.
+    "SERVC_LOCAL_SEOUL_20240812_ATTACH_01_5",
+    "SERVC_LOCAL_DAEJEON_20260101_ATTACH_1_3",
+    "SERVC_LOCAL_GANGWON_20230611_ATTACH_02",
+    "SERVC_LOCAL_JEONBUK_20240118_ATTACH_03",
 )
 
 
@@ -588,6 +593,8 @@ PREDECESSOR_RULE_IDS = (
     # 2026-10-18 대전광역시 구판(공고 제2024-2호, 시행 2024-01-20).
     "SERVC_LOCAL_DAEJEON_20240120_ATTACH_01",
     "SERVC_LOCAL_DAEJEON_20240120_SIMPLE_LABOR",
+    # 2026-11-07 D34(A) 대전광역시 구판 폐기물처리용역(같은 시행일).
+    "SERVC_LOCAL_DAEJEON_20240120_ATTACH_1_3",
     # 2026-10-19 경상북도 구판(예규 제1568호, 시행 2024-12-12).
     "SERVC_LOCAL_GB_20241212_ATTACH_01",
     "SERVC_LOCAL_GB_20241212_ATTACH_05",
@@ -604,7 +611,7 @@ PREDECESSOR_RULE_IDS = (
 
 
 def test_existing_36_local_rules_unchanged() -> None:
-    """기존 36개 규칙은 순서와 동작 필드가 그대로이고 신규 11개는 뒤에 추가된다."""
+    """기존 36개 규칙은 순서와 동작 필드가 그대로이고 신규 15개는 뒤에 추가된다."""
     rules = tuple(rule for rule in LOCAL_RULES if rule.rule_id not in PREDECESSOR_RULE_IDS)
     assert {rule.rule_id for rule in LOCAL_RULES} >= set(PREDECESSOR_RULE_IDS)
     assert len(rules) == len(EXISTING_RULE_IDS) + len(NEW_RULE_IDS)

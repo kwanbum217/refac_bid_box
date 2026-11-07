@@ -181,7 +181,9 @@ def test_confirmed_institution_band_values_match_yaml() -> None:
         code_total += len(code)
 
     assert expected_total == code_total
-    assert code_total == 137
+    # 2026-11-07 결정 D08(A)로 한국농어촌공사 별표 1·3·4·5의1·7·8 의 5억원 미만 밴드를
+    # 고시금액 경계로 둘로 나눠 구간이 6개 늘었습니다(137 -> 143).
+    assert code_total == 143
 
 
 def test_institution_band_labels_and_sources_trace_yaml() -> None:

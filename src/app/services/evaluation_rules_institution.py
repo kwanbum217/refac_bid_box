@@ -55,6 +55,12 @@ _SRC_INST_KAC_ANNEX32 = "docs/analysis/kac_annex_3_2_register_20261017.md"
 # 별표 4 위치: B(5억원 이상 60·5억원 미만 70), k(고시금액 이상 2·고시금액 미만 4), 기준비율 88,
 # 가격점수 고정 구간 상한 투찰률(95.5/91.75), 통과점수 85. 낙찰하한율은 원문 미인쇄, 계산값:
 # B70·k4: 필요 55, x<=3.75 -> 84.245 / B60·k2: 필요 45, x<=7.5 -> 80.495.
+# 한국농어촌공사 별표 1·3·4·5의1·7·8 은 배점한도 B 를 "추정가격 5억원 이상/미만" 두 열로,
+# 평점계수 k 를 "추정가격 고시금액 이상/미만" 두 행으로 인쇄합니다. 2026-11-07 결정 D08(A)로
+# 5억원 미만 밴드를 고시금액 기준으로 둘로 나눴습니다.
+_SRC_INST_KRC_BAND_AXIS = (
+    f"{_SRC_INST_AGENCY}:4.2; docs/analysis/kdhc_krc_sources_20261107.md:3.3.1"
+)
 _SRC_INST_KDHC_PREDECESSOR = (
     "나라장터 공고 R25BK01166116 첨부 '4. 일반용역 적격심사세부기준(개정전문).hwp' "
     "(.cache/kdhc/R25BK01166116/seq6_ord000.bin, sha256 132ff7b89ba5fdd782f3316bbe6d2dfdb156987c822826516643e549f8ee697b, 409600 bytes); "
@@ -75,20 +81,82 @@ _SRC_INST_KDHC_PREDECESSOR_OTHER = (
     "기준비율 88, 통과점수 85, 낙찰하한율 84.995/80.495; "
     "docs/analysis/rule_not_found_32_source_20261106.md 2.4 (2026-01-01판도 같은 값)"
 )
-# 한국지역난방공사 기타용역 공고의 수요기관(지사·사업소) 코드입니다. 2026-11-06 읽기 전용 DB
-# 조회로 RULE_NOT_FOUND 32건 중 기타용역 17건의 dminsttCd 를 확인해 정확 목록으로 넣었습니다.
-# 대역 접두가 아니라 명시 목록이므로 다른 기관 코드에는 적용되지 않습니다.
-# 근거: docs/analysis/rule_not_found_32_source_20261106.md 2.4, 3.1, 4.1
+# 한국지역난방공사 2023-07-19 시행판 별표 5 여객 육상운송용역의 구간 근거입니다. 원문은 위
+# _SRC_INST_KDHC_PREDECESSOR 와 같은 R25BK01166116 seq6 이며, 별표 5 는 B 를 인쇄하지 않고
+# k 4(단일), 기준비율 91, 가격점수 고정 구간 상한 투찰률 94%, 통과점수 88 을 인쇄합니다.
+# 낙찰하한율은 원문 미인쇄이며 계산값 91-(100-88)/4=88.0 -> 87.995 입니다. 공고
+# R25BK01166116 이 인쇄한 87.995 와 같습니다.
+# 근거: docs/analysis/inst_predecessor_attach_20261019.md 4절(54-61행),
+#       docs/analysis/not_computable_9_trace_20261107.md 3.2, 4절 1
+_SRC_INST_KDHC_PREDECESSOR_PASSENGER = (
+    "나라장터 공고 R25BK01166116 첨부 '4. 일반용역 적격심사세부기준(개정전문).hwp' "
+    "(.cache/kdhc/R25BK01166116/seq6_ord000.bin, sha256 132ff7b89ba5fdd782f3316bbe6d2dfdb156987c822826516643e549f8ee697b, 409600 bytes); "
+    "별표 5 여객 육상운송용역: B 원문 미인쇄, k 4(단일), 기준비율 91, "
+    "가격점수 고정 구간 상한 투찰률 94%, 통과점수 88; "
+    "낙찰하한율 원문 미인쇄, 계산값 91-(100-88)/4=88.0 -> 87.995; "
+    "공고 R25BK01166116 인쇄값 87.995; docs/analysis/inst_predecessor_attach_20261019.md 4절"
+)
+# 한국지역난방공사 2026-08-18 시행판의 구간 근거입니다. 원문은 나라장터 공고 R26BK01730527
+# 첨부 PDF 72쪽(개정 2026. 8. 18.)과 R26BK01793057 첨부 HWP 이며, 부칙이 2026-08-18 부터
+# 입찰공고되는 용역에 적용하고 2026-04-13판을 폐지한다고 적습니다. 2026-04-13판 HWP
+# (sha256 5da49919018...)는 별표 3·4·8 값이 2026-01-01판과 같아 별도 규칙으로 등록하지
+# 않습니다(D07 A).
+# 근거: docs/analysis/kdhc_krc_sources_20261107.md 3.2.1, 3.2.2, 4.1
+_SRC_INST_KDHC_20260818 = (
+    "나라장터 공고 R26BK01730527 첨부 '5. 일반용역적격심사세부기준(260818).pdf' "
+    "(60ea20722555c39898dfc4ed07c11fc8d62259173a47aeb9a4285ff57c3beda0, 912748 bytes, 72쪽) "
+    "및 R26BK01793057 첨부 '일반용역적격심사세부기준(26.8.18).hwp' "
+    "(2b55300798d0be844c1dbd5ab17e35393b35e8efb931db7a1d9d201549495200, 425984 bytes); "
+    "부칙 '2026년 8월 18일부터 입찰공고되어 실시되는 용역계약의 적격심사 낙찰자 선정에 적용한다', "
+    "2026-04-13판 폐지; 기준비율 90(별표 2·3의2·5·6 제외), "
+    "docs/analysis/kdhc_krc_sources_20261107.md 3.2.1, 3.2.2"
+)
+# 한국지역난방공사 세부기준 원문(data/sources/qualification/files/kdhc, 2023-07-19·2026-01-01·
+# 2026-08-18판)에는 폐기물처리용역 정의·적용 범위에 '건설폐기물' 제외 문구가 없습니다
+# (grep '건설폐기물' 0건). 다만 건설폐기물처리용역 공고문이 환경부고시를 직접 인용하므로,
+# 그 공고에는 공사 별표 4 대신 환경부고시 경로를 씁니다(cdw_exclusion="notice_cited").
+# 공고문 인용:
+# - R26BK01621293 첨부 '1. 입찰공고문(불연성).pdf'(sha256 3f91db9ef432defae2e3ca22a94112227a12010b8babe82bd39a10acfa3ad910, 1132801 bytes):
+#   "가. 기후에너지환경부 “건설폐기물처리용역 적격업체 평가기준”에 의하여 낙찰자를
+#   결정하므로 동 기준을 반드시 사전에 열람하여야 합니다."
+# - R26BK01629748 첨부 '0.입찰공고문.pdf'(sha256 0f294575cdcfd854b6a851c4f98134f72da5da121a533f9075370145ee82be78, 943668 bytes):
+#   "가. 적격심사 낙찰제로서 환경부고시 “건설폐기물처리용역 적격업체 평가기준”에 의하여
+#   낙찰자를 결정하므로 동 기준을 반드시 사전 열람하여야 합니다."
+# - R26BK01644144 첨부 '1. 입찰공고문(PDF).pdf'(sha256 3e129290cb3d74106fc325b6a94b0761668a896783d82a76fbab47e1a98a3262, 834112 bytes):
+#   "가. 적격심사 낙찰제로서 건설폐기물처리용역 적격업체 평가기준(환경부고시 제2025-165호)
+#   에 의하여 낙찰자를 결정하므로 동 기준을 반드시 사전 열람하여야 합니다."
+# 위 공고의 sucsfbidLwltRate 는 87.745·86.745 로 환경부고시 제4호·제3호 값과 같습니다.
+_KDHC_CDW_CITATION = (
+    "공고문 R26BK01621293 '1. 입찰공고문(불연성).pdf'"
+    "(sha256 3f91db9ef432defae2e3ca22a94112227a12010b8babe82bd39a10acfa3ad910): "
+    "'가. 기후에너지환경부 \"건설폐기물처리용역 적격업체 평가기준\"에 의하여 낙찰자를 결정'; "
+    "R26BK01629748 '0.입찰공고문.pdf'"
+    "(sha256 0f294575cdcfd854b6a851c4f98134f72da5da121a533f9075370145ee82be78): "
+    "'적격심사 낙찰제로서 환경부고시 \"건설폐기물처리용역 적격업체 평가기준\"에 의하여 낙찰자를 결정'; "
+    "R26BK01644144 '1. 입찰공고문(PDF).pdf'"
+    "(sha256 3e129290cb3d74106fc325b6a94b0761668a896783d82a76fbab47e1a98a3262): "
+    "'건설폐기물처리용역 적격업체 평가기준(환경부고시 제2025-165호)에 의하여 낙찰자를 결정'; "
+    "공고 sucsfbidLwltRate 87.745·86.745 는 환경부고시 제4호·제3호 값과 일치"
+)
+# 한국지역난방공사 지사·사업소 수요기관 코드입니다. 2026-11-06 읽기 전용 DB 조회로
+# RULE_NOT_FOUND 32건 중 기타용역 17건의 dminsttCd 를 확인했고, 2026-11-07 결정 D29 로
+# regime_lag_65 4.3절 지사 공고의 코드(D325103·D325105·D325117)를 더했습니다. 대역 접두가
+# 아니라 명시 목록이므로 다른 기관 코드에는 적용되지 않습니다.
+# 근거: docs/analysis/rule_not_found_32_source_20261106.md 2.4, 3.1, 4.1;
+#       docs/analysis/regime_lag_65_check_20261107.md 3.1, 3.2, 4.3
 _KDHC_BRANCH_CODES: frozenset[str] = frozenset(
     {
         "D325102",
+        "D325103",
         "D325104",
+        "D325105",
         "D325107",
         "D325109",
         "D325112",
         "D325114",
         "D325115",
         "D325116",
+        "D325117",
         "D325150",
         "D325152",
         "D325156",
@@ -97,11 +165,38 @@ _KDHC_BRANCH_CODES: frozenset[str] = frozenset(
 )
 
 # 규칙 ID 별 정확한 수요기관 코드 목록입니다. 코드가 있는 공고는 _axis_matches 가 이 목록을
-# 먼저 대조하고, 목록 밖 코드는 종전처럼 기관 코드 불일치로 봅니다.
-INSTITUTION_RULE_EXACT_CODES: dict[str, frozenset[str]] = {
-    "SERVC_INST_KDHC_20260101_OTHER": _KDHC_BRANCH_CODES,
-    "SERVC_INST_KDHC_20230719_OTHER": _KDHC_BRANCH_CODES,
-}
+# 먼저 대조하고, 목록 밖 코드는 종전처럼 기관 코드 불일치로 봅니다. 판본마다 규칙 ID 를
+# 따로 두므로(D09 A) 같은 지사 코드를 판본별 규칙 ID 에 모두 붙입니다.
+_KDHC_RULE_IDS: tuple[str, ...] = (
+    "SERVC_INST_KDHC_20230719_WASTE",
+    "SERVC_INST_KDHC_20230719_OTHER",
+    "SERVC_INST_KDHC_20230719_PASSENGER",
+    "SERVC_INST_KDHC_20260101_ACADEMIC",
+    "SERVC_INST_KDHC_20260101_FACILITY",
+    "SERVC_INST_KDHC_20260101_SW",
+    "SERVC_INST_KDHC_20260101_SW_TARGET",
+    "SERVC_INST_KDHC_20260101_WASTE",
+    "SERVC_INST_KDHC_20260101_PASSENGER",
+    "SERVC_INST_KDHC_20260101_FREIGHT",
+    "SERVC_INST_KDHC_20260101_INSURANCE",
+    "SERVC_INST_KDHC_20260101_REPAIR",
+    "SERVC_INST_KDHC_20260101_LEASE",
+    "SERVC_INST_KDHC_20260101_OTHER",
+    "SERVC_INST_KDHC_20260818_ACADEMIC",
+    "SERVC_INST_KDHC_20260818_FACILITY",
+    "SERVC_INST_KDHC_20260818_SW",
+    "SERVC_INST_KDHC_20260818_SW_TARGET",
+    "SERVC_INST_KDHC_20260818_WASTE",
+    "SERVC_INST_KDHC_20260818_PASSENGER",
+    "SERVC_INST_KDHC_20260818_FREIGHT",
+    "SERVC_INST_KDHC_20260818_INSURANCE",
+    "SERVC_INST_KDHC_20260818_REPAIR",
+    "SERVC_INST_KDHC_20260818_LEASE",
+    "SERVC_INST_KDHC_20260818_OTHER",
+)
+INSTITUTION_RULE_EXACT_CODES: dict[str, frozenset[str]] = dict.fromkeys(
+    _KDHC_RULE_IDS, _KDHC_BRANCH_CODES
+)
 
 # 한국공항공사의 수요기관 하위 조직 표기입니다. db_readonly_query.py 로 한국공항공사 적격심사
 # 용역 공고의 dminsttCd·dminsttNm 을 조회해 나온 정확 일치 이름만 담았고, 접두 확장은 쓰지
@@ -177,6 +272,7 @@ def _institution_rule(
     subunit_code_prefixes: tuple[str, ...] = (),
     quant_table: bool = True,
     superseded_date: str | None = None,
+    cdw_exclusion: str | None = None,
 ) -> EvaluationRule:
     """기관 규칙 하나를 구간별 price_bands·threshold_bands 로 만듭니다.
 
@@ -236,6 +332,7 @@ def _institution_rule(
         subunit_name_prefixes=subunit_name_prefixes,
         subunit_code_prefixes=subunit_code_prefixes,
         superseded_date=superseded_date,
+        cdw_exclusion=cdw_exclusion,
     )
 
 
@@ -471,6 +568,26 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         patterns=("학술연구용역", "학술연구"),
         bands=(
             _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 1 학술연구용역 · 고시금액 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 1 학술연구용역 · 고시금액 이상 5억원 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
                 None,
                 "60",
                 "2",
@@ -478,17 +595,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "85",
                 "82.495",
                 "별표 1 학술연구용역 · 5억원 이상",
-                f"{_SRC_INST_AGENCY}:4.2",
-            ),
-            _inst_band(
-                "500000000",
-                "70",
-                "4",
-                "90",
-                "85",
-                "86.245",
-                "별표 1 학술연구용역 · 5억원 미만",
-                f"{_SRC_INST_AGENCY}:4.2",
+                _SRC_INST_KRC_BAND_AXIS,
             ),
         ),
     ),
@@ -539,14 +646,24 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         patterns=("소프트웨어용역중소기업자간경쟁제품비대상", "소프트웨어용역경쟁제품비대상"),
         bands=(
             _inst_band(
-                "500000000",
+                "고시금액",
                 "70",
                 "4",
                 "90",
                 "85",
                 "86.245",
-                "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 미만",
-                f"{_SRC_INST_AGENCY}:4.2",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 고시금액 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 고시금액 이상 5억원 미만",
+                _SRC_INST_KRC_BAND_AXIS,
             ),
             _inst_band(
                 None,
@@ -556,7 +673,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "85",
                 "82.495",
                 "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 이상",
-                f"{_SRC_INST_AGENCY}:4.2",
+                _SRC_INST_KRC_BAND_AXIS,
             ),
         ),
     ),
@@ -607,6 +724,26 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         patterns=("폐기물처리용역", "폐기물처리"),
         bands=(
             _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 4 폐기물처리용역 · 고시금액 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 4 폐기물처리용역 · 고시금액 이상 5억원 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
                 None,
                 "60",
                 "2",
@@ -614,17 +751,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "85",
                 "82.495",
                 "별표 4 폐기물처리용역 · 5억원 이상",
-                f"{_SRC_INST_AGENCY}:4.2",
-            ),
-            _inst_band(
-                "500000000",
-                "70",
-                "4",
-                "90",
-                "85",
-                "86.245",
-                "별표 4 폐기물처리용역 · 5억원 미만",
-                f"{_SRC_INST_AGENCY}:4.2",
+                _SRC_INST_KRC_BAND_AXIS,
             ),
         ),
     ),
@@ -675,6 +802,26 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         patterns=("화물육상운송용역", "화물육상운송"),
         bands=(
             _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 5의1 화물 육상운송용역 · 고시금액 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 5의1 화물 육상운송용역 · 고시금액 이상 5억원 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
                 None,
                 "60",
                 "2",
@@ -682,17 +829,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "85",
                 "82.495",
                 "별표 5의1 화물 육상운송용역 · 5억원 이상",
-                f"{_SRC_INST_AGENCY}:4.2",
-            ),
-            _inst_band(
-                "500000000",
-                "70",
-                "4",
-                "90",
-                "85",
-                "86.245",
-                "별표 5의1 화물 육상운송용역 · 5억원 미만",
-                f"{_SRC_INST_AGENCY}:4.2",
+                _SRC_INST_KRC_BAND_AXIS,
             ),
         ),
     ),
@@ -743,6 +880,26 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         patterns=("수리점검용역", "수리점검"),
         bands=(
             _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 7 수리·점검용역 · 고시금액 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 7 수리·점검용역 · 고시금액 이상 5억원 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
                 None,
                 "60",
                 "2",
@@ -750,17 +907,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "85",
                 "82.495",
                 "별표 7 수리·점검용역 · 5억원 이상",
-                f"{_SRC_INST_AGENCY}:4.2",
-            ),
-            _inst_band(
-                "500000000",
-                "70",
-                "4",
-                "90",
-                "85",
-                "86.245",
-                "별표 7 수리·점검용역 · 5억원 미만",
-                f"{_SRC_INST_AGENCY}:4.2",
+                _SRC_INST_KRC_BAND_AXIS,
             ),
         ),
     ),
@@ -777,6 +924,26 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         patterns=("임대차용역", "임대차"),
         bands=(
             _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 8 임대차 · 고시금액 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 8 임대차 · 고시금액 이상 5억원 미만",
+                _SRC_INST_KRC_BAND_AXIS,
+            ),
+            _inst_band(
                 None,
                 "70",
                 "2",
@@ -784,17 +951,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 "85",
                 "82.495",
                 "별표 8 임대차 · 5억원 이상",
-                f"{_SRC_INST_AGENCY}:4.2",
-            ),
-            _inst_band(
-                "500000000",
-                "70",
-                "4",
-                "90",
-                "85",
-                "86.245",
-                "별표 8 임대차 · 5억원 미만",
-                f"{_SRC_INST_AGENCY}:4.2",
+                _SRC_INST_KRC_BAND_AXIS,
             ),
         ),
     ),
@@ -1382,6 +1539,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (학술연구용역)",
         description="한국지역난방공사 별표 1 학술연구용역 3구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("학술연구용역", "학술연구"),
         bands=(
@@ -1426,6 +1584,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (시설분야용역)",
         description="한국지역난방공사 별표 2 시설분야용역 2구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("시설분야용역", "시설분야"),
         bands=(
@@ -1460,6 +1619,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (소프트웨어용역 경쟁제품 비대상)",
         description="한국지역난방공사 별표 3 소프트웨어용역(경쟁제품 비대상) 3구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("소프트웨어용역중소기업자간경쟁제품비대상", "소프트웨어용역경쟁제품비대상"),
         bands=(
@@ -1504,6 +1664,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (소프트웨어용역 경쟁제품 대상)",
         description="한국지역난방공사 별표 3의2 소프트웨어용역(경쟁제품 대상) 2구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("소프트웨어용역중소기업자간경쟁제품대상", "소프트웨어용역경쟁제품대상"),
         bands=(
@@ -1538,8 +1699,10 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (폐기물처리용역)",
         description="한국지역난방공사 별표 4 폐기물처리용역 3구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("폐기물처리용역", "폐기물처리"),
+        cdw_exclusion="notice_cited",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
         bands=(
             _inst_band(
                 "고시금액",
@@ -1582,6 +1745,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (여객 육상운송용역)",
         description="한국지역난방공사 별표 5 여객 육상운송용역 2구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("여객육상운송용역", "여객육상운송"),
         bands=(
@@ -1616,6 +1780,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (화물 육상운송용역)",
         description="한국지역난방공사 별표 5의2 화물 육상운송용역 3구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("화물육상운송용역", "화물육상운송"),
         bands=(
@@ -1660,6 +1825,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (보험용역)",
         description="한국지역난방공사 별표 6 보험용역 2구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("보험용역", "보험"),
         bands=(
@@ -1694,6 +1860,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (수리·점검용역)",
         description="한국지역난방공사 별표 7 수리·점검용역 3구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("수리점검용역", "수리점검"),
         bands=(
@@ -1738,6 +1905,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (임대차)",
         description="한국지역난방공사 별표 8 임대차 3구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("임대차용역", "임대차"),
         bands=(
@@ -1782,6 +1950,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         table_name="한국지역난방공사 일반용역 적격심사 (기타용역)",
         description="한국지역난방공사 별표 9 기타용역 2구간",
         effective_date="2026-01-01",
+        superseded_date="2026-08-18",
         source=f"{_SRC_INST_AGENCY}:5",
         patterns=("기타용역", "기타"),
         bands=(
@@ -1807,9 +1976,453 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
             ),
         ),
     ),
+    # 한국지역난방공사 2026-08-18 시행판 (개정 2026. 8. 18., 2026-08-18 이후 입찰공고분 적용,
+    # 2026-04-13판 폐지). 판본마다 규칙 ID 를 두는 방식(D09 A)에 따라 2026-01-01판 11개
+    # 규칙을 superseded_date="2026-08-18" 로 끝내고 같은 별표를 새 ID 로 옮겼습니다.
+    # 2026-04-13판은 2026-01-01판과 값이 같아 별도 등록하지 않습니다(D07 A).
+    # 별표 1·2·3·4·5의2·7·8·9는 기준비율이 90(별표 2는 93, 별표 3의2·5는 91, 별표 6은 88)으로
+    # 바뀌었고, 별표 3의2·5·6은 값이 그대로입니다. 심사항목 배점한도는 2026-08-18판 원문
+    # 별표 1~9 가 2026-01-01판과 같으므로 두 판본이 같은 배점표를 씁니다(docs/analysis/
+    # kdhc_quant_20260818_20261107.md). 그래서 quant_table=True 로 두어 기관 배점표를 씁니다.
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_ACADEMIC",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="ACADEMIC",
+        table_name="한국지역난방공사 일반용역 적격심사 (학술연구용역, 2026.08.18판)",
+        description="한국지역난방공사 별표 1 학술연구용역 3구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("학술연구용역", "학술연구"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 1 학술연구용역 · 고시금액 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 1 학술연구용역 · 고시금액 이상 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 1 학술연구용역 · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_FACILITY",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="FACILITY",
+        table_name="한국지역난방공사 일반용역 적격심사 (시설분야용역, 2026.08.18판)",
+        description="한국지역난방공사 별표 2 시설분야용역 2구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("시설분야용역", "시설분야"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 2 시설분야용역 · 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "5",
+                "93",
+                "85",
+                "89.995",
+                "별표 2 시설분야용역 · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_SW",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="SW",
+        table_name="한국지역난방공사 일반용역 적격심사 (소프트웨어용역 경쟁제품 비대상, 2026.08.18판)",
+        description="한국지역난방공사 별표 3 소프트웨어용역(경쟁제품 비대상) 3구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("소프트웨어용역중소기업자간경쟁제품비대상", "소프트웨어용역경쟁제품비대상"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 고시금액 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 고시금액 이상 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 3 소프트웨어용역(경쟁제품 비대상) · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_SW_TARGET",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="SW_SME",
+        table_name="한국지역난방공사 일반용역 적격심사 (소프트웨어용역 경쟁제품 대상, 2026.08.18판)",
+        description="한국지역난방공사 별표 3의2 소프트웨어용역(경쟁제품 대상) 2구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("소프트웨어용역중소기업자간경쟁제품대상", "소프트웨어용역경쟁제품대상"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 3의2 소프트웨어용역(경쟁제품 대상) · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_WASTE",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="WASTE",
+        table_name="한국지역난방공사 일반용역 적격심사 (폐기물처리용역, 2026.08.18판)",
+        description="한국지역난방공사 별표 4 폐기물처리용역 3구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("폐기물처리용역", "폐기물처리"),
+        cdw_exclusion="notice_cited",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 4 폐기물처리용역 · 고시금액 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 4 폐기물처리용역 · 고시금액 이상 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 4 폐기물처리용역 · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_PASSENGER",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="PASSENGER_TRANSPORT",
+        table_name="한국지역난방공사 일반용역 적격심사 (여객 육상운송용역, 2026.08.18판)",
+        description="한국지역난방공사 별표 5 여객 육상운송용역 2구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("여객육상운송용역", "여객육상운송"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "4",
+                "91",
+                "88",
+                "87.995",
+                "별표 5 여객 육상운송용역 · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_FREIGHT",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="FREIGHT",
+        table_name="한국지역난방공사 일반용역 적격심사 (화물 육상운송용역, 2026.08.18판)",
+        description="한국지역난방공사 별표 5의2 화물 육상운송용역 3구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("화물육상운송용역", "화물육상운송"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 5의2 화물 육상운송용역 · 고시금액 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 5의2 화물 육상운송용역 · 고시금액 이상 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 5의2 화물 육상운송용역 · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_INSURANCE",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="INSURANCE",
+        table_name="한국지역난방공사 일반용역 적격심사 (보험용역, 2026.08.18판)",
+        description="한국지역난방공사 별표 6 보험용역 2구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("보험용역", "보험"),
+        bands=(
+            _inst_band(
+                "500000000",
+                "70",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "0.375",
+                "88",
+                "85",
+                "47.995",
+                "별표 6 보험용역 · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_REPAIR",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="REPAIR_INSPECTION",
+        table_name="한국지역난방공사 일반용역 적격심사 (수리·점검용역, 2026.08.18판)",
+        description="한국지역난방공사 별표 7 수리·점검용역 3구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("수리점검용역", "수리점검"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 7 수리·점검용역 · 고시금액 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                "500000000",
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 7 수리·점검용역 · 고시금액 이상 5억원 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "60",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 7 수리·점검용역 · 5억원 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_LEASE",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="LEASE",
+        table_name="한국지역난방공사 일반용역 적격심사 (임대차, 2026.08.18판)",
+        description="한국지역난방공사 별표 8 임대차 2구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("임대차용역", "임대차"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "70",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 8 임대차 · 고시금액 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "70",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 8 임대차 · 고시금액 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
+    _institution_rule(
+        "SERVC_INST_KDHC_20260818_OTHER",
+        institution_name="한국지역난방공사",
+        institution_code="B550373",
+        institution_aliases=("KDHC",),
+        service_type="GENERAL",
+        table_name="한국지역난방공사 일반용역 적격심사 (기타용역, 2026.08.18판)",
+        description="한국지역난방공사 별표 9 기타용역 2구간 (2026.08.18판)",
+        effective_date="2026-08-18",
+        source=_SRC_INST_KDHC_20260818,
+        patterns=("기타용역", "기타"),
+        bands=(
+            _inst_band(
+                "고시금액",
+                "80",
+                "4",
+                "90",
+                "85",
+                "86.245",
+                "별표 9 기타용역 고시금액 미만 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+            _inst_band(
+                None,
+                "50",
+                "2",
+                "90",
+                "85",
+                "82.495",
+                "별표 9 기타용역 고시금액 이상 (2026.08.18판)",
+                _SRC_INST_KDHC_20260818,
+            ),
+        ),
+        quant_table=True,
+    ),
     # 한국지역난방공사 구판 (일반용역 적격심사세부기준, 시행 2023-07-19 입찰공고부터, superseded 2026-01-01).
     # 원문 .cache/kdhc/R25BK01166116/seq6_ord000.bin (sha256 132ff7b89ba5fdd782f3316bbe6d2dfdb156987c822826516643e549f8ee697b).
-    # 별표 4 폐기물처리용역 2구간. 여객 육상운송(별표 5)은 직전판 B 가 원문에 인쇄되지 않아 이번 범위가 아닙니다.
+    # 별표 4 폐기물처리용역 3구간과 별표 5 여객 육상운송용역 1구간을 등록합니다.
     _institution_rule(
         "SERVC_INST_KDHC_20230719_WASTE",
         institution_name="한국지역난방공사",
@@ -1822,6 +2435,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
         superseded_date="2026-01-01",
         source=_SRC_INST_KDHC_PREDECESSOR,
         patterns=("폐기물처리용역", "폐기물처리"),
+        cdw_exclusion="notice_cited",  # 공고문이 환경부고시를 인용: _KDHC_CDW_CITATION
         bands=(
             _inst_band(
                 "고시금액",
@@ -3470,4 +4084,38 @@ KDHC_OTHER_PREDECESSOR_RULE = _institution_rule(
     quant_table=False,
 )
 
-PREDECESSOR_INSTITUTION_RULES: tuple[EvaluationRule, ...] = (KDHC_OTHER_PREDECESSOR_RULE,)
+# 한국지역난방공사 2023-07-19 시행판 별표 5 여객 육상운송용역입니다. 2026-01-01판 시행 전
+# 공고(R25BK01166116, 2025-11-19)가 이 판본의 [별표 5]를 지목해 추가했습니다(D22).
+# 원문이 B 를 인쇄하지 않아 B 는 None 으로 두고, k 4·기준비율 91·통과점수 88 만 확정합니다.
+# 낙찰하한율은 원문 미인쇄이며 계산값 87.995 가 공고 인쇄값과 같습니다.
+KDHC_PASSENGER_PREDECESSOR_RULE = _institution_rule(
+    "SERVC_INST_KDHC_20230719_PASSENGER",
+    institution_name="한국지역난방공사",
+    institution_code="B550373",
+    institution_aliases=("KDHC",),
+    service_type="PASSENGER_TRANSPORT",
+    table_name="한국지역난방공사 일반용역 적격심사 (여객 육상운송용역, 2023.07.19판)",
+    description="한국지역난방공사 별표 5 여객 육상운송용역 1구간 (2023.07.19판)",
+    effective_date="2023-07-19",
+    superseded_date="2026-01-01",
+    source=_SRC_INST_KDHC_PREDECESSOR_PASSENGER,
+    patterns=("여객육상운송용역", "여객육상운송"),
+    bands=(
+        _inst_band(
+            None,
+            None,
+            "4",
+            "91",
+            "88",
+            "87.995",
+            "별표 5 여객 육상운송용역 (2023.07.19판)",
+            _SRC_INST_KDHC_PREDECESSOR_PASSENGER,
+        ),
+    ),
+    quant_table=False,
+)
+
+PREDECESSOR_INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
+    KDHC_OTHER_PREDECESSOR_RULE,
+    KDHC_PASSENGER_PREDECESSOR_RULE,
+)
