@@ -116,19 +116,19 @@ make db-up
 2. 스냅샷 무결성을 확인합니다.
 
 ```powershell
-python3 scripts/backup_recovery.py verify --snapshot-dir <snapshot-dir>
+uv run python scripts/backup_recovery.py verify --snapshot-dir <snapshot-dir>
 ```
 
 3. 복원 계획만 확인합니다. 이 단계는 아무것도 덮어쓰지 않습니다.
 
 ```powershell
-python3 scripts/backup_recovery.py restore --snapshot-dir <snapshot-dir>
+uv run python scripts/backup_recovery.py restore --snapshot-dir <snapshot-dir>
 ```
 
 4. 사용자 승인 뒤 실제로 복원합니다.
 
 ```powershell
-python3 scripts/backup_recovery.py restore --snapshot-dir <snapshot-dir> --execute --confirm
+uv run python scripts/backup_recovery.py restore --snapshot-dir <snapshot-dir> --execute --confirm
 ```
 
 - 스냅샷을 `data/backups/snapshots/snapshot_*` 아래에 두면 `make restore-dry-run`, `make backup-verify` 로 최신 스냅샷을 대상으로 같은 확인을 할 수 있습니다.
