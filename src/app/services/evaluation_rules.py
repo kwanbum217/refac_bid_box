@@ -2038,14 +2038,24 @@ MOIS_TECH_ATTACHMENT_WARNING = (
 )
 
 
-def select_mois_academic_band_rule(method_name: str | None) -> EvaluationRule | None:
+def select_mois_academic_band_rule(
+    method_name: str | None, raw_data: dict[str, Any] | None = None
+) -> EvaluationRule | None:
     """낙찰방법명이 학술연구 띠 표기일 때 행안부 [별표 4] 해당 열 규칙을 돌려줍니다.
 
-    '추정가격 2억미만 1억이상' 은 공고마다 기준 문서가 갈려 매칭하지 않습니다.
+    '추정가격 1억미만'·'2억이상' 은 낙찰방법명만으로 확정합니다. '추정가격 2억미만
+    1억이상' 은 공고마다 기준 문서가 갈려 낙찰방법명만으로는 확정하지 않고, 조달분류가
+    학술연구서비스 계열일 때만 그 띠의 학술연구 열로 확정합니다(D25).
     """
     name = method_name or ""
-    if not name or any(marker in name for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS):
+    if not name:
         return None
+    if any(marker in name for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS):
+        if not all(marker in name for marker in _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS):
+            return None
+        if not _is_academic_band_classification(raw_data):
+            return None
+        return MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES[0]
     for rule in MOIS_ACADEMIC_BAND_RULES:
         if match_rule_by_mthd_nm(name, rules=(rule,)) is not None:
             return rule
@@ -2105,6 +2115,57 @@ _PROCUREMENT_CLASS_KEYS = (
 _CDW_PROCUREMENT_CLASS_MARKER = "건설폐기물처리서비스"
 _SIMPLE_LABOR_RECOMMEND_KEYWORDS = ("청소", "경비", "시설관리", "주차", "미화")
 _FISHERY_CLEANUP_RECOMMEND_KEYWORDS = ("어장정화", "어장정비", "해양쓰레기", "어장")
+
+# 조달분류가 학술연구 계열임을 가리키는 표기입니다. 조달청 분류체계는 중분류를
+# '학술연구서비스'로 두고 소분류를 '기타연구조사서비스'·'교통연구조사서비스' 등으로
+# 나누므로 네 필드를 모두 확인합니다(2026-11-07 실측: R26BK01310604 중분류
+# '학술연구서비스', R26BK01422491 소분류 '교통연구조사서비스').
+_ACADEMIC_CLASS_MARKER = "학술연구"
+
+
+def _is_academic_band_classification(raw_data: dict[str, Any] | None) -> bool:
+    """조달분류 네 필드 중 하나라도 학술연구 표기를 담고 있는지 봅니다.
+
+    낙찰방법 적용 기준(sucsfbidMthdAppStd)의 학술연구 표기는 확정 근거로 쓰지 않습니다.
+    이 값만 있는 공고는 학술 띠로 확정하지 않고 종전 차단을 유지합니다(D25).
+    """
+    data = raw_data if isinstance(raw_data, dict) else {}
+    return any(
+        _ACADEMIC_CLASS_MARKER in str(data.get(key) or "") for key in _PROCUREMENT_CLASS_KEYS
+    )
+
+
+# 낙찰방법명의 여객·화물 표기가 서로 어긋날 때 조달분류로 교정하는 신호입니다.
+# 화물 표기를 여객으로 되돌리는 한 방향만 두고(D19), 조달청 경로에서만 씁니다(D21).
+# 조달분류 소분류 표기는 '도로여객운송서비스'이고 낙찰방법명 여객 표기는 '여객'입니다.
+_FREIGHT_MARKER = "화물"
+_PASSENGER_MARKER = "여객"
+
+
+def correct_passenger_method_name(
+    method_name: str | None, raw_data: dict[str, Any] | None
+) -> tuple[str | None, bool]:
+    """낙찰방법명이 화물인데 조달분류가 여객이면 여객 표기로 교정합니다.
+
+    반환: (교정된 낙찰방법명, 교정 여부). 교정하지 않으면 받은 값을 그대로 돌려줍니다.
+    여객->화물 역방향은 교정하지 않고, 조달분류가 여객 표기를 담지 않아도 교정하지
+    않습니다. 낙찰방법명에 화물과 여객이 함께 있으면 어느 쪽이 정본인지 알 수 없어
+    교정하지 않습니다.
+    """
+    name = method_name or ""
+    if not name or _FREIGHT_MARKER not in name or _PASSENGER_MARKER in name:
+        return method_name, False
+    data = raw_data if isinstance(raw_data, dict) else {}
+    class_text = " ".join(str(data.get(key) or "") for key in _PROCUREMENT_CLASS_KEYS)
+    if _PASSENGER_MARKER not in class_text:
+        return method_name, False
+    return name.replace(_FREIGHT_MARKER, _PASSENGER_MARKER), True
+
+
+PASSENGER_METHOD_CORRECTION_WARNING = (
+    "낙찰방법명은 화물 육상운송용역인데 조달분류가 여객 운송서비스라, 조달분류에 맞춰 "
+    "여객 육상운송용역 규칙으로 교정했습니다(D16·D19·D21)."
+)
 
 
 def resolve_local_service_type(
@@ -2438,7 +2499,31 @@ def _select_local_rule(
         if general:
             return _applied(general[0])
         if simple:
-            return _applied(simple[0])
+            # GENERAL 후보가 없어 남은 SIMPLE_LABOR 단독 후보로 확정하던 경로입니다(D18).
+            # 단순노무 표기가 없는 공고를 단순노무 별표로 확정하면 규칙값이 실제 기준과
+            # 어긋나므로, 후보를 안내하고 사용자 선택을 받을 때까지 차단합니다.
+            # 공고일이 후보 규칙의 효력 구간 밖이면 이 분기에서 확정하지 않고, 뒤의 시행일
+            # 대조가 종전처럼 RULE_REGIME_MISMATCH 로 막게 둡니다.
+            in_window = [
+                rule
+                for rule in simple
+                if announced is None or _rule_applies_to_announcement(rule, announced)
+            ]
+            if not in_window:
+                return _applied(simple[0])
+            warnings.append(
+                "후보 별표: "
+                + ", ".join(f"{rule.rule_id} ({rule.table_name})" for rule in in_window)
+            )
+            recommendation = _recommend_local_service_type(raw_data, method_name)
+            if recommendation:
+                warnings.append(f"추천: {recommendation}")
+            return (
+                None,
+                BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED,
+                LOCAL_SIMPLE_LABOR_ONLY_REASON,
+                warnings,
+            )
         recommendation = _recommend_local_service_type(raw_data, method_name)
         if recommendation:
             warnings.append(f"추천: {recommendation}")
@@ -2768,6 +2853,15 @@ BLOCK_CODE_RULE_SCOPE_AMBIGUOUS = "RULE_SCOPE_AMBIGUOUS"
 BLOCK_CODE_LOCAL_RULE_NOT_FOUND = "LOCAL_RULE_NOT_FOUND"
 BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED = "LOCAL_SERVICE_TYPE_UNRESOLVED"
 
+# GENERAL 후보가 없어 SIMPLE_LABOR 단독 후보만 남은 공고를 자동 확정하지 않고 차단할 때
+# 쓰는 사유 문구입니다(D18). 이 사유로 차단된 공고는 사용자 선택 전까지 행안부 학술 띠
+# 구제 대상에서도 제외합니다.
+LOCAL_SIMPLE_LABOR_ONLY_REASON = (
+    "낙찰방법명과 조달분류에서 용역 세부유형을 확정하지 못했고 일반 별표 후보도 없어, "
+    "단순노무 별표로 자동 확정하지 않습니다. 용역 세부유형"
+    "(local_service_type, 예: 일반 별표 또는 단순노무 별표)을 선택해 주십시오."
+)
+
 # 시·도 자체 규칙이 학술연구 띠 표기를 규칙으로 풀지 못한 차단 코드입니다. 시·도 규칙으로
 # 계산되던 공고는 규칙이 확정돼 차단되지 않으므로 이 집합에 들지 않습니다.
 _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES = frozenset(
@@ -2894,6 +2988,65 @@ def _is_jeonnam_local_announcement(
     code = (region_code or "").strip()
     name = re.sub(r"\s+", "", region_name or "")
     return code in _JEONNAM_REGION_CODES or name in _JEONNAM_REGION_NAMES
+
+
+# 조달청 일반용역 '추정가격 2억원 미만' 띠의 표 이름입니다. 전남 일반용역 2억미만
+# 공고는 전남 자체 GENERAL 별표가 없어 이 띠를 조달청 기준으로 준용합니다(D24).
+_PPS_UNDER_2E_TABLE_NAME = "추정가격 2억원 미만인 용역"
+
+
+def _is_jeonnam_general_band_announcement(
+    region_code: str | None,
+    region_name: str | None,
+    announced: date | None,
+    institution_name: str | None,
+    method_name: str | None,
+    raw_data: dict[str, Any] | None,
+) -> bool:
+    """전남 지역의 일반용역 2억미만 띠 표기 공고인지 판정합니다(D24).
+
+    통합특별시 출범 전 공고는 지역 코드가 12(통합)로만 잡혀 _is_jeonnam_local_announcement
+    가 거짓이므로, 수요기관명으로 옛 계열(전라남도 46)을 확인합니다. 조달분류가
+    학술연구 계열이면 D25 학술 띠 확정이 먼저 적용되므로 여기서는 제외합니다.
+    """
+    if announced is None or not _is_band_only_method(method_name):
+        return False
+    if _is_academic_band_classification(raw_data):
+        return False
+    if _is_jeonnam_local_announcement(region_code, region_name, announced):
+        return True
+    if announced < JEONNAM_LOCAL_RULE_EFFECTIVE_DATE:
+        return False
+    if (
+        JEONNAM_LOCAL_RULE_SUPERSEDED_DATE is not None
+        and announced >= JEONNAM_LOCAL_RULE_SUPERSEDED_DATE
+    ):
+        return False
+    code = (region_code or "").strip()
+    name = re.sub(r"\s+", "", region_name or "")
+    if code != MERGED_REGION_CODE and name != "전남광주통합특별시":
+        return False
+    legacy = _legacy_merged_institution_code(institution_name)
+    return legacy is not None and legacy[0] in _JEONNAM_REGION_CODES
+
+
+def _is_band_only_method(method_name: str | None) -> bool:
+    """낙찰방법명이 '추정가격 2억미만 1억이상' 띠 표기인지 봅니다."""
+    name = method_name or ""
+    return all(marker in name for marker in _PPS_ATTACHMENT_BAND_MARKERS)
+
+
+def _select_pps_general_under_2e_rule(announced: date | None) -> EvaluationRule | None:
+    """공고일 판본의 조달청 일반용역 '추정가격 2억원 미만인 용역' 규칙을 고릅니다."""
+    if announced is None:
+        return None
+    for rule in _rules_for_announcement_date(announced):
+        if rule.service_type != "GENERAL" or rule.table_name != _PPS_UNDER_2E_TABLE_NAME:
+            continue
+        if announced < date.fromisoformat(rule.effective_date):
+            continue
+        return rule
+    return None
 
 
 METHOD_NAME_PLACEHOLDER = "공고서참조"
@@ -3469,18 +3622,33 @@ def resolve_evaluation_rule(
       evidence)나 공고의 낙찰방법 적용 기준·공고명이 [별표 1] 학술연구용역을
       지목한 경우에만 공고일 판에 맞는 조달청 학술연구용역 고시금액 미만 규칙으로
       계산합니다. 별표 유형을 확인하지 못하면 종전처럼 차단합니다.
+    - 낙찰방법명이 화물 육상운송용역인데 조달분류가 여객(도로여객운송서비스 등)이면
+      조달분류에 맞춰 여객 표기로 바꿔 조달청 경로에서 다시 판정합니다(화물->여객
+      한 방향, 시·도 경로 제외. D16·D19·D21).
+    - 여객 육상운송용역에는 '고시금액 미만' 규칙이 없습니다. 교정 뒤 그 띠로 떨어진
+      공고는 다른 구간 규칙으로 근사하지 않고 RULE_NOT_FOUND 로 차단합니다(D17).
+    - 전남 지역의 '추정가격 2억미만 1억이상' 띠 표기 공고는 조달분류가 학술연구 계열이
+      아닐 때 조달청 일반용역 '추정가격 2억원 미만인 용역' 규칙으로 준용합니다(D24).
+    - '추정가격 2억미만 1억이상' 띠는 조달분류가 학술연구 계열이면 행안부 예규
+      제2장의2 [별표 4] 학술연구용역 해당 열로 확정합니다. attachment_regime 이 없어도
+      됩니다(D25).
     """
     method_name, method_source, method_warnings = resolve_method_name(
         sucsfbid_mthd_nm, sucsfbid_mthd_cd
     )
     announced = _parse_announcement_date(bid_ntce_dt)
+    # 조달청 경로에서만 낙찰방법명 화물 표기를 조달분류 여객 표기로 교정합니다
+    # (D16·D19·D21). 시·도 규칙 선택은 원래 낙찰방법명을 그대로 쓰므로, 두 표기를 같은
+    # 세부유형(LAND_TRANSPORT)으로 매핑하는 시·도 경로에는 교차 확인이 들어가지 않습니다.
+    # 역방향(여객->화물) 교정은 하지 않습니다(D19).
+    pps_method_name, pps_method_corrected = correct_passenger_method_name(method_name, raw_data)
     allocated_rules = (
-        rules if rules is not None else _allocate_rules_for_announcement(announced, method_name)
+        rules if rules is not None else _allocate_rules_for_announcement(announced, pps_method_name)
     )
     result = _resolve_by_method_name(
         category=category,
         prearng_prce_dcsn_mthd_nm=prearng_prce_dcsn_mthd_nm,
-        sucsfbid_mthd_nm=method_name,
+        sucsfbid_mthd_nm=pps_method_name,
         sucsfbid_lwlt_rate=sucsfbid_lwlt_rate,
         tech_ablt_evl_rt=tech_ablt_evl_rt,
         bid_prce_evl_rt=bid_prce_evl_rt,
@@ -3593,7 +3761,7 @@ def resolve_evaluation_rule(
         if result.rule is not None:
             result, scope_stage = _narrow_rule_scope(
                 result,
-                method_name=method_name,
+                method_name=pps_method_name,
                 allocated_rules=allocated_rules,
                 institution_code=institution_code,
                 institution_name=institution_name,
@@ -3634,7 +3802,7 @@ def resolve_evaluation_rule(
                 if result.rule is not None:
                     result, scope_stage = _narrow_rule_scope(
                         result,
-                        method_name=method_name,
+                        method_name=pps_method_name,
                         allocated_rules=allocated_rules,
                         institution_code=institution_code,
                         institution_name=institution_name,
@@ -3655,7 +3823,7 @@ def resolve_evaluation_rule(
                 if result.rule is not None:
                     result, scope_stage = _narrow_rule_scope(
                         result,
-                        method_name=method_name,
+                        method_name=pps_method_name,
                         allocated_rules=allocated_rules,
                         institution_code=institution_code,
                         institution_name=institution_name,
@@ -3679,7 +3847,7 @@ def resolve_evaluation_rule(
                 if result.rule is not None:
                     result, scope_stage = _narrow_rule_scope(
                         result,
-                        method_name=method_name,
+                        method_name=pps_method_name,
                         allocated_rules=allocated_rules,
                         institution_code=institution_code,
                         institution_name=institution_name,
@@ -3717,7 +3885,7 @@ def resolve_evaluation_rule(
     elif result.rule is not None and result.rule.rule_id not in SERVC_TECH_QUAL_RULE_IDS:
         result, scope_stage = _narrow_rule_scope(
             result,
-            method_name=method_name,
+            method_name=pps_method_name,
             allocated_rules=allocated_rules,
             institution_code=institution_code,
             institution_name=institution_name,
@@ -3731,13 +3899,21 @@ def resolve_evaluation_rule(
         contract_regime != "NATIONAL"
         and result.is_blocked
         and result.block_reason_code in _MOIS_ACADEMIC_BAND_FALLBACK_BLOCK_CODES
+        and result.block_reason_message != LOCAL_SIMPLE_LABOR_ONLY_REASON
     ):
         # 행안부 예규는 지방계약 기준이라 국가계약으로 확인된 공고에는 적용하지 않습니다.
         # 계약 법령 미상(지방공사·의료원 등)은 공고문이 이 예규를 지목해 적용합니다.
         # 시·도 자체 별표가 이 띠 표기를 규칙으로 확정하지 못한 공고만 행안부 예규 제2장의2
         # [별표 4] 학술연구용역 해당 열로 풉니다. 시·도 규칙으로 계산되던 공고는 위 분기에서
-        # 이미 규칙이 확정돼 차단되지 않으므로 여기 오지 않습니다.
-        academic_band_rule = select_mois_academic_band_rule(method_name)
+        # 이미 규칙이 확정돼 차단되지 않으므로 여기 오지 않습니다. '추정가격 2억미만
+        # 1억이상' 띠는 조달분류가 학술연구 계열일 때만 확정하며(D25), 세부유형 선택
+        # 대기(LOCAL_*)는 사용자가 고를 수 있으므로 건드리지 않습니다.
+        academic_band_rule = None
+        if _is_band_only_method(method_name):
+            if result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND:
+                academic_band_rule = select_mois_academic_band_rule(method_name, raw_data)
+        else:
+            academic_band_rule = select_mois_academic_band_rule(method_name, raw_data)
         if academic_band_rule is not None:
             result = replace(
                 _apply_rule_lwlt(result, academic_band_rule, sucsfbid_lwlt_rate, estimated_price),
@@ -3745,6 +3921,29 @@ def resolve_evaluation_rule(
                 block_reason_code=None,
                 block_reason_message=None,
                 warnings=[*result.warnings, MOIS_ACADEMIC_BAND_WARNING],
+            )
+            scope_stage = RULE_SCOPE_ALL
+    if (
+        result.is_blocked
+        and result.block_reason_code in (BLOCK_CODE_RULE_NOT_FOUND, BLOCK_CODE_LOCAL_RULE_NOT_FOUND)
+        and _is_jeonnam_general_band_announcement(
+            region_code, region_name, announced, institution_name, method_name, raw_data
+        )
+    ):
+        # 전남 예규 제1075호에는 GENERAL 별표가 없습니다. 전남 일반용역 2억미만 띠 표기
+        # 공고는 '전남만 조달청 준용' 결정에 따라 조달청 일반용역 '추정가격 2억원 미만인
+        # 용역' 규칙으로 계산합니다(D24). 조달분류가 학술연구 계열인 공고는 위 D25 분기가
+        # 먼저 확정하므로 여기 오지 않습니다.
+        jeonnam_general_band_rule = _select_pps_general_under_2e_rule(announced)
+        if jeonnam_general_band_rule is not None:
+            result = replace(
+                _apply_rule_lwlt(
+                    result, jeonnam_general_band_rule, sucsfbid_lwlt_rate, estimated_price
+                ),
+                is_blocked=False,
+                block_reason_code=None,
+                block_reason_message=None,
+                warnings=[*result.warnings, JEONNAM_PPS_FALLBACK_WARNING],
             )
             scope_stage = RULE_SCOPE_ALL
     if (
@@ -3768,6 +3967,14 @@ def resolve_evaluation_rule(
             scope_stage = RULE_SCOPE_ALL
     if institution_warnings:
         result = replace(result, warnings=[*result.warnings, *institution_warnings])
+    # 교차 확인 경고는 조달청 규칙으로 판정했거나 조달청 매칭에서 막힌 결과에만 붙입니다.
+    # 시·도 규칙(REGION)으로 확정된 공고는 교정과 무관하므로 경고도 남기지 않습니다(D21).
+    correction_applied = pps_method_corrected and (
+        (result.rule is not None and result.rule.institution_scope == RULE_SCOPE_ALL)
+        or result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND
+    )
+    if correction_applied:
+        method_warnings = [*method_warnings, PASSENGER_METHOD_CORRECTION_WARNING]
     result = replace(
         result,
         method_source=method_source,
@@ -3789,6 +3996,19 @@ def resolve_evaluation_rule(
             block_reason_message=(
                 f"낙찰방법이 '{METHOD_NAME_PLACEHOLDER}'라 코드({sucsfbid_mthd_cd})로 "
                 "적격심사제 공고임은 확인했지만, 적용 별표는 공고서에서만 확인할 수 있습니다."
+            ),
+        )
+
+    if pps_method_corrected and result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND:
+        # 화물->여객 교정 뒤 여객 고시금액 미만 띠에 대응 규칙이 없습니다. 조달청 여객 별표는
+        # 5억원 미만·이상 두 구간만 인쇄하므로 다른 구간 규칙으로 근사하지 않고 차단합니다(D17).
+        result = replace(
+            result,
+            block_reason_message=(
+                f"낙찰방법명을 조달분류에 맞춰 여객으로 교정했지만 "
+                f"'{pps_method_name}'에 대응하는 여객 육상운송용역 별표가 없습니다. "
+                "여객 별표는 추정가격 5억원 미만·이상 두 구간만 있어 다른 구간 규칙으로 "
+                "근사하지 않습니다."
             ),
         )
 
