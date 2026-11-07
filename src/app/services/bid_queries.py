@@ -36,6 +36,7 @@ from src.app.services.band_regime_lookup import (
 )
 from src.app.services.demand_institutions import describe_contract_regime
 from src.app.services.evaluation_rules import (
+    BLOCK_CODE_NON_PRED_PRICE,
     METHOD_NAME_PLACEHOLDER,
     METHOD_SOURCE_CODE,
     resolve_evaluation_rule_from_raw_data,
@@ -1114,6 +1115,58 @@ def _past_result_candidates(db: Session, bid: BidAnnouncement, now: datetime) ->
     return results
 
 
+FOLLOWUP_MATCH_WINDOW_DAYS = 365
+FOLLOWUP_CANDIDATE_LIMIT = 300
+
+
+def _spec_registration_no(raw_data: Any) -> str:
+    """raw_data 의 사전규격등록번호(bfSpecRgstNo)를 문자열로 정규화합니다."""
+    data = raw_data if isinstance(raw_data, dict) else {}
+    return str(data.get("bfSpecRgstNo") or "").strip()
+
+
+def is_non_pred_price_blocked(bid: BidAnnouncement) -> bool:
+    """예정가격 미공개(비예가)로 계산이 차단되는 공고인지 단건 판정합니다."""
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    rule = resolve_evaluation_rule_from_raw_data(category=bid.category, raw_data=raw_data)
+    return rule.is_blocked and rule.block_reason_code == BLOCK_CODE_NON_PRED_PRICE
+
+
+def get_followup_announcements(db: Session, bid: BidAnnouncement) -> list[BidAnnouncement]:
+    """비예가(PQ) 공고의 후속 가격입찰 공고를 사전규격등록번호로 찾습니다.
+
+    매칭 키는 raw_data.bfSpecRgstNo 정확 일치 하나만 씁니다. 이름·기관·추정가격
+    보조 규칙은 같은 기관이 같은 금액으로 낸 다른 발주를 붙일 수 있어 쓰지 않습니다.
+    한 사전규격이 분할 발주되면 후속 공고가 1:N 이 되므로 전부 목록으로 돌려줍니다.
+
+    raw_data 전체를 SQL 로 훑지 않습니다. 같은 수요기관·분야이고 공고일이 현재 공고
+    이후 365일 안인 최신 차수 후보만 좁혀 읽고, bfSpecRgstNo 비교는 파이썬에서 합니다.
+    비예가 차단이 아닌 공고에서는 질의를 실행하지 않습니다.
+    """
+    if bid.bid_ntce_dt is None or not is_non_pred_price_blocked(bid):
+        return []
+    spec_no = _spec_registration_no(bid.raw_data)
+    if not spec_no:
+        return []
+
+    candidate_stmt = similar_announcement_latest_filter(
+        select(BidAnnouncement).where(
+            BidAnnouncement.category == bid.category,
+            BidAnnouncement.dminstt_nm == bid.dminstt_nm,
+            BidAnnouncement.id != bid.id,
+            BidAnnouncement.bid_ntce_dt.is_not(None),
+            BidAnnouncement.bid_ntce_dt >= bid.bid_ntce_dt,
+            BidAnnouncement.bid_ntce_dt
+            < bid.bid_ntce_dt + timedelta(days=FOLLOWUP_MATCH_WINDOW_DAYS),
+        )
+    ).order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
+
+    rows = db.execute(candidate_stmt.limit(FOLLOWUP_CANDIDATE_LIMIT)).scalars().all()
+    followups = [row for row in rows if _spec_registration_no(row.raw_data) == spec_no]
+    followups.sort(key=lambda row: (row.bid_ntce_dt or datetime.min, row.id))
+    return followups
+
+
 def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
     """공고 상세 + 비슷한 진행 중 공고 + 같은 분야 과거 낙찰 이력."""
     instance = db.get(BidAnnouncement, pk)
@@ -1135,6 +1188,7 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
         "award_method": describe_award_method(raw_data),
         "similar_bids": list(similar_bids),
         "past_results": past_results,
+        "followup_bids": get_followup_announcements(db, bid),
         "restrictions": get_announcement_restrictions(db, bid),
         "is_negotiation": _is_negotiation(bid),
         "default_prediction_model": DEFAULT_PREDICTION_MODEL_BY_CATEGORY.get(
