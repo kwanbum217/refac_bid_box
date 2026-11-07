@@ -31,9 +31,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # D07·D08·D22·D29 로 기관 규칙 벌이 의도적으로 바뀌어 INSTITUTION_RULES 지문만
 # d7cabe0e33a1e8cf -> 8a8c340f61ca94b1 로 갱신했고, 반려 재작업으로 한국지역난방공사
 # 폐기물 규칙 3개에 cdw_exclusion="named" 를 선언해 8a8c340f61ca94b1 ->
-# 0b25ba9cff246172 로 다시 갱신했습니다. 통합 브랜치에서 그 표지를 원문 근거(named)가 아닌
-# 공고 인용 근거(notice_cited)로 바로잡아 20930aef21fe79e1 로 갱신했습니다(회귀 문서
-# docs/analysis/inst_versions_regression_20261107.md 5절·9절).
+# 0b25ba9cff246172 로 다시 갱신했습니다(회귀 문서
+# docs/analysis/inst_versions_regression_20261107.md 5절·9절). 이어서 D07 (A) 연장으로
+# 한국지역난방공사 2026-08-18판 규칙 11개의 quant_table 을 False -> True 로 바꿔
+# quant_basis 가 INSTITUTION 이 되면서 0b25ba9cff246172 -> 05814ed65e4b5fa1 로
+# 갱신했습니다(같은 문서 9.6절).
+# 통합 브랜치에서 한국지역난방공사 폐기물 규칙 표지를 notice_cited 로 바로잡고 위 정량표 변경과 합쳐
+# INSTITUTION_RULES 를 f37501c91f5cf496 로 다시 계산했습니다.
 # 예외: LOCAL_RULES 는 2026-11-07 건설폐기물 라우팅 결정(D01~D06)으로 A 계열 시·도 6개
 # 규칙에 cdw_exclusion="notice_cited" 를 선언해 값이 바뀌었습니다. 변경 이유와 대상 규칙은
 # docs/analysis/cdw_route_regression_20261107.md 4절에 적었습니다.
@@ -49,7 +53,7 @@ EXPECTED_FINGERPRINTS: dict[str, str] = {
     # notice_cited 선언(D01~D06)과 합쳐 2fbac87191d73a54 로 다시 계산했습니다.
     "LOCAL_RULES": "2fbac87191d73a54",
     "MOIS_ACADEMIC_BAND_RULES": "e7e2960460553ba0",
-    "INSTITUTION_RULES": "20930aef21fe79e1",
+    "INSTITUTION_RULES": "f37501c91f5cf496",
 }
 
 # main 의 vars(evaluation_rules) 이름 목록. 비공개 이름(_ 로 시작)도 포함합니다.

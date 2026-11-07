@@ -47,22 +47,7 @@ KAC_NO_TABLE_IDS = (
     "SERVC_INST_KAC_20260302_INSURANCE",
     "SERVC_INST_KAC_20260302_SOFTWARE_SME",
 )
-KDHC_NO_TABLE_IDS = (
-    "SERVC_INST_KDHC_20230719_WASTE",
-    # 2026-08-18판은 배점표 명세(institution_quant_tables_20261013.yaml)가 없어
-    # 정량점수 직접 입력을 유지합니다(2026-11-07 결정 D07 A).
-    "SERVC_INST_KDHC_20260818_ACADEMIC",
-    "SERVC_INST_KDHC_20260818_FACILITY",
-    "SERVC_INST_KDHC_20260818_SW",
-    "SERVC_INST_KDHC_20260818_SW_TARGET",
-    "SERVC_INST_KDHC_20260818_WASTE",
-    "SERVC_INST_KDHC_20260818_PASSENGER",
-    "SERVC_INST_KDHC_20260818_FREIGHT",
-    "SERVC_INST_KDHC_20260818_INSURANCE",
-    "SERVC_INST_KDHC_20260818_REPAIR",
-    "SERVC_INST_KDHC_20260818_LEASE",
-    "SERVC_INST_KDHC_20260818_OTHER",
-)
+KDHC_NO_TABLE_IDS = ("SERVC_INST_KDHC_20230719_WASTE",)
 # 구판(한국농어촌공사 20251001판, 한국공항공사 10차판) 규칙은 배점표 명세가 없어
 # 종전처럼 표 없이 정량점수 직접 입력을 유지합니다.
 KRC_PREDECESSOR_NO_TABLE_IDS = (
@@ -97,7 +82,7 @@ def test_all_confirmed_rules_have_a_table_and_partial_rules_do_not() -> None:
         rule.rule_id for rule in INSTITUTION_RULES if rule.quant_basis == QUANT_BASIS_INSTITUTION
     }
     assert table_ids == basis_ids
-    assert len(table_ids) == 65
+    assert len(table_ids) == 76
     other_ids = {rule.rule_id for rule in INSTITUTION_RULES} - table_ids
     assert other_ids == {
         "SERVC_INST_KOGAS_20260709_GENERAL",
