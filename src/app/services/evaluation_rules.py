@@ -1399,6 +1399,27 @@ def select_moe_cdw_rule(method_name: str | None) -> EvaluationRule | None:
     return None
 
 
+def _is_cdw_excluded(rule: EvaluationRule, bid_name: str) -> bool:
+    """cdw_exclusion 선언과 공고명으로 건설폐기물 배제 여부를 판정합니다.
+
+    'band': 낙찰방법명이 환경부고시 건설폐기물 띠 표기에 맞으면 제외합니다.
+    'named': 위 조건에 더해 공고명(bidNtceNm)에 '건설폐기물' 이 있을 때만 제외합니다.
+    'named_except_haul': 'named' 조건에 더해 공고명에 '처리' 가 있을 때만 제외합니다.
+    """
+    mode = rule.cdw_exclusion
+    if not mode:
+        return False
+    if mode == "band":
+        return True
+    if "건설폐기물" not in bid_name:
+        return False
+    if mode == "named":
+        return True
+    if mode == "named_except_haul":
+        return "처리" in bid_name
+    return False
+
+
 # 2025-09-01 시행 개정 전 규칙 14종 (제2025-257호·제2026-15호).
 # 하한율은 2025-09-01 이상 2026-05-26 미만 구간 공고의 실측 최빈값입니다.
 PRE_20250901_RULES: tuple[EvaluationRule, ...] = (
@@ -2165,7 +2186,9 @@ def _narrow_to_current_regime(
     """같은 세부유형에 구판·현행이 함께 있으면 공고일이 효력 구간에 드는 규칙만 남깁니다.
 
     구판(예: 전라남도 예규 제1075호)과 현행(통합 지침)이 같은 시·도·세부유형으로 함께
-    걸리면, 공고일이 구간에 드는 하나만 남겨 구판과 현행을 가립니다. 구간에 드는 규칙이
+    걸리면, 공고일이 구간에 드는 하나만 남겨 구판과 현행을 가립니다. 기관 규칙도 판본마다
+    규칙 ID 를 두므로(D09 A, 예: 한국지역난방공사 2023-07-19·2026-01-01·2026-08-18판)
+    같은 원리로 공고일이 드는 판본 하나를 고릅니다. 구간에 드는 규칙이
     없으면(모두 시행 전) 시행일이 가장 늦은 현행 규칙을 남겨, 종전처럼 시행일 대조에서
     RULE_REGIME_MISMATCH 로 막습니다. 공고일이 없으면 폐지되지 않은 현행 규칙을 남겨
     종전 판정을 유지합니다.
@@ -2366,23 +2389,9 @@ def _select_local_rule(
         if isinstance(raw_data, dict):
             bid_name = str(raw_data.get("bidNtceNm") or "")
 
-        def _cdw_excluded(rule: EvaluationRule) -> bool:
-            mode = rule.cdw_exclusion
-            if not mode:
-                return False
-            if mode == "band":
-                return True
-            if "건설폐기물" not in bid_name:
-                return False
-            if mode == "named":
-                return True
-            if mode == "named_except_haul":
-                return "처리" in bid_name
-            return False
-
-        removed = [rule for rule in base_candidates if _cdw_excluded(rule)]
+        removed = [rule for rule in base_candidates if _is_cdw_excluded(rule, bid_name)]
         cdw_excluded_any = len(removed) > 0
-        base_candidates = [rule for rule in base_candidates if not _cdw_excluded(rule)]
+        base_candidates = [rule for rule in base_candidates if not _is_cdw_excluded(rule, bid_name)]
 
     region_rules = _narrow_to_current_regime(base_candidates, announced)
     if cdw_excluded_any:
@@ -2538,6 +2547,21 @@ def _select_institution_rule(
     # (지방계약 _narrow_to_current_regime 와 같은 원리)
     data_for_date = raw_data if isinstance(raw_data, dict) else {}
     announced = _parse_announcement_date(data_for_date.get("bidNtceDt"))
+    if announced is not None:
+        # 지사·사업소 정확 코드 목록으로만 걸린 후보 가운데 아직 시행되지 않은 판본은
+        # 후보에서 뺍니다. 본청 코드·이름으로 직접 맞은 기관은 종전처럼 남겨
+        # RULE_REGIME_MISMATCH 로 차단합니다(시행일 불일치 차단 유지). 이렇게 해야
+        # 2026-01-01판 이전 지사 공고가 새 판본과 코드만 맞아 차단으로 뒤집히지 않습니다.
+        candidates = [
+            rule
+            for rule in candidates
+            if not (
+                institution_code
+                and rule.institution_code != institution_code
+                and rule.rule_id in INSTITUTION_RULE_EXACT_CODES
+                and date.fromisoformat(rule.effective_date) > announced
+            )
+        ]
     candidates = _narrow_to_current_regime(candidates, announced)
     if not candidates:
         return None, None, "", warnings
@@ -2551,6 +2575,20 @@ def _select_institution_rule(
             ["공고기관이 조달청 대행이라 수요기관 기관 규칙을 배제하고 조달청 기준을 적용합니다."],
         )
     data = raw_data if isinstance(raw_data, dict) else {}
+    # 공사 세부기준 원문에는 건설폐기물 제외 문구가 없습니다. 대신 건설폐기물처리용역
+    # 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」을 인용하므로
+    # (evaluation_rules_institution._KDHC_CDW_CITATION), 그 공고에는 기관 폐기물 규칙을
+    # 적용하지 않고 아래 환경부고시 경로로 넘깁니다.
+    if select_moe_cdw_rule(method_name) is not None:
+        bid_name = str(data.get("bidNtceNm") or "")
+        if any(_is_cdw_excluded(rule, bid_name) for rule in candidates):
+            candidates = [rule for rule in candidates if not _is_cdw_excluded(rule, bid_name)]
+            warnings.append(
+                "공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」을 인용해 "
+                "기관 폐기물 규칙을 적용하지 않았습니다."
+            )
+            if not candidates:
+                return None, None, "", warnings
     text = f"{method_name or ''} {data.get('bidNtceNm') or ''}"
     scored = [(rule, _institution_match_score(rule, text)) for rule in candidates]
     best = max(score for _, score in scored)
@@ -3014,6 +3052,8 @@ def _axis_matches(
         # 규칙과 공고 양쪽에 코드가 있으면 코드 일치로만 판정하고, 한쪽이라도 코드가 없으면
         # 공백 제거 이름(또는 name_aliases) 일치로 판정합니다. 기관 코드가 본청과 다른 지사·
         # 사업소는 규칙별 정확 코드 목록(INSTITUTION_RULE_EXACT_CODES)도 코드 일치로 봅니다.
+        # 이 목록은 이름 접두나 코드 대역이 아니라 읽기 전용 DB 조회로 확인한 명시 코드만
+        # 담고, 판본마다 규칙 ID 가 달라 같은 코드를 판본별 규칙 ID 에 모두 붙입니다(D29).
         # 정확 일치가 실패하면 원문
         # 적용 범위 조항이 하위 조직 적용을 명시한 기관만 코드 대역·이름 접두로 2차
         # 판정합니다. 코드 대역을 선언한 규칙은 대역 밖 코드를 이름 접두로 되돌리지 않습니다.
