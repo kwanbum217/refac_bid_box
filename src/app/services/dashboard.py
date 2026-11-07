@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from src.app.core import latency_segments
 from src.app.core.cache import cache
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bids import (
     DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
@@ -399,7 +399,7 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
     if data:
         return data
 
-    now = utcnow()
+    now = kst_now(utcnow())
     one_year_ago = now - timedelta(days=365)
 
     scoped = db.execute(
@@ -623,7 +623,7 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
             cache_hit = True
             return data
 
-        now = utcnow()
+        now = kst_now(utcnow())
         one_year_ago = now - timedelta(days=365)
 
         # 매칭 데이터 (최근 1년). 스냅샷이 신선하면 실시간 집계를 건너뜁니다.

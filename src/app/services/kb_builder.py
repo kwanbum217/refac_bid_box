@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.chatbot import KnowledgeBaseStatus
 from src.app.services.kb_document_builder import (
@@ -139,13 +139,17 @@ def rebuild_knowledge_base(
             ({}, False) if full or delta_mode else _load_existing_index(collection)
         )
 
-        one_year_ago = utcnow() - timedelta(days=365)
+        now = utcnow()
+        one_year_ago = kst_now(now) - timedelta(days=365)
+        collected_one_year_ago = now - timedelta(days=365)
         if delta_mode:
             if collected_since is None:
                 raise ValueError("delta_mode requires collected_since")
             announcements, source_mode = _resolve_delta_announcements(db, collected_since)
         else:
-            announcements, source_mode = _resolve_announcements(db, one_year_ago)
+            announcements, source_mode = _resolve_announcements(
+                db, one_year_ago, collected_one_year_ago
+            )
 
         # 1년치 BidResult 전량을 한번에 메모리에 올려 results_map(O(N))을 구성하면
         # 수십만 건 ORM 객체로 워커 메모리가 소진됩니다.

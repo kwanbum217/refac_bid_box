@@ -202,13 +202,20 @@ def _max_documents() -> int:
 
 
 def _resolve_announcements(
-    db: Session, one_year_ago: datetime
+    db: Session,
+    one_year_ago: datetime,
+    collected_one_year_ago: datetime | None = None,
 ) -> tuple[Sequence[BidAnnouncement], str]:
     """공고일 기준 -> 수집일 기준 순으로 폴백합니다.
+
+    one_year_ago 는 원문 계열(KST naive) 컬럼인 bid_ntce_dt 용이고,
+    collected_one_year_ago 는 앱 계열(UTC naive) 컬럼인 collected_at 용입니다.
+    후자를 생략하면 전자를 그대로 씁니다.
 
     .scalars().all() 로 전량을 한 번에 로드하지 않고,
     Keyset seek 페이징과 ORM 객체 expunge 가 적용된 PagedQuerySequence 를 반환합니다.
     """
+    collected_cutoff = one_year_ago if collected_one_year_ago is None else collected_one_year_ago
     limit = _max_documents()
     initial_objs = set(db.identity_map.values()) if hasattr(db, "identity_map") else set()
 
@@ -261,7 +268,7 @@ def _resolve_announcements(
     collected_count = (
         db.scalar(
             select(func.count(BidAnnouncement.id)).where(
-                BidAnnouncement.collected_at >= one_year_ago
+                BidAnnouncement.collected_at >= collected_cutoff
             )
         )
         or 0
@@ -271,7 +278,7 @@ def _resolve_announcements(
         total = min(collected_count, limit)
         base_query = (
             select(BidAnnouncement)
-            .where(BidAnnouncement.collected_at >= one_year_ago)
+            .where(BidAnnouncement.collected_at >= collected_cutoff)
             .order_by(BidAnnouncement.collected_at.desc(), BidAnnouncement.id.desc())
         )
 
