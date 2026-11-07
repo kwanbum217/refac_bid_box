@@ -331,7 +331,9 @@ def test_parse_args_overrides() -> None:
 
 
 def test_check_does_not_write(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(ledger_script, "collect_records", lambda **kwargs: [])
+    monkeypatch.setattr(
+        ledger_script, "collect_records", lambda **kwargs: ledger_script.CollectedRecords()
+    )
     monkeypatch.setattr(
         ledger_script, "load_registry_index", lambda *a, **k: ledger_script.RegistryIndex()
     )

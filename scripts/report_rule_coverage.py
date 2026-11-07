@@ -8,6 +8,10 @@ data/reference/rule_coverage_ledger.yaml 로 남깁니다.
 (classify_contract_regime, institution_sido, resolve_evaluation_rule_from_raw_data)를
 같은 인자로 부르기만 합니다. DB 는 READ ONLY 트랜잭션에서 SELECT 만 씁니다.
 
+같은 공고번호·업무구분의 최신 차수가 취소공고(raw_data.ntceKindNm == '취소공고')면 그
+공고번호는 집계에서 빼고, 뺀 건수를 totals.excluded_cancelled 에 남깁니다. 취소되지 않은
+차수는 재공고·변경공고를 포함해 그대로 집계합니다.
+
 차단(BLOCKED)은 사용자 입력이 있어야 계산되는 코드와 자동 계산이 불가능한 코드로 나눠
 totals.blocked_breakdown 과 기관 항목 blocked_breakdown 에 함께 셉니다. 사용자 입력 경로
 코드 집합은 src/app/api/v1/evaluations.py 의 사용자 입력 처리(약 1862·1892행)를 근거로
@@ -28,6 +32,7 @@ import calendar
 import json
 import sys
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from datetime import time as day_time
@@ -62,6 +67,10 @@ GENERATED_BY = "scripts/report_rule_coverage.py"
 DEFAULT_OUTPUT = "data/reference/rule_coverage_ledger.yaml"
 INSTITUTION_RULES_PATH = "data/reference/institution_rules_20261013.yaml"
 MANIFEST_PATH = "data/sources/qualification/manifest.json"
+
+# 최신 차수가 취소공고인 공고번호는 집계에서 뺍니다. 취소 판별은 raw_data.ntceKindNm
+# 한 필드만 보며, 재공고·변경공고는 취소가 아니므로 집계합니다.
+CANCELLED_NOTICE_KIND = "취소공고"
 
 # 원장의 applied_scope 값. 규칙 객체의 institution_scope(ALL/INSTITUTION/REGION)를
 # 그대로 쓰지 않고 ALL 만 PPS_DEFAULT 로 옮겨, 차단·오류까지 한 축에서 셉니다.
@@ -137,6 +146,14 @@ class RegistryIndex:
 
     by_name: dict[str, str] = field(default_factory=dict)
     by_rule_id: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CollectedRecords:
+    """수집 결과. records 는 집계 대상이고 excluded_cancelled 는 취소공고로 뺀 공고 수입니다."""
+
+    records: list[dict[str, Any]] = field(default_factory=list)
+    excluded_cancelled: int = 0
 
 
 def _ord_key(value: Any) -> int:
@@ -245,6 +262,7 @@ def build_ledger(
     filter_meta: dict[str, Any],
     min_announcements: int,
     generated_at: str,
+    excluded_cancelled: int = 0,
     registry_index: RegistryIndex | None = None,
     manifest_sources_by_name: dict[str, list[dict[str, Any]]] | None = None,
     existing_ledger: dict[str, Any] | None = None,
@@ -253,6 +271,7 @@ def build_ledger(
 
     레코드의 ``result`` 는 판정 함수 반환값(RuleResolutionResult)이고, ``error_type``
     이 있으면 판정 중 예외가 난 건입니다. 분류는 classify_result 가 전담합니다.
+    ``excluded_cancelled`` 는 최신 차수가 취소공고라 records 에 넣지 않은 공고 수입니다.
     """
     registry_index = registry_index or RegistryIndex()
     manifest_sources_by_name = manifest_sources_by_name or {}
@@ -392,6 +411,7 @@ def build_ledger(
         "filter": filter_meta,
         "totals": {
             "announcements": total_announcements,
+            "excluded_cancelled": excluded_cancelled,
             "institutions": len(institutions) + tail_institutions,
             "applied_scope": applied_scope_summary,
             "blocked_breakdown": _blocked_breakdown(blocked_totals),
@@ -469,6 +489,39 @@ def _to_record(
     }
 
 
+def is_cancelled_notice(row: Any) -> bool:
+    """공고 한 행이 취소공고인지 판별합니다. 판별 필드는 raw_data.ntceKindNm 입니다."""
+    return str(_as_dict(row.raw_data).get("ntceKindNm") or "").strip() == CANCELLED_NOTICE_KIND
+
+
+def split_by_latest_order(rows: Iterable[Any]) -> tuple[list[Any], list[Any]]:
+    """(공고번호, 업무구분, 차수) 순서로 들어온 행을 최신 차수 기준으로 가릅니다.
+
+    같은 공고번호·업무구분의 최신 차수 행은 집계 대상으로, 그 행이 취소공고면 제외
+    대상으로 돌려줍니다. 이전 차수가 취소공고여도 최신 차수가 취소가 아니면 집계합니다.
+    """
+    latest: list[Any] = []
+    excluded: list[Any] = []
+    current_key: tuple[str, str] | None = None
+    best_row: Any = None
+    best_ord = -1
+    for row in rows:
+        key = (row.bid_ntce_no, row.category)
+        if key != current_key:
+            if best_row is not None:
+                (excluded if is_cancelled_notice(best_row) else latest).append(best_row)
+            current_key = key
+            best_row = None
+            best_ord = -1
+        ord_key = _ord_key(row.bid_ntce_ord)
+        if best_row is None or ord_key > best_ord:
+            best_row = row
+            best_ord = ord_key
+    if best_row is not None:
+        (excluded if is_cancelled_notice(best_row) else latest).append(best_row)
+    return latest, excluded
+
+
 def collect_records(
     *,
     months: int,
@@ -476,11 +529,12 @@ def collect_records(
     method_code: str,
     today: date | None = None,
     engine: Engine | None = None,
-) -> list[dict[str, Any]]:
+) -> CollectedRecords:
     """공고를 DB 에서 읽어 공고별 레코드 목록으로 만듭니다.
 
     기간과 업무구분으로 거른 뒤 낙찰방법 코드는 raw_data 에서 파이썬으로 거르고,
-    같은 공고번호·업무구분의 최신 차수만 남깁니다. 세션을 READ ONLY 로 열어 SELECT 만 씁니다.
+    같은 공고번호·업무구분의 최신 차수만 남깁니다. 최신 차수가 취소공고인 공고번호는
+    집계에서 빼고 건수만 돌려줍니다. 세션을 READ ONLY 로 열어 SELECT 만 씁니다.
     """
     if engine is None:
         from src.app.core.db import engine as default_engine
@@ -491,11 +545,10 @@ def collect_records(
     window_from = _months_ago(window_to, months)
     window_end = window_to + timedelta(days=1)
 
-    records: list[dict[str, Any]] = []
     with engine.connect() as conn:
         conn.execute(text("SET SESSION TRANSACTION READ ONLY"))
         institutions = _load_institutions(conn)
-        result = conn.execution_options(stream_results=True).execute(
+        stmt_result = conn.execution_options(stream_results=True).execute(
             text(ANNOUNCEMENT_SQL),
             {
                 "category": category,
@@ -503,32 +556,23 @@ def collect_records(
                 "window_end": datetime.combine(window_end, day_time.min),
             },
         )
-        current_key: tuple[str, str] | None = None
-        best_row: Any = None
-        best_ord = -1
-        best_rows: list[Any] = []
-        for row in result:
-            raw_data = _as_dict(row.raw_data)
-            if method_code and str(raw_data.get("sucsfbidMthdCd") or "").strip() != method_code:
-                continue
-            key = (row.bid_ntce_no, row.category)
-            if key != current_key:
-                if best_row is not None:
-                    best_rows.append(best_row)
-                current_key = key
-                best_row = None
-                best_ord = -1
-            ord_key = _ord_key(row.bid_ntce_ord)
-            if best_row is None or ord_key > best_ord:
-                best_row = row
-                best_ord = ord_key
-        if best_row is not None:
-            best_rows.append(best_row)
-        result.close()
-        regimes = lookup_attachment_regimes(conn, (attachment_regime_key(row) for row in best_rows))
-    for row in best_rows:
-        records.append(_to_record(row, institutions, regimes.get(attachment_regime_key(row))))
-    return records
+        rows: Iterable[Any] = stmt_result
+        if method_code:
+            rows = (
+                row
+                for row in stmt_result
+                if str(_as_dict(row.raw_data).get("sucsfbidMthdCd") or "").strip() == method_code
+            )
+        latest_rows, excluded_rows = split_by_latest_order(rows)
+        stmt_result.close()
+        regimes = lookup_attachment_regimes(
+            conn, (attachment_regime_key(row) for row in latest_rows)
+        )
+    records = [
+        _to_record(row, institutions, regimes.get(attachment_regime_key(row)))
+        for row in latest_rows
+    ]
+    return CollectedRecords(records=records, excluded_cancelled=len(excluded_rows))
 
 
 def load_registry_index(path: str | Path = INSTITUTION_RULES_PATH) -> RegistryIndex:
@@ -646,7 +690,11 @@ def write_ledger(path: str | Path, ledger: dict[str, Any]) -> None:
 
 def _print_summary(ledger: dict[str, Any]) -> None:
     totals = ledger["totals"]
-    print(f"공고 {totals['announcements']}건, 기관 {totals['institutions']}곳")
+    print(
+        f"공고 {totals['announcements']}건"
+        f"(취소공고 제외 {totals.get('excluded_cancelled', 0)}건), "
+        f"기관 {totals['institutions']}곳"
+    )
     for scope, summary in totals["applied_scope"].items():
         print(f"  {scope}: {summary['announcements']}건 ({summary['ratio']})")
     for category, summary in totals["blocked_breakdown"].items():
@@ -679,14 +727,15 @@ def main(argv: list[str] | None = None) -> int:
         "window_to": today.isoformat(),
         "min_announcements": args.min_announcements,
     }
-    records = collect_records(
+    collected = collect_records(
         months=args.months, category=args.category, method_code=args.method_code, today=today
     )
     ledger = build_ledger(
-        records,
+        collected.records,
         filter_meta=filter_meta,
         min_announcements=args.min_announcements,
         generated_at=today.isoformat(),
+        excluded_cancelled=collected.excluded_cancelled,
         registry_index=load_registry_index(),
         manifest_sources_by_name=load_manifest_sources(),
         existing_ledger=existing,
