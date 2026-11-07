@@ -2751,6 +2751,27 @@ SIDO_RULE_EXCLUDED_PPS_WARNING = (
 )
 
 
+# 공고문이 조달청 일반용역 적격심사 세부기준을 인용한 지방공기업입니다. 시·도 매핑이
+# 있어도 시·도 세부기준 후보를 만들지 않고 조달청 기본 규칙으로 해석할 때 붙입니다.
+# 대상 기관은 demand_institutions.PPS_CITED_LOCAL_INSTITUTION_CODES 에 수요기관 코드로
+# 명시돼 있습니다(사용자 결정 3, 2026-11-06).
+PPS_CITED_LOCAL_INSTITUTION_WARNING = (
+    "공고문이 조달청 일반용역 적격심사 세부기준을 인용한 지방공기업이라 "
+    "시·도 세부기준 대신 조달청 일반용역 적격심사 세부기준을 적용했습니다."
+)
+
+
+def _is_pps_cited_local_institution(institution_code: str | None) -> bool:
+    """수요기관 코드가 조달청 기준 인용 지방공기업 명시 목록에 드는지 판정합니다.
+
+    demand_institutions 가 이 모듈의 extract_contract_regime 을 가져다 쓰므로 순환
+    임포트를 피해 함수 안에서 가져옵니다.
+    """
+    from src.app.services.demand_institutions import is_pps_cited_local_institution
+
+    return is_pps_cited_local_institution(institution_code)
+
+
 def _is_sido_rule_excluded_institution(
     raw_data: dict[str, Any] | None,
     institution_name: str | None,
@@ -3373,6 +3394,11 @@ def resolve_evaluation_rule(
       조달청 별표에도 없으면 RULE_NOT_FOUND 로 남고, 시·도 매핑이 있으면 종전 판정을
       유지합니다. 조달청 기준으로 풀린 결과에만 경고(SIDO_RULE_EXCLUDED_PPS_WARNING)를
       붙입니다.
+    - 수요기관 코드가 demand_institutions.PPS_CITED_LOCAL_INSTITUTION_CODES 에 들면
+      contract_regime == "LOCAL" 이고 시·도 매핑이 있어도 시·도 규칙 후보를 만들지
+      않고 조달청 매칭 결과를 씁니다. 공고문이 조달청 일반용역 적격심사 세부기준을
+      인용한 지방공기업을 기관 단위로 옮긴 것입니다(사용자 결정 3). 조달청 기준으로
+      풀린 결과에만 경고(PPS_CITED_LOCAL_INSTITUTION_WARNING)를 붙입니다.
     - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).
       공고일이 없으면 대조하지 않고, 있는데 읽을 수 없으면 차단 대신 경고만 남깁니다.
     - 공고 하한율이 없으면 estimated_price 로 고른 구간의 하한율을 씁니다. 구간별
@@ -3411,6 +3437,7 @@ def resolve_evaluation_rule(
     institution_selected: EvaluationRule | None = None
     institution_block: tuple[str, str] | None = None
     institution_warnings: list[str] = []
+    pps_cited_local = _is_pps_cited_local_institution(institution_code)
     if (
         contract_regime != "LOCAL"
         and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
@@ -3499,6 +3526,31 @@ def resolve_evaluation_rule(
             warnings=[*result.warnings, attachment_warning],
         )
         scope_stage = RULE_SCOPE_ALL
+    elif (
+        contract_regime == "LOCAL"
+        and pps_cited_local
+        and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
+        and not (result.rule is not None and result.rule.rule_id in SERVC_TECH_QUAL_RULE_IDS)
+    ):
+        # 공고문이 조달청 일반용역 적격심사 세부기준을 인용한 지방공기업은 시·도 매핑이
+        # 있어도 시·도 세부기준 후보를 만들지 않고 조달청 기본 규칙으로 해석합니다.
+        # 해석기는 실행 시 공고문을 읽지 않으므로 기관 단위 명시 목록으로 판정합니다.
+        if result.rule is not None:
+            result, scope_stage = _narrow_rule_scope(
+                result,
+                method_name=method_name,
+                allocated_rules=allocated_rules,
+                institution_code=institution_code,
+                institution_name=institution_name,
+                region_code=region_code,
+                region_name=region_name,
+                contract_regime=contract_regime,
+            )
+        if result.rule is not None and not result.is_blocked:
+            result = replace(
+                result,
+                warnings=[*result.warnings, PPS_CITED_LOCAL_INSTITUTION_WARNING],
+            )
     elif (
         contract_regime == "LOCAL"
         and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
