@@ -81,3 +81,25 @@
 | OpenCode 2.2.6 | TUI 는 `--model` 을 받지 않습니다. `OPENCODE_CONFIG_CONTENT='{"model":"..."}' opencode --standalone` |
 | 게이트 3 | 검증 명령에 `python3 scripts/...` 를 넣으면 허용 목록 밖으로 거부됩니다. 미러 일치는 규칙 검증이 이미 검사합니다 |
 | 원문 자료 회수 | gitignore 원문은 워크트리 제거 전에 회수합니다(이번 세션 14개 유실 후 재수집) |
+
+---
+
+## 6. 세션 종료 (2026-11-07 22:50)
+
+> 사용자 지시로 컴퓨터 종료를 위해 마감합니다.
+
+| 항목 | 상태 |
+| --- | --- |
+| main | `72c35985` 까지 6회 병합, 모두 CI 12개 job 통과(windows-latest py3.11 포함). 이 절의 병합 커밋 CI 는 다음 세션에서 확인 |
+| 워커·워크트리 | 워커 0대, 남은 워크트리 없음, 상시 감시기(`orca_worker_watch.py`) 종료 |
+| Docker | app·db·redis·meilisearch·worker 정지, Docker Desktop 종료. 다음 세션은 `make up` 후 worker 의 크론 등록 확인 |
+| 데이터 묶음 | `data/backups/snapshots/snapshot_20261107_123933/` 에 `db_dump.sql.gz`, `chroma_db.tar.gz`, `models.tar.gz`, `qualification_sources.tar.gz`, `backup_manifest.json`, `SHA256SUMS.txt`. 전달은 사용자 |
+
+### 6.1 다음 세션이 바로 할 일
+
+| 우선 | 과업 |
+| --- | --- |
+| 1 | 이 문서 병합 커밋의 main CI 확인 |
+| 2 | Docker 기동(`make up`) 후 app 응답과 worker 크론 등록 확인 |
+| 3 | Windows 팀원 첫 실행 결과 반영(`windows-onboarding` 스킬의 winget ID 2개 실측) |
+| 4 | 사용자 정리 대기: Codex 전역 hook 의 cmux 항목 |
