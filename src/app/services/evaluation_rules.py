@@ -2077,6 +2077,9 @@ _PROCUREMENT_CLASS_KEYS = (
     "pubPrcrmntClsfcNm",
     "pubPrcrmntDtlClsfcNm",
 )
+# 건설폐기물 판정 보조 신호. 공고명 표기(가연성폐기물·폐아스콘·건설오니 등)가 흔들려도
+# 조달분류는 '건설폐기물처리서비스' 로 일정하므로 공고명 '건설폐기물' 과 병행(OR)합니다.
+_CDW_PROCUREMENT_CLASS_MARKER = "건설폐기물처리서비스"
 _SIMPLE_LABOR_RECOMMEND_KEYWORDS = ("청소", "경비", "시설관리", "주차", "미화")
 _FISHERY_CLEANUP_RECOMMEND_KEYWORDS = ("어장정화", "어장정비", "해양쓰레기", "어장")
 
@@ -2358,13 +2361,15 @@ def _select_local_rule(
     # cdw_exclusion 이 선언된 규칙은 낙찰방법명이 환경부고시 건설폐기물 띠 표기에 맞는
     # 공고에는 적용하지 않고 기존 MoE 경로(SERVC_QUAL_MOE_CDW_*)를 쓴다.
     # 'band': 낙찰방법명 일치만으로 제외(대구).
-    # 'named': 위 조건에 더해 공고명(bidNtceNm)에 '건설폐기물' 이 있을 때만 제외.
-    # 'named_except_haul': 'named' 조건에 더해 공고명에 '처리' 가 있을 때만 제외(울산).
+    # 'named'·'notice_cited': 위 조건에 더해 건설폐기물 신호가 있을 때만 제외. 신호는 공고명
+    # (bidNtceNm)의 '건설폐기물' 과 조달분류의 '건설폐기물처리서비스' 를 병행(OR)한다.
+    # 'named_except_haul': 위 신호에 더해 공고명에 '처리' 가 있을 때만 제외(울산).
     cdw_excluded_any = False
     if select_moe_cdw_rule(method_name) is not None:
-        bid_name = ""
-        if isinstance(raw_data, dict):
-            bid_name = str(raw_data.get("bidNtceNm") or "")
+        data = raw_data if isinstance(raw_data, dict) else {}
+        bid_name = str(data.get("bidNtceNm") or "")
+        class_text = " ".join(str(data.get(key) or "") for key in _PROCUREMENT_CLASS_KEYS)
+        is_cdw_notice = "건설폐기물" in bid_name or _CDW_PROCUREMENT_CLASS_MARKER in class_text
 
         def _cdw_excluded(rule: EvaluationRule) -> bool:
             mode = rule.cdw_exclusion
@@ -2372,9 +2377,9 @@ def _select_local_rule(
                 return False
             if mode == "band":
                 return True
-            if "건설폐기물" not in bid_name:
+            if not is_cdw_notice:
                 return False
-            if mode == "named":
+            if mode in ("named", "notice_cited"):
                 return True
             if mode == "named_except_haul":
                 return "처리" in bid_name

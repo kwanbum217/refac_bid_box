@@ -703,6 +703,11 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2024-01-01",
         source=_SRC_JEJU,
+        # 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 띠를 인용하지만
+        # 제주특별자치도 예규 원문에서는 제외 문구를 확인하지 못했다. 원문 근거가 있는 "named" 와
+        # 구분해 "notice_cited" 로 둔다(docs/analysis/entity_cdw_route_cause_20261106.md
+        # 1.2·3.4절 A-1). 대표 공고 R26BK01387878 외 1건.
+        cdw_exclusion="notice_cited",
         description="제주특별자치도 일반용역 적격심사 (단순노무 외)",
         # 별표 1 1~4 는 구간별 입찰가격 평점산식을 인쇄합니다. 10억원 이상은 30억원 경계로
         # 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
@@ -1620,6 +1625,11 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2023-01-05",
         source=_SRC_GN,
+        # 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 띠를 인용하지만
+        # 경상남도 예규 원문에서는 제외 문구를 확인하지 못했다. 원문 근거가 있는 "named" 와
+        # 구분해 "notice_cited" 로 둔다(docs/analysis/entity_cdw_route_cause_20261106.md
+        # 1.2·3.4절 A-1). 대표 공고 R26BK01537443 외 1건.
+        cdw_exclusion="notice_cited",
         description="경상남도 일반용역 적격심사 (별표 1)",
         # 별표 1 1~4 는 구간별 입찰가격 평점산식을 인쇄합니다. 10억원 이상은 30억원 경계로
         # 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
@@ -1816,6 +1826,11 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2024-08-12",
         source=_SRC_SEOUL,
+        # 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 띠를 인용하지만
+        # 서울특별시 예규 원문에서는 제외 문구를 확인하지 못했다. 원문 근거가 있는 "named" 와
+        # 구분해 "notice_cited" 로 둔다(docs/analysis/entity_cdw_route_cause_20261106.md
+        # 1.2·3.4절 A-1). 대표 공고 R26BK01268796 외 30건.
+        cdw_exclusion="notice_cited",
         description="서울특별시 일반용역 적격심사 (별표 1~4, 단순노무 외)",
         price_bands=_seoul_five_band_price(_SRC_SEOUL),
         threshold_bands=_threshold_30_10(_SRC_SEOUL),
@@ -1844,6 +1859,11 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="GENERAL",
         effective_date="2025-06-26",
         source=_SRC_BUSAN,
+        # 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 띠를 인용하지만
+        # 부산광역시 예규 원문에서는 제외 문구를 확인하지 못했다. 원문 근거가 있는 "named" 와
+        # 구분해 "notice_cited" 로 둔다(docs/analysis/entity_cdw_route_cause_20261106.md
+        # 1.2·3.4절 A-1). 대표 공고 R26BK01390456 외 4건.
+        cdw_exclusion="notice_cited",
         description="부산광역시 일반용역 적격심사 (별표 1, 단순노무 외)",
         # 별표 1 입찰가격 평가는 구간마다 낙찰하한율을 인쇄합니다(원문 :149). 10억원 이상은
         # 30억원 경계로 30억원 미만 77.995%, 30억원 이상 72.995% 로 갈립니다.
@@ -1969,6 +1989,11 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         effective_date="2020-02-01",
         superseded_date="2026-07-13",
         source=_SRC_CHUNGNAM_20200201,
+        # 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 띠를 인용하지만
+        # 충청남도 예규 원문에서는 제외 문구를 확인하지 못했다. 원문 근거가 있는 "named" 와
+        # 구분해 "notice_cited" 로 둔다(docs/analysis/entity_cdw_route_cause_20261106.md
+        # 1.2·3.4절 A-2). 대표 공고 R25BK01255404 외 3건.
+        cdw_exclusion="notice_cited",
         description="충청남도 폐기물처리용역 적격심사 (별표 3, 구판)",
         lwlt_rate="84.245",
         price_bands=_chungnam_notice_band_price(_SRC_CHUNGNAM_20200201),
@@ -2104,6 +2129,11 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         service_type="WASTE",
         effective_date="2026-07-13",
         source=_SRC_CHUNGNAM_ATTACH_03,
+        # 공고문이 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 띠를 인용하지만
+        # 충청남도 예규 원문에서는 제외 문구를 확인하지 못했다. 원문 근거가 있는 "named" 와
+        # 구분해 "notice_cited" 로 둔다(docs/analysis/entity_cdw_route_cause_20261106.md
+        # 1.2·3.4절 A-2). 대표 공고 R25BK01255404(구판 적용)와 같은 별표의 현행판이다.
+        cdw_exclusion="notice_cited",
         description="충청남도 폐기물처리용역 적격심사 (별표 3)",
         # 별표 2 와 같은 3구간·같은 값입니다(고시금액 미만 k4·84.245% / 이상 k2·80.495%).
         lwlt_rate="84.245",

@@ -28,7 +28,9 @@ def _raw(bid_ntce_dt: str, method: str, price: str, **extra) -> dict[str, str]:
         "bidNtceDt": bid_ntce_dt,
         "sucsfbidMthdNm": method,
         "presmptPrce": price,
-        "pubPrcrmntClsfcNm": "건설폐기물처리서비스",
+        # 이 파일은 구판·현행 시행일 선택을 봅니다. 건설폐기물 신호를 넣으면 2026-11-07
+        # 결정(D04)의 고시 경로가 먼저 잡히므로, 세부유형만 GENERAL 로 확정되는 분류를 씁니다.
+        "pubPrcrmntClsfcNm": "소프트웨어개발서비스",
     }
     base.update(extra)
     return base

@@ -28,6 +28,9 @@ from src.app.services import (
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # main 에서 계산한 sha256(repr(상수))[:16] 지문값. 값을 바꿀 수 없습니다.
+# 예외: LOCAL_RULES 는 2026-11-07 건설폐기물 라우팅 결정(D01~D06)으로 A 계열 시·도 6개
+# 규칙에 cdw_exclusion="notice_cited" 를 선언해 값이 바뀌었습니다. 변경 이유와 대상 규칙은
+# docs/analysis/cdw_route_regression_20261107.md 4절에 적었습니다.
 EXPECTED_FINGERPRINTS: dict[str, str] = {
     "POST_20260526_RULES": "92dfb7c194d68e3f",
     "POST_20260727_RULES": "dfad0fcd3f7e9987",
@@ -35,7 +38,7 @@ EXPECTED_FINGERPRINTS: dict[str, str] = {
     "PRE_20250901_RULES": "8462974964f16d17",
     "PRE_20230501_RULES": "77a16139ea892a07",
     "PRE_20260526_RULES": "a09f80a6e80bf80d",
-    "LOCAL_RULES": "48d29a0c7a15e957",
+    "LOCAL_RULES": "dc1347bfca63de90",
     "MOIS_ACADEMIC_BAND_RULES": "e7e2960460553ba0",
     "INSTITUTION_RULES": "d7cabe0e33a1e8cf",
 }
