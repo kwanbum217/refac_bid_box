@@ -585,6 +585,11 @@ def _candidate_by_name() -> dict[str, dict]:
     return index
 
 
+# 2026-11-07 결정 D26 으로 원장이 최신 차수가 취소공고인 공고를 빼면서 기관별 공고 수가
+# min_announcements(5) 아래로 내려가 institutions 목록에서 빠진 조사 대상입니다.
+BELOW_MIN_AFTER_CANCEL_EXCLUSION = frozenset({"1400000"})
+
+
 def test_committed_ledger_investigation_targets() -> None:
     """후보 14곳의 조사 결론이 대응 16행에만 적히고 나머지 행은 null 이다.
 
@@ -595,6 +600,9 @@ def test_committed_ledger_investigation_targets() -> None:
     by_code = {item["dminstt_cd"]: item for item in _ledger()["institutions"]}
 
     for code, candidate_name, source in INVESTIGATION_TARGETS:
+        if code in BELOW_MIN_AFTER_CANCEL_EXCLUSION:
+            assert code not in by_code, code
+            continue
         candidate = candidates[candidate_name]
         investigation = by_code[code]["investigation"]
         assert investigation is not None, code
