@@ -23,7 +23,7 @@ from src.app.services.evaluation_rules import (
     BLOCK_CODE_RULE_NOT_FOUND,
     INSTITUTION_RULES,
     PREDECESSOR_INSTITUTION_RULES,
-    QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+    QUANT_BASIS_INSTITUTION,
     RULE_SCOPE_INSTITUTION,
     resolve_evaluation_rule_from_raw_data,
     resolve_score_params,
@@ -145,7 +145,9 @@ def test_kdhc_20260818_version_boundary() -> None:
         )
         assert rule.effective_date == "2026-08-18"
         assert rule.superseded_date is None
-        assert rule.quant_basis == QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED
+        # 2026-08-18판 별표 1~9 의 심사항목 배점한도는 원문상 2026-01-01판과 같아
+        # 기관 정량 배점표를 그대로 연결했습니다(docs/analysis/kdhc_quant_20260818_20261107.md).
+        assert rule.quant_basis == QUANT_BASIS_INSTITUTION
 
     old_waste = next(rule for rule in INSTITUTION_RULES if rule.rule_id == f"{KDHC_OLD}WASTE")
     assert old_waste.superseded_date == "2026-08-18"

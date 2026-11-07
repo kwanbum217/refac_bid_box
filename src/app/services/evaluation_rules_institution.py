@@ -1981,8 +1981,9 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
     # 규칙을 superseded_date="2026-08-18" 로 끝내고 같은 별표를 새 ID 로 옮겼습니다.
     # 2026-04-13판은 2026-01-01판과 값이 같아 별도 등록하지 않습니다(D07 A).
     # 별표 1·2·3·4·5의2·7·8·9는 기준비율이 90(별표 2는 93, 별표 3의2·5는 91, 별표 6은 88)으로
-    # 바뀌었고, 별표 3의2·5·6은 값이 그대로입니다. 배점표는 2026-08-18판 명세가 없어
-    # quant_table=False 로 두어 정량점수 직접 입력을 유지합니다.
+    # 바뀌었고, 별표 3의2·5·6은 값이 그대로입니다. 심사항목 배점한도는 2026-08-18판 원문
+    # 별표 1~9 가 2026-01-01판과 같으므로 두 판본이 같은 배점표를 씁니다(docs/analysis/
+    # kdhc_quant_20260818_20261107.md). 그래서 quant_table=True 로 두어 기관 배점표를 씁니다.
     _institution_rule(
         "SERVC_INST_KDHC_20260818_ACADEMIC",
         institution_name="한국지역난방공사",
@@ -2026,7 +2027,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_FACILITY",
@@ -2061,7 +2062,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_SW",
@@ -2106,7 +2107,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_SW_TARGET",
@@ -2141,7 +2142,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_WASTE",
@@ -2187,7 +2188,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_PASSENGER",
@@ -2222,7 +2223,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_FREIGHT",
@@ -2267,7 +2268,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_INSURANCE",
@@ -2302,7 +2303,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_REPAIR",
@@ -2347,7 +2348,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_LEASE",
@@ -2382,7 +2383,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     _institution_rule(
         "SERVC_INST_KDHC_20260818_OTHER",
@@ -2417,7 +2418,7 @@ INSTITUTION_RULES: tuple[EvaluationRule, ...] = (
                 _SRC_INST_KDHC_20260818,
             ),
         ),
-        quant_table=False,
+        quant_table=True,
     ),
     # 한국지역난방공사 구판 (일반용역 적격심사세부기준, 시행 2023-07-19 입찰공고부터, superseded 2026-01-01).
     # 원문 .cache/kdhc/R25BK01166116/seq6_ord000.bin (sha256 132ff7b89ba5fdd782f3316bbe6d2dfdb156987c822826516643e549f8ee697b).
