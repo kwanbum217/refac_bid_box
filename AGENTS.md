@@ -150,5 +150,7 @@ G3 는 일회성 과업이 아니라 상시 과제입니다. 기능이 동작하
 | `frontend-streaming` | Phase 6 | `.agents/skills/frontend-streaming/` | SSE/WebSocket 스트리밍, HTMX/React 동적 UI |
 | `validation-cutover` | Phase 7 | `.agents/skills/validation-cutover/` | E2E, P95 레이턴시 벤치마크, 크로스플랫폼 컷오버 |
 | `project-orchestrator` | 운영 | `.agents/skills/project-orchestrator/` | 도커 컨테이너 통째 시동, 헬스체크, 무손실 검증, 레이턴시 벤치마크 자동 오케스트레이션 |
+| `platform-health-checklist` | 운영 | `.agents/skills/platform-health-checklist/` | 기능·성능·데이터 무손실 점검표와 통과 기준, 결과 기록 양식 |
+| `windows-onboarding` | 공통 | `.agents/skills/windows-onboarding/` | Windows 팀원의 저장소 클론 후 설치 점검(확인 후 winget)·데이터 확보·웹 플랫폼 실행 |
 | `git-workflow` | 공통 | `.agents/skills/git-workflow/` | 커밋 메시지 컨벤션, pre-commit 검증, 1인 작업 브랜치 -> main 병합 워크플로우 (PR 없음) |
 | `orca-section-coordination` | 공통 | `.agents/skills/orca-section-coordination/` | Orca Run·Task·Dispatch 기반 섹션 의존성, 공유 자원, 완료 검증, 인수인계 조율 |
