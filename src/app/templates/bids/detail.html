@@ -288,6 +288,23 @@
                                         <p class="mt-1 text-[11px] leading-relaxed text-slate-600">이 값으로 투찰가를 계산하지 않습니다. 예정가격이 공개된 가격입찰 공고에서 확인하십시오.</p>
                                     </div>
                                     <a id="blocked-attachment-link" href="#announcement-attachments" class="hidden mt-1 inline-block text-xs font-semibold text-primary hover:underline">공고 첨부파일 카드로 이동</a>
+                                    {% if show_followup_bids %}
+                                    <div id="followup-bids" class="mt-2 rounded-lg border border-red-200 bg-white p-3">
+                                        <div class="text-xs font-bold text-red-700">후속 가격입찰 공고</div>
+                                        {% if followup_bids %}
+                                        <ul class="mt-1 space-y-1 text-xs text-slate-700">
+                                            {% for followup in followup_bids %}
+                                            <li>
+                                                <a href="{{ url('bids:bid_detail', followup.id) }}" class="font-semibold text-primary hover:underline">{{ followup.bid_ntce_nm }}</a>
+                                                <span class="block text-[11px] text-slate-500">공고일 {{ followup.bid_ntce_dt|date("Y-m-d") }} · 마감 {{ followup.bid_clse_dt|date("Y-m-d H:i") }}</span>
+                                            </li>
+                                            {% endfor %}
+                                        </ul>
+                                        {% else %}
+                                        <p class="mt-1 text-xs text-slate-600">아직 연결된 후속 공고가 없습니다</p>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
                                     <div id="recommend-blocked-gap" class="hidden mt-2">
                                         <div id="recommend-blocked-gap-deficit" class="text-xs font-semibold text-red-700"></div>
                                         <ul id="recommend-blocked-gap-items" class="hidden mt-1 text-xs text-red-700"></ul>

@@ -327,6 +327,7 @@ def bid_detail(
     if detail is None:
         raise HTTPException(status_code=404, detail="대상을 찾을 수 없습니다.")
     detail["announcement_links"] = describe_announcement_links(detail["bid"].raw_data)
+    detail["show_followup_bids"] = bid_queries.is_non_pred_price_blocked(detail["bid"])
     return _render(request, "bids/detail.html", detail, user, "bids")
 
 
