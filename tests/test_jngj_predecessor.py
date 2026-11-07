@@ -200,6 +200,8 @@ def test_predecessor_rules_declare_supersede_window() -> None:
     daejeon_windows = {
         "SERVC_LOCAL_DAEJEON_20240120_ATTACH_01": ("2024-01-20", "2026-01-01"),
         "SERVC_LOCAL_DAEJEON_20240120_SIMPLE_LABOR": ("2024-01-20", "2026-01-01"),
+        # 2026-11-07 D34(A) 대전 구판 폐기물처리용역.
+        "SERVC_LOCAL_DAEJEON_20240120_ATTACH_1_3": ("2024-01-20", "2026-01-01"),
     }
     daejeon_rules = {rule.rule_id: rule for rule in LOCAL_RULES if rule.rule_id in daejeon_windows}
     assert set(daejeon_rules) == set(daejeon_windows)

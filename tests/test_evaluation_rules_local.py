@@ -15,6 +15,33 @@ from src.app.services.evaluation_rules_local import _LOCAL_LWLT_BY_SERVICE
 GB_WASTE_ID = "SERVC_LOCAL_GB_20260108_ATTACH_03"
 JNGJ_WASTE_ID = "SERVC_LOCAL_JNGJ_20260716_ATTACH_03"
 
+# D34(A) 시·도 세부유형 별표 규칙의 구간 하한율입니다. 서울 보험·전북 폐기물은 원문
+# 미인쇄 산식값, 대전·강원 폐기물은 원문 인쇄값입니다.
+ANNEX_30_BAND_RATES: dict[str, tuple[str, ...]] = {
+    "SERVC_LOCAL_SEOUL_20240812_ATTACH_01_5": ("47.995", "47.995"),
+    "SERVC_LOCAL_DAEJEON_20260101_ATTACH_1_3": (
+        "87.745",
+        "86.745",
+        "85.495",
+        "77.995",
+        "72.995",
+    ),
+    "SERVC_LOCAL_GANGWON_20230611_ATTACH_02": (
+        "87.745",
+        "86.745",
+        "85.495",
+        "77.995",
+        "72.995",
+    ),
+    "SERVC_LOCAL_JEONBUK_20240118_ATTACH_03": (
+        "87.745",
+        "86.745",
+        "85.495",
+        "77.995",
+        "72.995",
+    ),
+}
+
 
 def _rule(rule_id: str) -> EvaluationRule:
     match = next((rule for rule in LOCAL_RULES if rule.rule_id == rule_id), None)
@@ -44,3 +71,11 @@ def test_gb_waste_rule_owns_its_lower_rate() -> None:
         Decimal("87.745"),
         Decimal("86.745"),
     ]
+
+
+def test_local_annex_30_rules_own_their_band_rates() -> None:
+    """D34(A) 새 규칙은 서비스 기본값이 아니라 원문·산식값을 구간마다 직접 선언한다."""
+    for rule_id, expected in ANNEX_30_BAND_RATES.items():
+        rule = _rule(rule_id)
+        assert [str(band.lwlt_rate) for band in rule.price_bands or ()] == list(expected), rule_id
+        assert str(rule.lwlt_rate) == expected[0], rule_id

@@ -65,6 +65,21 @@ _SRC_GANGWON = (
     "EXT/qual_raw/1.txt:1996-2032 (참고 입찰가격 평점 산식 낙찰하한율 30억 이상 72.995%"
     "·10억 이상 77.995%), :150,307,463,618 (별표 1 1~4. 구간별 입찰가격 평점산식)"
 )
+# D34(A) 강원 폐기물처리용역 별표 2. B·k·기준비율은 별표 2 원문 표, 낙찰하한율은 같은 판본
+# PDF 의 참고 입찰가격 평점 산식 폐기물 행에 인쇄된 값을 씁니다.
+_SRC_GANGWON_ATTACH_02 = (
+    "data/sources/qualification/files/gwd/0ab5d0ce1041_elis_gwd_main.txt:260 "
+    "(제3조①3 폐기물처리용역 적격심사 세부기준: 별표 2), :276 "
+    "(제6조① 통과점수 30억원 이상 85·30억원 미만 10억원 이상 90·10억원 미만 95); "
+    "data/sources/qualification/files/gwd/9d1c5fe5c9dd_tbl2_gwd.txt:3,58,64 "
+    "(1. 추정가격 10억원 이상 B 30·계수 1·기준비율 88), :218,272 "
+    "(2. 10억원 미만 5억원 이상 B 50·계수 2), :435,491 (3. 5억원 미만 2억원 이상 B 70·계수 4), "
+    ":653,703 (4. 2억원 미만 B 90·계수 20); "
+    "data/sources/qualification/files/gwd/86e1aa191727_강원특별자치도 일반용역 적격심사 "
+    "세부기준 예규 제832호.pdf 참고 입찰가격 평점 산식 폐기물 행 "
+    "(낙찰하한율 30억원 이상 72.995·10억원 이상 77.995·5억원 미만 85.495·"
+    "2억원 이상 86.745·2억원 미만 87.745 인쇄)"
+)
 _SRC_SEJONG = (
     f"{_LOCAL_COLLECTION}:225-247 (세종특별자치시 일반용역 적격심사 세부기준, "
     "세종특별자치시 예규 제32호, 시행 2025-12-01, 별표 2~5)"
@@ -169,6 +184,16 @@ _SRC_SEOUL_LWLT_FORMULA = (
     "제7조 :32 (30억원 이상 85, 10억~30억 90, 10억원 미만 95), "
     "평점산식 :379(k 1), :722(k 2), :1065(k 4), :1318(k 20)"
 )
+# D34(A) 서울 보험용역 별표 1 5절. B·계수·기준비율·통과점수는 원문 인쇄값이고,
+# 낙찰하한율은 원문에 인쇄되지 않아 별표 인쇄값을 산식에 대입해 산출합니다.
+_SRC_SEOUL_INSURANCE = (
+    "data/sources/qualification/files/seoul/c3c437588e9f_seoul_general_2024_08_12.tbl.txt:1325 "
+    "(5. 보험용역 적격심사), :1415-1418 (입찰가격 배점한도 5억원 이상 60·5억원 미만 70), "
+    ":1446 (평점 = 배점한도 - 0.375x|(88/100-입찰가격/예정가격)x100|), "
+    ":32 (제7조① 보험용역은 85점이상); "
+    "낙찰하한율은 원문 미인쇄, 별표 인쇄값 대입 산출(88-(100-85)/0.375=48.0, .995 표기 47.995; "
+    "c3c437588e9f_seoul_general_2024_08_12.tbl.txt:32,1446)"
+)
 _SRC_BUSAN = (
     f"{_SRC_RECOVER}:105-132 (부산광역시 일반용역 적격심사 세부기준, 공고 제2025-1981호, "
     "시행 2025-06-26, 별표 1); EXT/busan/busan_general_2025_1981.txt:57,82-84,149-150 "
@@ -186,6 +211,17 @@ _SRC_DAEJEON_20240120 = (
     "https://www.daejeon.go.kr/drh/drhGosiView.do?gosigbn=A&sno=45050&menuSeq=1908&pageIndex=1 "
     "첨부 HWP, sha256 05f8bd0b2f03f9515b35a5cba23fee90209cd707082d6da763dd4be1db97423f; "
     "EXT/daejeon/daejeon_2024_2.hwp (별표 6)"
+)
+# D34(A) 대전 폐기물처리용역 별표 1-3. B 는 별표 1-3, 계수·기준비율·낙찰하한율은
+# [별표 6], 통과점수는 제8조① 원문 인쇄값입니다.
+_SRC_DAEJEON_ATTACH_1_3 = (
+    "data/sources/qualification/files/daejeon/6cfe2e0ddf33_daejeon_2025_9528.txt:16 "
+    "(제4조①3 폐기물처리용역 평가기준: 별표 1-3), :88 "
+    "([별표 1-3] 입찰가격 배점한도 10억원 30·10억원미만 5억원이상 50·"
+    "5억원미만 2억원이상 70·2억원미만 90), :262 "
+    "([별표 6] 평점산식 계수 1·2·4·20, 기준비율 88, 낙찰하한율 30억원 이상 72.995·"
+    "30억원 미만 77.995·85.495·86.745·87.745 인쇄), :39 "
+    "(제8조① 통과점수 30억원 이상 85·30억원 미만 10억원 이상 90·10억원 미만 95)"
 )
 _SRC_CHUNGNAM_ATTACH_01 = (
     f"{_SRC_RECOVER}:170-202 (충청남도 일반용역 적격심사 세부기준, 공고 2026-1235호, "
@@ -247,6 +283,20 @@ _SRC_JEONBUK = (
     "35-37,44-49,127-145,357-366,583-592,792-799 "
     "(138-145 입찰가격 평가: 단순노무 외 10억원 이상 30억원 미만 77.995%, 30억원 이상 "
     "72.995%; 단순노무 87.745%; 구간 하한율 숫자 행 141, 143, 145, 369, 595, 802)"
+)
+# D34(A) 전북 폐기물처리용역 별표 3. B·계수·기준비율·통과점수는 원문 인쇄값이고,
+# 낙찰하한율은 원문에 인쇄되지 않아 별표 인쇄값을 산식에 대입해 산출합니다.
+_SRC_JEONBUK_ATTACH_03 = (
+    "data/sources/qualification/files/jeonbuk/2d58643f0a49_jb_general_2024_10.hwp5txt.txt:48 "
+    "(제5조② 폐기물처리용역 세부기준 [별표 3]), :66 "
+    "(제8조① 통과점수 30억원 이상 85·30억원 미만 10억원 이상 90·10억원 미만 95); "
+    "data/sources/qualification/files/jeonbuk/5110c07087d6_jb_general_2024_10.tbl.txt:1080 "
+    "([별표 3]), :1121,1156 (10억원 이상 B 30·계수 1·기준비율 88), :1179,1238 "
+    "(10억원 미만 5억원 이상 B 50·계수 2), :1319,1322 (5억원 미만 2억원 이상 B 70·계수 4), "
+    ":1365,1368 (2억원 미만 B 90·계수 20); "
+    "낙찰하한율은 원문 미인쇄, 별표 인쇄값 대입 산출(87.745/86.745/85.495/77.995/72.995; "
+    "2d58643f0a49_jb_general_2024_10.hwp5txt.txt:66 통과점수와 "
+    "5110c07087d6_jb_general_2024_10.tbl.txt:1121-1368 산식)"
 )
 
 # 통합특별시 출범 전 옛 전라남도 기준입니다. 통합 지침(예규 제3호) 시행일 2026-07-16 이전 공고에만
@@ -2210,5 +2260,227 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         threshold_bands=_single_threshold("85", "전 구간 85", _SRC_DAEGU_ATTACH_04),
         lwlt_rate="80.495",
         cdw_exclusion="band",
+    ),
+    # D34(A) 시·도 세부유형 별표. 기존 규칙 순서를 바꾸지 않도록 새 규칙은 뒤에 추가합니다.
+    # 대전광역시 구판(공고 제2024-2호, 시행 2024-01-20) 폐기물처리용역. 2024-01-20 판본
+    # 별표 6 의 소프트웨어·폐기물처리·기타 일반용역 공통 행이며, 기존
+    # SERVC_LOCAL_DAEJEON_20240120_ATTACH_01 과 같은 B·k·기준비율·통과점수·하한율입니다.
+    _local_rule(
+        "SERVC_LOCAL_DAEJEON_20240120_ATTACH_1_3",
+        sido_code="30",
+        sido_name="대전광역시",
+        service_type="WASTE",
+        effective_date="2024-01-20",
+        superseded_date="2026-01-01",
+        source=_SRC_DAEJEON_20240120,
+        description="대전광역시 폐기물처리용역 적격심사 (별표 6, 구판)",
+        price_bands=_five_band_price(
+            _SRC_DAEJEON_20240120,
+            lwlt_rates=("87.745", "86.745", "85.495", "77.995", "72.995"),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_DAEJEON_20240120),
+        lwlt_rate="87.745",
+    ),
+    # 서울특별시 보험용역 (별표 1 5절) — 원문 :1325, :1426-1427, :1446, :32
+    _local_rule(
+        "SERVC_LOCAL_SEOUL_20240812_ATTACH_01_5",
+        sido_code="11",
+        sido_name="서울특별시",
+        service_type="INSURANCE",
+        effective_date="2024-08-12",
+        source=_SRC_SEOUL_INSURANCE,
+        description="서울특별시 일반용역 적격심사 (별표 1 5절, 보험용역)",
+        # B 60(5억원 이상)·70(5억원 미만), 계수 0.375, 기준비율 88, 통과점수 85 는 원문
+        # 인쇄값입니다. 낙찰하한율은 원문 미인쇄, 별표 인쇄값 대입 산출
+        # (88-(100-85)/0.375=48.0, .995 표기 47.995)입니다.
+        price_bands=(
+            _local_price_band(
+                "500000000",
+                "70",
+                "0.375",
+                "추정가격 5억원 미만",
+                _SRC_SEOUL_INSURANCE,
+                lwlt_rate="47.995",
+            ),
+            _local_price_band(
+                None,
+                "60",
+                "0.375",
+                "추정가격 5억원 이상",
+                _SRC_SEOUL_INSURANCE,
+                lwlt_rate="47.995",
+            ),
+        ),
+        threshold_bands=_single_threshold("85", "전 구간 85", _SRC_SEOUL_INSURANCE),
+        lwlt_rate="47.995",
+    ),
+    # 대전광역시 폐기물처리용역 (별표 1-3·별표 6) — 원문 _SRC_DAEJEON_ATTACH_1_3
+    _local_rule(
+        "SERVC_LOCAL_DAEJEON_20260101_ATTACH_1_3",
+        sido_code="30",
+        sido_name="대전광역시",
+        service_type="WASTE",
+        effective_date="2026-01-01",
+        source=_SRC_DAEJEON_ATTACH_1_3,
+        description="대전광역시 폐기물처리용역 적격심사 (별표 1-3·별표 6)",
+        # B 30/50/70/90, 계수 1/2/4/20, 기준비율 88, 통과점수 85/90/95, 낙찰하한율
+        # 72.995/77.995/85.495/86.745/87.745 는 모두 원문 인쇄값입니다.
+        price_bands=(
+            _local_price_band(
+                "200000000",
+                "90",
+                "20",
+                "추정가격 2억원 미만",
+                _SRC_DAEJEON_ATTACH_1_3,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "500000000",
+                "70",
+                "4",
+                "5억원 미만 2억원 이상",
+                _SRC_DAEJEON_ATTACH_1_3,
+                lwlt_rate="86.745",
+            ),
+            _local_price_band(
+                "1000000000",
+                "50",
+                "2",
+                "10억원 미만 5억원 이상",
+                _SRC_DAEJEON_ATTACH_1_3,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                "3000000000",
+                "30",
+                "1",
+                "30억원 미만 10억원 이상",
+                _SRC_DAEJEON_ATTACH_1_3,
+                lwlt_rate="77.995",
+            ),
+            _local_price_band(
+                None,
+                "30",
+                "1",
+                "추정가격 30억원 이상",
+                _SRC_DAEJEON_ATTACH_1_3,
+                lwlt_rate="72.995",
+            ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_DAEJEON_ATTACH_1_3),
+        lwlt_rate="87.745",
+    ),
+    # 강원특별자치도 폐기물처리용역 (별표 2) — 원문 _SRC_GANGWON_ATTACH_02
+    _local_rule(
+        "SERVC_LOCAL_GANGWON_20230611_ATTACH_02",
+        sido_code="51",
+        sido_name="강원특별자치도",
+        service_type="WASTE",
+        effective_date="2023-06-11",
+        source=_SRC_GANGWON_ATTACH_02,
+        description="강원특별자치도 폐기물처리용역 적격심사 (별표 2)",
+        # 별표 2 의 B·계수·기준비율은 원문 표에, 낙찰하한율은 같은 판본 PDF 참고 산식의
+        # 폐기물 행에 인쇄되어 있습니다. 10억원 이상은 30억원 경계로 77.995/72.995 로 갈립니다.
+        price_bands=(
+            _local_price_band(
+                "200000000",
+                "90",
+                "20",
+                "추정가격 2억원 미만",
+                _SRC_GANGWON_ATTACH_02,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "500000000",
+                "70",
+                "4",
+                "5억원 미만 2억원 이상",
+                _SRC_GANGWON_ATTACH_02,
+                lwlt_rate="86.745",
+            ),
+            _local_price_band(
+                "1000000000",
+                "50",
+                "2",
+                "10억원 미만 5억원 이상",
+                _SRC_GANGWON_ATTACH_02,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                "3000000000",
+                "30",
+                "1",
+                "30억원 미만 10억원 이상",
+                _SRC_GANGWON_ATTACH_02,
+                lwlt_rate="77.995",
+            ),
+            _local_price_band(
+                None,
+                "30",
+                "1",
+                "추정가격 30억원 이상",
+                _SRC_GANGWON_ATTACH_02,
+                lwlt_rate="72.995",
+            ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_GANGWON_ATTACH_02),
+        lwlt_rate="87.745",
+    ),
+    # 전북특별자치도 폐기물처리용역 (별표 3) — 원문 _SRC_JEONBUK_ATTACH_03
+    _local_rule(
+        "SERVC_LOCAL_JEONBUK_20240118_ATTACH_03",
+        sido_code="52",
+        sido_name="전북특별자치도",
+        service_type="WASTE",
+        effective_date="2024-01-18",
+        source=_SRC_JEONBUK_ATTACH_03,
+        description="전북특별자치도 폐기물처리용역 적격심사 (별표 3)",
+        # B 30/50/70/90, 계수 1/2/4/20, 기준비율 88, 통과점수 85/90/95 는 원문 인쇄값입니다.
+        # 낙찰하한율은 원문 미인쇄, 별표 인쇄값 대입 산출
+        # (87.745/86.745/85.495/77.995/72.995)입니다.
+        price_bands=(
+            _local_price_band(
+                "200000000",
+                "90",
+                "20",
+                "추정가격 2억원 미만",
+                _SRC_JEONBUK_ATTACH_03,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "500000000",
+                "70",
+                "4",
+                "5억원 미만 2억원 이상",
+                _SRC_JEONBUK_ATTACH_03,
+                lwlt_rate="86.745",
+            ),
+            _local_price_band(
+                "1000000000",
+                "50",
+                "2",
+                "10억원 미만 5억원 이상",
+                _SRC_JEONBUK_ATTACH_03,
+                lwlt_rate="85.495",
+            ),
+            _local_price_band(
+                "3000000000",
+                "30",
+                "1",
+                "30억원 미만 10억원 이상",
+                _SRC_JEONBUK_ATTACH_03,
+                lwlt_rate="77.995",
+            ),
+            _local_price_band(
+                None,
+                "30",
+                "1",
+                "추정가격 30억원 이상",
+                _SRC_JEONBUK_ATTACH_03,
+                lwlt_rate="72.995",
+            ),
+        ),
+        threshold_bands=_threshold_30_10(_SRC_JEONBUK_ATTACH_03),
+        lwlt_rate="87.745",
     ),
 )
