@@ -6,7 +6,7 @@ tests/test_detail_recommendations.py
 유사 기관 보충 표지를 확인합니다.
 """
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement, BidResult
@@ -299,6 +299,41 @@ def test_past_results_do_not_fill_when_same_agency_is_enough(isolated_db):
     assert {row.id for row in past} == {row.id for row in same_agency}
     assert all(getattr(row, "institution_match_label", "") == "같은 기관" for row in past)
     assert other_agency.id not in {row.id for row in past}
+
+
+def test_recommendations_use_kst_naive_deadline(isolated_db, monkeypatch):
+    """(b) 추천 마감 판정은 나라장터 원문 시각(KST naive) 기준입니다."""
+    fixed_utc = datetime(2026, 11, 10, 0, 0, 0)
+    monkeypatch.setattr(bid_queries, "utcnow", lambda: fixed_utc)
+
+    target = _add_announcement(
+        isolated_db,
+        bid_ntce_no="KST-TARGET",
+        bid_ntce_nm="하수관로 정비사업",
+        bid_ntce_dt=fixed_utc,
+        bid_clse_dt=fixed_utc + timedelta(hours=12),
+    )
+    closed_three_hours_ago = _add_announcement(
+        isolated_db,
+        bid_ntce_no="KST-CLOSED",
+        bid_ntce_nm="하수관로 정비사업 관급자재",
+        bid_ntce_dt=fixed_utc - timedelta(days=1),
+        bid_clse_dt=fixed_utc + timedelta(hours=6),
+    )
+    open_three_hours_later = _add_announcement(
+        isolated_db,
+        bid_ntce_no="KST-OPEN",
+        bid_ntce_nm="하수관로 정비사업 관급자재 구입",
+        bid_ntce_dt=fixed_utc - timedelta(days=1),
+        bid_clse_dt=fixed_utc + timedelta(hours=12),
+    )
+
+    detail = bid_queries.get_announcement_detail(isolated_db, target.id)
+    assert detail is not None
+
+    similar_ids = {row.id for row in detail["similar_bids"]}
+    assert closed_three_hours_ago.id not in similar_ids
+    assert open_three_hours_later.id in similar_ids
 
 
 def test_announcement_name_tokens_and_similarity():

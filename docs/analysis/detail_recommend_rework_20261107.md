@@ -1,7 +1,8 @@
 # 공고 상세 추천·과거 사례 선정 재작업 (2026-11-07)
 
 > 작성일: 2026-11-07
-> Task: `task_9f57a2a1e934`
+> 수정일: 2026-11-07 (리뷰 반려 후 KST 마감 판정 수정)
+> Task: `task_9f57a2a1e934`, 재작업 `task_f887d6b59d69`
 > 브랜치: `kwanbum217/detail-recommend`
 > 범위: `src/app/services/bid_queries.py`, `src/app/templates/bids/detail.html`, API 직렬화·스키마, 시험, 본 문서
 
@@ -26,7 +27,7 @@
 | `src/app/templates/bids/detail.html` | 추천 제목을 '비슷한 진행 중 공고'로 변경, 항목마다 마감일 표시, 과거 사례의 '완료' 배지를 '같은 기관'/'유사 기관' 표지로 교체 |
 | `src/app/api/v1/bids.py` | 과거 사례 직렬화에 `institution_match_label` 추가 |
 | `src/app/schemas/bids.py` | `BidResultResponse.institution_match_label` 필드 추가 |
-| `tests/test_detail_recommendations.py` | 신규 시험 7건 |
+| `tests/test_detail_recommendations.py` | 신규 시험 8건 |
 | `tests/test_similar_bids_recency.py` | 새 마감 규칙에 맞춘 fixture 보정 |
 | `tests/test_bid_queries_detail_latest_revision.py` | 새 마감 규칙에 맞춘 fixture 보정 |
 | `tests/test_backend_rest_fixes.py` | 상세 API 계약 시험 fixture 에 마감일 추가 |
@@ -160,6 +161,7 @@
 | (d) | 유사도가 높은 공고가 더 최신인 무관 공고보다 앞섬 |
 | (e) | 같은 기관 결과가 5건 미만일 때만 유사 기관이 채워지고 표지가 붙음. 5건 이상이면 보충 없음 |
 | (f) | 핵심어 추출에서 연도·차수·일반어가 빠지고 유사도가 겹침 비율로 계산됨 |
+| (g) | 추천 마감 판정이 KST naive 기준이라 KST 3시간 전 마감 공고는 빠지고 3시간 뒤 마감 공고는 남음 |
 
 ### 6.2 기존 시험 변경
 
@@ -180,3 +182,25 @@
 - 운영 DB 는 읽기 전용 세션의 `SELECT`/`EXPLAIN` 만 사용했습니다. `docker exec`, `mysql` 직접 호출, 쓰기 트랜잭션을 사용하지 않았습니다.
 - 새 라이브러리나 새 의존성을 추가하지 않았습니다. 프런트엔드는 npm 을 유지했습니다.
 - 템플릿에 새 tailwind 클래스를 추가하지 않아 `src/app/static/css/tailwind.css` 는 재생성 후에도 변경이 없습니다.
+
+---
+
+## 8. 리뷰 반려 수정: KST naive 마감 판정
+
+### 8.1 문제
+
+이전 시도는 `get_announcement_detail` 에서 `utcnow()`(UTC naive)를 현재 시각으로 썼습니다. 그런데 `bid_announcements.bid_clse_dt` 는 나라장터 원문 시각(KST naive)을 그대로 저장합니다. 예를 들어 id 10352948 의 `bid_clse_dt` 는 원문 `bidClseDt` 와 같은 `2026-11-12 10:00:00` 입니다. 그래서 마감 후 9시간 동안 마감된 공고가 추천에 남았습니다.
+
+### 8.2 수정
+
+- `bid_queries._kst_now()` 를 추가했습니다. 값은 `utcnow() + timedelta(hours=9)` 이며 한국은 일광절약시간이 없으므로 `zoneinfo` 를 쓰지 않습니다.
+- `get_announcement_detail` 의 `now` 를 `_kst_now()` 로 바꿨습니다. 이 값이 추천의 `bid_clse_dt >= now` 마감 필터, 최근 30일 후보 창, 과거 사례의 최근 365일 보충 창에 함께 쓰입니다.
+- `tests/test_detail_recommendations.py` 에 `test_recommendations_use_kst_naive_deadline` 을 추가해 `bid_queries.utcnow` 를 고정하고, KST 기준 3시간 전에 마감된 공고가 추천에서 빠지고 3시간 뒤 마감 공고는 남는지 확인합니다.
+
+### 8.3 범위 밖 관찰
+
+`get_announcement_restrictions` 의 `uncollected_legacy` 판정(`clse_dt >= utcnow()`)도 같은 UTC/KST 혼용을 갖고 있습니다. 이번 결정 범위가 아니므로 고치지 않았고 동작은 그대로입니다.
+
+### 8.4 누적 변경
+
+재작업 보고서의 `changed_files` 는 `git diff --name-only main...HEAD` 전체, `commit_count` 는 `main..HEAD` 전체 커밋 수를 기준으로 적습니다.
