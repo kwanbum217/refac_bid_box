@@ -83,6 +83,8 @@ def test_cache_miss_emits_all_nine_segments(isolated_db, monkeypatch, caplog):
         data = dashboard.get_compare_stats_data(isolated_db)
     assert data["announce_count"] == 3
     assert data["matched_count"] == 0
+    assert data["announce_count_1y"] == 0
+    assert data["matched_count_1y"] == 0
     payload = _segment_payload_from_caplog(caplog)
     assert payload["cache_hit"] is False
     assert sorted(payload["segments"]) == sorted(EXPECTED_SEGMENTS)

@@ -91,9 +91,15 @@ def test_재집계가_두_스냅샷을_만들고_형태가_사양과_같다(isol
     for item in agency_row.payload:
         assert set(item.keys()) == {"name", "total_base_amount", "total_prce", "count"}
         assert item["total_base_amount"] == item["total_prce"]
-    assert set(matched_row.payload.keys()) == {"value"}
+    assert set(matched_row.payload.keys()) == {
+        "value",
+        "announce_count_1y",
+        "matched_count_1y",
+    }
     assert isinstance(matched_row.payload["value"], int)
     assert matched_row.payload["value"] == 1
+    assert matched_row.payload["announce_count_1y"] == 1
+    assert matched_row.payload["matched_count_1y"] == 1
 
 
 def test_상한_초과_금액은_집계에서_빠진다(isolated_db):

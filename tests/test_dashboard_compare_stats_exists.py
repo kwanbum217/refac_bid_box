@@ -74,6 +74,10 @@ def test_compare_stats_matching_count_uses_exists_and_preserves_meaning(isolated
         data = dashboard.get_compare_stats_data(isolated_db)
 
     assert data["matched_count"] == 1
+    # 매칭률 분자·분모는 개찰 결과 날짜가 아니라 공고 날짜(bid_ntce_dt)의 1년 창을
+    # 씁니다. 세 공고가 모두 창 안이고, 결과가 있는 MATCHED 와 OUTSIDE 가 분자입니다.
+    assert data["announce_count_1y"] == 3
+    assert data["matched_count_1y"] == 2
     matching_stmt = scalar.call_args.args[0]
     assert "EXISTS" in str(matching_stmt.compile(compile_kwargs={"literal_binds": True})).upper()
     assert "JOIN" not in str(matching_stmt).upper()

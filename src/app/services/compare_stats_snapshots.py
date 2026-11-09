@@ -11,10 +11,11 @@ GET /api/v1/bids/compare-stats 의 두 무거운 집계(기관별 상위 10,
 스냅샷은 넷입니다. snapshot_key='agency_announce_top10' 의 payload 는
 응답의 agency_announce_top10 리스트와 똑같은 배열이며 각 항목은 name,
 total_base_amount, total_prce, count 네 키를 가집니다.
-snapshot_key='matched_count' 의 payload 는 {"value": 정수} 입니다.
-snapshot_key='announce_by_month' 및 snapshot_key='result_by_month' 의 payload 는
-각각 공고/개찰결과 월별 추세 배열이며 각 항목은 month, count 두 키를 가집니다.
-window_days 는 넷 모두 365 입니다.
+snapshot_key='matched_count' 의 payload 는 기존 매칭 건수 value 와 함께
+같은 1년 공고 창의 매칭률 분자·분모인 matched_count_1y, announce_count_1y 를
+가집니다. snapshot_key='announce_by_month' 및 snapshot_key='result_by_month' 의
+payload 는 각각 공고/개찰결과 월별 추세 배열이며 각 항목은 month, count 두 키를
+가집니다. window_days 는 넷 모두 365 입니다.
 
 금액 집계는 dashboard._announcement_amount_expr 를 그대로 재사용합니다.
 다시 구현하면 이상치 상한 규칙이 갈라져 같은 화면에 다른 금액이 나옵니다.
@@ -62,6 +63,19 @@ def is_agency_payload_usable(payload: object) -> bool:
     return all(
         isinstance(item, dict) and all(key in item for key in AGENCY_ITEM_KEYS) for item in payload
     )
+
+
+# 매칭 payload 가 가져야 하는 키입니다. value 는 기존 응답 필드용 매칭 건수이고,
+# 나머지 둘은 같은 1년 공고 창을 쓰는 매칭률의 분자·분모입니다. 새 키가 없는
+# 옛 스냅샷은 매칭률 두 값을 낼 수 없으므로 실시간 폴백으로 보냅니다.
+MATCHED_ITEM_KEYS = ("value", "announce_count_1y", "matched_count_1y")
+
+
+def is_matched_payload_usable(payload: object) -> bool:
+    """매칭 payload 를 그대로 쓸 수 있는 형태인지 판정합니다."""
+    if not isinstance(payload, dict):
+        return False
+    return all(isinstance(payload.get(key), int) for key in MATCHED_ITEM_KEYS)
 
 
 # 월별 payload 한 항목이 가져야 하는 키입니다.
@@ -171,7 +185,14 @@ def _compute_agency_top10_payload(db: Session, one_year_ago: datetime) -> list[d
 
 
 def _compute_matched_count_payload(db: Session, one_year_ago: datetime) -> dict[str, int]:
-    """매칭 공고 수 payload 를 실시간 집계와 같은 EXISTS 식으로 계산합니다."""
+    """매칭 payload 를 실시간 집계와 같은 식으로 계산합니다.
+
+    value 는 기존 응답 필드용 매칭 건수이고, 나머지 둘은 같은 1년 공고 창을
+    쓰는 매칭률의 분자·분모입니다. 매칭률 두 값은 실시간 폴백과 정의가 갈라지지
+    않도록 dashboard._query_match_rate_1y_realtime 하나만 부릅니다.
+    """
+    from src.app.services.dashboard import _query_match_rate_1y_realtime
+
     matched_count = db.scalar(
         select(func.count(BidAnnouncement.id)).where(
             select(BidResult.id)
@@ -182,7 +203,7 @@ def _compute_matched_count_payload(db: Session, one_year_ago: datetime) -> dict[
             .exists()
         )
     )
-    return {"value": int(matched_count or 0)}
+    return {"value": int(matched_count or 0), **_query_match_rate_1y_realtime(db, one_year_ago)}
 
 
 def _compute_announce_by_month_payload(db: Session, one_year_ago: datetime) -> list[dict[str, Any]]:
@@ -260,6 +281,7 @@ def rebuild_compare_stats_snapshots(db: Session) -> dict[str, Any]:
 __all__ = [
     "COMPARE_STATS_SNAPSHOT_MAX_AGE_DAYS",
     "COMPARE_STATS_WINDOW_DAYS",
+    "MATCHED_ITEM_KEYS",
     "MONTHLY_ITEM_KEYS",
     "SNAPSHOT_KEY_AGENCY_TOP10",
     "SNAPSHOT_KEY_ANNOUNCE_BY_MONTH",
@@ -268,6 +290,7 @@ __all__ = [
     "get_compare_stats_snapshot",
     "get_snapshot_with_age",
     "is_agency_payload_usable",
+    "is_matched_payload_usable",
     "is_monthly_payload_usable",
     "is_snapshot_fresh",
     "rebuild_compare_stats_snapshots",
