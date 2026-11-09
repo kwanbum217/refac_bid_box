@@ -56,6 +56,7 @@ WORKDIR /app
 # openssl 계열(CVE-2026-75804, CVE-2026-84782), libpcre2-8-0, perl-base 도 같은 이유로
 # 2026-10-02 에 추가했습니다.
 # apt·libapt-pkg7.0(CVE-2026-109518, 3.0.3 -> 3.0.4 stable-security)은 2026-11-06 에 추가했습니다.
+# zlib1g(CVE-2026-76844, CVE-2026-85091, deb13u1 trixie-security)는 2026-11-09 에 추가했습니다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && apt-get install -y --no-install-recommends --only-upgrade \
@@ -68,6 +69,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libapt-pkg7.0 \
     openssl-provider-legacy \
     perl-base \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
