@@ -199,7 +199,7 @@ def test_predict_fallback_equivalence_with_previous_chain(monkeypatch, tiny_mode
         _registry(
             {
                 SERVC_MODEL: _FailingWrapper(),
-                "v25": fallback_wrapper,
+                "v13_hybrid": fallback_wrapper,
             }
         ),
     )
@@ -217,7 +217,7 @@ def test_predict_fallback_equivalence_with_previous_chain(monkeypatch, tiny_mode
         _registry(
             {
                 SERVC_MODEL: _FailingWrapper(),
-                "v25": old_fallback_wrapper,
+                "v13_hybrid": old_fallback_wrapper,
             }
         ),
     )
@@ -225,7 +225,7 @@ def test_predict_fallback_equivalence_with_previous_chain(monkeypatch, tiny_mode
         SERVC_MODEL, feature_map, full_map=None
     )
     old_fallback_frame = old_fallback_wrapper.last_frame.copy(deep=True)
-    assert outcome.actual_model == "v25"
+    assert outcome.actual_model == "v13_hybrid"
     assert outcome.fallback_used is True
 
     # predictor 는 요청 모델을 model_version 으로 보고합니다 (기존 계약).

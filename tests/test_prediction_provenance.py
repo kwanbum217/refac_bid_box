@@ -29,7 +29,7 @@ from src.ml.model_registry import (
 )
 
 REQUESTED = "servc_institution_v1"
-FALLBACK = "v25"
+FALLBACK = "v13_hybrid"
 
 
 class _FakeWrapper:

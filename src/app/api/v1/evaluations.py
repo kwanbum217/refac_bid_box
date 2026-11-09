@@ -176,6 +176,7 @@ from src.app.services.sajeong_rate_stats import (
     lookup_sajeong_rate_range,
 )
 from src.ml.institution_history import lookup_institution_stats
+from src.ml.model_registry import UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE
 
 logger = logging.getLogger(__name__)
 
@@ -1247,6 +1248,17 @@ def _blocked_response(
     )
 
 
+def _prediction_error_reason(exc: HTTPException) -> str:
+    """예측 호출 실패 사유 문장.
+
+    전용 모델이 없는 분야는 422 와 함께 공용 안내 문구가 오므로, 모델 오류로
+    뭉개지 않고 그 문구를 그대로 전달합니다.
+    """
+    if exc.status_code == 422 and exc.detail == UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE:
+        return UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE
+    return f"예측 모델을 확인할 수 없습니다 ({exc.status_code}: {exc.detail})"
+
+
 def _model_provenance(
     payload: EvaluationRequest,
     request: Request,
@@ -1268,7 +1280,7 @@ def _model_provenance(
             requested_model=payload.selected_model,
             actual_model=None,
             fallback_used=True,
-            fallback_reason=f"예측 모델을 확인할 수 없습니다 ({exc.status_code}: {exc.detail})",
+            fallback_reason=_prediction_error_reason(exc),
         )
     return ModelProvenance(
         requested_model=prediction.requested_model,
@@ -2468,7 +2480,7 @@ def _recommend_prediction(
             # 적용되지 않은 것과 같으므로 그대로 올립니다.
             raise
         fallback_used = True
-        fallback_reason = f"예측 모델을 확인할 수 없습니다 ({exc.status_code}: {exc.detail})"
+        fallback_reason = _prediction_error_reason(exc)
     else:
         requested_model = response.requested_model
         actual_model = response.model_id

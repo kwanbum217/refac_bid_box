@@ -151,7 +151,7 @@ def _create_bid(db, **overrides) -> BidAnnouncement:
 
 
 REQUESTED = "servc_institution_v1"
-FALLBACK = "v25"
+FALLBACK = "v13_hybrid"
 
 
 # --------------------------------------------------------------------------- #

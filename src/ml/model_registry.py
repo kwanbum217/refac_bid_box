@@ -29,8 +29,10 @@ from src.ml.model_wrappers import (
     V13HybridWrapper,
 )
 from src.ml.prediction_api import (
+    UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE,
     PredictionOutcome,
     PriceDecisionMethod,
+    UnsupportedPredictionCategoryError,
     classify_price_decision_method,
     predict_interval,
     predict_optimal_price,
@@ -244,6 +246,15 @@ def _prepare_full_frame(features_dict, full_map=None):
 def _resolve_model_id(model_id):
     normalized = (model_id or "v25").strip()
     return MODEL_ALIASES.get(normalized, normalized)
+
+
+def prediction_supported_for_category(category) -> bool:
+    """전용 예측 모델이 있는 분야인지 판정합니다.
+
+    정본은 CATEGORY_DEFAULT_MODELS 입니다. 여기에 없는 분야(공사·외자 등)는
+    검증된 예측 모델이 없어 투찰가 추천을 제공하지 않습니다.
+    """
+    return str(category or "").strip() in CATEGORY_DEFAULT_MODELS
 
 
 def _preferred_model_for_features(features_dict):
@@ -483,6 +494,7 @@ _pred_api._resolve_model_id = _resolve_model_id
 _pred_api._preferred_model_for_features = _preferred_model_for_features
 _pred_api._prepare_full_frame = _prepare_full_frame
 _pred_api._normalize_prediction_rate = _normalize_prediction_rate
+_pred_api._prediction_supported = prediction_supported_for_category
 
 __all__ = [
     "CATEGORY_DEFAULT_MODELS",
@@ -493,6 +505,7 @@ __all__ = [
     "MODEL_ALIASES",
     "MODEL_FILES_ROOT",
     "PROJECT_ROOT",
+    "UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE",
     "BaseModelWrapper",
     "EnsembleV25Wrapper",
     "HistPremiumEnsembleWrapper",
@@ -502,6 +515,7 @@ __all__ = [
     "PredictionOutcome",
     "PriceDecisionMethod",
     "QuantumLeapRuleWrapper",
+    "UnsupportedPredictionCategoryError",
     "V13HybridWrapper",
     "_apply_inference_thread_budget",
     "_coerce_float",
@@ -517,5 +531,6 @@ __all__ = [
     "predict_optimal_price",
     "predict_optimal_price_batch",
     "predict_optimal_price_with_provenance",
+    "prediction_supported_for_category",
     "resolve_serving_tree",
 ]
