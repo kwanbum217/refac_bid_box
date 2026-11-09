@@ -55,7 +55,7 @@ Level 1 게이트가 전량 시험을 다시 돌렸을 때 `1 failed, 10675 pass
 
 ### 2.4 B5 수동 재학습
 
-`_step_retrain` 이 `category_code` 없이 `run_retrain_pipeline_task` 를 불러 수동 재학습이 항상 `ValueError` 로 실패하는 결함(I-ai F-03)입니다. 종료 시점에 진행분 보존 커밋과 `worker_done --outcome failed` 를 지시했습니다. 다음 세션은 워크트리 `manual-retrain` 의 커밋과 보고를 확인하고 `orca_taskctl.py rework` 로 이어서 완료합니다. Intent 는 `.orca/intents/manual_retrain_fix_20261109.yaml` 입니다.
+`_step_retrain` 이 `category_code` 없이 `run_retrain_pipeline_task` 를 불러 수동 재학습이 항상 `ValueError` 로 실패하는 결함(I-ai F-03)입니다. 종료 지시가 워커 턴 안에서 처리되지 않아 `worker-stop`(Dispatch `ctx_7bc248e7ffb4`, state stopped)으로 멈추고 터미널을 닫았습니다. 커밋은 0건이고, 미커밋 진행분(`src/tasks/automation_steps.py`, `src/tasks/scheduled_tasks.py` 105줄 추가·37줄 삭제, 새 시험 파일)은 워크트리 `manual-retrain` 에 그대로 있으며 주 저장소 `.orca/capsules/task_46d7afb90948/wip_20261109/` 에 패치로 백업했습니다. 시험은 돌리지 않았습니다. 다음 세션은 Task 를 `ready` 로 되돌려 같은 워크트리에서 재 Dispatch 하고, 진행분을 검증부터 이어 가게 합니다. Intent 는 `.orca/intents/manual_retrain_fix_20261109.yaml` 입니다.
 
 ---
 
