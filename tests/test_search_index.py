@@ -92,6 +92,31 @@ def test_announcement_document_records_qualification_analyzable():
     assert announcement_document(no_raw_data)["qualification_analyzable"] is False
 
 
+def test_announcement_document_uses_saved_attachment_regime():
+    """색인 문서 판정도 목록 배지·분석 API 와 같은 저장 갈래를 씁니다."""
+    bid = BidAnnouncement(
+        id=47,
+        bid_ntce_no="20260923004",
+        bid_ntce_ord="000",
+        bid_ntce_nm="첨부 판별 띠 용역",
+        dminstt_nm="서울특별시",
+        category="Servc",
+        presmpt_prce=150_000_000,
+        bid_ntce_dt=utcnow(),
+        collected_at=utcnow(),
+        raw_data={
+            **QUALIFICATION_RAW,
+            "sucsfbidMthdNm": "적격심사제-추정가격 2억미만 1억이상",
+        },
+    )
+
+    assert announcement_document(bid)["qualification_analyzable"] is False
+    assert (
+        announcement_document(bid, attachment_regime="MOIS_ACADEMIC")["qualification_analyzable"]
+        is True
+    )
+
+
 def test_announcement_document_includes_custom_license_codes():
     row = BidAnnouncement(
         id=43,

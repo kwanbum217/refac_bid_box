@@ -20,6 +20,10 @@ from sqlalchemy.orm import Session
 
 from src.app.core.config import settings
 from src.app.models.bids import BidAnnouncement, BidResult
+from src.app.services.band_regime_lookup import (
+    attachment_regime_key,
+    lookup_attachment_regimes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +84,7 @@ def announcement_document(
     row: BidAnnouncement,
     license_codes: list[str] | None = None,
     participation_region_names: Sequence[str] | None = None,
+    attachment_regime: str | None = None,
 ) -> dict[str, Any]:
     # 판정 정본은 bid_queries 에 있고, 이 모듈은 bid_queries 를 지연 import 합니다
     # (bid_queries 가 이 모듈을 함수 안에서 import 하므로 최상단 import 는 순환입니다).
@@ -98,7 +103,7 @@ def announcement_document(
         "dminstt_nm": row.dminstt_nm or "",
         "ntce_instt_nm": row.ntce_instt_nm or "",
         "category": row.category,
-        "qualification_analyzable": is_qualification_analyzable(row),
+        "qualification_analyzable": is_qualification_analyzable(row, attachment_regime),
         "region_codes": region_codes,
         # 발주처 지역(region_codes)과 달리 실제 참가가능지역 제한입니다. 지역 제한
         # 필터는 이 필드를 기준으로 걸어 SQL 경로와 같은 결과를 냅니다.
@@ -357,6 +362,10 @@ def _build_announcement_batch(db: Session, rows: list[BidAnnouncement]) -> list[
         key = (region.bid_ntce_no, region.bid_ntce_ord)
         regions_by_key.setdefault(key, []).append(region.prtcpt_psbl_rgn_nm)
 
+    # 색인 문서의 적격심사 판정도 목록 배지·분석 API 와 같은 갈래를 쓰도록 배치 단위로
+    # 한 번만 조회합니다. 공고별 단건 질의로 늘리지 않습니다.
+    attachment_regimes = lookup_attachment_regimes(db, (attachment_regime_key(row) for row in rows))
+
     batch_docs: list[dict[str, Any]] = []
     for row in rows:
         key = (row.bid_ntce_no, row.bid_ntce_ord or "000")
@@ -366,6 +375,7 @@ def _build_announcement_batch(db: Session, rows: list[BidAnnouncement]) -> list[
                 row,
                 license_codes=codes,
                 participation_region_names=regions_by_key.get(key, []),
+                attachment_regime=attachment_regimes.get(attachment_regime_key(row)),
             )
         )
     return batch_docs
@@ -393,6 +403,39 @@ def _rows_to_batches(rows: Iterable[Any], mapper):
             batch = []
     if batch:
         yield batch
+
+
+def upsert_announcement_documents(
+    db: Session,
+    rows: Iterable[BidAnnouncement],
+    *,
+    client: MeiliSearchClient | None = None,
+) -> int:
+    """주어진 공고의 색인 문서만 현재 DB 상태로 다시 upsert 합니다.
+
+    첨부 판별 갈래가 새로 분류된 공고처럼 일부 문서만 갱신할 때 씁니다. 문서 생성·판정은
+    `sync_search_index` 와 같은 경로를 재사용하며, `MEILI_ENABLED` 가 거짓이면 아무것도
+    하지 않습니다. 저장된 문서 수를 돌려줍니다.
+    """
+    if not settings.MEILI_ENABLED:
+        return 0
+    target = client or MeiliSearchClient()
+    written = 0
+    batch: list[BidAnnouncement] = []
+    for row in rows:
+        batch.append(row)
+        if len(batch) == SYNC_BATCH_SIZE:
+            documents = _build_announcement_batch(db, batch)
+            target.upsert(documents)
+            written += len(documents)
+            batch = []
+    if batch:
+        documents = _build_announcement_batch(db, batch)
+        target.upsert(documents)
+        written += len(documents)
+    if written:
+        logger.info("Meilisearch 공고 문서 갱신: %s건", written)
+    return written
 
 
 def sync_search_index(db: Session, *, collected_since: datetime | None = None) -> dict[str, int]:
