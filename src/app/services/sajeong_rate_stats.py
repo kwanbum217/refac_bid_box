@@ -15,6 +15,7 @@ category 로 떨어집니다. 이 표는 선택된 scope 의 min_rate/max_rate �
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
@@ -24,6 +25,8 @@ from sqlalchemy import delete, select
 from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.prearng_prices import BidPrearngPrice, InstitutionSajeongRateStat
 from src.app.services.demand_institutions import SIDO_ALIASES, SIDO_CODES
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_WINDOW_DAYS = 1095
 MIN_INSTITUTION_SAMPLES = 30
@@ -189,16 +192,30 @@ def rebuild_institution_sajeong_rate_stats(
                 )
             )
 
+    institution_rows = sum(1 for row in rows if row["scope"] == SCOPE_INSTITUTION)
+    region_rows = sum(1 for row in rows if row["scope"] == SCOPE_REGION)
+    category_rows = sum(1 for row in rows if row["scope"] == SCOPE_CATEGORY)
+
     session.execute(delete(InstitutionSajeongRateStat))
     if rows:
         session.bulk_insert_mappings(InstitutionSajeongRateStat, rows)
     session.commit()
 
+    logger.info(
+        "기관별 사정률 통계 재집계 완료: 전체 %d행 (기관 %d, 지역 %d, 업종 %d), 창 %d일, 기준 %s",
+        len(rows),
+        institution_rows,
+        region_rows,
+        category_rows,
+        window_days,
+        rebuilt_at.isoformat(),
+    )
+
     return {
         "rows": len(rows),
-        "institution_rows": sum(1 for row in rows if row["scope"] == SCOPE_INSTITUTION),
-        "region_rows": sum(1 for row in rows if row["scope"] == SCOPE_REGION),
-        "category_rows": sum(1 for row in rows if row["scope"] == SCOPE_CATEGORY),
+        "institution_rows": institution_rows,
+        "region_rows": region_rows,
+        "category_rows": category_rows,
         "window_days": window_days,
         "rebuilt_at": rebuilt_at.isoformat(),
     }

@@ -48,6 +48,8 @@ from src.app.services.api_collector import (
 )
 from src.app.services.automation_orchestrator import STATUS_RUNNING
 from src.app.services.collector_service import _bulk_insert
+from src.app.services.prearng_dminstt_link import link_prearng_dminstt
+from src.app.services.sajeong_rate_stats import rebuild_institution_sajeong_rate_stats
 from src.ml.dataset import build_training_dataset
 from src.ml.drift_verdict import DRIFT_EVALUATION_WINDOW_DAYS
 from src.ml.features import (
@@ -2342,8 +2344,10 @@ async def _run_schedule_catchup(ctx: dict[str, Any]) -> dict[str, Any]:
 # 핸드오프 17번의 연결만 담당합니다. stream_servc_prearng_by_notices 는 구현만
 # 되어 있고 수집 파이프라인에 연결되지 않았습니다. 최근 개찰한 용역 공고 중
 # 예비가격 행이 아직 없는 공고번호만 단건(inqryDiv=2)으로 조회합니다.
-# 과거 기간 소급(stream_servc_prearng_range)과 dminstt_nm 대량 갱신은 하지
-# 않습니다.
+# 과거 기간 소급(stream_servc_prearng_range)은 하지 않습니다. 적재 뒤에는
+# 비어 있는 dminstt_nm 을 공고 원장으로 잇고 기관별 사정률 통계를 다시
+# 집계합니다. 재집계 호출부가 없어 표가 2026-10-07 에 멈춰 있던 결함(F-02)을
+# 이 경로가 닫습니다.
 # --------------------------------------------------------------------------- #
 
 PREARNG_DAILY_SCHEDULE_NAME = "prearng_daily"
@@ -2421,6 +2425,40 @@ def _persist_prearng_rows(rows: list[dict[str, Any]]) -> int:
         return _bulk_insert(session, BidPrearngPrice, rows)
     finally:
         session.close()
+
+
+def _refresh_institution_sajeong_stats_thread() -> dict[str, Any]:
+    """적재분의 수요기관명 연결과 기관별 사정률 재집계를 수행합니다.
+
+    후속 단계 실패는 로그로만 남깁니다. 수집은 이미 끝났으므로 이 함수의
+    예외가 수집 결과 status 를 뒤집으면 안 됩니다. 연결과 재집계는 서로
+    독립으로 시도해 한쪽 실패가 다른 쪽을 막지 않게 합니다.
+    """
+    result: dict[str, Any] = {"linked": 0, "stats_rebuilt": None}
+    session = SessionLocal()
+    try:
+        try:
+            result["linked"] = link_prearng_dminstt(session)
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception("예비가격 수요기관명 연결 실패")
+            result["linked"] = None
+        try:
+            result["stats_rebuilt"] = rebuild_institution_sajeong_rate_stats(session)
+        except Exception:
+            session.rollback()
+            logger.exception("기관별 사정률 통계 재집계 실패")
+    finally:
+        session.close()
+    return result
+
+
+async def _run_sajeong_stats_followup(saved: int) -> dict[str, Any]:
+    """새 행이 적재된 경우에만 연결·재집계를 스레드에서 실행합니다."""
+    if saved <= 0:
+        return {}
+    return await asyncio.to_thread(_refresh_institution_sajeong_stats_thread)
 
 
 # --------------------------------------------------------------------------- #
@@ -2514,12 +2552,14 @@ async def band_regime_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:
 async def prearng_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:
     """최근 개찰한 신규 용역 공고의 예비가격 상세를 매일 증분 수집합니다.
 
-    나라장터를 공고번호 단건(inqryDiv=2)으로만 호출하며, 과거 기간 소급이나
-    수요기관명 대량 갱신은 하지 않습니다. 실패 공고는 RangeCollectionError 의
-    failed_ranges 로 남겨 수동 재수집 근거로 삼습니다.
+    나라장터를 공고번호 단건(inqryDiv=2)으로만 호출하며, 과거 기간 소급은 하지
+    않습니다. 새 행을 적재했으면 수요기관명 연결과 기관별 사정률 통계 재집계를
+    이어서 실행합니다. 후속 단계가 실패해도 수집 결과 status 는 바꾸지 않고
+    linked·stats_rebuilt 값과 로그로만 드러냅니다. 실패 공고는
+    RangeCollectionError 의 failed_ranges 로 남겨 수동 재수집 근거로 삼습니다.
 
-    조회와 적재에 쓰는 Session 은 스레드 경계를 넘기지 않고 각 실행 스레드
-    안에서 SessionLocal 로 만들고 닫습니다.
+    조회·적재·후속 집계에 쓰는 Session 은 스레드 경계를 넘기지 않고 각 실행
+    스레드 안에서 SessionLocal 로 만들고 닫습니다.
     """
     notices = await asyncio.to_thread(_select_new_servc_notices_thread)
     if not notices:
@@ -2531,10 +2571,13 @@ async def prearng_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:
         saved = await stream_servc_prearng_by_notices(notices, _persist_prearng_rows)
     except RangeCollectionError as exc:
         logger.error("예비가격 일일 증분 부분 실패: %s", mask_credentials(exc))
+        followup = await _run_sajeong_stats_followup(exc.saved)
         return {
             "status": "partial_failure",
             "notice_count": len(notices),
             "saved": exc.saved,
             "failed_notices": [notice for notice, _ in exc.failed_ranges],
+            **followup,
         }
-    return {"status": "success", "notice_count": len(notices), "saved": saved}
+    followup = await _run_sajeong_stats_followup(saved)
+    return {"status": "success", "notice_count": len(notices), "saved": saved, **followup}
