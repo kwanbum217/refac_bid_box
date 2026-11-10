@@ -590,32 +590,38 @@ def _acquire_weekly_retrain_claim() -> ScheduleClaimResult:
     )
 
 
-@traced_worker_task
-@_record_schedule("weekly_retrain")
-async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
-    """매주 월요일 03:00 재학습. 원본 Airflow narabid_weekly_retrain 대체.
+async def run_retrain_category_fanout(
+    ctx: dict[str, Any],
+    *,
+    trigger_source: str,
+    guard_name: str,
+    log_label: str,
+    notify_title: str,
+) -> dict[str, Any]:
+    """카테고리별 재학습 fan-out. 주간 크론과 수동 재학습이 함께 씁니다.
 
-    CATEGORY_MODEL_NAMES 의 각 카테고리에 대해 독립적으로 재학습을 수행(fan-out)합니다.
-    한 카테고리가 실패해도 다른 카테고리는 중단 없이 계속 실행되며 각 결과가 개별 기록됩니다.
-    크론과 기동 따라잡기가 같은 선점 키를 공유해 같은 주 재학습이 겹치지 않습니다.
+    선택·검증된 카테고리마다 run_retrain_pipeline_task 를 category_code 와 함께
+    호출합니다. 카테고리 코드 없이 부르면 파이프라인이 ValueError 로 즉시
+    실패하므로, 호출부가 카테고리를 빠뜨릴 자리를 이 함수 하나로 모읍니다.
+
+    주간 크론과 같은 무거운 작업 가드와 선점 키를 쓰므로 두 경로가 동시에
+    학습하지 않습니다. 한 카테고리가 실패해도 나머지는 계속 실행되며, 결과는
+    카테고리별 dict 로 모아 반환합니다.
     """
-    if not settings.ML_WEEKLY_RETRAIN_ENABLED:
-        logger.info("주간 재학습이 비활성화되어 있어 건너뜁니다.")
-        return {"status": "skipped", "reason": "disabled"}
-
     # worker.py 가 이 모듈을 import 하므로 순환 import 를 피해 호출 시점에 가져옵니다.
     from src.tasks.worker import heavy_task_guard
 
     # 학습은 DB 전량과 모델 메모리를 함께 쓰므로 수집·색인과 같은 단일 실행 가드 안에서 돕니다.
-    async with heavy_task_guard("weekly_retrain_task"):
-        # arq 월요일 03:00 크론과 기동 따라잡기가 같은 키를 잡아 중복 학습을 막습니다.
+    async with heavy_task_guard(guard_name):
+        # 주간 크론·기동 따라잡기·수동 재학습이 같은 키를 잡아 중복 학습을 막습니다.
         claim = _acquire_weekly_retrain_claim()
         if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
-            logger.info("주간 재학습이 이미 실행 중이어서 건너뜁니다.")
+            logger.info("%s이 이미 실행 중이어서 건너뜁니다.", log_label)
             return {"status": "skipped", "reason": "already_running"}
         if not claim.acquired:
             logger.warning(
-                "Redis 접근 불가로 주간 재학습 선점 없이 진행합니다 (key=%s, status=%s)",
+                "Redis 접근 불가로 %s 선점 없이 진행합니다 (key=%s, status=%s)",
+                log_label,
                 WEEKLY_RETRAIN_CLAIM_KEY,
                 claim.status.value,
             )
@@ -627,25 +633,25 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
                 error_msg = (
                     f"ML_WEEKLY_RETRAIN_CATEGORIES 에 등록되지 않은 카테고리가 있습니다: {unknown}"
                 )
-                await notify_task_failure("주간 재학습 스케줄", error_msg)
-                return {"status": "failed", "trigger_source": "weekly_schedule", "error": error_msg}
+                await notify_task_failure(notify_title, error_msg)
+                return {"status": "failed", "trigger_source": trigger_source, "error": error_msg}
             categories = sorted(selected or CATEGORY_MODEL_NAMES.keys())
 
-            logger.info("주간 재학습 실행 시작 (카테고리 fan-out: %s)", categories)
+            logger.info("%s 실행 시작 (카테고리 fan-out: %s)", log_label, categories)
             results: dict[str, Any] = {}
             has_failure = False
 
             for category in categories:
                 try:
-                    logger.info("주간 재학습 시작: 카테고리 %s", category)
+                    logger.info("%s 시작: 카테고리 %s", log_label, category)
                     cat_result = await run_retrain_pipeline_task(
                         ctx,
-                        trigger_source="weekly_schedule",
+                        trigger_source=trigger_source,
                         category_code=category,
                     )
                     results[category] = cat_result
                 except Exception as exc:
-                    logger.exception("주간 재학습 카테고리 %s 실패", category)
+                    logger.exception("%s 카테고리 %s 실패", log_label, category)
                     has_failure = True
                     results[category] = {
                         "status": "failed",
@@ -663,7 +669,7 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
             )
             outcome: dict[str, Any] = {
                 "status": status,
-                "trigger_source": "weekly_schedule",
+                "trigger_source": trigger_source,
                 "categories": results,
             }
             if has_failure:
@@ -674,13 +680,77 @@ async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
                 ]
                 error_msg = "; ".join(errors)
                 outcome["error"] = error_msg
-                await notify_task_failure("주간 재학습 스케줄", error_msg)
+                await notify_task_failure(notify_title, error_msg)
 
             return outcome
         finally:
             # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
             if claim.acquired and claim.token:
                 release_schedule_claim(key=WEEKLY_RETRAIN_CLAIM_KEY, token=claim.token)
+
+
+def summarize_retrain_outcome(outcome: dict[str, Any]) -> str:
+    """재학습 fan-out 결과를 카테고리별 한 줄과 집계 머리말로 요약합니다.
+
+    자동화 실행 이력에 남길 사용자 문구입니다. 카테고리 결과가 없으면
+    건너뜀·실패 사유만 남깁니다.
+    """
+    categories = outcome.get("categories")
+    if not isinstance(categories, dict) or not categories:
+        status = str(outcome.get("status") or "unknown")
+        if status == "skipped" and outcome.get("reason") == "already_running":
+            return "재학습을 건너뛰었습니다. 다른 재학습이 이미 실행 중입니다."
+        reason = str(outcome.get("reason") or outcome.get("error") or "-")
+        return f"재학습 결과: {status} ({reason})"
+
+    succeeded = 0
+    skipped = 0
+    failed = 0
+    lines: list[str] = []
+    for category, result in categories.items():
+        if not isinstance(result, dict):
+            failed += 1
+            lines.append(f"{category}: 실패 (결과 형식을 알 수 없습니다)")
+            continue
+        result_status = str(result.get("status") or "unknown")
+        if result_status == "success":
+            succeeded += 1
+            lines.append(
+                f"{category}: 성공 (버전 {result.get('version', '-')}, "
+                f"표본 {result.get('samples', 0)}건, 판정 {result.get('recommendation', '-')})"
+            )
+        elif result_status == "skipped":
+            skipped += 1
+            lines.append(f"{category}: 건너뜀 ({result.get('reason') or '학습 데이터 없음'})")
+        else:
+            failed += 1
+            lines.append(f"{category}: 실패 ({result.get('error') or result_status})")
+
+    header = f"재학습 카테고리 {len(categories)}개: 성공 {succeeded}건, 건너뜀 {skipped}건, 실패 {failed}건."
+    return " ".join([header, *lines])
+
+
+@traced_worker_task
+@_record_schedule("weekly_retrain")
+async def weekly_retrain_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """매주 월요일 03:00 재학습. 원본 Airflow narabid_weekly_retrain 대체.
+
+    CATEGORY_MODEL_NAMES 의 각 카테고리에 대해 독립적으로 재학습을 수행(fan-out)합니다.
+    한 카테고리가 실패해도 다른 카테고리는 중단 없이 계속 실행되며 각 결과가 개별 기록됩니다.
+    크론과 기동 따라잡기가 같은 선점 키를 공유해 같은 주 재학습이 겹치지 않습니다.
+    fan-out 본문은 수동 재학습과 공유하는 run_retrain_category_fanout 이 담당합니다.
+    """
+    if not settings.ML_WEEKLY_RETRAIN_ENABLED:
+        logger.info("주간 재학습이 비활성화되어 있어 건너뜁니다.")
+        return {"status": "skipped", "reason": "disabled"}
+
+    return await run_retrain_category_fanout(
+        ctx,
+        trigger_source="weekly_schedule",
+        guard_name="weekly_retrain_task",
+        log_label="주간 재학습",
+        notify_title="주간 재학습 스케줄",
+    )
 
 
 def _record_drift_log(
