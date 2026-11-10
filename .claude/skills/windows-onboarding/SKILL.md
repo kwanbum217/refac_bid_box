@@ -131,6 +131,21 @@ uv run python scripts/backup_recovery.py restore --snapshot-dir <snapshot-dir>
 uv run python scripts/backup_recovery.py restore --snapshot-dir <snapshot-dir> --execute --confirm
 ```
 
+- 복원이 `Authentication plugin ... cannot be loaded` 처럼 호스트 `mysql` 클라이언트의 인증 플러그인 오류로 실패하면 컨테이너 안의 클라이언트를 쓰도록 대상을 지정한 뒤 같은 명령을 다시 실행합니다. `docs/ops/backup_recovery_runbook.md` 4.4 절과 같은 환경변수입니다.
+
+```powershell
+$env:MYSQL_CLIENT_CONTAINER = (docker inspect -f '{{.Name}}' $(docker compose ps -q db)).TrimStart('/')
+```
+
+Git Bash 에서는 아래 형식을 씁니다.
+
+```bash
+export MYSQL_CLIENT_CONTAINER=$(docker inspect -f '{{.Name}}' $(docker compose ps -q db) | tr -d /)
+```
+
+지정한 값은 현재 창에만 적용되므로 복원 명령을 같은 창에서 이어서 실행합니다.
+
+- 다른 Mac 의 키로 서명된 스냅샷을 복원해 모델 서명 검증이 실패하면 `.env` 의 `MODEL_MANIFEST_SIGNING_KEY` 를 비워 둡니다. 값은 사용자에게 받고 문서·커밋에 남기지 않습니다.
 - 스냅샷을 `data/backups/snapshots/snapshot_*` 아래에 두면 `make restore-dry-run`, `make backup-verify` 로 최신 스냅샷을 대상으로 같은 확인을 할 수 있습니다.
 - 복원 후 스키마 상태를 읽기 전용으로 확인합니다.
 
@@ -140,6 +155,37 @@ make migrate-check
 ```
 
 복원된 DB 에는 `make migrate-up` 을 실행하지 않습니다. `migrate-up` 은 빈 신규 DB 전용입니다.
+
+5. 전체 스택을 띄웁니다. 재색인은 `app` 과 `meilisearch` 컨테이너가 필요합니다.
+
+```powershell
+make up
+```
+
+6. Meilisearch 읽기 모델을 전체 재색인합니다. Meilisearch 색인은 백업 대상이 아니므로 복원한 MySQL 데이터에서 다시 만들어야 합니다. 이 단계를 건너뛰면 공고 목록과 검색 요청이 `503` 을 돌려줍니다.
+
+```powershell
+docker compose exec app env MEILI_TIMEOUT_SECONDS=30 python3 scripts/sync_search_index.py
+```
+
+`MEILI_TIMEOUT_SECONDS=30` 은 필수입니다. 기본값 5초는 전체 재색인의 배치 적재를 끝내지 못할 수 있습니다. 스크립트가 끝나도 Meilisearch 서버의 색인 작업은 계속되므로, 완료 판정은 아래 작업 상태로 합니다.
+
+7. 재색인 완료를 확인합니다. 아래 명령은 Git Bash 에서 실행합니다. PowerShell 의 `curl` 은 `Invoke-WebRequest` 별칭이라 같은 명령이 동작하지 않습니다.
+
+```bash
+export MEILI_MASTER_KEY="$(grep '^MEILI_MASTER_KEY=' .env | cut -d= -f2-)"
+curl -s -H "Authorization: Bearer $MEILI_MASTER_KEY" \
+  "http://127.0.0.1:7700/tasks?statuses=enqueued,processing&limit=1"
+```
+
+응답의 `total` 이 `0` 이면 재색인이 완료된 것입니다. 읽은 키 값은 화면·문서·셸 이력에 남기지 않습니다.
+
+| 확인 | 기대 결과 |
+| --- | --- |
+| 위 `/tasks` 응답의 `total` | `0` |
+| 브라우저에서 `http://localhost:8000/bids/` | `200`, 공고 목록 표시 |
+
+`/bids/` 가 `503` 이면 재색인이 실행되지 않았거나 아직 끝나지 않은 것입니다. `total` 이 `0` 이 될 때까지 기다린 뒤 다시 확인하고, 그래도 `503` 이면 6장 문제 해결 표를 봅니다. 복원만 하고 이 단계를 건너뛴 상태가 실제로 `503` 을 냈으므로, 재색인 확인 전에는 4장 A 를 완료로 보지 않습니다.
 
 ### B. 빈 DB 로 시작하고 첫 수집 실행
 
@@ -240,6 +286,7 @@ GNU Make 가 없을 때는 같은 동작을 아래 명령으로 대체합니다.
 | 경로 길이 초과 | 빌드 중 경로 길이 오류 | 저장소를 `C:\dev` 처럼 짧은 경로에 두고, 필요하면 관리자 권한으로 `git config --system core.longpaths true` 를 설정합니다. |
 | Compose 구성 단계 실패 | `SECRET_KEY`, `MEILI_MASTER_KEY` 누락 오류 | `.env` 에 두 값을 채웁니다. 값은 사용자에게 받습니다. |
 | `/api/v1/health/ready` 가 `503` | 응답의 `checks` 에서 실패 항목 확인 | `mysql`, `redis`, `model_registry`, `chromadb`, `meilisearch` 중 실패 원인을 확인하고 `make logs` 로 앱 로그를 봅니다. 모델 가중치가 없으면 4장 A 복원이 필요합니다. |
+| `/bids/` 가 `503` | `docker compose ps` 로 `app`, `meilisearch` 상태 확인 | Meilisearch 색인은 백업 대상이 아니므로 복원 뒤 4장 A 6단계 재색인을 `MEILI_TIMEOUT_SECONDS=30` 으로 실행하고, 7단계에서 `/tasks` 의 `enqueued`·`processing` 이 `0` 인지 확인합니다. |
 | DB 테이블이 없음 | `make migrate-current` 가 비어 있음 | 빈 신규 DB 에서만 `make migrate-up` 을 실행합니다. 복원 대상 DB 에는 실행하지 않습니다. |
 
 ## 7. 실행 확인
