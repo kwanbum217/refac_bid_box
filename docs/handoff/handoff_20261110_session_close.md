@@ -12,10 +12,11 @@
 
 | 우선 | 과업 | 방법 |
 | --- | --- | --- |
-| 1 | 마지막 병합들의 main CI 확인 | `gh run list --branch main --limit 8`. 공급망·시험 job 이 통과해야 합니다 |
-| 2 | 예비가격 수집 따라잡기 | `bid_prearng_prices.rl_openg_dt` 최대가 2026-10-14 입니다. Docker 를 띄우면 `prearng_daily` 크론(최근 14일 창)이 돕니다. 10-14 ~ 10-27 개찰분은 14일 창 밖이라 소급 수집이 따로 필요합니다(아래 3장) |
-| 3 | 스케줄 실행 기록 영속화 | 실패 기록이 Redis 7일 TTL 로 사라져 10-17 이후 중단 원인을 확정하지 못했습니다 |
-| 4 | I-ai·I-data 미확인 항목 재현 | 11-09 인수인계 4장 그대로입니다 |
+| 1 | Meilisearch 전체 재색인 완료(사용자 지시로 이월) | `make up` 뒤 `docker compose exec app env MEILI_TIMEOUT_SECONDS=30 python3 scripts/sync_search_index.py`. 약 840만 건을 1,000건 묶음으로 보내며 스크립트 송신이 병목이라 약 45분 걸립니다(분당 약 180묶음). 완료 판정은 `/tasks?statuses=enqueued,processing` 의 `total` 0 과 `/bids/` 200. 전량 시험과 겹치면 시간 측정 시험이 흔들리므로 동시에 돌리지 않습니다 |
+| 2 | 마지막 병합들의 main CI 확인 | `gh run list --branch main --limit 8`. 공급망·시험 job 이 통과해야 합니다 |
+| 3 | 예비가격 수집 따라잡기 | `bid_prearng_prices.rl_openg_dt` 최대가 2026-10-14 입니다. Docker 를 띄우면 `prearng_daily` 크론(최근 14일 창)이 돕니다. 10-14 ~ 10-27 개찰분은 14일 창 밖이라 소급 수집이 따로 필요합니다(아래 3장) |
+| 4 | 스케줄 실행 기록 영속화 | 실패 기록이 Redis 7일 TTL 로 사라져 10-17 이후 중단 원인을 확정하지 못했습니다 |
+| 5 | I-ai·I-data 미확인 항목 재현 | 11-09 인수인계 4장 그대로입니다 |
 
 ---
 
@@ -41,7 +42,7 @@
 | 수요기관명 연결(사용자 지시) | `link_prearng_dminstt.py --execute` 로 빈 `dminstt_nm` 30건을 채웠습니다. 미매칭 88건이 남습니다. 빈 값만 채우는 갱신이라 덮어쓰기는 없습니다 |
 | 사정률 통계 재집계(사용자 지시) | `rebuild_institution_sajeong_rate_stats` 1회 실행, 1,060행 → 1,042행(기관 1,025, 시·도 16, 분야 1), `rebuilt_at` 2026-11-10 06:23:44, 6.6초. 1,095일 창이 밀리고 새 수집이 없어 일부 기관이 최소 표본 아래로 내려간 것으로 봅니다 |
 | 백업 | `data/backups/sajeong_refresh_20261110/` 에 통계 테이블 덤프와 빈 수요기관명 키 118건 목록. Git 미추적이며 커밋하지 않습니다 |
-| Meilisearch 재색인 | 모든 병합 뒤 app·worker 재시작과 전체 재색인을 실행했습니다(__REINDEX__) |
+| Meilisearch 재색인 | B4 병합 직후 app·worker 재시작과 전체 재색인을 완료했습니다(공고 4,931,956건, 낙찰 3,473,111건). 모든 병합 뒤 두 번째 전체 재색인은 약 25%(약 2,090묶음/8,400묶음) 진행 중 사용자 지시로 중단했습니다. 이후 병합(B5, F-02, windows-onboarding)은 색인 문서를 바꾸지 않아 색인 내용은 B4 반영 상태와 같다고 봅니다. 중단은 upsert 도중이라 색인을 깨뜨리지 않습니다. 0장 1번 과업으로 넘깁니다 |
 
 ---
 
@@ -68,4 +69,4 @@
 | 문서 과업 Capsule 검증 명령 | `python3 scripts/sync_skill_mirrors.py --check` 는 Level 1 게이트 허용 목록 밖이라 게이트 3 이 실패합니다. 문서 과업은 `--tests tests/test_sync_skill_mirrors.py` 로 덮습니다 |
 | 빌더 보고 blocked 처리 | F-02 빌더가 범위 밖 시험 실패로 verdict blocked 를 적어 게이트 6 이 실패했습니다. 코디네이터 재현 뒤 `coordinator-capsule` 로 검증했고, 체크리스트는 빌더 Capsule 원문 블록을 그대로 붙였습니다(`yaml.safe_dump` 는 목록 들여쓰기를 바꿔 게이트 2 가 범위를 못 읽습니다) |
 | GLM 리뷰어 기동 | 런처 `--preamble .orca/preamble_<task>_rev.txt` + `orchestration dispatch --return-preamble`. 지시문이 Intent 이름 경로 Capsule 을 가리키므로 두 경로 모두에 복사합니다. 감시기의 "reportPath 누락" 실패 정체는 지시문 문구 오탐입니다 |
-| 종료 상태 | Docker Desktop 정지, Orca 워커 0, 배경 감시기 정지 |
+| 종료 상태 | Docker Desktop 정지, Orca 워커 0, 배경 감시기·재색인 프로세스 정지 |
