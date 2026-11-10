@@ -140,3 +140,38 @@ class HomeContextResponse(BaseModel):
     result_total: int = 0
     latest_result_rate: float | None = None
     latest_collected_at: datetime | None = None
+
+
+class CompareStatsMonthlyPoint(BaseModel):
+    month: str = Field(..., description="귀속 월 (YYYY-MM)")
+    count: int = Field(..., description="해당 월 건수")
+
+
+class CompareStatsAgencyItem(BaseModel):
+    name: str | None = Field(None, description="수요기관명")
+    total_base_amount: int = Field(..., description="최근 1년 기초금액 합계")
+    total_prce: int = Field(..., description="기초금액 합계 (레거시 별칭)")
+    count: int = Field(..., description="최근 1년 공고 건수")
+
+
+class CompareStatsResponse(BaseModel):
+    """GET /api/v1/bids/compare-stats 응답 계약.
+
+    announce_count, result_count, matched_count 는 기존 의미를 그대로 둡니다.
+    announce_count_1y 와 matched_count_1y 는 매칭률의 분자·분모로, 둘 다
+    bid_ntce_dt 가 최근 365일인 공고를 기준으로 셉니다.
+    """
+
+    announce_count: int = Field(..., description="전체 기간 입찰공고 건수")
+    announce_total_base_amount: int = Field(..., description="전체 기간 기초금액 합계")
+    announce_total_prce: int = Field(..., description="전체 기간 기초금액 합계 (레거시 별칭)")
+    result_count: int = Field(..., description="전체 기간 낙찰 건수")
+    result_total_amt: int = Field(..., description="전체 기간 낙찰금액 합계")
+    matched_count: int = Field(..., description="최근 1년 개찰 결과가 있는 매칭 공고 수")
+    announce_count_1y: int = Field(0, description="최근 1년 공고 수 (매칭률 분모)")
+    matched_count_1y: int = Field(
+        0, description="최근 1년 공고 중 결과가 있는 공고 수 (매칭률 분자)"
+    )
+    announce_by_month: list[CompareStatsMonthlyPoint] = Field(default_factory=list)
+    result_by_month: list[CompareStatsMonthlyPoint] = Field(default_factory=list)
+    agency_announce_top10: list[CompareStatsAgencyItem] = Field(default_factory=list)

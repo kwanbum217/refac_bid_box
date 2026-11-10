@@ -50,7 +50,7 @@
                     </div>
                     <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest">ANNOUNCEMENT</span>
                 </div>
-                <h4 class="text-slate-500 text-xs font-bold mb-1">입찰공고 건수</h4>
+                <h4 class="text-slate-500 text-xs font-bold mb-1">입찰공고 건수 (전체 기간)</h4>
                 <p class="text-2xl font-extrabold text-slate-900" id="announceCount">-</p>
             </div>
 
@@ -72,7 +72,7 @@
                     </div>
                     <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">WINNING BIDS</span>
                 </div>
-                <h4 class="text-slate-500 text-xs font-bold mb-1">낙찰 건수</h4>
+                <h4 class="text-slate-500 text-xs font-bold mb-1">낙찰 건수 (전체 기간)</h4>
                 <p class="text-2xl font-extrabold text-slate-900" id="resultCount">-</p>
             </div>
 
@@ -95,7 +95,7 @@
                     </div>
                     <span class="text-[10px] font-bold text-primary-200 uppercase tracking-widest text-blue-100">MATCH RATE</span>
                 </div>
-                <h4 class="text-blue-100 text-xs font-bold mb-1 relative z-10">데이터 매칭률</h4>
+                <h4 class="text-blue-100 text-xs font-bold mb-1 relative z-10">데이터 매칭률 (최근 1년 공고 기준)</h4>
                 <p class="text-2xl font-extrabold text-white relative z-10" id="matchRate">-</p>
             </div>
         </div>
@@ -153,11 +153,7 @@
                     <div class="flex flex-wrap gap-4 pt-2">
                         <div class="flex items-center space-x-2 text-xs font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
                             <i class="fas fa-check-circle text-emerald-500"></i>
-                            <span>최근 1개년도 기준</span>
-                        </div>
-                        <div class="flex items-center space-x-2 text-xs font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
-                            <i class="fas fa-shield-check text-primary"></i>
-                            <span>정확도 99.8% 매칭</span>
+                            <span>매칭률·월별 차트 최근 1년 기준</span>
                         </div>
                     </div>
                 </div>
@@ -166,10 +162,10 @@
                     <div class="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                         <i class="fas fa-link text-2xl text-primary"></i>
                     </div>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Matched Samples</p>
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Matched Announcements (1Y)</p>
                     <p class="text-4xl font-extrabold text-slate-900 tracking-tighter" id="matchedCount">-</p>
                     <div class="mt-6 px-4 py-1.5 bg-primary text-white text-[10px] font-extrabold uppercase tracking-widest rounded-lg shadow-lg shadow-primary/20">
-                        Verified Match
+                        최근 1년 공고 기준
                     </div>
                 </div>
             </div>
@@ -210,10 +206,14 @@
             document.getElementById('announceTotalPrce').textContent = formatWon(announceTotalBaseAmount);
             document.getElementById('resultCount').textContent = (data.result_count || 0).toLocaleString() + '건';
             document.getElementById('resultTotalAmt').textContent = formatWon(data.result_total_amt);
-            document.getElementById('matchedCount').textContent = (data.matched_count || 0).toLocaleString() + '건';
 
-            const matchRate = data.announce_count > 0 ? ((data.matched_count / data.announce_count) * 100).toFixed(1) : 0;
-            document.getElementById('matchRate').textContent = matchRate + '%';
+            const announceCount1y = data.announce_count_1y || 0;
+            const matchedCount1y = data.matched_count_1y || 0;
+            document.getElementById('matchedCount').textContent = matchedCount1y.toLocaleString() + '건';
+
+            document.getElementById('matchRate').textContent = announceCount1y > 0
+                ? ((matchedCount1y / announceCount1y) * 100).toFixed(1) + '%'
+                : '-';
 
             // Charts
             renderCompareCharts(data);

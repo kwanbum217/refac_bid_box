@@ -176,8 +176,9 @@ def _compare_stats_cache_key(
     announcement_summary: BidDatasetSummary,
     result_summary: BidDatasetSummary,
 ) -> str:
+    # v2: 응답에 announce_count_1y, matched_count_1y 가 추가되기 전 캐시를 버립니다.
     return (
-        "dashboard_compare_stats:"
+        "dashboard_compare_stats:v2:"
         f"v{announcement_summary.aggregation_version}:"
         f"{_marker_value(announcement_summary.source_latest_collected_at)}:"
         f"{_marker_value(announcement_summary.rebuilt_at)}:"
@@ -498,6 +499,30 @@ def _query_matched_count_realtime(db: Session, one_year_ago: datetime) -> int:
     return int(matched_count or 0)
 
 
+def _query_match_rate_1y_realtime(db: Session, one_year_ago: datetime) -> dict[str, int]:
+    """최근 1년 공고 기준 매칭률의 분자·분모를 셉니다.
+
+    분모는 bid_ntce_dt 가 창 안인 공고 수, 분자는 그중 같은 bid_ntce_no 의
+    개찰 결과가 하나라도 있는 공고 수입니다. 두 값이 같은 창을 쓰므로 나눈
+    매칭률은 100% 를 넘지 않습니다. 스냅샷 재집계도 이 함수를 그대로 부릅니다.
+    """
+    announce_count = db.scalar(
+        select(func.count(BidAnnouncement.id)).where(BidAnnouncement.bid_ntce_dt >= one_year_ago)
+    )
+    matched_count = db.scalar(
+        select(func.count(BidAnnouncement.id)).where(
+            BidAnnouncement.bid_ntce_dt >= one_year_ago,
+            select(BidResult.id)
+            .where(BidResult.bid_ntce_no == BidAnnouncement.bid_ntce_no)
+            .exists(),
+        )
+    )
+    return {
+        "announce_count_1y": int(announce_count or 0),
+        "matched_count_1y": int(matched_count or 0),
+    }
+
+
 def _query_agency_announce_top10_realtime(
     db: Session, one_year_ago: datetime
 ) -> list[dict[str, Any]]:
@@ -598,11 +623,9 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         agency_usable = compare_snapshots.is_snapshot_fresh(
             agency_rebuilt_at
         ) and compare_snapshots.is_agency_payload_usable(agency_payload)
-        matched_usable = (
-            compare_snapshots.is_snapshot_fresh(matched_rebuilt_at)
-            and isinstance(matched_payload, dict)
-            and isinstance(matched_payload.get("value"), int)
-        )
+        matched_usable = compare_snapshots.is_snapshot_fresh(
+            matched_rebuilt_at
+        ) and compare_snapshots.is_matched_payload_usable(matched_payload)
         announce_month_usable = compare_snapshots.is_snapshot_fresh(
             announce_month_rebuilt_at
         ) and compare_snapshots.is_monthly_payload_usable(announce_month_payload)
@@ -627,11 +650,18 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         one_year_ago = now - timedelta(days=365)
 
         # 매칭 데이터 (최근 1년). 스냅샷이 신선하면 실시간 집계를 건너뜁니다.
+        # 매칭률의 분자·분모는 같은 1년 공고 창을 쓰는 _query_match_rate_1y_realtime
+        # 하나로 계산합니다. 스냅샷과 폴백의 정의가 갈라지지 않게 같은 함수를 씁니다.
         with latency_segments.compare_stats_segment("matched_count"):
             if matched_usable:
                 matched_count = int(matched_payload["value"])
+                match_rate_counts = {
+                    "announce_count_1y": int(matched_payload["announce_count_1y"]),
+                    "matched_count_1y": int(matched_payload["matched_count_1y"]),
+                }
             else:
                 matched_count = _query_matched_count_realtime(db, one_year_ago)
+                match_rate_counts = _query_match_rate_1y_realtime(db, one_year_ago)
 
         with latency_segments.compare_stats_segment("announce_by_month"):
             if announce_month_usable:
@@ -675,6 +705,8 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
                 "result_count": result_summary.total_count or 0,
                 "result_total_amt": int(result_summary.total_amount or 0),
                 "matched_count": int(matched_count or 0),
+                "announce_count_1y": match_rate_counts["announce_count_1y"],
+                "matched_count_1y": match_rate_counts["matched_count_1y"],
                 "announce_by_month": announce_by_month,
                 "result_by_month": result_by_month,
                 "agency_announce_top10": agency_announce_top10,

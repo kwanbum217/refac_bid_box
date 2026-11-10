@@ -36,6 +36,7 @@ from src.app.schemas.bids import (
     BidListResponse,
     BidResultDetailResponse,
     BidResultListResponse,
+    CompareStatsResponse,
     HomeContextResponse,
 )
 from src.app.services import bid_queries
@@ -208,7 +209,11 @@ def api_stats(
         return _stats_error("대시보드 통계 데이터를 불러오지 못했습니다.")
 
 
-@router.get("/compare-stats", summary="공고 대비 낙찰 비교 통계")
+@router.get(
+    "/compare-stats",
+    response_model=CompareStatsResponse,
+    summary="공고 대비 낙찰 비교 통계",
+)
 def api_compare_stats(
     request: Request,
     db: Session = Depends(get_db),
