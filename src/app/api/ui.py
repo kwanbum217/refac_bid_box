@@ -63,6 +63,10 @@ from src.app.services.auth_forms import (
     login_form,
     signup_form,
 )
+from src.app.services.band_regime_lookup import (
+    attachment_regime_key,
+    lookup_attachment_regimes,
+)
 from src.app.services.evaluation_rules import find_reputation_item
 from src.app.services.home_context import (
     DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES,
@@ -230,9 +234,16 @@ def bid_list(
             detail="공고 검색 인덱스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
         ) from exc
     bid_queries.load_announcement_region_display(db, page_obj.object_list)
+    # 목록 배지도 상세 분석과 같은 판정을 내리도록 저장된 첨부 판별 갈래를 페이지 단위로
+    # 한 번만 조회해 넘깁니다. 공고별 단건 질의로 늘리지 않습니다.
+    attachment_regimes = lookup_attachment_regimes(
+        db, (attachment_regime_key(bid) for bid in page_obj.object_list)
+    )
     context = {
         "bids": page_obj.object_list,
-        "qualification_ids": bid_queries.qualification_analyzable_ids(page_obj.object_list),
+        "qualification_ids": bid_queries.qualification_analyzable_ids(
+            page_obj.object_list, attachment_regimes
+        ),
         "page_obj": page_obj,
         "max_page": bid_queries.MAX_LIST_PAGE,
         "is_paginated": page_obj.has_previous or page_obj.has_next,

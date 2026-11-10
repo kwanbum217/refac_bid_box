@@ -24,6 +24,10 @@ from src.app.models.bids import (
     BidDatasetSummary,
     BidResult,
 )
+from src.app.services.band_regime_lookup import (
+    attachment_regime_key,
+    lookup_attachment_regimes,
+)
 from src.app.services.bid_queries import qualification_analyzable_ids
 
 DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES = ("Cnstwk", "Servc", "Thng", "Frgcpt")
@@ -255,6 +259,13 @@ def get_home_page_context(
         for category_code in categories
     ]
 
+    home_bids = list(announcement_map.values())
+    # 홈 배지도 상세 분석과 같은 판정을 내리도록 저장된 첨부 판별 갈래를 화면 묶음 단위로
+    # 한 번만 조회합니다. 공고별 단건 질의로 늘리지 않습니다.
+    attachment_regimes = lookup_attachment_regimes(
+        db, (attachment_regime_key(bid) for bid in home_bids)
+    )
+
     return {
         "recent_bids": [
             announcement_map[item_id]
@@ -263,7 +274,7 @@ def get_home_page_context(
         ],
         "recent_results": recent_results,
         "recent_bid_sections": recent_bid_sections,
-        "qualification_ids": qualification_analyzable_ids(announcement_map.values()),
+        "qualification_ids": qualification_analyzable_ids(home_bids, attachment_regimes),
         "announcement_total": payload["announcement_total"],
         "result_total": payload["result_total"],
         "latest_result_rate": payload["latest_result_rate"],

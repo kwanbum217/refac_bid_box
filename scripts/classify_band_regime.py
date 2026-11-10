@@ -47,7 +47,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(PROJECT_ROOT / ".env")
 
 import httpx  # noqa: E402
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select, tuple_  # noqa: E402
 from sqlalchemy.dialects.mysql import insert as mysql_insert  # noqa: E402
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
@@ -528,6 +528,41 @@ def _upsert_regime(db: Session, rows: list[dict[str, Any]]) -> None:
     db.commit()
 
 
+INDEX_REFRESH_CHUNK_SIZE = 200
+
+
+def _refresh_index_documents(db: Session, keys: list[tuple[str, str, str]]) -> int:
+    """갈래가 새로 저장된 공고의 검색 색인 문서를 같은 실행에서 갱신합니다.
+
+    목록 배지·필터와 색인 읽기 모델이 같은 판정을 내리려면 새로 분류된 갈래가 색인
+    문서에도 반영되어야 합니다. 문서 생성·upsert 는 `search_index` 의 경로를 재사용하고,
+    `MEILI_ENABLED` 가 거짓이면 그쪽에서 건너뜁니다.
+    """
+    if not keys:
+        return 0
+
+    from src.app.services.search_index import upsert_announcement_documents
+
+    refreshed = 0
+    for start in range(0, len(keys), INDEX_REFRESH_CHUNK_SIZE):
+        chunk = keys[start : start + INDEX_REFRESH_CHUNK_SIZE]
+        rows = (
+            db.execute(
+                select(BidAnnouncement).where(
+                    tuple_(
+                        BidAnnouncement.bid_ntce_no,
+                        BidAnnouncement.bid_ntce_ord,
+                        BidAnnouncement.category,
+                    ).in_(chunk)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        refreshed += upsert_announcement_documents(db, rows)
+    return refreshed
+
+
 def _outcome_row(target: Target, outcome: TargetOutcome) -> dict[str, Any]:
     matched_rules = ",".join(outcome.matched_rules)
     return {
@@ -577,6 +612,7 @@ def run_batch(
         "no_attachment": 0,
         "failed": 0,
         "skipped": 0,
+        "index_refreshed": 0,
         "regimes": {},
     }
 
@@ -602,6 +638,9 @@ def run_batch(
     pacer = _Pacer(sleep_seconds)
     calls_used = 0
     regimes: dict[str, int] = {}
+    # 갈래가 새로 CLASSIFIED 로 저장된 공고만 색인 문서를 다시 씁니다. 판정이 바뀌지 않는
+    # FAILED·NO_ATTACHMENT 행까지 색인 쓰기를 늘리지 않습니다.
+    changed_keys: list[tuple[str, str, str]] = []
     for index, target in enumerate(targets):
         outcome = None
         try:
@@ -622,6 +661,8 @@ def run_batch(
 
         calls_used += outcome.calls
         _upsert_regime(db, [_outcome_row(target, outcome)])
+        if outcome.status == REGIME_STATUS_CLASSIFIED:
+            changed_keys.append((target.bid_ntce_no, target.bid_ntce_ord, target.category))
         summary[outcome.status.lower()] += 1
         regimes[outcome.regime] = regimes.get(outcome.regime, 0) + 1
         label = f"{target.bid_ntce_no}-{target.bid_ntce_ord}"
@@ -629,6 +670,12 @@ def run_batch(
             print(f"  {label}: {outcome.status} ({outcome.error})", file=sys.stderr)
         else:
             print(f"  {label}: {outcome.status} {outcome.regime}")
+
+    try:
+        summary["index_refreshed"] = _refresh_index_documents(db, changed_keys)
+    except Exception as exc:  # 색인 장애가 판별 결과 저장을 되돌리지 않게 합니다
+        summary["index_refresh_error"] = f"{type(exc).__name__}: {_short_error(str(exc))}"
+        print(f"색인 문서 갱신 실패: {summary['index_refresh_error']}", file=sys.stderr)
 
     summary["calls_used"] = calls_used
     summary["regimes"] = regimes

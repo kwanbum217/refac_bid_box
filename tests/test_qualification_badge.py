@@ -91,6 +91,21 @@ def test_marking_matches_analysis_rule_resolution():
     assert qualification_analyzable_ids(bids) == expected == {10}
 
 
+def test_marking_uses_saved_attachment_regime():
+    """저장된 첨부 판별 갈래가 있으면 '2억미만 1억이상' 띠 공고도 분석 대상으로 표기한다."""
+    from src.app.services.band_regime_lookup import regime_key
+
+    bid = _bid(
+        12,
+        raw_overrides={"sucsfbidMthdNm": "적격심사제-추정가격 2억미만 1억이상"},
+        presmpt_prce=150_000_000,
+    )
+    assert qualification_analyzable_ids([bid]) == set()
+
+    regimes = {regime_key(bid.bid_ntce_no, bid.bid_ntce_ord, bid.category): "MOIS_ACADEMIC"}
+    assert qualification_analyzable_ids([bid], regimes) == {12}
+
+
 @pytest.fixture
 def seeded_qualification_bid(isolated_db):
     now = utcnow()
