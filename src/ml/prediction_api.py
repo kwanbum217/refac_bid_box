@@ -15,6 +15,21 @@ _resolve_model_id: Any = None
 _preferred_model_for_features: Any = None
 _prepare_full_frame: Any = None
 _normalize_prediction_rate: Any = None
+_prediction_supported: Any = None
+
+# 전용 모델이 없는 분야의 공고에 대해 사용자에게 내보내는 단일 문구입니다.
+# 화면, REST API, 챗봇 도구, 자동화 단계가 모두 이 상수를 그대로 씁니다.
+UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE = (
+    "공사·외자 등 전용 모델이 없는 분야는 검증된 예측 모델이 없어 투찰가 추천을 제공하지 않습니다."
+)
+
+
+class UnsupportedPredictionCategoryError(ValueError):
+    """전용 예측 모델이 없는 분야라 투찰가 추천을 낼 수 없을 때 발생합니다.
+
+    ValueError 하위이므로 기존 호출부의 오류 처리 계약을 깨지 않습니다.
+    호출부는 이 예외를 잡아 안내 문구만 사용자에게 전달해야 합니다.
+    """
 
 
 class PriceDecisionMethod(StrEnum):
@@ -124,6 +139,18 @@ def predict_interval(model_id, features_dict):
     return low, high, float(coverage) if coverage is not None else None
 
 
+def _require_supported_category(features_dict) -> None:
+    """features 의 분야에 전용 예측 모델이 있는지 검사합니다.
+
+    전용 모델이 없는 분야(공사·외자 등)는 요청 모델과 무관하게 후보 순회와
+    특징 계산 전에 끊습니다. 그래야 어떤 호출부도 예측 낙찰률이나 추천 금액을
+    사용자에게 내보낼 수 없습니다.
+    """
+    category = features_dict.get("category") if isinstance(features_dict, dict) else None
+    if not _prediction_supported(category):
+        raise UnsupportedPredictionCategoryError(UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE)
+
+
 def predict_optimal_price_with_provenance(
     model_id, features_dict, full_map=None
 ) -> PredictionOutcome:
@@ -135,10 +162,12 @@ def predict_optimal_price_with_provenance(
     full_map 은 호출부가 이미 구축한 전체 특징 맵입니다. 넘기면 후보 순회
     전체가 같은 맵을 재사용해 요청당 구축 횟수가 1회로 줄어듭니다.
     """
+    _require_supported_category(features_dict)
     requested_id = _resolve_model_id(model_id or _preferred_model_for_features(features_dict))
     preferred_id = _preferred_model_for_features(features_dict)
     candidate_ids = []
-    for candidate in (requested_id, preferred_id, "v25", "v13_hybrid"):
+    # v25 는 원시 출력이 낙찰률 비율이 아니라 대체 후보로 쓰면 틀린 값이 나갑니다.
+    for candidate in (requested_id, preferred_id, "v13_hybrid"):
         if candidate not in candidate_ids:
             candidate_ids.append(candidate)
 
@@ -228,6 +257,8 @@ def predict_optimal_price_batch(model_id, features_dicts, full_maps=None):
     """
     if not features_dicts:
         return []
+    for item in features_dicts:
+        _require_supported_category(item)
     requested_ids = [
         _resolve_model_id(model_id or _preferred_model_for_features(item))
         for item in features_dicts

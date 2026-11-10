@@ -42,7 +42,11 @@ from src.app.services.evaluation_rules import (
     resolve_evaluation_rule_from_raw_data,
     resolve_method_name,
 )
-from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
+from src.ml.model_registry import (
+    CATEGORY_DEFAULT_MODELS,
+    UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE,
+    prediction_supported_for_category,
+)
 
 # 매핑을 여기 다시 적으면 모델 교체 때 한쪽만 바뀝니다. 정본은 model_registry 입니다.
 DEFAULT_PREDICTION_MODEL_BY_CATEGORY = CATEGORY_DEFAULT_MODELS
@@ -1194,6 +1198,11 @@ def get_announcement_detail(db: Session, pk: int) -> dict[str, Any] | None:
         "default_prediction_model": DEFAULT_PREDICTION_MODEL_BY_CATEGORY.get(
             bid.category, DEFAULT_PREDICTION_MODEL
         ),
+        # 전용 모델이 없는 분야는 화면에서도 투찰가 추천을 감추고 안내만 보여 줍니다.
+        # 분야 판정은 model_registry 의 공용 함수가 정본이며, 템플릿에 분야 목록을
+        # 두지 않습니다.
+        "prediction_supported": prediction_supported_for_category(bid.category),
+        "prediction_unsupported_message": UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE,
     }
 
 

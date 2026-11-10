@@ -1,6 +1,5 @@
 """
 src/tasks/automation_steps.py
-
 자동화 파이프라인의 개별 스텝 구현 (_step_* 및 _check_chroma_vectors).
 """
 
@@ -147,9 +146,9 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
     2요소 튜플은 디스패치 루프에서 성공으로 처리되므로, 아무것도 검증하지
     못한 실행이 통과로 승격됩니다.
     """
-    from src.ml.model_registry import ModelRegistry, predict_optimal_price
+    from src.ml import model_registry as mr
 
-    available = ModelRegistry.available_models()
+    available = mr.ModelRegistry.available_models()
     sample = db.execute(
         select(BidAnnouncement)
         .where(BidAnnouncement.presmpt_prce.is_not(None))
@@ -161,7 +160,6 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
         return (
             "partial_success",
             "검증 가능한 모델 또는 공고가 없어 예측 검증을 수행하지 못했습니다.",
-            # 불리언 플래그 키이며 비밀번호가 아닙니다
             {  # nosec B105 - 불리언 상태 플래그 키 pass_all 이지 비밀번호가 아닙니다
                 "pass_all": False,
                 "model_count": len(available),
@@ -169,6 +167,10 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
                 "skip_reason": ("등록된 모델 없음" if not available else "검증 대상 공고 없음"),
             },
         )
+
+    if not mr.prediction_supported_for_category(sample.category):
+        msg = mr.UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE
+        return "partial_success", msg, {"pass_all": False, "skipped": True, "skip_reason": msg}  # nosec B105 - 불리언 상태 플래그 키 pass_all 이지 비밀번호가 아닙니다
 
     reference = float(sample.prediction_reference_amount or 0)
     features = {
@@ -180,7 +182,7 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
         "bid_ntce_dt": sample.bid_ntce_dt,
         "openg_dt": sample.openg_dt,
     }
-    rate = predict_optimal_price(None, features)
+    rate = mr.predict_optimal_price(None, features)
     return (
         f"모델 {len(available)}종 로드, 표본 추론 성공 (예측률 {rate:.4f}).",
         # 불리언 플래그 키이며 비밀번호가 아닙니다

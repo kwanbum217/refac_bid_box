@@ -63,11 +63,14 @@ from src.app.services.price_score_verification import (
 from src.ml.dataset import announcement_feature_payload
 from src.ml.features import build_feature_dict
 from src.ml.model_registry import (
+    UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE,
     ModelRegistry,
     PriceDecisionMethod,
+    UnsupportedPredictionCategoryError,
     classify_price_decision_method,
     predict_interval,
     predict_optimal_price_with_provenance,
+    prediction_supported_for_category,
 )
 from src.ml.predictor import predictor
 
@@ -624,6 +627,14 @@ def predict_price_api(
             detail="기초금액과 예정가격이 모두 공개되지 않은 공고라 투찰가를 산출할 수 없습니다.",
         )
 
+    # 전용 예측 모델이 없는 분야는 특징 생성 전에 먼저 끊습니다. 요청 모델과
+    # 무관하게 같은 공용 판정을 쓰며, 기존 비예가 422 와 같은 응답 형식입니다.
+    if not prediction_supported_for_category(bid.category):
+        raise HTTPException(
+            status_code=422,
+            detail=UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE,
+        )
+
     # 비예가 판정: model_registry.classify_price_decision_method 단일 함수 사용.
     # 명시적 Servc 비예가만 차단하고 missing/unknown/non-Servc는 pass-through 한다.
     # 근거: docs/design/servc_nonprearng_population_cause_20260812.md
@@ -657,6 +668,8 @@ def predict_price_api(
         outcome = predict_optimal_price_with_provenance(selected_model, features)
         t_point_infer = max(0.0, time.perf_counter() - t_point_start)
         c_point_infer = max(0.0, time.thread_time() - c_point_start)
+    except UnsupportedPredictionCategoryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("모델 후보 전량 실패 (요청 모델 %s): %s", selected_model, exc)
         raise HTTPException(
@@ -839,9 +852,20 @@ def predict_winning_price(
     dumped_payload = payload.model_dump()
     t_payload_dump = max(0.0, time.perf_counter() - t_payload_start)
 
+    # 특징 직접 입력 경로도 같은 분야 판정을 씁니다. predictor 는 모델 로딩이
+    # 꺼진 실행(SKIP_MODEL_LOAD)에서 공용 지점을 거치지 않으므로 여기서 먼저 막습니다.
+    if not prediction_supported_for_category(dumped_payload.get("category_code")):
+        raise HTTPException(
+            status_code=422,
+            detail=UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE,
+        )
+
     t_model_start = time.perf_counter()
     c_model_start = time.thread_time()
-    result = predictor.predict(dumped_payload, session=db)
+    try:
+        result = predictor.predict(dumped_payload, session=db)
+    except UnsupportedPredictionCategoryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     t_model = max(0.0, time.perf_counter() - t_model_start)
     c_model = max(0.0, time.thread_time() - c_model_start)
 

@@ -320,6 +320,27 @@ async def test_ssr_bid_detail_three_amounts_autofilled(
 
 
 @pytest.mark.e2e
+async def test_ssr_bid_detail_unsupported_category_notice(
+    authenticated_page: Page,
+    live_server_url: str,
+    seeded_announcements: list[BidAnnouncement],
+) -> None:
+    """전용 모델이 없는 분야(공사)는 추천 UI 대신 안내를 보여 줌을 검증합니다."""
+    cnstwk_bid = next(
+        bid
+        for bid in seeded_announcements
+        if bid.category == "Cnstwk" and bid.base_amount is not None
+    )
+
+    await authenticated_page.goto(f"{live_server_url}/bids/{cnstwk_bid.id}/")
+
+    notice = authenticated_page.locator("#recommend-unsupported")
+    await expect(notice).to_be_visible(timeout=10000)
+    await expect(notice).to_contain_text("검증된 예측 모델이 없어")
+    await expect(authenticated_page.locator("#prediction-result")).to_have_count(0)
+
+
+@pytest.mark.e2e
 async def test_ssr_bid_detail_no_amount_shows_blocked_guidance(
     authenticated_page: Page,
     live_server_url: str,

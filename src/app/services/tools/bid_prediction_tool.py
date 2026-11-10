@@ -25,6 +25,7 @@ from src.ml.model_registry import (
     CATEGORY_DEFAULT_MODELS,
     ModelRegistry,
     PriceDecisionMethod,
+    UnsupportedPredictionCategoryError,
     classify_price_decision_method,
     predict_optimal_price_with_provenance,
 )
@@ -342,6 +343,34 @@ def _predict_bid(
     # provenance 함수 내부의 후보 순회와 중복이므로 제거한다.
     try:
         outcome = predict_optimal_price_with_provenance(requested_model, features)
+    except UnsupportedPredictionCategoryError as exc:
+        # 전용 모델이 없는 분야는 오류가 아니라 안내 대상입니다. 챗봇은 예외를
+        # 올리지 않고 공용 문구를 그대로 돌려줍니다.
+        reference_amount = float(bid.prediction_reference_amount or 0)
+        return {
+            "bid": {
+                "id": bid.id,
+                "bid_ntce_no": bid.bid_ntce_no,
+                "bid_ntce_ord": bid.bid_ntce_ord,
+                "bid_ntce_nm": bid.bid_ntce_nm or "",
+                "dminstt_nm": bid.dminstt_nm or "",
+                "ntce_instt_nm": bid.ntce_instt_nm or "",
+                "category": bid.category,
+                "category_label": bid.category_label,
+                "bid_ntce_dt": (bid.bid_ntce_dt.isoformat() if bid.bid_ntce_dt else ""),
+                "collected_at": (bid.collected_at.isoformat() if bid.collected_at else ""),
+            },
+            "model_id": "",
+            "model_name": "",
+            "requested_model": requested_model,
+            "fallback_used": False,
+            "fallback_reason": str(exc),
+            "reference_amount": int(reference_amount),
+            "optimal_price": 0,
+            "prediction_rate": 0,
+            "skipped": True,
+            "skip_reason": str(exc),
+        }
     except Exception:
         # 후보 전량 실패 시 챗봇은 오류 대신 사유를 반환한다.
         reference_amount = float(bid.prediction_reference_amount or 0)

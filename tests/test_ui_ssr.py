@@ -416,18 +416,44 @@ def test_double_slash_redirect_preserves_query_string(client):
     assert response.headers["location"].startswith("/bids/?q=")
 
 
-def test_prediction_form_enabled_when_amount_available(auth_client, seeded_bid):
-    """금액이 있는 공고는 자동 추천 카드(세 금액) 요소가 노출된다."""
+def test_prediction_form_replaced_by_notice_without_model(auth_client, seeded_bid):
+    """전용 모델이 없는 분야(공사)는 금액이 있어도 추천 카드 대신 안내를 보여 준다."""
     bid, _ = seeded_bid
     body = auth_client.get(f"/bids/{bid.id}/").text
 
-    assert 'id="prediction-result"' in body
-    assert 'id="res-min-price"' in body
-    assert 'id="res-optimal-price"' in body
-    assert 'id="res-max-price"' in body
+    assert 'id="recommend-unsupported"' in body
+    assert "검증된 예측 모델이 없어" in body
+    assert 'id="prediction-result"' not in body
     # 수동 예측 입력과 실행 버튼은 추천 자동 호출로 대체되어 제거됐다.
     assert 'id="btn-predict"' not in body
     assert 'id="user-price"' not in body
+    assert 'id="recommend-unavailable"' not in body
+
+
+def test_prediction_form_enabled_for_supported_category(auth_client, isolated_db):
+    """전용 모델이 있는 분야(용역)는 종전대로 자동 추천 카드를 노출한다."""
+    now = utcnow()
+    bid = BidAnnouncement(
+        bid_ntce_no="ANN-SERVC-UI",
+        bid_ntce_ord="000",
+        bid_ntce_nm="용역 투찰가 추천 화면 시험 공고",
+        dminstt_nm="테스트발주기관",
+        category="Servc",
+        presmpt_prce=400_000_000,
+        base_amount=400_000_000,
+        bid_ntce_dt=now,
+        bid_clse_dt=now + timedelta(days=7),
+        collected_at=now,
+    )
+    isolated_db.add(bid)
+    isolated_db.commit()
+    isolated_db.refresh(bid)
+
+    body = auth_client.get(f"/bids/{bid.id}/").text
+
+    assert 'id="recommend-unsupported"' not in body
+    assert 'id="prediction-result"' in body
+    assert 'id="res-optimal-price"' in body
     assert 'id="recommend-unavailable"' not in body
 
 
@@ -435,7 +461,8 @@ def test_prediction_unavailable_notice_without_amount(auth_client, isolated_db):
     """금액을 확정할 수 없는 공고는 추천 카드에서 산출 불가 안내를 보여야 한다.
 
     외자 공고는 절반 가까이가 이 상태입니다. 예측을 누를 수 없게 막던 종전 동작은
-    자동 추천 호출로 바뀌었지만, 산출할 수 없다는 사실은 계속 알려야 합니다.
+    자동 추천 호출로 바뀌었습니다. 외자는 전용 모델도 없으므로 모델 부재 안내가
+    우선하며, 어느 경우에도 투찰가 추천 값은 노출되지 않습니다.
     """
     now = utcnow()
     bid = BidAnnouncement(
@@ -455,8 +482,9 @@ def test_prediction_unavailable_notice_without_amount(auth_client, isolated_db):
 
     body = auth_client.get(f"/bids/{bid.id}/").text
 
-    assert 'id="recommend-unavailable"' in body
-    assert "산출할 수 없습니다" in body
+    assert 'id="recommend-unsupported"' in body
+    assert "검증된 예측 모델이 없어" in body
+    assert 'id="prediction-result"' not in body
     # 수동 예측 입력과 실행 버튼은 제거됐다.
     assert 'id="btn-predict"' not in body
     assert 'id="user-price"' not in body
