@@ -41,26 +41,45 @@ from src.tasks.worker import WorkerSettings
 
 
 class _FakeSession:
-    """close 만 있는 DB 세션 대역."""
+    """close·commit·rollback 만 있는 DB 세션 대역."""
 
     def __init__(self) -> None:
         self.closed = False
+        self.committed = 0
+        self.rolled_back = 0
 
     def close(self) -> None:
         self.closed = True
 
+    def commit(self) -> None:
+        self.committed += 1
+
+    def rollback(self) -> None:
+        self.rolled_back += 1
+
 
 @pytest.fixture
 def fake_env(monkeypatch):
-    """세션과 스케줄 기록을 대역으로 바꾼 환경을 돌려줍니다."""
+    """세션·스케줄 기록·사정률 후속 단계를 대역으로 바꾼 환경을 돌려줍니다."""
     session = _FakeSession()
     monkeypatch.setattr(scheduled_tasks, "SessionLocal", lambda: session)
-    recorded: dict[str, Any] = {"inserted": [], "records": []}
+    recorded: dict[str, Any] = {"inserted": [], "records": [], "followups": []}
 
     def _record(schedule_name: str, outcome: Any, success: bool) -> None:
         recorded["records"].append((schedule_name, outcome, success))
 
     monkeypatch.setattr("src.tasks.worker.record_schedule_result", _record)
+
+    def _link(db):
+        recorded["followups"].append(("link", db))
+        return 7
+
+    def _rebuild(db):
+        recorded["followups"].append(("rebuild", db))
+        return {"rows": 3}
+
+    monkeypatch.setattr(scheduled_tasks, "link_prearng_dminstt", _link)
+    monkeypatch.setattr(scheduled_tasks, "rebuild_institution_sajeong_rate_stats", _rebuild)
     return session, recorded
 
 
@@ -175,13 +194,20 @@ async def test_daily_task_forwards_selected_notices_and_persists(monkeypatch, fa
 
     outcome = await prearng_daily_task({})
 
-    assert outcome == {"status": "success", "notice_count": 2, "saved": 1}
+    assert outcome == {
+        "status": "success",
+        "notice_count": 2,
+        "saved": 1,
+        "linked": 7,
+        "stats_rebuilt": {"rows": 3},
+    }
     assert calls["notices"] == notices
     db, model, rows = recorded["inserted"][0]
     assert db is session
     assert model is BidPrearngPrice
     assert rows[0]["bid_ntce_no"] == "R25BK000001"
     assert session.closed is True
+    assert [name for name, _ in recorded["followups"]] == ["link", "rebuild"]
     assert recorded["records"][0][0] == PREARNG_DAILY_SCHEDULE_NAME
     assert recorded["records"][0][2] is True
 
@@ -196,6 +222,12 @@ async def test_daily_task_creates_sessions_inside_worker_threads(monkeypatch) ->
         def close(self) -> None:
             pass
 
+        def commit(self) -> None:
+            pass
+
+        def rollback(self) -> None:
+            pass
+
     def _session_factory():
         created_in.append(threading.get_ident())
         return _Session()
@@ -203,6 +235,12 @@ async def test_daily_task_creates_sessions_inside_worker_threads(monkeypatch) ->
     monkeypatch.setattr(scheduled_tasks, "SessionLocal", _session_factory)
     monkeypatch.setattr(scheduled_tasks, "select_new_servc_notices", lambda db: ["R1"])
     monkeypatch.setattr(scheduled_tasks, "_bulk_insert", lambda db, model, rows: len(rows))
+    monkeypatch.setattr(scheduled_tasks, "link_prearng_dminstt", lambda db: 1)
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "rebuild_institution_sajeong_rate_stats",
+        lambda db: {"rows": 1},
+    )
     monkeypatch.setattr("src.tasks.worker.record_schedule_result", lambda *args, **kwargs: None)
 
     async def _fake_stream(notice_list, sink, num_of_rows=500):
@@ -213,8 +251,15 @@ async def test_daily_task_creates_sessions_inside_worker_threads(monkeypatch) ->
 
     outcome = await prearng_daily_task({})
 
-    assert outcome == {"status": "success", "notice_count": 1, "saved": 1}
-    assert len(created_in) == 2
+    assert outcome == {
+        "status": "success",
+        "notice_count": 1,
+        "saved": 1,
+        "linked": 1,
+        "stats_rebuilt": {"rows": 1},
+    }
+    # 조회·적재·후속 집계가 각각 스레드 안에서 세션을 열고 닫는다.
+    assert len(created_in) == 3
     assert all(thread_id != loop_thread for thread_id in created_in)
 
 
@@ -250,6 +295,8 @@ async def test_daily_task_reports_partial_failure(monkeypatch, fake_env) -> None
     assert outcome["notice_count"] == 2
     assert outcome["saved"] == 1
     assert outcome["failed_notices"] == ["R2"]
+    assert outcome["linked"] == 7
+    assert outcome["stats_rebuilt"] == {"rows": 3}
     assert recorded["records"][0][2] is False
 
 

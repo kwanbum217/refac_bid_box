@@ -8,6 +8,9 @@ from pathlib import Path
 
 import pytest
 
+from src.app.services import prearng_dminstt_link
+from src.tasks import scheduled_tasks
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -91,3 +94,11 @@ def test_match_rows_empty_is_safe():
     assert summary.total == 0
     assert summary.unmatched == 0
     assert summary.match_rate == 0.0
+
+
+def test_script_and_task_use_same_link_function():
+    """연결 로직은 서비스 모듈 하나에만 있고 스크립트·태스크가 그것을 쓴다."""
+    assert link.normalize_ord is prearng_dminstt_link.normalize_ord
+    assert link.match_rows is prearng_dminstt_link.match_rows
+    assert link.link_prearng_dminstt is prearng_dminstt_link.link_prearng_dminstt
+    assert scheduled_tasks.link_prearng_dminstt is prearng_dminstt_link.link_prearng_dminstt
