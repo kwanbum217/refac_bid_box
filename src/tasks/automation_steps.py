@@ -191,20 +191,18 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
 
 
 async def _step_retrain(db) -> tuple[str, dict[str, Any]]:
-    """기존 재학습 파이프라인을 자동화 실행 이력에 연결합니다."""
-    from src.tasks.retrain_task import run_retrain_pipeline_task
+    """주간 크론과 같은 fan-out 으로 카테고리별 재학습을 실행해 이력에 연결합니다."""
+    # scheduled_tasks -> automation_tasks -> 이 모듈 순환을 피해 호출 시점에 가져옵니다.
+    from src.tasks.scheduled_tasks import run_retrain_category_fanout, summarize_retrain_outcome
 
-    outcome = await run_retrain_pipeline_task({}, trigger_source="manual_api")
-    status = outcome.get("status", "unknown")
-    if status == "success":
-        return (
-            f"재학습 완료 (버전 {outcome.get('version', '-')}, 표본 {outcome.get('samples', 0)}건, "
-            f"판정 {outcome.get('recommendation', '-')}).",
-            outcome,
-        )
-    if status == "skipped":
-        return "재학습을 건너뛰었습니다. 학습 가능 데이터가 없습니다.", outcome
-    return f"재학습 결과: {status}", outcome
+    outcome = await run_retrain_category_fanout(
+        {},
+        trigger_source="manual_api",
+        guard_name="manual_retrain_task",
+        log_label="수동 재학습",
+        notify_title="수동 재학습",
+    )
+    return summarize_retrain_outcome(outcome), outcome
 
 
 def _check_chroma_vectors() -> int | None:
