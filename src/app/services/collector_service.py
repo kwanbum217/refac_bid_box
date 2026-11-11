@@ -48,7 +48,7 @@ from src.app.services.api_collector import (
     stream_openg_results,
 )
 from src.app.services.dashboard import rebuild_bid_dataset_summaries, warm_dashboard_stats_cache
-from src.app.services.home_context import warm_home_page_cache
+from src.app.services.home_summary import warm_home_summary_cache as warm_home_page_cache
 
 logger = logging.getLogger(__name__)
 

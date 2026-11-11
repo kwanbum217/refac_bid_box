@@ -1,6 +1,78 @@
 {
   "version": "1.0.0",
   "tables": {
+    "account_bid_preferences": {
+      "name": "account_bid_preferences",
+      "columns": [
+        {
+          "name": "created_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "license_codes",
+          "type": "JSON",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "region_code",
+          "type": "VARCHAR(16) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": "''"
+        },
+        {
+          "name": "updated_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [
+        {
+          "name": "fk_account_bid_preferences_user_id",
+          "constrained_columns": [
+            "user_id"
+          ],
+          "referred_table": "accounts_customuser",
+          "referred_columns": [
+            "id"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "uq_account_bid_preferences_user_id",
+          "column_names": [
+            "user_id"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "9171a7887b1e3aed1899d4d02437cc95d3026a4bbd1af236e6f0f02f69af7856"
+    },
     "account_company_profiles": {
       "name": "account_company_profiles",
       "columns": [
@@ -4720,6 +4792,7 @@
     }
   },
   "table_hashes": {
+    "account_bid_preferences": "9171a7887b1e3aed1899d4d02437cc95d3026a4bbd1af236e6f0f02f69af7856",
     "account_company_profiles": "0d51ff07bdd4dfff28f9e4c4267bda5581f9ce53ed67e602ca7e2b3800328a9a",
     "account_consent_events": "b4932704c09d780c144043f84800528f51a57b302125c31560af0df2ded77298",
     "account_emailaddress": "74a58b4a27cffcb5f5ba91a4a27cbda1f498108f2c3fe66d06bee66d79a58123",
@@ -4768,8 +4841,9 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "c979427e4b9fc7fd644bf21f5ee9b1346106303992042248d61e896451ed8477",
+  "overall_hash": "3363c940f01a37214e230749e84d78044bee924a2d0942997ebc2f81243b7fd2",
   "orm_tables": [
+    "account_bid_preferences",
     "account_company_profiles",
     "account_consent_events",
     "account_qualification_facts",
@@ -4801,6 +4875,7 @@
     "schedule_run_log"
   ],
   "database_tables": [
+    "account_bid_preferences",
     "account_company_profiles",
     "account_consent_events",
     "account_emailaddress",
@@ -4850,10 +4925,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-11-11T03:32:29.490584+00:00",
+    "generated_at": "2026-11-11T08:20:53.095434+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "cac3069ddcc59e6452f9e9adbfe30c2cd526167c"
+    "git_head": "0a3694f83c476cd106b8f648f5ad3b12d11f0650"
   }
 }

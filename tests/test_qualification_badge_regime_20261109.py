@@ -1,12 +1,12 @@
 """
 tests/test_qualification_badge_regime_20261109.py
 
-F-04 회귀 시험: 목록·홈 배지와 Meilisearch 색인 문서가 저장된 첨부 판별 갈래
+F-04 회귀 시험: 목록 배지와 Meilisearch 색인 문서가 저장된 첨부 판별 갈래
 (`bid_announcement_regime`)를 쓰지 않아 DB 대체 필터·`/evaluations/analyze` 판정과
 어긋나던 결함을 고정합니다.
 
 검증 항목:
-(1) MOIS_ACADEMIC 갈래가 있는 '2억미만 1억이상' 띠 공고는 목록 배지, 홈 배지,
+(1) MOIS_ACADEMIC 갈래가 있는 '2억미만 1억이상' 띠 공고는 목록 배지,
     색인 문서 `qualification_analyzable`, DB 대체 필터, analyze 규칙 판별이 모두 같다.
 (2) 갈래가 없는 같은 띠 공고는 수정 이전과 같이 분석 대상이 아니다.
 (3) 목록 한 페이지의 갈래 조회 질의는 한 번이다.
@@ -170,14 +170,6 @@ def _row_html(html: str, title: str) -> str:
     return html[row_start:row_end]
 
 
-def _home_card_html(html: str, bid_id: int) -> str:
-    marker = f'href="/bids/{bid_id}/" class="home-slide-card'
-    start = html.index(marker)
-    card_start = html.rfind("<a ", 0, start)
-    card_end = html.index("</a>", start)
-    return html[card_start:card_end]
-
-
 @pytest.fixture
 def as_user():
     """실제 인증·Redis 없이 요청 사용자만 바꾸는 대역."""
@@ -245,9 +237,6 @@ def test_regime_bid_badge_filter_index_and_analysis_all_agree(
 
     list_html = auth_client.get("/bids/").text
     assert BADGE_TEXT in _row_html(list_html, regime_bid.bid_ntce_nm)
-
-    home_html = auth_client.get("/").text
-    assert BADGE_TEXT in _home_card_html(home_html, regime_bid.id)
 
     documents = _document_by_id(_build_announcement_batch(isolated_db, [regime_bid]))
     assert documents[f"announcement_Servc_{MOIS_BID_NO}"]["qualification_analyzable"] is True

@@ -148,7 +148,10 @@ def test_migration_revision_follows_current_head() -> None:
     assert migration.down_revision == PREVIOUS_REVISION
 
     script = ScriptDirectory.from_config(Config(str(PROJECT_ROOT / "alembic.ini")))
-    assert script.get_heads() == [REVISION]
+    heads = script.get_heads()
+    assert len(heads) == 1
+    chain = {rev.revision for rev in script.walk_revisions("base", heads[0])}
+    assert REVISION in chain
 
 
 def test_migration_declares_utf8mb4_unicode_ci(monkeypatch: pytest.MonkeyPatch) -> None:

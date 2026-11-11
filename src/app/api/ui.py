@@ -67,11 +67,9 @@ from src.app.services.band_regime_lookup import (
     attachment_regime_key,
     lookup_attachment_regimes,
 )
+from src.app.services.bid_preferences import get_bid_preferences, save_bid_preferences
 from src.app.services.evaluation_rules import find_reputation_item
-from src.app.services.home_context import (
-    DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES,
-    get_home_page_context,
-)
+from src.app.services.home_summary import get_home_summary
 from src.app.services.search_index import SearchBackendUnavailable
 
 logger = logging.getLogger(__name__)
@@ -193,9 +191,7 @@ def index(
 ):
     if user is None:
         return _login_redirect(request)
-    context = get_home_page_context(db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
-    context["hide_sidebar"] = True
-    return _render(request, "index.html", context, user, "index")
+    return _render(request, "index.html", get_home_summary(db, user.id), user, "index")
 
 
 @router.get("/bids/")
@@ -455,6 +451,30 @@ def _reputation_rows(
     return rows
 
 
+def _bid_license_codes_from_form(form_data: dict[str, list[str]]) -> list[str]:
+    """관심 업종 체크박스 값을 공고 탐색과 같은 코드 목록으로 정규화합니다."""
+    return bid_queries.normalize_license_codes(",".join(form_data.get("bid_license_codes") or []))
+
+
+def _bid_industry_labels(codes: list[str]) -> list[str]:
+    selected = set(codes)
+    return [
+        str(group["label"])
+        for group in bid_queries.industry_groups_payload(codes)
+        if selected.intersection(group["codes"])
+    ]
+
+
+def _bid_region_label(region_code: str) -> str:
+    if not region_code:
+        return ""
+    for group in bid_queries.region_groups_payload():
+        for item in group["items"]:
+            if item["code"] == region_code:
+                return str(item["label"])
+    return ""
+
+
 @router.get("/accounts/mypage/")
 def mypage(
     request: Request,
@@ -466,6 +486,7 @@ def mypage(
         return _login_redirect(request)
     profile = me_profile(user=user, db=db)
     qualification = profile.qualification
+    prefs = get_bid_preferences(db, user.id)
     context = {
         "account": _serialize(user),
         "company": profile.company,
@@ -473,6 +494,9 @@ def mypage(
         "reputation_rows": _reputation_rows(
             qualification.reputation_items if qualification is not None else None
         ),
+        "bid_preferences": prefs,
+        "bid_industry_labels": _bid_industry_labels(prefs.license_codes) if prefs else [],
+        "bid_region_label": _bid_region_label(prefs.region_code) if prefs else "",
     }
     return _render(request, "accounts/mypage.html", context, user, "mypage")
 
@@ -482,6 +506,7 @@ def _mypage_edit_default_form(user: CustomUser, db: Session) -> dict[str, Any]:
     profile = me_profile(user=user, db=db)
     company = profile.company
     qualification = profile.qualification
+    prefs = get_bid_preferences(db, user.id)
     evaluated_on = qualification.credit_evaluated_on if qualification is not None else None
     return {
         "nickname": user.nickname,
@@ -505,6 +530,8 @@ def _mypage_edit_default_form(user: CustomUser, db: Session) -> dict[str, Any]:
             if qualification is not None and qualification.non_price_quant_score is not None
             else ""
         ),
+        "bid_license_codes": list(prefs.license_codes) if prefs is not None else [],
+        "bid_region_code": prefs.region_code if prefs is not None else "",
     }
 
 
@@ -530,6 +557,8 @@ def _mypage_edit_submitted_form(form_data: dict[str, list[str]]) -> dict[str, An
         "credit_evaluated_on": qualification["credit_evaluated_on"],
         "reputation_items": qualification["reputation_items"],
         "non_price_quant_score": qualification["non_price_quant_score"] or "",
+        "bid_license_codes": _bid_license_codes_from_form(form_data),
+        "bid_region_code": _form_value(form_data, "bid_region_code"),
     }
 
 
@@ -570,6 +599,10 @@ def _mypage_edit_context(
         "non_field_errors": errors.get("__all__", []),
         "credit_grade_choices": CREDIT_GRADE_CHOICES,
         "reputation_fields": build_reputation_fields(form_values),
+        "bid_industry_groups": bid_queries.industry_groups_payload(
+            form_values.get("bid_license_codes") or []
+        ),
+        "bid_region_groups": bid_queries.region_groups_payload(),
         "document_extraction_enabled": bool(
             getattr(settings, "DOCUMENT_EXTRACTION_ENABLED", False)
         ),
@@ -625,6 +658,12 @@ async def mypage_edit_submit(
         )
         response.status_code = 200
         return response
+    save_bid_preferences(
+        db,
+        user.id,
+        _bid_license_codes_from_form(form_data),
+        _form_value(form_data, "bid_region_code"),
+    )
     update_mypage_profile(db, user, edit_payload)
     return RedirectResponse(url="/accounts/mypage/", status_code=303)
 

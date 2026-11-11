@@ -1,8 +1,11 @@
 """
 tests/test_benchmark_home_recent_selection.py
 
-홈 최근 공고 선별 실측 하니스(scripts/benchmark_home_recent_selection.py)의 계약을
-실제 MySQL·Docker 없이 인메모리 SQLite 로 검증합니다.
+외부 홈 컨텍스트 API(GET /api/v1/bids/home)가 쓰는 최근 공고 선별 실측 하니스
+(scripts/benchmark_home_recent_selection.py)의 계약을 실제 MySQL·Docker 없이
+인메모리 SQLite 로 검증합니다.
+
+SSR 메인 화면은 2026-11-11 개편으로 이 선별을 쓰지 않습니다.
 
 이 파일이 증명하는 것:
 

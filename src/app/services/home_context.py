@@ -1,7 +1,13 @@
 """
 src/app/services/home_context.py
 
-홈 화면 컨텍스트 (원본 apps/bids/home_context.py 1:1 이식).
+외부 API `GET /api/v1/bids/home` 이 쓰는 최근 수집 문맥입니다 (원본
+apps/bids/home_context.py 1:1 이식).
+
+SSR 메인 화면은 2026-11-11 부터 `home_summary.py` 의 요약 문맥을 씁니다. 이
+모듈은 외부 응답 계약(HomeContextResponse)과 벤치마크 하니스가 계속 쓰므로
+선별 알고리즘을 그대로 유지합니다.
+
 표본 확대(50/200/1000건)와 수집일 윈도우(1/3/7일) 폴백 판정은 그대로 두고,
 전역 정렬 접두를 표본 크기 순서로 필요할 때만 늘려 읽어 윈도우별 후보를 메모리에서
 거릅니다. 흔한 경우 질의 한 번(50행)으로 끝나고, 데이터가 희소해도 세 번을 넘지 않습니다.

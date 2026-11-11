@@ -1,0 +1,171 @@
+"""
+src/app/services/home_summary.py
+
+한 화면 메인의 요약 값을 만듭니다.
+
+| 지표 | 조건 |
+| --- | --- |
+| 정확도 | 서빙 중인 용역 모델 `metadata.json` 의 `source_metrics.rmse` |
+| 최근 365일 | `category='Servc'` AND `bid_ntce_dt >= now-365일` 의 최신 차수 공고 수 |
+| 입찰 중 | `category='Servc'` AND `bid_clse_dt >= now` AND `bid_ntce_dt >= now-90일` |
+| 내 조건 | 관심 업종·지역에 맞는 입찰 중 용역 공고 수 |
+
+최신 차수 판정은 `bid_queries.latest_announcement_filter` 를 그대로 씁니다.
+관심 조건 셈은 `bid_preferences.count_open_servc_matching` 을 그대로 호출합니다.
+
+365일·입찰 중 건수는 대형 테이블 집계라 요청마다 세지 않고 10분 캐시합니다.
+정확도는 서빙 메타데이터를 매 요청 읽어 모델 교체가 화면에 바로 반영되게 합니다.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from src.app.core.cache import cache
+from src.app.core.timeutil import kst_now
+from src.app.models.bids import BidAnnouncement
+from src.app.services.bid_preferences import (
+    BidPreferenceView,
+    count_open_servc_matching,
+    get_bid_preferences,
+)
+from src.app.services.bid_queries import latest_announcement_filter
+from src.ml.model_registry import resolve_serving_tree
+from src.ml.promotion import SERVING_ROOT, load_serving_metrics
+
+SERVC_CATEGORY = "Servc"
+SERVC_MODEL_NAME = "servc_institution_v1"
+
+RECENT_YEAR_DAYS = 365
+OPEN_BID_LOOKBACK_DAYS = 90
+
+SERVIC_COUNTS_CACHE_KEY = "home:summary:servc_counts:v1"
+SERVIC_COUNTS_CACHE_TTL = 60 * 10
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number
+
+
+def _promoted_date(serving_root: Path) -> str | None:
+    """서빙 트리의 metadata.json 에서 승격일만 읽습니다.
+
+    `load_serving_metrics` 는 지표만 돌려주므로 승격일은 같은 파일을 직접 읽습니다.
+    파일이 없거나 형식이 깨졌으면 None 이고, 화면은 날짜 없이 문구를 만듭니다.
+    """
+    meta_path = resolve_serving_tree(serving_root / SERVC_MODEL_NAME) / "metadata.json"
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    promoted_at = meta.get("promoted_at")
+    if not isinstance(promoted_at, str) or not promoted_at:
+        return None
+    try:
+        return datetime.fromisoformat(promoted_at).strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def load_serving_accuracy(serving_dir: Path | str | None = None) -> dict[str, Any]:
+    """서빙 중인 용역 모델의 실측 오차를 화면 표시 형태로 돌려줍니다.
+
+    숫자는 코드나 템플릿에 두지 않고 metadata.json 에서 읽습니다. 읽지 못하면
+    available=False 이며 화면은 '측정값 준비 중' 을 보여 줍니다.
+    """
+    serving_root = Path(SERVING_ROOT) if serving_dir is None else Path(serving_dir)
+    _version, metrics = load_serving_metrics(SERVC_MODEL_NAME, serving_dir=serving_root)
+    rmse = _to_float(metrics.get("rmse")) if isinstance(metrics, dict) else None
+    if rmse is None:
+        return {"available": False, "rmse_display": None, "promoted_date": None}
+    return {
+        "available": True,
+        "rmse_display": f"{rmse:.2f}",
+        "promoted_date": _promoted_date(serving_root),
+    }
+
+
+def _count_recent_year_servc(db: Session, now_dt: datetime) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(BidAnnouncement)
+        .where(
+            BidAnnouncement.category == SERVC_CATEGORY,
+            BidAnnouncement.bid_ntce_dt >= now_dt - timedelta(days=RECENT_YEAR_DAYS),
+        )
+    )
+    return int(db.scalar(latest_announcement_filter(stmt)) or 0)
+
+
+def _count_open_servc(db: Session, now_dt: datetime) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(BidAnnouncement)
+        .where(
+            BidAnnouncement.category == SERVC_CATEGORY,
+            BidAnnouncement.bid_clse_dt >= now_dt,
+            BidAnnouncement.bid_ntce_dt >= now_dt - timedelta(days=OPEN_BID_LOOKBACK_DAYS),
+        )
+    )
+    return int(db.scalar(latest_announcement_filter(stmt)) or 0)
+
+
+def _servc_counts(db: Session, now_dt: datetime, *, use_cache: bool) -> tuple[int, int]:
+    if use_cache:
+        cached = cache.get(SERVIC_COUNTS_CACHE_KEY)
+        if isinstance(cached, dict):
+            recent_year = cached.get("recent_year_count")
+            open_count = cached.get("open_count")
+            if isinstance(recent_year, int) and isinstance(open_count, int):
+                return recent_year, open_count
+
+    recent_year = _count_recent_year_servc(db, now_dt)
+    open_count = _count_open_servc(db, now_dt)
+    if use_cache:
+        cache.set(
+            SERVIC_COUNTS_CACHE_KEY,
+            {"recent_year_count": recent_year, "open_count": open_count},
+            SERVIC_COUNTS_CACHE_TTL,
+        )
+    return recent_year, open_count
+
+
+def get_home_summary(
+    db: Session,
+    user_id: int | None = None,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """메인 한 화면이 쓰는 요약 문맥을 만듭니다.
+
+    now 를 넘기면 캐시를 건너뜁니다. 시험이 기준 시각을 고정할 때 씁니다.
+    """
+    now_dt = now or kst_now()
+    recent_year_count, open_count = _servc_counts(db, now_dt, use_cache=now is None)
+
+    prefs: BidPreferenceView | None = get_bid_preferences(db, user_id) if user_id else None
+    has_preferences = prefs is not None and not prefs.is_empty
+    matching_count = count_open_servc_matching(db, prefs, now=now) if has_preferences else None
+
+    return {
+        "accuracy": load_serving_accuracy(),
+        "recent_year_count": recent_year_count,
+        "open_count": open_count,
+        "has_preferences": has_preferences,
+        "matching_count": matching_count,
+    }
+
+
+def warm_home_summary_cache(db: Session) -> dict[str, Any]:
+    """수집이 끝난 뒤 365일·입찰 중 건수를 미리 캐시합니다."""
+    return get_home_summary(db)

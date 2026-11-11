@@ -239,6 +239,30 @@ def test_schedule_run_log_is_covered_by_signature():
     assert "ix_schedule_run_log_name_started" in {index["name"] for index in signature["indexes"]}
 
 
+def test_account_bid_preferences_is_covered_by_signature():
+    """신규 account_bid_preferences 도 서명 대상에 포함되고 제약이 드러나야 합니다."""
+    from src.app.models.bid_preferences import AccountBidPreference
+
+    engine = create_engine("sqlite:///:memory:")
+    AccountBidPreference.__table__.create(engine)
+    try:
+        signature = extract_table_signature(inspect(engine), "account_bid_preferences")
+    finally:
+        engine.dispose()
+
+    assert signature["primary_key"] == ["id"]
+    assert [column["name"] for column in signature["columns"]] == sorted(
+        column.name for column in AccountBidPreference.__table__.columns
+    )
+    assert "uq_account_bid_preferences_user_id" in {
+        constraint.name for constraint in AccountBidPreference.__table__.constraints
+    }
+    assert any(
+        foreign_key["referred_table"] == "accounts_customuser"
+        for foreign_key in signature["foreign_keys"]
+    )
+
+
 def test_first_run_without_baseline_fails_closed(tmp_path, sample_engine_a):
     """기준선 부재 시 파일을 만들지 않고 실패 처리하는지 검증."""
     baseline_file = tmp_path / "schema_signature_baseline.json"
