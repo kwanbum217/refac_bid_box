@@ -171,6 +171,8 @@ PRODUCTION_INDEX_NAMES = {
     # 원본에 없는 신규 테이블. 리비전 b7c8d9e0f1a2 가 만듭니다.
     # user_id 가 PK 라 외래키 색인 외에 추가 인덱스가 없습니다.
     "accounts_session_generation": set(),
+    # 원본에 없는 신규 테이블. 리비전 c5d6e7f8a9b0 이 만듭니다.
+    "schedule_run_log": {"ix_schedule_run_log_name_started"},
 }
 
 
