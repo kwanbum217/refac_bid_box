@@ -353,6 +353,14 @@ def test_cli_execution_fail_closed_without_manifest():
     assert ret == 1
 
 
+def test_cli_execution_default_manifest_for_v1(capsys):
+    """v1 fixture 는 별도 --manifest-path 없이 기존 manifest 로 검증된다 (경로 불변)."""
+    ret = main([str(FIXTURE_PATH), "--quiet"])
+    assert ret == 0
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
 def test_cli_execution_optout_succeeds(capsys):
     """CLI 실행 시 --skip-manifest-check 플래그를 주면 manifest 없이도 exit code 0을 반환하는지 확인합니다."""
     ret = main(

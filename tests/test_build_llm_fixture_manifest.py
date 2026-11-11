@@ -20,6 +20,8 @@ from pathlib import Path
 from scripts.build_llm_fixture_manifest import (
     build_manifest_file,
     extract_required_evidence_ids,
+    manifest_path_for_fixture,
+    parse_args,
 )
 
 
@@ -100,6 +102,20 @@ def test_extract_required_evidence_ids():
     }
     ids = extract_required_evidence_ids(fixture_data)
     assert ids == {"bid_1", "bid_2", "bid_3"}
+
+
+def test_default_output_path_follows_fixture():
+    """--output 미지정 시 fixture 파일명에 맞는 manifest 경로를 기본 출력으로 쓴다."""
+    v2_args = parse_args(["--fixture", "data/eval/llm_quality_fixture_v2.json"])
+    v1_args = parse_args(["--fixture", "data/eval/llm_quality_fixture_v1.json"])
+    assert v2_args.output is None
+    assert v1_args.output is None
+    assert manifest_path_for_fixture(Path("data/eval/llm_quality_fixture_v2.json")) == Path(
+        "data/eval/llm_quality_evidence_manifest_v2.json"
+    )
+    assert manifest_path_for_fixture(Path("data/eval/llm_quality_fixture_v1.json")) == Path(
+        "data/eval/llm_quality_evidence_manifest.json"
+    )
 
 
 def test_build_manifest_fails_when_chromadb_missing(tmp_path: Path):
