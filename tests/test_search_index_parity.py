@@ -11,6 +11,8 @@ Meilisearch 읽기 모델 건수 대조 점검 회귀 테스트.
 6. nightly_schedule_task outcome 에 search_index_parity 가 붙고, 불일치여도
    최종 status 가 바뀌지 않는다.
 7. 불일치 시 경고 로그가 남는다.
+8. 불일치가 야간 호출부에서 운영 알림(notify)으로 승격된다. 2026-11-11 에
+   로그만 남기던 경로를 승격하면서, 알림이 결과 status 를 바꾸지 않는지 함께 고정한다.
 
 실제 Meilisearch 나 MySQL 에 접속하지 않는다. 가짜 클라이언트와 DB 로만 검증한다.
 """
@@ -22,7 +24,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -40,6 +42,7 @@ from src.app.services.search_index import (
 )
 from src.app.services.search_index_parity import check_search_index_parity, count_db_announcements
 from src.tasks import scheduled_tasks
+from src.tasks.scheduled_tasks import nightly_schedule_task
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_BASELINE_PATH = PROJECT_ROOT / "data" / "backups" / "schema_signature_baseline.json"
@@ -350,6 +353,117 @@ async def test_nightly_outcome_에_불일치가_담겨도_status_는_유지된�
     assert outcome["status"] == "success"
     assert outcome["search_index_parity"] == mismatch
     assert "failed_followups" not in outcome
+
+
+@pytest.mark.asyncio
+async def test_nightly_불일치는_호출부에서_notify_로_승격된다(monkeypatch) -> None:
+    """건수 불일치가 로그로만 남지 않고 야간 호출부에서 운영 알림으로 나간다."""
+    dummy_claim = MagicMock()
+    dummy_claim.acquired = True
+    dummy_claim.key = "claim_key"
+    dummy_claim.token = "claim_token"  # noqa: S105
+
+    mismatch: dict[str, Any] = {
+        "status": "mismatch",
+        "announcements": {"db": 100, "meili": 97, "diff": -3},
+        "results": {"db": 200, "meili": 200, "diff": 0},
+    }
+    notify = AsyncMock()
+
+    with (
+        patch("src.tasks.scheduled_tasks.settings.AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True),
+        patch("src.tasks.scheduled_tasks.acquire_schedule_claim", return_value=dummy_claim),
+        patch("src.tasks.scheduled_tasks._create_scheduled_execution", return_value="test_exec"),
+        patch(
+            "src.tasks.scheduled_tasks.run_automation_pipeline",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_ranking_snapshots",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_compare_stats_snapshots",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_institution_stats",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._check_mysql_stats_freshness",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._check_restore_drill_freshness",
+            return_value={"status": "success"},
+        ),
+        patch("src.tasks.scheduled_tasks._check_search_index_parity", return_value=mismatch),
+        patch("src.tasks.scheduled_tasks.notify", notify),
+        patch("src.tasks.scheduled_tasks.release_schedule_claim"),
+    ):
+        outcome = await nightly_schedule_task({})
+
+    notify.assert_awaited_once()
+    assert notify.await_args.kwargs["level"] == "warning"
+    body = "\n".join(notify.await_args.args[1])
+    assert "scripts/sync_search_index_deletions.py" in body
+    assert outcome["status"] == "success"
+    assert outcome["search_index_parity"] == mismatch
+
+
+@pytest.mark.asyncio
+async def test_개발_최신화_경로도_불일치를_notify_로_승격한다() -> None:
+    dummy_claim = MagicMock()
+    dummy_claim.acquired = True
+    dummy_claim.key = "claim_key"
+    dummy_claim.token = "claim_token"  # noqa: S105
+
+    unavailable: dict[str, Any] = {
+        "status": "unavailable",
+        "announcements": {"db": None, "meili": None, "diff": None},
+        "results": {"db": None, "meili": None, "diff": None},
+    }
+    notify = AsyncMock()
+
+    with (
+        patch("src.tasks.scheduled_tasks.settings.AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True),
+        patch("src.tasks.scheduled_tasks.settings.AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", False),
+        patch("src.tasks.scheduled_tasks.acquire_schedule_claim", return_value=dummy_claim),
+        patch("src.tasks.scheduled_tasks._create_scheduled_execution", return_value="test_exec"),
+        patch(
+            "src.tasks.scheduled_tasks.run_automation_pipeline",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_ranking_snapshots",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_compare_stats_snapshots",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._rebuild_institution_stats",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._check_mysql_stats_freshness",
+            return_value={"status": "success"},
+        ),
+        patch(
+            "src.tasks.scheduled_tasks._check_restore_drill_freshness",
+            return_value={"status": "success"},
+        ),
+        patch("src.tasks.scheduled_tasks._check_search_index_parity", return_value=unavailable),
+        patch("src.tasks.scheduled_tasks.notify", notify),
+        patch("src.tasks.scheduled_tasks.release_schedule_claim"),
+    ):
+        outcome = await scheduled_tasks.development_data_refresh_task({})
+
+    notify.assert_awaited_once()
+    assert "대조 불가" in notify.await_args.args[0]
+    assert outcome["status"] == "success"
 
 
 # --------------------------------------------------------------------------- #

@@ -585,24 +585,18 @@ def _candidate_by_name() -> dict[str, dict]:
     return index
 
 
-# 2026-11-07 결정 D26 으로 원장이 최신 차수가 취소공고인 공고를 빼면서 기관별 공고 수가
-# min_announcements(5) 아래로 내려가 institutions 목록에서 빠진 조사 대상입니다.
-BELOW_MIN_AFTER_CANCEL_EXCLUSION = frozenset({"1400000"})
-
-
 def test_committed_ledger_investigation_targets() -> None:
     """후보 14곳의 조사 결론이 대응 16행에만 적히고 나머지 행은 null 이다.
 
     기관명이 dminstt_nm 과 같은 13행과, 이름 행이 없는 국방부의 별칭 3행만 채운다.
     같은 후보의 다른 별칭 행(김포공항·지방청·지방산림청·환경본부 등)은 null 이다.
+    2026-11-11 재생성 창에서 1400000(산림청)이 기준 건수를 넘어 목록에 들어와,
+    후보 YAML 기록을 그대로 옮긴 investigation 까지 확인한다.
     """
     candidates = _candidate_by_name()
     by_code = {item["dminstt_cd"]: item for item in _ledger()["institutions"]}
 
     for code, candidate_name, source in INVESTIGATION_TARGETS:
-        if code in BELOW_MIN_AFTER_CANCEL_EXCLUSION:
-            assert code not in by_code, code
-            continue
         candidate = candidates[candidate_name]
         investigation = by_code[code]["investigation"]
         assert investigation is not None, code
