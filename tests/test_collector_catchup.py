@@ -17,6 +17,7 @@ import pytest
 from src.app.services.collector_service import (
     MAX_CATCHUP_DAYS,
     resolve_collection_window,
+    validate_explicit_date_range,
 )
 
 # ---------------------------------------------------------------------------
@@ -73,6 +74,29 @@ def _seed_res(db, cat: str, dt: datetime, suffix: str = "") -> None:
             collected_at=dt,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# 명시적 날짜 창 검증
+# ---------------------------------------------------------------------------
+
+
+class TestValidateExplicitDateRange:
+    """end_date 단독·역순 창을 거부해 조용한 무시를 막습니다."""
+
+    def test_end_date_without_start_date_is_rejected(self):
+        with pytest.raises(ValueError, match="end_date"):
+            validate_explicit_date_range(None, "20260812")
+
+    def test_reversed_range_is_rejected(self):
+        with pytest.raises(ValueError, match="start_date"):
+            validate_explicit_date_range("20260812", "20260810")
+
+    def test_start_and_end_together_is_accepted(self):
+        validate_explicit_date_range("20260810", "20260812")
+
+    def test_missing_range_is_accepted(self):
+        validate_explicit_date_range(None, None)
 
 
 # ---------------------------------------------------------------------------

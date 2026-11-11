@@ -313,7 +313,12 @@ def collect_bids_api(
     if not (user.is_staff or user.is_superuser):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
 
-    from src.app.services.collector_service import collect_bids
+    from src.app.services.collector_service import collect_bids, validate_explicit_date_range
+
+    try:
+        validate_explicit_date_range(start_date or None, end_date or None)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return asyncio.run(
         collect_bids(
