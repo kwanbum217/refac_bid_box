@@ -33,10 +33,6 @@ from src.app.main import app
 from src.app.models.accounts import CustomUser
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import bid_queries
-from src.app.services.home_context import (
-    DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES,
-    get_home_page_context,
-)
 
 
 @pytest.fixture
@@ -271,49 +267,31 @@ def test_double_slash_compare_url_redirects_to_canonical_url(auth_client):
 # --------------------------------------------------------------------------- #
 
 
-def test_index_page_renders_restored_home_template(auth_client, isolated_db):
-    """홈이 원본 히어로 슬라이드 구성을 그대로 쓴다."""
+def test_index_page_renders_one_screen_home(auth_client, isolated_db):
+    """홈은 한 화면 요약(서비스 소개·4개 지표·바로가기)으로 렌더된다."""
     _add_announcement(isolated_db, bid_ntce_no="ANN-001", bid_ntce_nm="홈 노출 공고")
-    now = utcnow()
-    # 원본 setUp 의 기준 낙찰 1건에 대응합니다. 아래 반복분과 합쳐 8건입니다.
-    _add_result(isolated_db, bid_ntce_no="ANN-001")
-    for index in range(2, 9):
-        _add_result(
-            isolated_db,
-            bid_ntce_no=f"ANN-{index:03d}",
-            bid_ntce_nm=f"낙찰 결과 {index}",
-            bidwinnr_nm=f"테스트 낙찰업체 {index}",
-            sucsf_bid_amt=950000 + index,
-            sucsf_bid_rate=95.0 + index,
-            rl_openg_dt=now + timedelta(minutes=index),
-        )
 
     body = auth_client.get("/").text
 
     for phrase in (
-        "홈 노출 공고",
-        "최근 낙찰 결과",
-        "홈 브리핑",
-        "외자 브리핑",
-        "home-hero-slide",
-        "home-category-entries",
-        "grid-template-columns: repeat(3",
-        "공고 전체 탐색",
-        "최근 동기화",
-        'data-slide-index="0"',
-        'data-slide-index="5"',
-        "data-home-swipe-track",
-        "align-items: flex-start",
-        "syncTrackHeight",
-        "bootstrap.bundle.min.js",
+        "공공조달 용역 입찰을 데이터로 해석합니다",
+        'data-home-metric="accuracy"',
+        'data-home-metric="recent-year"',
+        'data-home-metric="open"',
+        'data-home-metric="matching"',
+        'data-home-shortcut="bid-list"',
+        'data-home-shortcut="result-list"',
+        'data-home-shortcut="compare"',
+        'data-home-shortcut="chatbot"',
+        "/bids/compare/",
     ):
         assert phrase in body, phrase
-    # 홈은 사이드바를 감춥니다 (hide_sidebar).
-    assert '<aside id="sidebar"' not in body
-
-    context = get_home_page_context(isolated_db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
-    assert context["announcement_total"] == 1
-    assert context["result_total"] == 8
+    # 옛 스와이프 브리핑 마크업과 스크립트는 남지 않는다.
+    assert "data-home-swipe-slide" not in body
+    assert "data-home-swipe-track" not in body
+    assert "syncTrackHeight" not in body
+    # 홈도 다른 화면처럼 사이드바를 보인다.
+    assert '<aside id="sidebar"' in body
 
 
 def test_index_page_header_shows_branding_and_logout_without_bell(auth_client, isolated_db):
@@ -322,58 +300,9 @@ def test_index_page_header_shows_branding_and_logout_without_bell(auth_client, i
 
     body = auth_client.get("/").text
 
-    assert "border-slate-200/80 bg-white" in body
     assert 'action="/bids/"' in body
     assert 'name="q"' in body
     assert "공고명 또는 번호 검색" in body
     assert "/accounts/logout/" in body
     assert "로그아웃" in body
     assert "fa-bell" not in body
-
-
-def test_index_page_recent_bid_sections_keep_latest_notice_order(isolated_db):
-    """홈의 분야별 최근 공고도 같은 공고번호는 최신 차수만 노출한다."""
-    now = utcnow()
-    _add_announcement(
-        isolated_db,
-        bid_ntce_no="ANN-HOME",
-        bid_ntce_ord="000",
-        bid_ntce_nm="홈 중복 공고",
-        category="Thng",
-        base_amount=5100000,
-        presmpt_prce=5000000,
-        bid_ntce_dt=now,
-    )
-    latest = _add_announcement(
-        isolated_db,
-        bid_ntce_no="ANN-HOME",
-        bid_ntce_ord="001",
-        bid_ntce_nm="홈 중복 공고",
-        category="Thng",
-        base_amount=5200000,
-        presmpt_prce=5100000,
-        bid_ntce_dt=now + timedelta(minutes=1),
-    )
-
-    context = get_home_page_context(isolated_db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
-    section = next(item for item in context["recent_bid_sections"] if item["code"] == "Thng")
-    matching = [row for row in section["entries"] if row.bid_ntce_no == "ANN-HOME"]
-
-    assert len(matching) == 1
-    assert matching[0].id == latest.id
-
-
-def test_index_page_default_sections_include_foreign_procurement(isolated_db):
-    """기본 홈 분야 목록에 외자 공고 6건 패널도 포함합니다."""
-    _add_announcement(
-        isolated_db,
-        bid_ntce_no="FRGCPT-HOME",
-        bid_ntce_nm="외자 홈 공고",
-        category="Frgcpt",
-    )
-
-    context = get_home_page_context(isolated_db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
-    section = next(item for item in context["recent_bid_sections"] if item["code"] == "Frgcpt")
-
-    assert section["label"] == "외자"
-    assert [row.bid_ntce_no for row in section["entries"]] == ["FRGCPT-HOME"]
