@@ -97,8 +97,8 @@ async def test_ssr_auth_login_success(
     # 홈 헤더의 로그아웃 버튼 가시성 확인
     await expect(page.get_by_role("button", name="로그아웃")).to_be_visible(timeout=15_000)
 
-    # 사이드바가 있는 대시보드 페이지 방문 시 닉네임 표시 검증
-    await page.goto(f"{live_server_url}/bids/dashboard/")
+    # 사이드바가 있는 비교 분석 페이지 방문 시 닉네임 표시 검증
+    await page.goto(f"{live_server_url}/bids/compare/")
     await expect(page.locator("body")).to_contain_text(e2e_test_user["nickname"], timeout=15_000)
 
 
@@ -133,7 +133,7 @@ async def test_ssr_auth_logout_post(
 ) -> None:
     """인증 상태에서 POST 로그아웃 수행 시 세션이 무효화되고 로그인 페이지로 리다이렉트됨을 검증합니다."""
     # 1. 보호된 화면 진입
-    response = await authenticated_page.goto(f"{live_server_url}/bids/dashboard/")
+    response = await authenticated_page.goto(f"{live_server_url}/bids/compare/")
     assert response is not None
     assert response.status == 200
 
@@ -149,7 +149,7 @@ async def test_ssr_auth_logout_post(
     assert "/accounts/login/" in authenticated_page.url
 
     # 4. 보호된 화면 재접근 시 로그인 리다이렉트 확인 (세션 무효화)
-    re_response = await authenticated_page.goto(f"{live_server_url}/bids/dashboard/")
+    re_response = await authenticated_page.goto(f"{live_server_url}/bids/compare/")
     assert re_response is not None
     await authenticated_page.wait_for_url(re.compile(r".*/accounts/login.*"), timeout=15_000)
     assert "/accounts/login/" in authenticated_page.url

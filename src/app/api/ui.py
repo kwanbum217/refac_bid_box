@@ -276,7 +276,9 @@ def result_list(
     if user is None:
         return _login_redirect(request)
     try:
-        page_obj = bid_queries.list_results(db, q=q, cat=cat, region=region, sort=sort, page=page)
+        page_obj = bid_queries.list_results(
+            db, q=q, cat="Servc", region=region, sort=sort, page=page
+        )
     except SearchBackendUnavailable as exc:
         logger.exception("낙찰 SSR 목록 검색 백엔드 실패")
         raise HTTPException(
@@ -289,7 +291,6 @@ def result_list(
         "max_page": bid_queries.MAX_LIST_PAGE,
         "is_paginated": page_obj.has_previous or page_obj.has_next,
         "q": q,
-        "cat": cat,
         "sort": bid_queries.normalize_result_sort(sort),
         "region": bid_queries.normalize_region_code(region),
         "region_groups": bid_queries.region_groups_payload(),
@@ -316,14 +317,14 @@ def result_detail(
 def dashboard(request: Request, user: CustomUser | None = Depends(get_current_user)):
     if user is None:
         return _login_redirect(request)
-    return _render(request, "bids/dashboard.html", {}, user, "dashboard")
+    return RedirectResponse(url="/", status_code=302)
 
 
 @router.get("/bids/compare/")
 def compare(request: Request, user: CustomUser | None = Depends(get_current_user)):
     if user is None:
         return _login_redirect(request)
-    return _render(request, "bids/compare.html", {}, user, "dashboard")
+    return _render(request, "bids/compare.html", {}, user, "compare")
 
 
 @router.get("/bids/{pk}/")
@@ -355,7 +356,7 @@ def compat_result_detail(request: Request, pk: int):
 
 @router.get("/dashboard/", include_in_schema=False)
 def compat_dashboard(request: Request):
-    return _compat_redirect(request, "/bids/dashboard/")
+    return RedirectResponse(url="/", status_code=302)
 
 
 @router.get("/compare/", include_in_schema=False)
