@@ -312,6 +312,21 @@ python3 -m json.tool .cache/openg_backfill_ledger.json
 - `G2B_SERVICE_KEY` 가 없으면 `FAIL: G2B serviceKey 가 설정되지 않았습니다` 를 남기고 종료 코드 1 로 끝납니다.
 - 서비스 키 값은 코드·원장·표준출력에 기록되지 않습니다.
 
+### 5.5 예비가격 소급(공고 단건)
+
+용역 예비가격 상세는 월 단위 구간 소급(`scripts/backfill_prearng_prices.py`)이 나라장터에서 `[07] 입력범위값 초과` 로 거부됩니다. 이때는 공고번호 단건(`inqryDiv=2`) 조회로 소급합니다. 스크립트는 `scripts/backfill_prearng_by_notices.py` 이며 기본은 dry-run 입니다.
+
+```bash
+# 1) dry-run: 후보 수와 개찰일별 분포만 확인합니다. API 호출은 없습니다.
+docker compose exec app python3 scripts/backfill_prearng_by_notices.py --since 2026-10-12
+
+# 2) 실행: 하루 2,000건을 권장합니다. 일일 크론 500건과 서비스 키 한도를 함께 보호합니다.
+docker compose exec app python3 scripts/backfill_prearng_by_notices.py \
+  --since 2026-10-12 --until 2026-11-10 --limit 2000 --execute
+```
+
+`--limit` 기본값은 2,000, 상한은 5,000 이고 최근 개찰일부터 자릅니다. 적재가 있으면 수요기관명 연결과 기관별 사정률 재집계가 자동으로 이어집니다. 실패 공고가 있으면 목록과 개수를 출력하고 종료 코드 1 로 끝나므로, 같은 범위로 다시 실행해 이어서 채웁니다.
+
 ---
 
 ## 6. 소급 이력
