@@ -405,6 +405,6 @@ def test_자동_삭제_경로가_앱과_스케줄에_없다() -> None:
     for path in (project_root / "src").rglob("*.py"):
         text = path.read_text(encoding="utf-8")
         if "delete_documents(" in text or "delete-batch" in text:
-            hits.append(str(path.relative_to(project_root)))
+            hits.append(path.relative_to(project_root).as_posix())
 
     assert hits == ["src/app/services/search_index.py"]
