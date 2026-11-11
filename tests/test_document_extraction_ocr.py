@@ -295,7 +295,9 @@ def test_ocr_success_without_grade_keeps_unrecognized(api, ocr_enabled, monkeypa
     assert response.json()["status"] == "unrecognized"
 
 
-def test_missing_model_disables_ocr_once(api, ocr_enabled, monkeypatch, tmp_path, caplog) -> None:
+def test_missing_model_disables_ocr_once(
+    api, ocr_enabled, relaxed_extraction_timeout, monkeypatch, tmp_path, caplog
+) -> None:
     monkeypatch.setattr(settings, "DOCUMENT_OCR_MODEL_DIR", str(tmp_path / "empty"))
     content = _build_image_pdf([_draw_scan()])
 
@@ -312,7 +314,9 @@ def test_missing_model_disables_ocr_once(api, ocr_enabled, monkeypatch, tmp_path
     assert len(unavailable) == 1
 
 
-def test_mismatched_model_hash_disables_ocr(api, ocr_enabled, monkeypatch, tmp_path) -> None:
+def test_mismatched_model_hash_disables_ocr(
+    api, ocr_enabled, relaxed_extraction_timeout, monkeypatch, tmp_path
+) -> None:
     model_dir = tmp_path / "ocr_models"
     model_dir.mkdir()
     filename = ocr.MODEL_FILES[0][0]

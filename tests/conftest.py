@@ -258,6 +258,24 @@ def _fast_fail_local_services(monkeypatch):
 
 
 @pytest.fixture
+def relaxed_extraction_timeout(monkeypatch):
+    """실제 추출 스레드를 도는 문서 추출 시험에 제한 시간 여유를 줍니다.
+
+    라우터는 추출을 스레드로 넘기고 운영 예산 10초를 넘으면 422 로 끝냅니다
+    (src/app/api/v1/documents.py:44, documents.py:210-213). 그 10초는 운영 요청
+    예산이지 시험의 불변 조건이 아닙니다. 모델 파일이 없는 경로도 OCR 엔진을
+    만들기 전에 rapidocr 패키지를 import 하며(ocr.py:90), 이 import 는 벽시계
+    2초 중 CPU 0.3초로 I/O 대기가 대부분입니다. 전량 시험이 디스크를 함께 쓰는
+    상황에서는 같은 import 가 10초를 넘겨 시험이 부하에 흔들렸습니다. 제한 시간만
+    시험 안에서 넓히고 단정과 운영 동작은 그대로 둡니다. 제한 시간 동작 자체는
+    EXTRACTION_TIMEOUT_SECONDS 를 직접 낮추는 시험이 따로 검증합니다.
+    """
+    from src.app.api.v1 import documents
+
+    monkeypatch.setattr(documents, "EXTRACTION_TIMEOUT_SECONDS", 60.0)
+
+
+@pytest.fixture
 def isolated_db():
     """SQLite 인메모리 DB 세션. accounts 등 DB 쓰기 테스트를 격리합니다."""
     engine = create_engine(
