@@ -12,6 +12,10 @@ src/app/api/v1/bids.py
 | `bids:api_stats` | `GET /api/v1/bids/stats` |
 | `bids:api_compare_stats` | `GET /api/v1/bids/compare-stats` |
 | `index` (홈 컨텍스트) | `GET /api/v1/bids/home` |
+
+SSR 메인 화면은 한 화면 요약(`home_summary`)으로 바뀌었습니다. `/api/v1/bids/home`
+은 외부 응답 계약(`HomeContextResponse`)을 유지해야 하므로 기존 최근 수집 문맥을
+그대로 돌려줍니다.
 """
 
 from __future__ import annotations

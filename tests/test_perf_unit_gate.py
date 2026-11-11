@@ -90,8 +90,10 @@ def compute_metrics() -> dict[str, Any]:
         "feature_map_set_sha256": _feature_map_set_sha256(),
         "training_features_servc_count": len(servc_columns),
         "unservable_features": unservable_features(servc_columns),
-        # 홈 한 번 = 공통 1회 + 분야별 len(DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)회
-        # 선별이고, 각 선별은 표본 크기 수(HOME_RECENT_SAMPLE_SIZES)를 넘지 않는다.
+        # 외부 홈 컨텍스트 API 한 번 = 공통 1회 +
+        # 분야별 len(DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)회 선별이고, 각 선별은
+        # 표본 크기 수(HOME_RECENT_SAMPLE_SIZES)를 넘지 않는다. SSR 메인 화면은
+        # 2026-11-11 개편으로 이 경로를 쓰지 않지만 외부 응답 계약은 유지한다.
         "home_context_query_ceiling": (
             (1 + len(home_context.DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES))
             * len(home_context.HOME_RECENT_SAMPLE_SIZES)

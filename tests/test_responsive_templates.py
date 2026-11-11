@@ -27,6 +27,7 @@ from src.app.models.accounts import CustomUser
 INLINE_HANDLER = re.compile(r"<[a-zA-Z][^>]*\son[a-z]+\s*=")
 
 AUTHENTICATED_PATHS = (
+    "/",
     "/bids/dashboard/",
     "/bids/",
     "/bids/results/",

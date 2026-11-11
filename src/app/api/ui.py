@@ -69,10 +69,7 @@ from src.app.services.band_regime_lookup import (
 )
 from src.app.services.bid_preferences import get_bid_preferences, save_bid_preferences
 from src.app.services.evaluation_rules import find_reputation_item
-from src.app.services.home_context import (
-    DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES,
-    get_home_page_context,
-)
+from src.app.services.home_summary import get_home_summary
 from src.app.services.search_index import SearchBackendUnavailable
 
 logger = logging.getLogger(__name__)
@@ -194,9 +191,7 @@ def index(
 ):
     if user is None:
         return _login_redirect(request)
-    context = get_home_page_context(db, DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES)
-    context["hide_sidebar"] = True
-    return _render(request, "index.html", context, user, "index")
+    return _render(request, "index.html", get_home_summary(db, user.id), user, "index")
 
 
 @router.get("/bids/")

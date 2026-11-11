@@ -148,6 +148,17 @@ def test_protected_pages_render_when_logged_in(auth_client, seeded_bid, path):
     assert "BIDBOX" in response.text
 
 
+def test_home_renders_summary_metrics_without_swipe(auth_client, seeded_bid):
+    """메인은 네 지표와 바로가기를 스와이프 없이 렌더한다."""
+    body = auth_client.get("/").text
+
+    for metric in ("accuracy", "recent-year", "open", "matching"):
+        assert f'data-home-metric="{metric}"' in body, metric
+    for shortcut in ("bid-list", "result-list", "compare", "chatbot"):
+        assert f'data-home-shortcut="{shortcut}"' in body, shortcut
+    assert "data-home-swipe-slide" not in body
+
+
 def test_bid_list_renders_actual_row(auth_client, seeded_bid):
     """목록 화면이 DB 행을 실제로 출력하는지 확인한다 (빈 껍데기 방지)."""
     bid, _ = seeded_bid
