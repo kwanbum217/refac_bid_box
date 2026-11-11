@@ -43,7 +43,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from src.app.api.v1.accounts import require_current_user
+from src.app.api.v1.accounts import get_current_user, require_current_user
 from src.app.api.v1.predictions import predict_price_api
 from src.app.core.db import get_db
 from src.app.core.security import enforce_anonymous_api_quota
@@ -2888,8 +2888,10 @@ def _serialize_rule_meta(rule: EvaluationRule) -> dict[str, str | None]:
 
 @router.get("/rules", summary="일반용역 적격심사 별표 규칙 메타 목록")
 def list_evaluation_rules_meta(
+    request: Request,
     bid_id: int | None = None,
     db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
 ) -> dict[str, Any]:
     """산식 카드의 별표 표를 채울 조달청 일반용역 적격심사 별표 20종 메타를 돌려줍니다.
 
@@ -2899,10 +2901,14 @@ def list_evaluation_rules_meta(
     한국석유공사는 원문 적용 범위가 하위 조직까지 미쳐 그 하위 조직 공고도 기관 규칙으로
     판정한다는 사실을 scope_note 에 함께 밝힙니다.
     bid_id 가 주어지면 그 공고에 매칭된 별표를 matched_rule 로 함께 돌려주고, 매칭되지
-    않으면 null 로 두고 목록만 돌려줍니다. 규칙은 공개 정보라 인증을 요구하지 않습니다.
+    않으면 null 로 두고 목록만 돌려줍니다. 규칙 목록은 공개 정보라 인증 없이 열리지만,
+    bid_id 로 공고·첨부 판별 정보를 조회하는 경로는 로그인과 API 쿼터를 요구합니다.
     """
     matched_rule: dict[str, str | None] | None = None
     if bid_id is not None:
+        if user is None:
+            raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+        enforce_anonymous_api_quota(request, user)
         bid = _get_bid_or_404(db, bid_id)
         raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
         institution = _demand_institution_for_bid(db, bid)
