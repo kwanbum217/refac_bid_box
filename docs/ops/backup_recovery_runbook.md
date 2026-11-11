@@ -306,6 +306,17 @@ docker compose -f docker-compose.prod.yml exec meilisearch sh -c \
 
 응답의 `total` 이 0 이면 재색인이 완료된 것입니다.
 
+#### 4.3.1.3 원본에서 사라진 색인 문서 정리
+
+재색인은 upsert 만 하므로 원본에서 삭제된 행의 문서가 색인에 남습니다. 야간 건수 대조가 불일치(`diff` 양수)를 알리면 잔존 문서를 정리합니다. 삭제는 되돌리는 데 전체 재색인이 필요하므로 자동화하지 않으며, 아래 스크립트를 사람이 직접 실행합니다.
+
+```bash
+docker compose exec app python3 scripts/sync_search_index_deletions.py
+docker compose exec app python3 scripts/sync_search_index_deletions.py --execute
+```
+
+기본은 dry-run 이며 후보 건수와 표본 20건만 출력합니다. 후보가 데이터셋 색인 건수의 1% 를 넘으면 아무것도 지우지 않고 종료 코드 2 로 끝납니다. 원본 데이터나 색인 상태를 먼저 확인하고, 의도한 규모일 때만 `--max-ratio 0.05` 처럼 상한을 명시 상향하십시오. 삭제 후 4.3.1.1 의 `/tasks` 로 반영을 확인하고 `python3 scripts/sync_search_index.py` 로 누락분을 다시 채웁니다.
+
 전제: [`docs/ops/rpo_rto_policy.md`](rpo_rto_policy.md) 3장의 재색인 실측(2026-09-22 839.3초, 2026-09-25 951.2초)은 모두 `MEILI_TIMEOUT_SECONDS=30` 에서 측정한 값입니다. 기본값 5초로 전체 재색인이 배치 실패 없이 끝나는지는 확인하지 않았으므로, 복구에서는 반드시 30을 지정합니다.
 
 ### 4.4 복원 리허설 (Restore Drill)
