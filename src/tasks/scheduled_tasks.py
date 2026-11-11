@@ -345,6 +345,7 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # Meilisearch 읽기 모델 건수 대조 점검 (읽기 전용, 재구축 자동 실행 금지)
     outcome["search_index_parity"] = await asyncio.to_thread(_check_search_index_parity)
+    await _notify_search_index_parity(outcome["search_index_parity"])
     final_outcome = _mark_followup_failures(outcome)
     failed_followups = final_outcome.get("failed_followups")
     if isinstance(failed_followups, list) and failed_followups:
@@ -429,6 +430,7 @@ async def development_data_refresh_task(ctx: dict[str, Any]) -> dict[str, Any]:
     outcome["mysql_stats_freshness"] = await asyncio.to_thread(_check_mysql_stats_freshness)
     outcome["restore_drill_freshness"] = await asyncio.to_thread(_check_restore_drill_freshness)
     outcome["search_index_parity"] = await asyncio.to_thread(_check_search_index_parity)
+    await _notify_search_index_parity(outcome["search_index_parity"])
     final_outcome = _mark_followup_failures(outcome)
     if final_outcome.get("status") == "success":
         await asyncio.to_thread(release_schedule_claim, claim.key, token=claim.token)
@@ -605,6 +607,52 @@ def _check_search_index_parity() -> dict[str, Any]:
         return {"status": "failed", **safe_error(exc)}
     finally:
         db.close()
+
+
+def _search_index_parity_lines(result: dict[str, Any]) -> list[str]:
+    """건수 대조 결과를 알림 본문으로 만듭니다. 수치와 조치 경로를 함께 남깁니다."""
+    announcements = result.get("announcements") or {}
+    results = result.get("results") or {}
+    return [
+        "Meilisearch 읽기 모델과 MySQL 원본 건수가 다릅니다.",
+        (
+            f"공고: db={announcements.get('db')} meili={announcements.get('meili')} "
+            f"diff={announcements.get('diff')}"
+        ),
+        (f"낙찰: db={results.get('db')} meili={results.get('meili')} diff={results.get('diff')}"),
+        "",
+        "수동 재구축: python3 scripts/sync_search_index.py",
+        "삭제 정리: python3 scripts/sync_search_index_deletions.py",
+    ]
+
+
+async def _notify_search_index_parity(result: dict[str, Any]) -> None:
+    """건수 불일치·대조 불가를 경고 로그가 아니라 운영 알림으로 승격합니다.
+
+    색인이 어긋나도 서비스는 응답하므로 로그만 남기면 아무도 보지 못합니다. 삭제는
+    자동 실행하지 않고, 사람이 dry-run 으로 확인할 경로만 안내합니다. 알림 실패가
+    야간 스케줄 결과를 되돌리면 안 되므로 삼키고 로그만 남깁니다.
+    """
+    status = result.get("status")
+    if status == "mismatch":
+        title = "Meilisearch 읽기 모델 건수 불일치"
+        lines = _search_index_parity_lines(result)
+    elif status == "unavailable":
+        title = "Meilisearch 읽기 모델 건수 대조 불가"
+        lines = [
+            "검색 백엔드에 연결하지 못해 건수 대조를 수행하지 못했습니다.",
+            "Meilisearch 기동·네트워크 상태를 확인하십시오.",
+            "",
+            "수동 재구축: python3 scripts/sync_search_index.py",
+            "삭제 정리: python3 scripts/sync_search_index_deletions.py",
+        ]
+    else:
+        return
+
+    try:
+        await notify(title, lines, level="warning")
+    except Exception as exc:
+        logger.warning("Meilisearch 건수 대조 알림 발신 실패: %s", exc)
 
 
 def _acquire_weekly_retrain_claim() -> ScheduleClaimResult:
