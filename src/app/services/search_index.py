@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -43,6 +43,7 @@ def extract_license_codes(*texts: str | None) -> list[str]:
 
 
 SYNC_BATCH_SIZE = 1_000
+DOCUMENT_ID_BATCH_SIZE = 10_000
 INDEX_MAX_TOTAL_HITS = 10_000_000
 
 
@@ -209,6 +210,55 @@ class MeiliSearchClient:
     def upsert(self, documents: list[dict[str, Any]]) -> None:
         if documents:
             self._request("POST", f"/indexes/{INDEX_UID}/documents", json=documents)
+
+    def iter_document_ids(
+        self, dataset: str, *, batch_size: int = DOCUMENT_ID_BATCH_SIZE
+    ) -> Iterator[str]:
+        """dataset 에 속한 문서 id 를 페이지 단위로 끝까지 순회합니다.
+
+        검색 API 의 offset 상한(maxTotalHits)을 피하려고 documents API 를 limit·offset
+        으로 순회합니다. filter 질의 대신 dataset 필드를 함께 받아 클라이언트에서
+        거르므로, 문서 조회의 필터 지원 여부에 기대지 않습니다. 문서 본문은 받지
+        않으므로 페이지당 응답은 (id, dataset) 두 필드뿐입니다.
+        """
+        offset = 0
+        while True:
+            payload = self._request(
+                "GET",
+                f"/indexes/{INDEX_UID}/documents",
+                params={
+                    "fields": "id,dataset",
+                    "limit": batch_size,
+                    "offset": offset,
+                },
+            )
+            rows = payload.get("results")
+            if not isinstance(rows, list):
+                raise SearchBackendUnavailable("Meilisearch 응답에 문서 목록이 없습니다.")
+            page = [
+                str(row["id"])
+                for row in rows
+                if isinstance(row, dict)
+                and row.get("dataset") == dataset
+                and row.get("id") is not None
+            ]
+            yield from page
+            offset += len(rows)
+            total = payload.get("total")
+            if len(rows) < batch_size or (isinstance(total, int) and offset >= total):
+                return
+
+    def delete_documents(self, ids: Sequence[str]) -> int | None:
+        """documents/delete-batch 로 문서를 지우고 taskUid 를 돌려줍니다."""
+        if not ids:
+            return None
+        payload = self._request(
+            "POST",
+            f"/indexes/{INDEX_UID}/documents/delete-batch",
+            json=list(ids),
+        )
+        task_uid = payload.get("taskUid")
+        return task_uid if isinstance(task_uid, int) else None
 
     def search(
         self,
