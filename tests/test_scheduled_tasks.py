@@ -22,7 +22,7 @@ from sqlalchemy import select
 
 from src.app.core.config import settings
 from src.app.models.chatbot import PipelineExecution
-from src.ml.training_config import CATEGORY_MODEL_NAMES
+from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 from src.tasks import scheduled_tasks, worker
 from src.tasks.run_mode_matrix import get_run_mode_steps
 from src.tasks.worker import WorkerSettings
@@ -690,7 +690,8 @@ async def test_drift_feature_frame_and_psi_run_off_event_loop(monkeypatch):
     outcome = await scheduled_tasks.drift_monitor_task({}, evaluation_window_days=7)
 
     assert outcome["status"] == "success"
-    expected = 2 * len(CATEGORY_MODEL_NAMES)
+    # 드리프트 감시는 서빙 매핑(CATEGORY_DEFAULT_MODELS) 분야만 평가합니다.
+    expected = 2 * len(CATEGORY_DEFAULT_MODELS)
     assert len(seen) == expected
     for index in range(0, expected, 2):
         build_kind, build_thread = seen[index]
