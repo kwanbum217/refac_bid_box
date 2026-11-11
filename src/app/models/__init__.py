@@ -1,5 +1,6 @@
 from src.app.models.accounts import CustomUser, UserAccount
 from src.app.models.announcement_regime import BidAnnouncementRegime
+from src.app.models.bid_preferences import AccountBidPreference
 from src.app.models.bid_restrictions import (
     BidAnnouncementLicenseLimit,
     BidAnnouncementParticipationRegion,
@@ -35,6 +36,7 @@ from src.app.models.predictions import PredictionResult, RetrainLog
 from src.app.models.schedule_run_log import ScheduleRunLog
 
 __all__ = [
+    "AccountBidPreference",
     "AccountCompanyProfile",
     "AccountConsentEvent",
     "AccountQualificationFact",
