@@ -4046,6 +4046,96 @@
       "indexes": [],
       "hash": "37f7bdb7bd12c8869ca79b8617fc99b7d2c83c4c7c591235a68744bc0b6b3936"
     },
+    "schedule_run_log": {
+      "name": "schedule_run_log",
+      "columns": [
+        {
+          "name": "duration_ms",
+          "type": "INTEGER",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "error_message",
+          "type": "VARCHAR(1000) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "error_type",
+          "type": "VARCHAR(128) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "finished_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "schedule_name",
+          "type": "VARCHAR(64) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "started_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR(32) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "success",
+          "type": "TINYINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "worker_id",
+          "type": "VARCHAR(128) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_schedule_run_log_name_started",
+          "column_names": [
+            "schedule_name",
+            "started_at"
+          ],
+          "unique": false
+        }
+      ],
+      "hash": "f580c4de6d217c3af712ecde4abbb35509c57b93c8eaeee2bba4dd02191d3d6f"
+    },
     "servc_inst_verify": {
       "name": "servc_inst_verify",
       "columns": [
@@ -4671,13 +4761,14 @@
     "pipeline_executions": "ef98bd6ef8d384fbdd1c9010d8a374379f17bf5599a33d15af254cc95bebaed2",
     "prediction_results": "e45f1a94754ebd46ef78ef5d6b613b773331de67bb46010d5f4bd4ddf7a2cfa4",
     "retrain_logs": "37f7bdb7bd12c8869ca79b8617fc99b7d2c83c4c7c591235a68744bc0b6b3936",
+    "schedule_run_log": "f580c4de6d217c3af712ecde4abbb35509c57b93c8eaeee2bba4dd02191d3d6f",
     "servc_inst_verify": "9f3f26bbb31c356f27926741057947ebfb287952d7f7ae3454a88201d70c5e4a",
     "socialaccount_socialaccount": "1f9ceb2497fe293bb2e86f423accedfcb57051fc3686c4b1c43fc1923bb2adfe",
     "socialaccount_socialapp": "2b15551d964b4690a6b2153fe0c06317ee798a189e0567eb1bde220d5dc0dec7",
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "2a20a06cab7ee668803d2ce1d61441fb7ff3e5b8fe917180e110863d374eef11",
+  "overall_hash": "c979427e4b9fc7fd644bf21f5ee9b1346106303992042248d61e896451ed8477",
   "orm_tables": [
     "account_company_profiles",
     "account_consent_events",
@@ -4706,7 +4797,8 @@
     "knowledge_base_status",
     "pipeline_executions",
     "prediction_results",
-    "retrain_logs"
+    "retrain_logs",
+    "schedule_run_log"
   ],
   "database_tables": [
     "account_company_profiles",
@@ -4750,6 +4842,7 @@
     "pipeline_executions",
     "prediction_results",
     "retrain_logs",
+    "schedule_run_log",
     "servc_inst_verify",
     "socialaccount_socialaccount",
     "socialaccount_socialapp",
@@ -4757,10 +4850,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-11-06T03:05:09.104782+00:00",
+    "generated_at": "2026-11-11T03:32:29.490584+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "a3a1ee944374b618091fe70f79dfc36950376265"
+    "git_head": "cac3069ddcc59e6452f9e9adbfe30c2cd526167c"
   }
 }
