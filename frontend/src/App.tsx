@@ -19,7 +19,29 @@ interface PredictionResult extends Record<string, unknown> {
   predicted_price: number;
   predicted_rate: number;
   features_used?: unknown;
+  extreme_prediction_warning?: boolean;
+  wide_interval_warning?: boolean;
+  lwlt_missing?: boolean;
+  uncertainty_warning?: string | null;
 }
+
+const EXTREME_PREDICTION_WARNING_MESSAGE =
+  '모델 예측이 경계값에 가까워 신뢰도가 낮습니다. 투찰가 결정에는 참고용으로만 사용하십시오.';
+
+// 서버가 준 불확실성 경고를 화면 문구로 옮긴다. 경고가 없으면 빈 배열이다.
+const predictionWarningMessages = (prediction: PredictionResult): string[] => {
+  const messages: string[] = [];
+  if (prediction.extreme_prediction_warning) messages.push(EXTREME_PREDICTION_WARNING_MESSAGE);
+  if (prediction.uncertainty_warning) messages.push(prediction.uncertainty_warning);
+  return messages;
+};
+
+const predictionWarningBadges = (prediction: PredictionResult): string[] => {
+  const badges: string[] = [];
+  if (prediction.wide_interval_warning) badges.push('예측 구간 넓음');
+  if (prediction.lwlt_missing) badges.push('낙찰하한율 근거 부족');
+  return badges;
+};
 
 const hasVisualizations = (vis: unknown): boolean => {
   if (!vis) return false;
@@ -313,6 +335,11 @@ export default function App() {
     Cnstwk: '공사',
     Frgcpt: '외자',
   };
+
+  const predictionWarnings = predictionResult ? predictionWarningMessages(predictionResult) : [];
+  const predictionWarningBadgeList = predictionResult
+    ? predictionWarningBadges(predictionResult)
+    : [];
 
   return (
     <div style={{ padding: '24px', maxWidth: '1280px', margin: '0 auto', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -725,6 +752,28 @@ export default function App() {
                       {predictionResult.predicted_rate.toFixed(4)} %
                     </div>
                   </div>
+
+                  {(predictionWarnings.length > 0 || predictionWarningBadgeList.length > 0) && (
+                    <div style={{ marginBottom: '16px', padding: '12px', borderRadius: '6px', border: '1px solid #b45309', backgroundColor: '#451a03' }}>
+                      <div style={{ color: '#fbbf24', fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>
+                        예측 신뢰도 주의
+                      </div>
+                      {predictionWarningBadgeList.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+                          {predictionWarningBadgeList.map((badge) => (
+                            <span key={badge} style={{ border: '1px solid #b45309', borderRadius: '4px', padding: '1px 6px', fontSize: '11px', color: '#fbbf24', backgroundColor: '#78350f' }}>
+                              {badge}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {predictionWarnings.map((warning) => (
+                        <p key={warning} style={{ margin: '2px 0', fontSize: '12px', lineHeight: 1.6, color: '#fde68a' }}>
+                          {warning}
+                        </p>
+                      ))}
+                    </div>
+                  )}
 
                   <div>
                     <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '8px' }}>산출에 사용된 핵심 특징 (features.py)</div>

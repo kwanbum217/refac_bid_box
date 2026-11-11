@@ -368,6 +368,21 @@
                                     </div>
                                 </div>
 
+                                <!-- 예측 불확실성 경고. 서버가 보낸 경고가 없으면 숨긴다. -->
+                                <div id="res-prediction-warning" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                                    <div class="flex items-start gap-2">
+                                        <i class="fas fa-triangle-exclamation text-amber-500 mt-0.5 shrink-0" aria-hidden="true"></i>
+                                        <div class="min-w-0 space-y-1">
+                                            <div class="flex flex-wrap gap-1.5">
+                                                <span id="res-prediction-warning-wide-badge" class="hidden rounded-sm border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-bold text-amber-700">예측 구간 넓음</span>
+                                                <span id="res-prediction-warning-lwlt-badge" class="hidden rounded-sm border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-bold text-amber-700">낙찰하한율 근거 부족</span>
+                                            </div>
+                                            <p id="res-prediction-warning-extreme" class="hidden font-bold">모델 예측이 경계값에 가까워 신뢰도가 낮습니다. 투찰가 결정에는 참고용으로만 사용하십시오.</p>
+                                            <p id="res-prediction-warning-message" class="hidden leading-relaxed"></p>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div id="res-rate-notice" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-[11px] font-bold text-amber-700 flex items-start gap-2">
                                     <i class="fas fa-circle-exclamation mt-0.5"></i>
                                     <span id="res-rate-notice-msg"></span>
@@ -1954,6 +1969,23 @@ $(document).ready(function() {
         $block.toggleClass('hidden', !isNonPred || (!hasRate && !hasEstimated));
     }
 
+    // 예측 불확실성 경고. 경고가 없으면 영역을 숨기고, 문구는 textContent 로만 넣는다.
+    function renderPredictionWarnings(prediction) {
+        const extreme = !!prediction.extreme_prediction_warning;
+        const uncertainty = prediction.uncertainty_warning || '';
+        const wide = !!prediction.wide_interval_warning;
+        const lwlt = !!prediction.lwlt_missing;
+
+        $('#res-prediction-warning-extreme').toggleClass('hidden', !extreme);
+        $('#res-prediction-warning-message').text(uncertainty).toggleClass('hidden', !uncertainty);
+        $('#res-prediction-warning-wide-badge').toggleClass('hidden', !wide);
+        $('#res-prediction-warning-lwlt-badge').toggleClass('hidden', !lwlt);
+        $('#res-prediction-warning').toggleClass(
+            'hidden',
+            !(extreme || uncertainty || wide || lwlt)
+        );
+    }
+
     function renderRecommendAmounts(data) {
         const prediction = data.prediction || {};
         const bounds = data.price_bounds || {};
@@ -2019,6 +2051,8 @@ $(document).ready(function() {
         } else {
             $('#res-lwlt-missing').addClass('hidden');
         }
+
+        renderPredictionWarnings(prediction);
     }
 
     let recommendTimer = null;

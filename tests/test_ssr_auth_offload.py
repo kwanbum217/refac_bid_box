@@ -13,10 +13,13 @@ asyncio.get_running_loop() 이 RuntimeError 를 냅니다. 루프 스레드에�
 import asyncio
 
 import pytest
+from fastapi.testclient import TestClient
 
 import src.app.api.ui as ui
-from src.app.core.security import make_password
+from src.app.core import security
+from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_password
 from src.app.core.timeutil import utcnow
+from src.app.main import app
 from src.app.models.accounts import CustomUser
 from tests.test_csrf import csrf_form
 
@@ -103,3 +106,73 @@ def test_signup_registration_runs_off_loop_thread(client, monkeypatch):
 
     assert response.status_code == 303, response.text
     assert observed == [False], "register_user 가 이벤트 루프 스레드에서 실행되었습니다"
+
+
+def test_logout_destroy_session_runs_off_loop_thread(client, monkeypatch):
+    """SSR 로그아웃의 세션 삭제가 이벤트 루프 스레드를 점유하지 않습니다."""
+    observed: list[bool] = []
+    original = ui.destroy_session
+
+    def _spy(token):
+        observed.append(_on_loop_thread())
+        return original(token)
+
+    monkeypatch.setattr(ui, "destroy_session", _spy)
+
+    response = client.post(
+        "/accounts/logout/",
+        data=csrf_form(client, "/accounts/login/", {}),
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert observed == [False], "destroy_session 이 이벤트 루프 스레드에서 실행되었습니다"
+
+
+def test_logout_all_invalidations_run_off_loop_thread(isolated_db, monkeypatch):
+    """전체 로그아웃의 세대 갱신과 세션 삭제가 루프 스레드를 점유하지 않습니다."""
+    monkeypatch.setattr(security.session_store, "_local", {})
+    monkeypatch.setattr(security.settings, "CSRF_PROTECTION_ENABLED", True, raising=False)
+
+    user = CustomUser(
+        username="offload_logout_all",
+        password=make_password("offload-pass-1234"),
+        email="offload_logout_all@example.com",
+        nickname="전체 로그아웃 오프로드",
+        is_active=True,
+        is_staff=False,
+        is_superuser=False,
+        date_joined=utcnow(),
+    )
+    isolated_db.add(user)
+    isolated_db.commit()
+    isolated_db.refresh(user)
+
+    token = create_session(user.id, user.username)
+    auth_client = TestClient(app, cookies={SESSION_COOKIE_NAME: token})
+
+    observed: list[tuple[str, bool]] = []
+    original_invalidate = ui.invalidate_all_sessions
+    original_destroy = ui.destroy_session
+
+    def _spy_invalidate(user_id):
+        observed.append(("invalidate_all_sessions", _on_loop_thread()))
+        return original_invalidate(user_id)
+
+    def _spy_destroy(value):
+        observed.append(("destroy_session", _on_loop_thread()))
+        return original_destroy(value)
+
+    monkeypatch.setattr(ui, "invalidate_all_sessions", _spy_invalidate)
+    monkeypatch.setattr(ui, "destroy_session", _spy_destroy)
+
+    response = auth_client.post(
+        "/accounts/mypage/logout-all/",
+        data=csrf_form(auth_client, "/accounts/mypage/", {}),
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert observed == [("invalidate_all_sessions", False), ("destroy_session", False)], (
+        "전체 로그아웃의 저장소 호출이 이벤트 루프 스레드에서 실행되었습니다"
+    )
