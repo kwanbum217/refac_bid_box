@@ -27,7 +27,7 @@ from src.app.models.accounts import CustomUser
 INLINE_HANDLER = re.compile(r"<[a-zA-Z][^>]*\son[a-z]+\s*=")
 
 AUTHENTICATED_PATHS = (
-    "/bids/dashboard/",
+    "/bids/compare/",
     "/bids/",
     "/bids/results/",
     "/chatbot/",
@@ -80,12 +80,12 @@ def test_authenticated_pages_expose_mobile_nav_drawer(auth_client, path):
 
 
 def test_mobile_nav_script_is_loaded_from_static(auth_client):
-    body = _rendered(auth_client, "/bids/dashboard/")
+    body = _rendered(auth_client, "/bids/compare/")
     assert "js/mobile-nav.js" in body
 
 
 def test_sidebar_is_hidden_below_tablet_and_restored_at_md(auth_client):
-    body = _rendered(auth_client, "/bids/dashboard/")
+    body = _rendered(auth_client, "/bids/compare/")
 
     match = re.search(r'<aside id="sidebar" class="([^"]*)"', body)
     assert match, "사이드바 aside 를 찾지 못했습니다"

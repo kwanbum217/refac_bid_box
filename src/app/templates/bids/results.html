@@ -2,6 +2,8 @@
 
 {% block title %}낙찰 결과 - BIDBOX Intelligence{% endblock %}
 
+{% block page_header %}낙찰 결과{% endblock %}
+
 {% block extra_head %}
 <style>
     .result-row {
@@ -109,6 +111,7 @@
                 </div>
                 <h1 class="mt-2 text-2xl font-bold text-slate-900">낙찰 결과</h1>
                 <p class="mt-1 text-sm text-slate-500">수집된 낙찰 업체, 낙찰 금액, 낙찰률을 공고 단위로 조회합니다.</p>
+                <p class="mt-1 text-xs font-semibold text-emerald-600">용역 분야 낙찰 결과만 표시합니다.</p>
             </div>
 
             <form method="GET" class="flex flex-wrap items-center gap-2" data-results-filter-form>
@@ -123,13 +126,6 @@
                         class="search-input w-64 bg-white border border-slate-200 rounded-md pl-9 pr-3 py-2 text-sm outline-hidden transition-all"
                     >
                 </div>
-                <select name="cat" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
-                    <option value="">전체 분야</option>
-                    <option value="Thng" {% if cat == 'Thng' %}selected{% endif %}>물품</option>
-                    <option value="Cnstwk" {% if cat == 'Cnstwk' %}selected{% endif %}>건설</option>
-                    <option value="Servc" {% if cat == 'Servc' %}selected{% endif %}>용역</option>
-                    <option value="Frgcpt" {% if cat == 'Frgcpt' %}selected{% endif %}>외자</option>
-                </select>
                 <select name="sort" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
                     <option value="opening" {% if sort == 'opening' %}selected{% endif %}>개찰일</option>
                     <option value="amount" {% if sort == 'amount' %}selected{% endif %}>낙찰금액</option>
@@ -259,7 +255,7 @@
 
                 <div class="flex items-center space-x-2">
                     {% if page_obj.has_previous %}
-                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}" class="pagination-btn whitespace-nowrap flex h-8 items-center justify-center rounded-sm border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50" data-results-loading-link>
+                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&sort={{ sort }}&region={{ region }}" class="pagination-btn whitespace-nowrap flex h-8 items-center justify-center rounded-sm border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50" data-results-loading-link>
                         이전
                     </a>
                     {% endif %}
@@ -269,7 +265,7 @@
                     </span>
 
                     {% if page_obj.has_next %}
-                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}" class="pagination-btn whitespace-nowrap flex h-8 items-center justify-center rounded-sm border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50" data-results-loading-link>
+                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&sort={{ sort }}&region={{ region }}" class="pagination-btn whitespace-nowrap flex h-8 items-center justify-center rounded-sm border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50" data-results-loading-link>
                         다음
                     </a>
                     {% endif %}

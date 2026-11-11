@@ -90,9 +90,9 @@
                 <span class="text-sm hidden lg:block">낙찰 결과</span>
             </a>
 
-            <a href="{{ url('bids:dashboard') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='dashboard' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+            <a href="{{ url('bids:compare') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='compare' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-chart-line w-5 text-center text-lg"></i>
-                <span class="text-sm hidden lg:block">입찰 인텔리전스</span>
+                <span class="text-sm hidden lg:block">비교 분석</span>
             </a>
 
             <a href="{{ url('chatbot:chat_page') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='chatbot' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
@@ -170,9 +170,9 @@
                 <span class="text-sm">낙찰 결과</span>
             </a>
 
-            <a href="{{ url('bids:dashboard') }}" data-mobile-nav-link data-mobile-nav-close class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors {% if active_nav =='dashboard' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
+            <a href="{{ url('bids:compare') }}" data-mobile-nav-link data-mobile-nav-close class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors {% if active_nav =='compare' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-chart-line w-5 text-center text-lg"></i>
-                <span class="text-sm">입찰 인텔리전스</span>
+                <span class="text-sm">비교 분석</span>
             </a>
 
             <a href="{{ url('chatbot:chat_page') }}" data-mobile-nav-link data-mobile-nav-close class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors {% if active_nav =='chatbot' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
@@ -227,9 +227,7 @@
                 {% endif %}
                 <div class="flex min-w-0 items-center text-sm font-medium text-slate-400">
                     {% block breadcrumbs %}
-                    <span class="hover:text-slate-600 cursor-pointer transition-colors hidden sm:inline">기본 프로젝트</span>
-                    <i class="fas fa-chevron-right mx-3 text-[9px] opacity-30 hidden sm:inline"></i>
-                    <span class="text-slate-900 dark:text-white font-semibold truncate">{% block page_header %}대시보드{% endblock %}</span>
+                    <span class="text-slate-900 dark:text-white font-semibold truncate">{% block page_header %}{% endblock %}</span>
                     {% endblock %}
                 </div>
             </div>

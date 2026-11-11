@@ -29,7 +29,6 @@ PROTECTED_PATHS = [
     "/",
     "/bids/",
     "/bids/results/",
-    "/bids/dashboard/",
     "/bids/compare/",
     "/chatbot/",
 ]
@@ -37,7 +36,6 @@ PROTECTED_PATHS = [
 # 이식 과도기에 쓰던 단축 경로. 정본으로 되돌려 보냅니다.
 COMPAT_PATH_REDIRECTS = {
     "/results/": "/bids/results/",
-    "/dashboard/": "/bids/dashboard/",
     "/compare/": "/bids/compare/",
     "/results/1/": "/bids/result/1/",
     "/chat/": "/chatbot/",
@@ -88,7 +86,7 @@ def seeded_bid(isolated_db):
         bid_ntce_ord="00",
         bid_ntce_nm="테스트 낙찰 결과 공고",
         dminstt_nm="테스트발주기관",
-        category="Cnstwk",
+        category="Servc",
         sucsf_bid_amt=880_000_000,
         sucsf_bid_rate=88.88,
         rl_openg_dt=now,
@@ -118,7 +116,7 @@ def test_all_templates_compile():
     names = sorted(
         path.relative_to(TEMPLATE_DIR).as_posix() for path in TEMPLATE_DIR.rglob("*.html")
     )
-    assert len(names) == 15, names
+    assert len(names) == 14, names
     for name in names:
         try:
             templates.env.get_template(name)
@@ -139,6 +137,14 @@ def test_legacy_ui_paths_redirect_to_current_ssr_paths(client, source, target):
     response = client.get(source, follow_redirects=False)
     assert response.status_code == 307
     assert response.headers["location"] == target
+
+
+@pytest.mark.parametrize("path", ["/bids/dashboard/", "/dashboard/"])
+def test_removed_dashboard_paths_redirect_to_home(auth_client, path):
+    """입찰 인텔리전스 화면은 삭제되었고 옛 주소는 홈으로 보냅니다."""
+    response = auth_client.get(path, follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
 
 
 @pytest.mark.parametrize("path", PROTECTED_PATHS)

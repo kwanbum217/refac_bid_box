@@ -9,7 +9,6 @@ STATIC_DIR = APP_DIR / "static"
 TEMPLATES_DIR = APP_DIR / "templates"
 BASE_HTML = TEMPLATES_DIR / "base.html"
 CHARTJS_TEMPLATES = [
-    TEMPLATES_DIR / "bids" / "dashboard.html",
     TEMPLATES_DIR / "bids" / "compare.html",
     TEMPLATES_DIR / "chatbot" / "chat.html",
 ]
@@ -145,7 +144,7 @@ def test_fonts_css_webfonts_exist_and_resolve():
 
 
 def test_chartjs_templates_have_no_external_asset_references():
-    """Verify dashboard, compare, and chat templates have no external CDN references."""
+    """Verify compare and chat templates have no external CDN references."""
     for template_path in CHARTJS_TEMPLATES:
         _assert_no_external_asset_references(template_path)
 
@@ -155,11 +154,9 @@ def test_chartjs_templates_static_assets_exist_on_disk():
     for template_path in CHARTJS_TEMPLATES:
         _assert_static_assets_exist_on_disk(template_path)
 
-    dashboard_content = (TEMPLATES_DIR / "bids" / "dashboard.html").read_text(encoding="utf-8")
     compare_content = (TEMPLATES_DIR / "bids" / "compare.html").read_text(encoding="utf-8")
     chat_content = (TEMPLATES_DIR / "chatbot" / "chat.html").read_text(encoding="utf-8")
 
-    assert "vendor/chartjs/4.5.1/chart.umd.min.js" in dashboard_content
     assert "vendor/chartjs/4.5.1/chart.umd.min.js" in compare_content
     assert "vendor/chartjs/4.5.1/chart.umd.min.js" in chat_content
     assert "vendor/marked/15.0.12/marked.min.js" in chat_content
