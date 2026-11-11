@@ -1,5 +1,4 @@
-"""
-src/tasks/automation_steps.py
+"""src/tasks/automation_steps.py
 자동화 파이프라인의 개별 스텝 구현 (_step_* 및 _check_chroma_vectors).
 """
 
@@ -141,14 +140,12 @@ def _step_search(db, collected_since: datetime | None = None) -> tuple[str, dict
 
 def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, Any]]:
     """Champion 모델 로드 및 추론 가능 여부 검증.
-
     검증할 모델이나 표본이 없으면 성공이 아니라 partial_success 를 돌려줍니다.
-    2요소 튜플은 디스패치 루프에서 성공으로 처리되므로, 아무것도 검증하지
-    못한 실행이 통과로 승격됩니다.
+    2요소 튜플은 디스패치 루프에서 성공으로 처리되므로, 아무것도 검증하지 못한 실행이 통과로 승격됩니다.
     """
-    from src.ml import model_registry as mr
+    from src.ml import model_registry, serving_metrics
 
-    available = mr.ModelRegistry.available_models()
+    available = model_registry.ModelRegistry.available_models()
     sample = db.execute(
         select(BidAnnouncement)
         .where(BidAnnouncement.presmpt_prce.is_not(None))
@@ -168,8 +165,8 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
             },
         )
 
-    if not mr.prediction_supported_for_category(sample.category):
-        msg = mr.UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE
+    if not model_registry.prediction_supported_for_category(sample.category):
+        msg = model_registry.UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE
         return "partial_success", msg, {"pass_all": False, "skipped": True, "skip_reason": msg}  # nosec B105 - 불리언 상태 플래그 키 pass_all 이지 비밀번호가 아닙니다
 
     reference = float(sample.prediction_reference_amount or 0)
@@ -182,11 +179,15 @@ def _step_predict(db) -> tuple[str, dict[str, Any]] | tuple[str, str, dict[str, 
         "bid_ntce_dt": sample.bid_ntce_dt,
         "openg_dt": sample.openg_dt,
     }
-    rate = mr.predict_optimal_price(None, features)
+    rate = model_registry.predict_optimal_price(None, features)
     return (
         f"모델 {len(available)}종 로드, 표본 추론 성공 (예측률 {rate:.4f}).",
-        # 불리언 플래그 키이며 비밀번호가 아닙니다
-        {"pass_all": True, "model_count": len(available), "model_name": ", ".join(available)},  # nosec B105 - 불리언 상태 플래그 키 pass_all 이지 비밀번호가 아닙니다
+        {  # nosec B105 - 불리언 상태 플래그 키 pass_all 이지 비밀번호가 아닙니다
+            "pass_all": True,
+            "model_count": len(available),
+            "model_name": ", ".join(available),
+            **serving_metrics.serving_holdout_metrics(),
+        },
     )
 
 
