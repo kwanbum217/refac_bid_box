@@ -167,6 +167,33 @@
             {% endif %}
         </div>
 
+        <!-- 관심 업종·지역 -->
+        <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-8 md:p-10">
+            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2 mb-2">
+                <i class="fas fa-filter text-primary"></i>
+                관심 업종·지역
+            </h2>
+            <p class="text-xs text-slate-400 mb-6">메인 화면의 '사용자에 해당되는 입찰 건수' 를 셀 때 쓰는 조건입니다.</p>
+
+            {% if not bid_preferences or bid_preferences.is_empty %}
+            <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-6 text-center">
+                <i class="fas fa-circle-info text-slate-300 text-xl mb-2"></i>
+                <p class="text-sm text-slate-500">관심 업종·지역을 아직 고르지 않았습니다. 정보 수정에서 골라 주세요.</p>
+            </div>
+            {% else %}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div class="space-y-1.5">
+                    <span class="block text-xs font-bold text-slate-500 uppercase tracking-wider">관심 업종(면허)</span>
+                    <p class="text-sm text-slate-900">{% if bid_industry_labels %}{{ bid_industry_labels|join(', ') }}{% else %}미입력{% endif %}</p>
+                </div>
+                <div class="space-y-1.5">
+                    <span class="block text-xs font-bold text-slate-500 uppercase tracking-wider">관심 지역</span>
+                    <p class="text-sm text-slate-900">{{ bid_region_label|default('미입력', true) }}</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
         <!-- 세션 보안 -->
         <div class="bg-white border border-slate-200 rounded-xl shadow-xs p-8 md:p-10">
             <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2 mb-2">

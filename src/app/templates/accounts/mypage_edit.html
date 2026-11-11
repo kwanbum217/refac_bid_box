@@ -119,6 +119,40 @@
                     </div>
                 </section>
 
+                <!-- 관심 업종·지역 -->
+                <section class="space-y-5 pt-6 border-t border-slate-100">
+                    <div>
+                        <h2 class="text-sm font-bold text-slate-700">관심 업종·지역 <span class="text-slate-400">(선택)</span></h2>
+                        <p class="text-xs text-slate-400 mt-1">메인 화면에서 회원님께 해당되는 입찰 건수를 셀 때 씁니다. 고르지 않으면 메인에 입력 안내가 표시됩니다.</p>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <span class="block text-xs font-bold text-slate-500 uppercase tracking-wider">관심 업종(면허)</span>
+                        <div class="grid grid-cols-1 gap-2 mt-1">
+                            {% for group in bid_industry_groups %}
+                            <label class="flex items-center gap-2 cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                                <input type="checkbox" name="bid_license_codes" value="{{ group.codes_csv }}" class="w-4 h-4 rounded-sm border-slate-300 text-primary focus:ring-primary cursor-pointer" {% if group.selected %}checked{% endif %}>
+                                <span>{{ group.label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <label for="id_bid_region_code" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">관심 지역</label>
+                        <select name="bid_region_code" id="id_bid_region_code" class="block w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
+                            <option value="">선택 안 함</option>
+                            {% for group in bid_region_groups %}
+                            <optgroup label="{{ group.label }}">
+                                {% for item in group['items'] %}
+                                <option value="{{ item.code }}" {% if form.bid_region_code == item.code %}selected{% endif %}>{{ item.label }}</option>
+                                {% endfor %}
+                            </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </section>
+
                 <!-- 정량평가 원자료 -->
                 <section class="space-y-5 pt-6 border-t border-slate-100">
                     <div>
