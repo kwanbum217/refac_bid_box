@@ -59,6 +59,7 @@ from src.ml.features import (
     collect_category_levels,
 )
 from src.ml.institution_history import attach_institution_history
+from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 from src.ml.monitoring import (
     apply_drift_persistence,
     check_dataset_drift,
@@ -935,7 +936,8 @@ async def drift_monitor_task(
     """매일 04:00 주기적 PSI 드리프트 검사 태스크.
 
     - settings/환경변수 ML_DRIFT_MONITOR_ENABLED 플래그로 활성화 제어 (기본값: True)
-    - CATEGORY_MODEL_NAMES 의 각 카테고리별 모델에 대해 baseline 아티팩트 조회
+    - CATEGORY_DEFAULT_MODELS(서빙 매핑)의 각 카테고리별 서빙 모델에 대해 baseline 아티팩트 조회
+    - 학습 매핑에만 있는 미서빙 카테고리는 감시하지 않고 not_served 로 결과에 남김
     - 평가 윈도우 [now - evaluation_window_days, now) 반열림 구간(개찰일 기준)으로 최근 데이터만 조회
     - persist=False 로 운영 학습 데이터셋 Parquet 덮어쓰기 방지
     - Single Source of Truth features.py 를 통해 최근 N일 평가 데이터의 특징 프레임 산출
@@ -975,6 +977,44 @@ async def drift_monitor_task(
                 release_schedule_claim(key=DRIFT_MONITOR_CLAIM_KEY, token=claim.token)
 
 
+def _resolve_drift_monitor_targets() -> tuple[dict[str, str], dict[str, str]]:
+    """드리프트 감시 대상과 미서빙 분야를 서빙 매핑에서 파생합니다.
+
+    감시 대상은 실제로 서빙하는 분야뿐입니다. 학습 매핑(CATEGORY_MODEL_NAMES)에만
+    있고 서빙 매핑(CATEGORY_DEFAULT_MODELS)에 없는 분야는 대응하는 서빙 경로가
+    없으므로 그 baseline 을 읽지 않습니다. 두 매핑의 모델 이름이 어긋나면
+    승격이 한쪽에만 반영된 상태이므로 경고를 남기고 서빙 이름을 씁니다.
+
+    반환값은 (감시 대상 {분야: 서빙 모델 이름}, 미서빙 분야 {분야: 사유}) 입니다.
+    """
+    targets: dict[str, str] = {}
+    not_served: dict[str, str] = {}
+
+    for category, served_model_name in sorted(CATEGORY_DEFAULT_MODELS.items()):
+        training_model_name = CATEGORY_MODEL_NAMES.get(category)
+        if training_model_name and training_model_name != served_model_name:
+            logger.warning(
+                "카테고리 %s 의 서빙 모델 이름(%s)과 학습 모델 이름(%s)이 다릅니다. "
+                "서빙 이름으로 감시합니다.",
+                category,
+                served_model_name,
+                training_model_name,
+            )
+        targets[category] = served_model_name
+
+    for category in sorted(CATEGORY_MODEL_NAMES):
+        if category in CATEGORY_DEFAULT_MODELS:
+            continue
+        reason = (
+            "서빙 매핑(CATEGORY_DEFAULT_MODELS)에 없는 분야라 드리프트 감시 대상이 아닙니다 "
+            f"(학습 모델 {CATEGORY_MODEL_NAMES[category]})."
+        )
+        not_served[category] = reason
+        logger.info("카테고리 %s 는 감시하지 않습니다. %s", category, reason)
+
+    return targets, not_served
+
+
 async def _run_drift_monitor(
     ctx: dict[str, Any],
     evaluation_window_days: int,
@@ -986,8 +1026,15 @@ async def _run_drift_monitor(
     has_failure = False
 
     try:
-        for category in sorted(CATEGORY_MODEL_NAMES.keys()):
-            model_name = CATEGORY_MODEL_NAMES[category]
+        targets, not_served = _resolve_drift_monitor_targets()
+        for category, reason in not_served.items():
+            results[category] = {
+                "status": "not_served",
+                "reason": reason,
+                "category": category,
+            }
+
+        for category, model_name in targets.items():
             baseline_dir = Path(registry_dir) / model_name / "baseline"
 
             baseline_dist = await asyncio.to_thread(load_baseline_distributions, baseline_dir)
