@@ -774,13 +774,6 @@ export default function App() {
                       ))}
                     </div>
                   )}
-
-                  <div>
-                    <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '8px' }}>산출에 사용된 핵심 특징 (features.py)</div>
-                    <pre style={{ backgroundColor: '#1e293b', padding: '12px', borderRadius: '6px', fontSize: '11px', color: '#a78bfa', margin: 0, overflowX: 'auto' }}>
-                      {JSON.stringify(predictionResult.features_used, null, 2)}
-                    </pre>
-                  </div>
                 </div>
               ) : (
                 <div style={{ backgroundColor: '#0f172a', padding: '32px', borderRadius: '10px', border: '1px dashed #334155', textAlign: 'center', color: '#64748b', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>

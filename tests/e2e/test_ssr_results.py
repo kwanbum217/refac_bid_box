@@ -1,7 +1,7 @@
 """tests/e2e/test_ssr_results.py
 
 SSR 브라우저 E2E 낙찰 결과 목록 및 상세 화면 검증 테스트.
-- 낙찰 목록 검색어(q) 및 카테고리(cat) 필터링 검증
+- 낙찰 목록 검색어(q) 검증 및 용역(Servc) 고정 검증
 - 낙찰 목록 페이지네이션(이전/다음) 검증
 - 낙찰 상세 화면 진입 및 제원(낙찰업체, 낙찰금액, 낙찰률) 렌더링 검증
 - 낙찰 상세에서 AI 챗봇 인텔리전스 분석 연계 바로가기 검증
@@ -74,7 +74,7 @@ def seeded_results(e2e_db_session: Session) -> list[BidResult]:
                 bid_ntce_ord="00",
                 bid_ntce_nm=f"페이지네이션 테스트 낙찰 결과 {i:02d}호",
                 dminstt_nm="조달청",
-                category="Cnstwk",
+                category="Servc",
                 sucsf_bid_amt=50_000_000 + i * 5_000_000,
                 sucsf_bid_rate=88.0 + (i % 5) * 0.5,
                 bidwinnr_nm=f"테스트건설사_{i:02d}",
@@ -129,12 +129,18 @@ async def test_ssr_results_list_search_and_filter(
         "부산 신항만 남측 방파제 보강 공사"
     )
 
-    # 3. 카테고리 필터링 (건설)
+    # 3. cat 파라미터는 무시되고 용역 결과만 노출된다
     await authenticated_page.goto(f"{live_server_url}/bids/results/?cat=Cnstwk")
     await authenticated_page.wait_for_load_state("networkidle")
 
     await expect(authenticated_page.locator("body")).to_contain_text(
+        "페이지네이션 테스트 낙찰 결과 01호"
+    )
+    await expect(authenticated_page.locator("body")).not_to_contain_text(
         "부산 신항만 남측 방파제 보강 공사"
+    )
+    await expect(authenticated_page.locator("body")).not_to_contain_text(
+        "국립중앙의료원 정밀 진단 의료장비 구매"
     )
 
 

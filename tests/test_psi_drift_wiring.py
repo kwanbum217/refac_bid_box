@@ -19,6 +19,7 @@ import pytest
 
 from src.app.core.config import settings
 from src.app.models.predictions import RetrainLog
+from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 from src.ml.monitoring import (
     InsufficientSampleError,
     calculate_categorical_psi,
@@ -361,9 +362,14 @@ async def test_drift_monitor_task_missing_baseline_skips_safely(
     assert outcome["status"] == "success"
     assert check_calls == []
     assert mock_notify.await_count == 0
-    for _category, res in outcome["categories"].items():
-        assert res["status"] == "skipped"
-        assert res["reason"] == "no_baseline"
+    # 감시 대상은 서빙 매핑 분야뿐입니다. 학습 매핑에만 있는 분야는 not_served 입니다.
+    for category, res in outcome["categories"].items():
+        if category in CATEGORY_DEFAULT_MODELS:
+            assert res["status"] == "skipped"
+            assert res["reason"] == "no_baseline"
+        else:
+            assert category not in CATEGORY_DEFAULT_MODELS
+            assert res["status"] == "not_served"
 
     logs = isolated_db.query(RetrainLog).filter(RetrainLog.trigger_source == "drift_monitor").all()
     assert len(logs) > 0
@@ -390,6 +396,8 @@ async def test_drift_monitor_task_present_baseline_evaluates(isolated_db, tmp_pa
 
     from src.ml.training_config import CATEGORY_MODEL_NAMES
 
+    # 학습 매핑 전체에 baseline 을 깔아 둡니다. 서빙 매핑에 없는 분야(공사)의
+    # baseline 이 있어도 드리프트 감시가 읽지 않는지 확인하기 위한 장치입니다.
     for _category, model_name in CATEGORY_MODEL_NAMES.items():
         save_baseline_distributions(
             df_feat=df_train,
@@ -441,13 +449,17 @@ async def test_drift_monitor_task_present_baseline_evaluates(isolated_db, tmp_pa
     outcome = await drift_monitor_task({}, evaluation_window_days=7, registry_dir=str(tmp_path))
 
     assert outcome["status"] == "success"
-    assert len(check_calls) == len(CATEGORY_MODEL_NAMES)
+    # 서빙 분야만 평가합니다. 학습 매핑에만 있는 분야는 baseline 이 있어도 평가하지 않습니다.
+    assert len(check_calls) == len(CATEGORY_DEFAULT_MODELS)
     assert mock_notify.await_count == 0
     assert mock_retrain.await_count == 0
-    for _category, res in outcome["categories"].items():
-        assert res["status"] == "STABLE"
-        assert res["baseline_version"] == "v_20260906_test"
+    for category, res in outcome["categories"].items():
+        if category in CATEGORY_DEFAULT_MODELS:
+            assert res["status"] == "STABLE"
+            assert res["baseline_version"] == "v_20260906_test"
+        else:
+            assert res["status"] == "not_served"
 
     logs = isolated_db.query(RetrainLog).filter(RetrainLog.trigger_source == "drift_monitor").all()
-    assert len(logs) == len(CATEGORY_MODEL_NAMES)
+    assert len(logs) == len(CATEGORY_DEFAULT_MODELS)
     assert all(log_item.status == "STABLE" for log_item in logs)

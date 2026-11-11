@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.app.api.v1 import evaluations
+from src.app.api.v1.accounts import get_current_user
 from src.app.api.v1.evaluations import require_current_user
 from src.app.main import app
 from src.app.models.announcement_regime import (
@@ -42,6 +43,15 @@ MOIS_RULE_ID = "SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E"
 RULES_URL = "/api/v1/evaluations/rules"
 ANALYZE_URL = "/api/v1/evaluations/analyze"
 CLASSIFIER_VERSION = "1.1.0"
+
+
+@pytest.fixture
+def as_logged_in_user():
+    """bid_id 로 /rules 를 부르는 시험은 로그인을 요구하므로 요청 사용자만 인증 상태로 둔다."""
+
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=7, is_active=True)
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def _regime_row(
@@ -180,7 +190,7 @@ def _matched_rule_id(client, bid_id: int) -> str | None:
     return None if matched is None else matched["rule_id"]
 
 
-def test_rules_api_uses_classified_mois_academic(client, isolated_db) -> None:
+def test_rules_api_uses_classified_mois_academic(client, isolated_db, as_logged_in_user) -> None:
     _seed_institution(isolated_db)
     baseline_bid = _create_band_bid(isolated_db, "R26BK20000001")
     classified_bid = _create_band_bid(isolated_db, "R26BK20000002")
@@ -259,7 +269,9 @@ def test_analyze_api_uses_classified_mois_academic(
 # --------------------------------------------------------------------------- #
 
 
-def test_lookup_failure_keeps_previous_result(client, isolated_db, monkeypatch) -> None:
+def test_lookup_failure_keeps_previous_result(
+    client, isolated_db, as_logged_in_user, monkeypatch
+) -> None:
     _seed_institution(isolated_db)
     bid = _create_band_bid(isolated_db, "R26BK40000001")
     isolated_db.add(

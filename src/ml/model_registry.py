@@ -60,6 +60,10 @@ MODEL_ALIASES = {
 }
 
 # 카테고리별 기본 서빙 모델. 이 dict 가 정본이며 app 계층은 여기서 가져다 씁니다.
+# 서빙 범위의 정본이기도 합니다. 드리프트 감시처럼 서빙 대상을 대표해야 하는
+# 소비자는 분야 목록과 모델 이름을 모두 이 dict 에서 읽습니다. 학습 매핑
+# (training_config.CATEGORY_MODEL_NAMES)은 재학습 fan-out 전용이라 여기에 없는
+# 분야를 포함할 수 있으므로 감시 범위로 쓰지 않습니다.
 # 종전 용역 기본값 ssh_hist_premium 은 5폴드 중 3개가 R2 0.9999999999999998 인
 # 타깃 누수 모델이었습니다. 근거: docs/design/servc_prediction_model_design.md 1장
 CATEGORY_DEFAULT_MODELS = {

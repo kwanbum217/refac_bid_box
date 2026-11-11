@@ -22,6 +22,7 @@ from src.app.core.config import settings
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.models.predictions import RetrainLog
 from src.ml.dataset import build_training_dataset
+from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 from src.ml.monitoring import save_baseline_distributions
 from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.tasks.scheduled_tasks import drift_monitor_task
@@ -270,7 +271,8 @@ async def test_drift_monitor_task_passes_window_interval_and_persist_false(
     outcome = await drift_monitor_task({}, evaluation_window_days=7, registry_dir=str(tmp_path))
 
     assert outcome["status"] == "success"
-    assert len(captured_calls) == len(CATEGORY_MODEL_NAMES)
+    # 드리프트 감시는 서빙 매핑(CATEGORY_DEFAULT_MODELS) 분야만 평가합니다.
+    assert len(captured_calls) == len(CATEGORY_DEFAULT_MODELS)
 
     for call in captured_calls:
         kw = call["kwargs"]
