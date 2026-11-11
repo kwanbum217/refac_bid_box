@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -60,7 +61,8 @@ def _spy_baseline_loader(monkeypatch: pytest.MonkeyPatch, *, found: bool) -> lis
     calls: list[str] = []
 
     def _load(baseline_dir: Any) -> dict[str, Any]:
-        calls.append(str(baseline_dir))
+        # Windows 에서도 같은 문자열로 비교하도록 구분자를 / 로 맞춥니다.
+        calls.append(Path(baseline_dir).as_posix())
         return {"model_version": "v_20261111"} if found else {}
 
     monkeypatch.setattr(scheduled_tasks, "load_baseline_distributions", _load)
