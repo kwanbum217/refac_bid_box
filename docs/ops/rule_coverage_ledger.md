@@ -1,6 +1,6 @@
 # 규칙 커버리지 원장 (rule_coverage_ledger)
 
-> **updated_at**: 2026-11-07
+> **updated_at**: 2026-11-11
 > **generator**: `scripts/report_rule_coverage.py`
 > **output**: `data/reference/rule_coverage_ledger.yaml`
 > **schema**: `RULE_COVERAGE_LEDGER_V1`
@@ -45,28 +45,73 @@ uv run python scripts/report_rule_coverage.py --check
 
 근거는 `docs/analysis/ledger_cancel_notice_impact_20261107.md` 1절·2절입니다.
 
-### 3.1 재생성 회귀 값
+### 3.1 재생성 기준값
 
-2026-11-07 창(2025-11-07 ~ 2026-11-07, 업무구분 `Servc`, 낙찰방법 `낙030001`,
-`min_announcements` 5)에서 메모리로 재생성한 값입니다. 파일 쓰기 없이 `collect_records` 와
-`build_ledger` 를 직접 호출했습니다.
+2026-11-11 재생성(창 2025-11-11 ~ 2026-11-11, 업무구분 `Servc`, 낙찰방법 `낙030001`,
+`min_announcements` 5) 값입니다. `uv run python scripts/report_rule_coverage.py` 로
+`data/reference/rule_coverage_ledger.yaml` 을 다시 쓴 뒤 같은 조건의 `--check` 가
+차이 0건임을 확인했습니다.
 
 | 항목 | 값 |
 | --- | ---: |
-| `totals.announcements` | 27,723 |
-| `totals.excluded_cancelled` | 3,602 |
-| `totals.institutions` | 3,364 |
-| `applied_scope.INSTITUTION` | 94 (0.003391) |
-| `applied_scope.REGION` | 1,599 (0.057678) |
-| `applied_scope.PPS_DEFAULT` | 17,345 (0.625654) |
-| `applied_scope.BLOCKED` | 8,685 (0.313278) |
+| `totals.announcements` | 27,791 |
+| `totals.excluded_cancelled` | 3,603 |
+| `totals.institutions` | 3,357 |
+| `applied_scope.INSTITUTION` | 130 (0.004678) |
+| `applied_scope.REGION` | 561 (0.020186) |
+| `applied_scope.PPS_DEFAULT` | 18,376 (0.661221) |
+| `applied_scope.BLOCKED` | 8,724 (0.313915) |
 | `applied_scope.ERROR` | 0 |
-| `blocked_breakdown.manual_input` | 8,511 |
-| `blocked_breakdown.not_computable` | 174 |
+| `blocked_breakdown.manual_input` | 8,552 |
+| `blocked_breakdown.not_computable` | 172 |
 
-취소 제외 전 31,325건 대비 -3,602건(-11.50%)입니다. 차단 코드별 값은
-`MANUAL_EVALUATION` 8,429, `NON_PRED_PRICE` 169, `LOCAL_RULE_NOT_FOUND` 78,
-`LOCAL_SERVICE_TYPE_UNRESOLVED` 4, `RULE_NOT_FOUND` 3, `RULE_REGIME_MISMATCH` 2 입니다.
+취소 제외 전 31,394건 대비 -3,603건(-11.48%)입니다. 차단 코드별 값은
+`MANUAL_EVALUATION` 8,466, `NON_PRED_PRICE` 166, `LOCAL_RULE_NOT_FOUND` 79,
+`LOCAL_SERVICE_TYPE_UNRESOLVED` 7, `RULE_NOT_FOUND` 5, `RULE_REGIME_MISMATCH` 1 입니다.
+
+### 3.2 2026-11-07 원장과의 비교
+
+2026-11-07 원장(창 2025-11-07 ~ 2026-11-07)과 이번 재생성 값을 비교한 결과입니다.
+
+| 항목 | 2026-11-07 | 2026-11-11 | 변화 |
+| --- | ---: | ---: | ---: |
+| `totals.announcements` | 27,723 | 27,791 | +68 |
+| `totals.excluded_cancelled` | 3,602 | 3,603 | +1 |
+| `totals.institutions` | 3,368 | 3,357 | -11 |
+| `applied_scope.INSTITUTION` | 130 (0.004689) | 130 (0.004678) | 0 |
+| `applied_scope.REGION` | 558 (0.020128) | 561 (0.020186) | +3 |
+| `applied_scope.PPS_DEFAULT` | 18,347 (0.661797) | 18,376 (0.661221) | +29 |
+| `applied_scope.BLOCKED` | 8,688 (0.313386) | 8,724 (0.313915) | +36 |
+| `applied_scope.ERROR` | 0 | 0 | 0 |
+| `blocked_breakdown.manual_input` | 8,513 | 8,552 | +39 |
+| `blocked_breakdown.not_computable` | 175 | 172 | -3 |
+
+기관 단위 변화는 목록 인덱스가 아니라 `dminstt_cd` 집합 차로 셉니다. 개별 항목이 있는
+기관(공고 5건 이상)은 1,008곳에서 1,010곳으로 늘었고, 집합 차는 추가 11곳·삭제 9곳입니다.
+`tail.institutions` 는 2,360곳에서 2,347곳으로 줄었습니다. 표본 10곳은 다음과 같습니다.
+
+| 구분 | `dminstt_cd` | 기관명 | 공고 수 |
+| --- | --- | --- | ---: |
+| 추가 | `1400000` | 산림청 | 5 |
+| 추가 | `1543087` | 농림축산식품부 농림축산검역본부 인천공항지역본부 | 5 |
+| 추가 | `5670074` | 경상남도 창원시 상수도사업소 | 7 |
+| 추가 | `5670123` | 경상남도 창원시 의창구 | 6 |
+| 추가 | `5670788` | 창원시 문화시설사업소 | 8 |
+| 삭제 | `1336429` | 경찰청 충청남도경찰청 | 5 |
+| 삭제 | `4960000` | 전라남도 함평군 | 6 |
+| 삭제 | `B552551` | 정보통신산업진흥원 | 5 |
+| 삭제 | `D150185` | 한국농어촌공사 강원지역본부 강릉지사 | 5 |
+| 삭제 | `Z006982` | 재단법인 대전테크노파크 | 6 |
+
+차이는 창 이동과 새 수집분이 섞여 있습니다. 창이 2025-11-07 에서 2025-11-11 로 4일
+움직였고 그 사이 수집분이 들어와, 같은 기관이라도 경계에서 공고가 빠지면 공고 수가
+5건 아래로 내려가 개별 항목에서 빠지고 `tail` 로 이동할 수 있습니다. 이번 회차에는
+규칙 레지스트리나 판정 코드를 바꾸지 않았으므로 `applied_scope` 구성비 변화는 위 두
+요인으로 설명합니다.
+
+이전 3.1절은 파일이 아니라 메모리 재생성 값(기관 3,364, `INSTITUTION` 94, `REGION` 1,599,
+`PPS_DEFAULT` 17,345)을 적어 커밋된 원장(3,368, 130, 558, 18,347)과 달랐습니다. 이번
+절부터는 원장 파일에 실제로 기록된 값을 기준으로 삼습니다.
 
 ## 4. 차단 분리 집계 (`blocked_breakdown`)
 
