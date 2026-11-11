@@ -67,13 +67,9 @@ def _check_model_registry() -> None:
 
 
 def _check_chromadb() -> None:
-    import chromadb
+    from src.rag.chroma_client import get_default_collection
 
-    from src.rag.vector_store import DEFAULT_COLLECTION
-
-    client = chromadb.PersistentClient(path=str(settings.CHROMA_DB_PATH))
-    collection = client.get_collection(DEFAULT_COLLECTION)
-    collection.count()
+    get_default_collection().count()
 
 
 class WarmupState:

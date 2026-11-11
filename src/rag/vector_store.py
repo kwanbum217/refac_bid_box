@@ -17,14 +17,18 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from src.app.core.config import PROJECT_ROOT, settings
+from src.app.core.config import PROJECT_ROOT
+from src.rag.chroma_client import (
+    DEFAULT_COLLECTION,
+    get_default_collection,
+    is_missing_collection_error,
+    reset_chroma_client,
+)
 from src.rag.embeddings import get_collection
 from src.rag.query_planning import is_result_query
 from src.rag.schemas import DEFAULT_VECTOR_TOP_K, RetrievalPlan
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_COLLECTION = "bidding_kb"
 
 # bidding_kb 메타데이터에서 ChromaDB where 절로 표현 가능한 필드
 SUPPORTED_METADATA_KEYS = frozenset({"category", "has_result", "type", "id", "doc_hash", "fmt"})
@@ -448,6 +452,87 @@ def _slice_query_result(results: dict[str, Any], keep_indexes: list[int]) -> dic
     return sliced
 
 
+def _query_collection(
+    collection: Any,
+    semantic_query: str,
+    where: dict[str, Any] | None,
+    query_top_k: int,
+) -> dict[str, Any]:
+    """열린 컬렉션에 질의하고 후보 묶음을 돌려줍니다."""
+    if where is not None:
+        # where 를 ChromaDB 에 넘기면 SQLite 로 후보를 좁힌 뒤 HNSW 를 돌아
+        # 344 배까지 느려집니다(2026-09-01 실측). 넓게 받아 파이썬에서 같은
+        # 조건을 평가하고, 목표 후보 수를 채우지 못했을 때만 기존 where
+        # 경로로 되돌아갑니다. 되돌아가면 결과는 종전과 완전히 같습니다.
+        flattened_where = _flatten_where_conditions(where)
+        results = None
+
+        if flattened_where is not None:
+            wide_results = collection.query(
+                query_texts=[semantic_query],
+                n_results=max(query_top_k, METADATA_WIDE_FETCH_SIZE),
+            )
+            wide_metadatas = (wide_results.get("metadatas") or [[]])[0] if wide_results else []
+            keep_indexes = [
+                index
+                for index, metadata in enumerate(wide_metadatas)
+                if _metadata_matches(metadata, flattened_where)
+            ]
+            if len(keep_indexes) >= query_top_k:
+                results = _slice_query_result(wide_results, keep_indexes[:query_top_k])
+            else:
+                logger.debug(
+                    "메타데이터 넓은 조회로 후보 %d/%d 만 확보해 where 경로로 되돌립니다 (where=%s)",
+                    len(keep_indexes),
+                    query_top_k,
+                    where,
+                )
+
+        if results is None:
+            results = collection.query(
+                query_texts=[semantic_query],
+                n_results=query_top_k,
+                where=where,
+            )
+
+        raw_docs = (results.get("documents") or [[]])[0] if results else []
+        if not raw_docs:
+            logger.info(
+                "ChromaDB 필터 적용 결과 0건 (where=%s, query=%s) — 필터 해제 재검색 없이 빈 결과로 처리",
+                where,
+                semantic_query,
+            )
+        return results
+
+    return collection.query(query_texts=[semantic_query], n_results=query_top_k)
+
+
+def _query_default_collection(
+    semantic_query: str,
+    where: dict[str, Any] | None,
+    query_top_k: int,
+) -> dict[str, Any]:
+    """프로세스 단위 기본 컬렉션으로 질의합니다.
+
+    색인 전량 재구축은 컬렉션을 지웠다 다시 만들기 때문에 보관하던 핸들이 낡을 수
+    있습니다. 컬렉션 부재 계열 오류일 때만 핸들을 버리고 한 번 다시 엽니다.
+    """
+    for attempt in range(2):
+        try:
+            collection = get_default_collection(opener=get_collection)
+            return _query_collection(collection, semantic_query, where, query_top_k)
+        except Exception as exc:
+            if attempt or not is_missing_collection_error(exc):
+                raise
+            logger.warning(
+                "기본 컬렉션 핸들이 낡아 다시 엽니다 (collection=%s): %s",
+                DEFAULT_COLLECTION,
+                exc,
+            )
+            reset_chroma_client()
+    raise RuntimeError("컬렉션 재시도 루프를 벗어날 수 없습니다")
+
+
 def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
     """원본 rag_engine.retrieve_semantic_context 와 동일한 동기 검색 경로.
 
@@ -499,59 +584,7 @@ def retrieve_semantic_context(plan: RetrievalPlan) -> SemanticSearchResult:
     t_start = time.perf_counter() if logger.isEnabledFor(logging.DEBUG) else 0.0
 
     try:
-        import chromadb
-
-        client = chromadb.PersistentClient(path=str(settings.CHROMA_DB_PATH))
-        # 색인과 같은 임베딩 함수로 열어야 합니다. 그냥 get_collection 을 부르면
-        # ChromaDB 가 기본 함수를 끼워 넣어, 실패 없이 결과만 엉뚱해집니다.
-        collection = get_collection(client, DEFAULT_COLLECTION)
-
-        if where is not None:
-            # where 를 ChromaDB 에 넘기면 SQLite 로 후보를 좁힌 뒤 HNSW 를 돌아
-            # 344 배까지 느려집니다(2026-09-01 실측). 넓게 받아 파이썬에서 같은
-            # 조건을 평가하고, 목표 후보 수를 채우지 못했을 때만 기존 where
-            # 경로로 되돌아갑니다. 되돌아가면 결과는 종전과 완전히 같습니다.
-            flattened_where = _flatten_where_conditions(where)
-            results = None
-
-            if flattened_where is not None:
-                wide_results = collection.query(
-                    query_texts=[semantic_query],
-                    n_results=max(query_top_k, METADATA_WIDE_FETCH_SIZE),
-                )
-                wide_metadatas = (wide_results.get("metadatas") or [[]])[0] if wide_results else []
-                keep_indexes = [
-                    index
-                    for index, metadata in enumerate(wide_metadatas)
-                    if _metadata_matches(metadata, flattened_where)
-                ]
-                if len(keep_indexes) >= query_top_k:
-                    results = _slice_query_result(wide_results, keep_indexes[:query_top_k])
-                else:
-                    logger.debug(
-                        "메타데이터 넓은 조회로 후보 %d/%d 만 확보해 where 경로로 되돌립니다 (where=%s)",
-                        len(keep_indexes),
-                        query_top_k,
-                        where,
-                    )
-
-            if results is None:
-                results = collection.query(
-                    query_texts=[semantic_query],
-                    n_results=query_top_k,
-                    where=where,
-                )
-
-            raw_docs = (results.get("documents") or [[]])[0] if results else []
-            if not raw_docs:
-                logger.info(
-                    "ChromaDB 필터 적용 결과 0건 (where=%s, query=%s) — 필터 해제 재검색 없이 빈 결과로 처리",
-                    where,
-                    semantic_query,
-                )
-        else:
-            results = collection.query(query_texts=[semantic_query], n_results=query_top_k)
-
+        results = _query_default_collection(semantic_query, where, query_top_k)
     except Exception as exc:
         # 오류 문구를 문서로 돌려주면 안 됩니다. 그 문자열이 그대로 LLM 프롬프트에
         # 실려 검색이 성공한 것처럼 보이고, 화면과 로그 어디에도 실패가 남지
