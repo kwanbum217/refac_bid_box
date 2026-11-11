@@ -32,6 +32,7 @@ from src.app.models.evaluations import (
 from src.app.models.openg_results import BidOpengResult
 from src.app.models.prearng_prices import BidPrearngPrice, InstitutionSajeongRateStat
 from src.app.models.predictions import PredictionResult, RetrainLog
+from src.app.models.schedule_run_log import ScheduleRunLog
 
 __all__ = [
     "AccountCompanyProfile",
@@ -60,5 +61,6 @@ __all__ = [
     "PipelineExecution",
     "PredictionResult",
     "RetrainLog",
+    "ScheduleRunLog",
     "UserAccount",
 ]

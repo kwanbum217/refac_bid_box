@@ -19,6 +19,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -28,6 +29,7 @@ from arq.worker import func as arq_func
 
 from src.app.core.cache import CacheLayer
 from src.app.core.config import settings
+from src.app.core.db import SessionLocal
 from src.app.core.logging_config import configure_logging
 from src.app.core.observability import (
     arq_on_job_end,
@@ -35,6 +37,8 @@ from src.app.core.observability import (
     setup_observability,
     traced_worker_task,
 )
+from src.app.core.timeutil import utcnow
+from src.app.models.schedule_run_log import ScheduleRunLog
 from src.tasks.automation_tasks import (
     collect_bids_task,
     manual_full_task,
@@ -214,6 +218,29 @@ _worker_cache = CacheLayer()
 _worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:12]}"
 
 
+@dataclass(frozen=True)
+class ScheduleRunTiming:
+    """`_record_schedule` 이 넘기는 실행 구간 정보.
+
+    `record_schedule_result` 의 기존 세 인자 시그니처를 쓰는 호출부가 남아 있어
+    실행 정보는 인자가 아니라 ContextVar 로 넘깁니다. `asyncio.to_thread` 가
+    컨텍스트를 복사하므로 기록 스레드에서도 같은 값을 읽습니다.
+    """
+
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+schedule_run_timing: ContextVar[ScheduleRunTiming | None] = ContextVar(
+    "schedule_run_timing", default=None
+)
+
+SCHEDULE_ERROR_MESSAGE_LIMIT = 1000
+
+
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -305,7 +332,11 @@ def record_worker_heartbeat(key: str = WORKER_HEARTBEAT_KEY) -> None:
 
 
 def record_schedule_result(schedule_name: str, outcome: Any, success: bool) -> None:
-    """스케줄별 마지막 실행 시각과 성공 여부를 기록합니다."""
+    """스케줄별 마지막 상태를 Redis 에, 실행 1건을 DB 에 기록합니다.
+
+    Redis 기록은 기존 동작(TTL 7일)을 그대로 유지하고, 같은 호출에서
+    `schedule_run_log` 에 한 행을 영구 보관합니다.
+    """
     try:
         current = _worker_cache.get(SCHEDULE_STATUS_KEY)
         schedules = current if isinstance(current, dict) else {}
@@ -315,7 +346,50 @@ def record_schedule_result(schedule_name: str, outcome: Any, success: bool) -> N
         }
         _worker_cache.set(SCHEDULE_STATUS_KEY, schedules, OBSERVATION_TTL_SECONDS)
     except Exception:
-        return
+        # 최근 상태 기록 실패가 영구 기록을 막지는 않습니다.
+        logger.debug("스케줄 최근 상태 기록 실패 (무시됨): %s", schedule_name)
+    _record_schedule_run(schedule_name, outcome, success)
+
+
+def _trim_text(value: Any, limit: int) -> str | None:
+    if value is None:
+        return None
+    return str(value)[:limit]
+
+
+def _record_schedule_run(schedule_name: str, outcome: Any, success: bool) -> None:
+    """스케줄 실행 1건을 DB 에 남깁니다.
+
+    기록 실패는 경고만 남기고 삼킵니다. 태스크 결과와 예외 전파는 바꾸지
+    않습니다. 호출 자체가 `asyncio.to_thread` 안에서 일어나므로 INSERT 가
+    이벤트 루프를 막지 않습니다.
+    """
+    timing = schedule_run_timing.get()
+    finished_at = timing.finished_at if timing is not None else utcnow()
+    status = outcome.get("status") if isinstance(outcome, dict) else None
+    row = ScheduleRunLog(
+        schedule_name=schedule_name,
+        started_at=timing.started_at if timing is not None else finished_at,
+        finished_at=finished_at,
+        duration_ms=timing.duration_ms if timing is not None else None,
+        success=success,
+        status=_trim_text(status, 32),
+        error_type=_trim_text(timing.error_type if timing is not None else None, 128),
+        error_message=_trim_text(
+            timing.error_message if timing is not None else None,
+            SCHEDULE_ERROR_MESSAGE_LIMIT,
+        ),
+        worker_id=_worker_id,
+    )
+    try:
+        session = SessionLocal()
+        try:
+            session.add(row)
+            session.commit()
+        finally:
+            session.close()
+    except Exception:
+        logger.warning("스케줄 실행 이력 DB 기록 실패 (무시됨): %s", schedule_name, exc_info=True)
 
 
 def read_schedule_status() -> dict[str, Any]:

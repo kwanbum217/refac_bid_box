@@ -19,6 +19,7 @@ import asyncio
 import json
 import logging
 import shutil
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -100,16 +101,43 @@ def _record_schedule(
     def decorator(task: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
         @wraps(task)
         async def tracked(*args: Any, **kwargs: Any) -> Any:
-            from src.tasks.worker import record_schedule_result
+            from src.tasks.worker import (
+                ScheduleRunTiming,
+                record_schedule_result,
+                schedule_run_timing,
+            )
 
-            # 스케줄 결과 기록도 동기 Redis 왕복을 포함하므로 이벤트 루프 밖에서 실행합니다.
+            started_at = utcnow()
+            started_monotonic = time.monotonic()
+
+            async def record(
+                outcome: Any,
+                success: bool,
+                *,
+                error: BaseException | None = None,
+            ) -> None:
+                timing = ScheduleRunTiming(
+                    started_at=started_at,
+                    finished_at=utcnow(),
+                    duration_ms=max(0, int((time.monotonic() - started_monotonic) * 1000)),
+                    error_type=type(error).__name__ if error is not None else None,
+                    error_message=str(error) if error is not None else None,
+                )
+                token = schedule_run_timing.set(timing)
+                try:
+                    # 스케줄 결과 기록은 동기 Redis 왕복과 DB INSERT 를 포함하므로
+                    # 이벤트 루프 밖에서 실행합니다.
+                    await asyncio.to_thread(record_schedule_result, schedule_name, outcome, success)
+                finally:
+                    schedule_run_timing.reset(token)
+
             try:
                 outcome = await task(*args, **kwargs)
-            except Exception:
-                await asyncio.to_thread(record_schedule_result, schedule_name, None, False)
+            except Exception as exc:
+                await record(None, False, error=exc)
                 raise
             success = isinstance(outcome, dict) and outcome.get("status") in success_statuses
-            await asyncio.to_thread(record_schedule_result, schedule_name, outcome, success)
+            await record(outcome, success)
             return outcome
 
         return cast(Any, tracked)
