@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 from src.ml.training_config import CATEGORY_MODEL_NAMES
 from src.tasks import scheduled_tasks, worker
 from src.tasks.scheduled_tasks import ScheduleClaimResult, ScheduleClaimStatus
@@ -147,7 +148,9 @@ async def _run_drift_with_patches(
     monkeypatch.setattr(scheduled_tasks, "_acquire_drift_monitor_claim", _acquired_claim)
     monkeypatch.setattr(scheduled_tasks.settings, "ML_DRIFT_MONITOR_ENABLED", True)
     _isolate_schedule_io(monkeypatch)
-    failing = sorted(CATEGORY_MODEL_NAMES)[0]
+    # 드리프트 감시는 서빙 매핑(CATEGORY_DEFAULT_MODELS)만 돕니다. 학습 매핑에만
+    # 있는 분야는 not_served 라 실패를 유도할 수 없으므로 서빙 분야에서 고릅니다.
+    failing = sorted(CATEGORY_DEFAULT_MODELS)[0]
     _patch_drift_body(monkeypatch, failing)
     notify = AsyncMock()
     monkeypatch.setattr(scheduled_tasks, "notify_task_failure", notify)
@@ -160,7 +163,7 @@ async def test_drift_category_failure_notifies_once_and_continues(
 ) -> None:
     failing, outcome, notify = await _run_drift_with_patches(monkeypatch)
 
-    assert set(outcome["categories"]) == set(CATEGORY_MODEL_NAMES)
+    assert set(outcome["categories"]) == set(CATEGORY_MODEL_NAMES) | set(CATEGORY_DEFAULT_MODELS)
     assert outcome["categories"][failing]["status"] == "failed"
     assert outcome["status"] == "partial_failure"
     assert notify.await_count == 1
@@ -171,7 +174,7 @@ async def test_drift_category_failure_notifies_once_and_continues(
 async def test_drift_category_failure_alert_raises_but_task_returns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    failing = sorted(CATEGORY_MODEL_NAMES)[0]
+    failing = sorted(CATEGORY_DEFAULT_MODELS)[0]
     monkeypatch.setattr(worker, "heavy_task_guard", GuardLog())
     monkeypatch.setattr(scheduled_tasks, "_acquire_drift_monitor_claim", _acquired_claim)
     monkeypatch.setattr(scheduled_tasks.settings, "ML_DRIFT_MONITOR_ENABLED", True)
@@ -186,7 +189,7 @@ async def test_drift_category_failure_alert_raises_but_task_returns(
     outcome = await scheduled_tasks.drift_monitor_task({})
 
     assert outcome["categories"][failing]["status"] == "failed"
-    assert set(outcome["categories"]) == set(CATEGORY_MODEL_NAMES)
+    assert set(outcome["categories"]) == set(CATEGORY_MODEL_NAMES) | set(CATEGORY_DEFAULT_MODELS)
 
 
 # --------------------------------------------------------------------------- #

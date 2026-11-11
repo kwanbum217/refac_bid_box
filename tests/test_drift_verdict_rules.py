@@ -23,6 +23,7 @@ from sqlalchemy.orm import sessionmaker
 from src.app.core.config import settings
 from src.app.models.predictions import RetrainLog
 from src.ml.drift_verdict import DRIFT_EVALUATION_WINDOW_DAYS
+from src.ml.model_registry import CATEGORY_DEFAULT_MODELS
 from src.ml.monitoring import (
     DRIFT_FEATURE_QUORUM,
     DRIFT_PERSISTENCE_WINDOWS,
@@ -504,7 +505,8 @@ async def test_run_drift_monitor_pending_does_not_notify(isolated_db, tmp_path, 
     assert mock_notify.await_count == 0
 
     logs = isolated_db.query(RetrainLog).filter(RetrainLog.trigger_source == "drift_monitor").all()
-    assert len(logs) == len(CATEGORY_MODEL_NAMES)
+    # 드리프트 감시는 서빙 매핑(CATEGORY_DEFAULT_MODELS) 분야만 기록합니다.
+    assert len(logs) == len(CATEGORY_DEFAULT_MODELS)
     assert all(log_item.status == "DRIFT_PENDING" for log_item in logs)
     assert all(log_item.metrics_summary["window_drift"] is True for log_item in logs)
 
@@ -579,7 +581,14 @@ async def test_run_drift_monitor_skips_previous_lookup_when_stable(
     outcome = await drift_monitor_task({}, evaluation_window_days=7, registry_dir=str(tmp_path))
 
     assert outcome["status"] == "success"
-    assert all(result["status"] == "STABLE" for result in outcome["categories"].values())
+    # 서빙 분야만 판정됩니다. 학습 매핑에만 있는 분야는 not_served 입니다.
+    served = {
+        category: result
+        for category, result in outcome["categories"].items()
+        if category in CATEGORY_DEFAULT_MODELS
+    }
+    assert set(served) == set(CATEGORY_DEFAULT_MODELS)
+    assert all(result["status"] == "STABLE" for result in served.values())
 
 
 @pytest.mark.asyncio
