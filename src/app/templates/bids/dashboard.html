@@ -79,11 +79,11 @@
                 <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 border border-emerald-100">
                     <i class="fas fa-shield-check text-lg"></i>
                 </div>
-                <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded-sm">정상</span>
+                <span id="systemStatusBadge" class="px-2 py-0.5 bg-slate-500/10 text-slate-500 text-[10px] font-bold rounded-sm">확인 중</span>
             </div>
             <div>
                 <h3 class="text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">시스템 상태</h3>
-                <p class="text-2xl font-extrabold text-slate-900 tracking-tight">안정</p>
+                <p id="systemStatusText" class="text-2xl font-extrabold text-slate-900 tracking-tight">확인 중</p>
             </div>
         </div>
     </div>
@@ -127,7 +127,6 @@
                     <h3 class="text-lg font-bold text-slate-900">총액 계약 상위 10개 업체</h3>
                     <p class="text-xs text-slate-500 font-medium mt-0.5">최근 1년 단가성 입찰을 제외하고 총액 낙찰금액 기준으로 정리합니다.</p>
                 </div>
-                <button class="text-[11px] font-bold text-primary hover:underline uppercase tracking-wider">보고서 내보내기</button>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
@@ -191,7 +190,31 @@
 <script nonce="{{ csp_nonce }}">
     document.addEventListener('DOMContentLoaded', function() {
         loadStats();
+        loadSystemStatus();
     });
+
+    async function loadSystemStatus() {
+        const badge = document.getElementById('systemStatusBadge');
+        const text = document.getElementById('systemStatusText');
+        if (!badge || !text) return;
+
+        let ready = false;
+        try {
+            const res = await fetch('/api/v1/health/ready', { headers: { Accept: 'application/json' } });
+            ready = res.ok;
+        } catch (e) {
+            ready = false;
+        }
+
+        badge.textContent = ready ? '정상' : '점검 필요';
+        text.textContent = ready ? '안정' : '점검 필요';
+        badge.className = ready
+            ? 'px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded-sm'
+            : 'px-2 py-0.5 bg-red-500/10 text-red-500 text-[10px] font-bold rounded-sm';
+        text.className = ready
+            ? 'text-2xl font-extrabold text-slate-900 tracking-tight'
+            : 'text-2xl font-extrabold text-red-600 tracking-tight';
+    }
 
     async function fetchJsonOrThrow(url) {
         const res = await fetch(url);

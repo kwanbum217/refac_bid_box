@@ -934,7 +934,7 @@ async def login_submit(
 @router.post("/accounts/logout/")
 async def logout_submit(
     request: Request,
-    bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
+    session_token: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ):
     """POST 로그아웃만 허용하여 GET 기반 CSRF 로그아웃 통로를 차단합니다.
 
@@ -943,7 +943,8 @@ async def logout_submit(
     """
     await _verify_ssr_csrf(request)
     try:
-        destroy_session(bidbox_session)
+        # destroy_session 은 Redis·DB 를 동기 호출하므로 이벤트 루프 밖으로 넘깁니다.
+        await asyncio.to_thread(destroy_session, session_token)
     except SessionStoreUnavailable as exc:
         logger.exception("SSR 로그아웃 세션 삭제 실패")
         raise HTTPException(
@@ -959,7 +960,7 @@ async def logout_submit(
 async def mypage_logout_all(
     request: Request,
     user: CustomUser | None = Depends(get_current_user),
-    bidbox_session: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
+    session_token: str | None = Cookie(None, alias=SESSION_COOKIE_NAME),
 ):
     """모든 기기의 세션을 무효화하고 로그인 화면으로 보냅니다.
 
@@ -971,8 +972,10 @@ async def mypage_logout_all(
         return _login_redirect(request)
     await _verify_ssr_csrf(request)
     try:
-        invalidate_all_sessions(user.id)
-        destroy_session(bidbox_session)
+        # 세대 갱신과 세션 삭제 모두 Redis·DB 를 동기 호출합니다. 로그인 경로와
+        # 같은 관례로 이벤트 루프 밖에서 실행합니다.
+        await asyncio.to_thread(invalidate_all_sessions, user.id)
+        await asyncio.to_thread(destroy_session, session_token)
     except SessionStoreUnavailable as exc:
         logger.exception("전체 로그아웃 세션 무효화 실패")
         raise HTTPException(

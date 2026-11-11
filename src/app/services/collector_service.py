@@ -100,6 +100,19 @@ def _checkpoint_categories(
     return tuple(cat for cat in categories if cat not in CHECKPOINT_EXCLUDED_CATEGORIES)
 
 
+def validate_explicit_date_range(start_date: str | None, end_date: str | None) -> None:
+    """명시적 수집 날짜 창의 조합을 검증합니다.
+
+    start_date 없이 end_date 만 지정하면 체크포인트 경로가 end_date 를 쓰지
+    않아 요청이 조용히 무시됩니다. 역순 창도 빈 결과로 이어지므로 함께
+    거부합니다. 창 계산 자체는 바꾸지 않습니다.
+    """
+    if end_date is not None and start_date is None:
+        raise ValueError("end_date 는 start_date 와 함께 지정해야 합니다.")
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise ValueError("start_date 는 end_date 보다 늦을 수 없습니다.")
+
+
 def resolve_collection_window(
     db: Session,
     *,
