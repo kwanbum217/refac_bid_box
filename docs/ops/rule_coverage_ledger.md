@@ -103,6 +103,12 @@ uv run python scripts/report_rule_coverage.py --check
 | 삭제 | `D150185` | 한국농어촌공사 강원지역본부 강릉지사 | 5 |
 | 삭제 | `Z006982` | 재단법인 대전테크노파크 | 6 |
 
+산림청(`1400000`)은 이번 창에서 공고 5건이 되어 개별 항목에 새로 들어왔습니다. 이 행의
+`investigation` 은 `data/reference/institution_rules_candidates_b_20261014.yaml` 의 산림청
+기록(recommendation `add_to_registry`, status `confirmed`, 기준 문서·note)을 2026-10-14
+조사 결과로 그대로 옮겨 채웠습니다. 생성기는 기존 원장의 `investigation` 만 보존하므로,
+새로 목록에 들어온 행은 이렇게 한 번 채워 두면 다음 재생성부터 유지됩니다.
+
 차이는 창 이동과 새 수집분이 섞여 있습니다. 창이 2025-11-07 에서 2025-11-11 로 4일
 움직였고 그 사이 수집분이 들어와, 같은 기관이라도 경계에서 공고가 빠지면 공고 수가
 5건 아래로 내려가 개별 항목에서 빠지고 `tail` 로 이동할 수 있습니다. 이번 회차에는
