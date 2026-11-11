@@ -1,12 +1,13 @@
 """
 scripts/build_llm_fixture_manifest.py
 
-LLM 품질 평가 fixture (data/eval/llm_quality_fixture_v1.json) 가 참조하는
-지식베이스 근거 ID 들의 경량 evidence manifest 생성기.
+LLM 품질 평가 fixture 가 참조하는 지식베이스 근거 ID 들의 경량 evidence manifest 생성기.
 
 표준 라이브러리만을 사용하여 ChromaDB SQLite 데이터베이스로부터 fixture 의
 expected_evidence_ids 에 해당하는 문서의 해시(SHA-256)와 컬렉션 메타데이터를 추출하고,
-data/eval/llm_quality_evidence_manifest.json 파일을 생성합니다.
+fixture 에 맞는 evidence manifest 파일을 생성합니다. v2 fixture 는
+data/eval/llm_quality_evidence_manifest_v2.json, 그 밖(v1)은
+data/eval/llm_quality_evidence_manifest.json 을 기본 출력으로 씁니다.
 
 ChromaDB 스키마:
 - collections(id, name)
@@ -37,9 +38,22 @@ from typing import Any
 
 DEFAULT_FIXTURE_PATH = Path("data/eval/llm_quality_fixture_v1.json")
 DEFAULT_MANIFEST_PATH = Path("data/eval/llm_quality_evidence_manifest.json")
+V2_FIXTURE_FILENAME = "llm_quality_fixture_v2.json"
+V2_MANIFEST_PATH = Path("data/eval/llm_quality_evidence_manifest_v2.json")
 DEFAULT_COLLECTION_NAME = "bidding_kb"
 MANIFEST_SCHEMA_VERSION = "1.0.0"
 CHROMA_DOCUMENT_KEY = "chroma:document"
+
+
+def manifest_path_for_fixture(fixture_path: str | Path) -> Path:
+    """fixture 파일명에 대응하는 기본 evidence manifest 경로를 돌려줍니다.
+
+    v2 fixture 는 별도 manifest 를 쓰고, 그 밖(v1)은 기존 manifest 경로를 그대로
+    유지합니다 (G1: 기존 v1 manifest 파일과 경로 불변).
+    """
+    if Path(fixture_path).name == V2_FIXTURE_FILENAME:
+        return V2_MANIFEST_PATH
+    return DEFAULT_MANIFEST_PATH
 
 
 def find_chroma_sqlite_path(custom_path: str | Path | None = None) -> Path | None:
@@ -211,12 +225,15 @@ def query_evidence_manifest_from_sqlite(
 
 def build_manifest_file(
     fixture_path: Path | str = DEFAULT_FIXTURE_PATH,
-    output_path: Path | str = DEFAULT_MANIFEST_PATH,
+    output_path: Path | str | None = None,
     chroma_db_path: Path | str | None = None,
     collection_name: str = DEFAULT_COLLECTION_NAME,
     quiet: bool = False,
 ) -> int:
-    """fixture 로부터 근거 ID 목록을 읽고 ChromaDB 에서 manifest 를 생성하여 저장합니다."""
+    """fixture 로부터 근거 ID 목록을 읽고 ChromaDB 에서 manifest 를 생성하여 저장합니다.
+
+    output_path 를 지정하지 않으면 fixture 파일명에 맞는 manifest 경로를 씁니다.
+    """
     fpath = Path(fixture_path)
     if not fpath.exists() or not fpath.is_file():
         if not quiet:
@@ -262,7 +279,7 @@ def build_manifest_file(
             )
         return 1
 
-    out_path = Path(output_path)
+    out_path = Path(output_path) if output_path is not None else manifest_path_for_fixture(fpath)
     try:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         # 임시 파일 작성 후 원자적 교체
@@ -295,8 +312,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default=str(DEFAULT_MANIFEST_PATH),
-        help=f"출력 manifest JSON 파일 경로 (기본값: {DEFAULT_MANIFEST_PATH})",
+        default=None,
+        help=(
+            "출력 manifest JSON 파일 경로 (미지정 시 fixture 에 맞는 경로: "
+            f"v2 는 {V2_MANIFEST_PATH}, v1 은 {DEFAULT_MANIFEST_PATH})"
+        ),
     )
     parser.add_argument(
         "--chroma-db-path",
