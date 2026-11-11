@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0.0",
+  "created_at": "2026-11-11T08:59:16.802061+00:00",
+  "collection_name": "bidding_kb",
+  "total_collection_documents": 577158,
+  "item_count": 24,
+  "entries": [
+    {
+      "evidence_id": "bid_10153847",
+      "content_hash": "sha256:a60d5d79f7f5af1535189409d8ffebf867ed6a0ba9ec766ffca199cb86ac7b28",
+      "doc_length": 250
+    },
+    {
+      "evidence_id": "bid_10154066",
+      "content_hash": "sha256:db84ce625ee611adad0ef1dc7d3dd64413a2e8193175a05dae2baacb6db51b96",
+      "doc_length": 212
+    },
+    {
+      "evidence_id": "bid_10154623",
+      "content_hash": "sha256:b75317f15ab45ca3db0eb7891b354c71fa2bb359e0ebe5dee6972ca6d058b9bb",
+      "doc_length": 244
+    },
+    {
+      "evidence_id": "bid_10154876",
+      "content_hash": "sha256:c4f281cef245ff810dbbf1c81282c98f90451051969bf3644d32fd590e8a95a3",
+      "doc_length": 273
+    },
+    {
+      "evidence_id": "bid_10168836",
+      "content_hash": "sha256:35491b0262f469722146dc6a23b7b855ae645d172f0c5cce6998608a05ff2aaa",
+      "doc_length": 224
+    },
+    {
+      "evidence_id": "bid_10168839",
+      "content_hash": "sha256:693e87e0ef22168b7984fa06489b1bf8fd8ea9e62fec8f3d96f1adb32d95a6a4",
+      "doc_length": 239
+    },
+    {
+      "evidence_id": "bid_10168850",
+      "content_hash": "sha256:aae5b8d242cbc630f6bd47593c2615ac81920a4b62e065b9212e2cabebcd20dd",
+      "doc_length": 259
+    },
+    {
+      "evidence_id": "bid_10169443",
+      "content_hash": "sha256:2bfcb577c55151a91f9f2f1c6538c962f4e688ee50280c4820c6e930a4dff1fc",
+      "doc_length": 222
+    },
+    {
+      "evidence_id": "bid_10169445",
+      "content_hash": "sha256:6909eb654fafcfea9cd253dc65b092f0198e5395db9d3d2fa97dac94188b5d55",
+      "doc_length": 212
+    },
+    {
+      "evidence_id": "bid_10169447",
+      "content_hash": "sha256:16d723ee870a81fffd7a5440455e74a9d52a83379a3594b4ce63b1dce77893a7",
+      "doc_length": 217
+    },
+    {
+      "evidence_id": "bid_10169448",
+      "content_hash": "sha256:1a5c3905fb6fb5dd4f6b62ab73293250f99a050334aea8545f4b1c16d19f372a",
+      "doc_length": 215
+    },
+    {
+      "evidence_id": "bid_10169451",
+      "content_hash": "sha256:25b29f2fbb6263a7557ab27c1ad4aa035687882fab5ff8f2d809291ba41dced8",
+      "doc_length": 215
+    },
+    {
+      "evidence_id": "bid_10169453",
+      "content_hash": "sha256:98555087dd3afbc217a868578c4ec48a48c7c3b3a54d2a8fb32be0e61a277ce4",
+      "doc_length": 212
+    },
+    {
+      "evidence_id": "bid_10169454",
+      "content_hash": "sha256:fac479ac12aff74dae64e7fd41134b73c7c5b65ed4a12877b3fcdcd3d347f143",
+      "doc_length": 218
+    },
+    {
+      "evidence_id": "bid_10169802",
+      "content_hash": "sha256:3106d8176259adce0243711c1daae206b00229ea02269d7f2356178b38197df9",
+      "doc_length": 221
+    },
+    {
+      "evidence_id": "bid_10169804",
+      "content_hash": "sha256:6c534c193eef6bc3d7c6bfeb666ec73333b757d2883f80c7383b8cb3cee34bf1",
+      "doc_length": 220
+    },
+    {
+      "evidence_id": "bid_10169806",
+      "content_hash": "sha256:4ff9edabf5047d3282e184055f85e1448081c13ed2e1c9c84c4864be7ef6788a",
+      "doc_length": 245
+    },
+    {
+      "evidence_id": "bid_10169812",
+      "content_hash": "sha256:53fbf9ad47f67c987a98b655c7eed9bcfa165bac6c3bbdc4038ad83cbd63298b",
+      "doc_length": 218
+    },
+    {
+      "evidence_id": "bid_10169965",
+      "content_hash": "sha256:bae1f438858f9f15e855dc03c491d06dbd19ffd9a623b4bc8010e82af8df0d42",
+      "doc_length": 223
+    },
+    {
+      "evidence_id": "bid_10169967",
+      "content_hash": "sha256:a5dcb1acc0cc041063188fea65ab1cc28b3701dbcee84e010eaf29e3babcadf6",
+      "doc_length": 250
+    },
+    {
+      "evidence_id": "bid_10169968",
+      "content_hash": "sha256:8465fd7401d9e3f2dae93b57f6a6bb6f1a6ff8df13b7e7914f43a61c6be3d204",
+      "doc_length": 248
+    },
+    {
+      "evidence_id": "bid_10169969",
+      "content_hash": "sha256:c16f5e25163d37712a1e199abec03719bbfe9b32ffe3005d7e6b263b3fe29476",
+      "doc_length": 270
+    },
+    {
+      "evidence_id": "bid_10169970",
+      "content_hash": "sha256:a499e982d9e1e320621e245ea100eb5a022c1444a0435c073c85ef3c563c0207",
+      "doc_length": 254
+    },
+    {
+      "evidence_id": "bid_10169971",
+      "content_hash": "sha256:f482ac4e31972adce90cc975f89b6b31c9cfe54e7550ae8fa15999956f2c2931",
+      "doc_length": 243
+    }
+  ]
+}
