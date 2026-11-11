@@ -14,7 +14,6 @@ tests/test_dashboard_stats_parity.py
 - test_dashboard_stats_cache_refreshes_after_new_result_is_collected
 - test_dashboard_company_table_uses_total_amount_contracts_only
 - test_dashboard_company_table_cleans_unreadable_company_names
-- test_dashboard_page_formats_chart_units_readably
 - test_compare_stats_api_returns_monthly_series
 - test_compare_stats_base_total_ignores_estimated_price_only_rows
 - test_compare_stats_api_returns_json_error_when_backend_fails
@@ -286,29 +285,6 @@ def test_dashboard_company_table_cleans_unreadable_company_names(auth_client, is
     assert "!!!@@@" not in names
     assert "에스케이에코플랜트 주식회사" in names
     assert "정상 업체" in names
-
-
-def test_dashboard_page_formats_chart_units_readably(auth_client, isolated_db):
-    """대시보드 화면이 원본 문구와 포매팅 함수를 그대로 쓴다."""
-    _add_result(isolated_db)
-
-    body = auth_client.get("/bids/dashboard/").text
-
-    for phrase in (
-        "전체 낙찰 건수",
-        "누적 낙찰금액",
-        "2015년 ~ 현재",
-        "총액 계약 상위 10개 업체",
-        "단가성 입찰을 제외",
-        "총액 합계",
-        "최근 12개월 기준 낙찰 건수 흐름",
-        "function formatCount",
-        "낙찰 건수",
-        "jo.toLocaleString",
-    ):
-        assert phrase in body, phrase
-    # 억원 단위 반올림 표기는 원본에서 제거된 형식입니다.
-    assert ".toFixed(1) + '억원'" not in body
 
 
 # --------------------------------------------------------------------------- #

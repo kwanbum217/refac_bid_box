@@ -3,7 +3,7 @@
 SSR 브라우저 E2E 인증 세션 주입 및 DB 격리 검증 테스트.
 - G1 데이터 무손실 원칙 준수: 임시 SQLite DB 격리 및 개발 DB 오염 방지 단언
 - create_session 기반 세션 쿠키 직접 주입 Fixture 동작 검증
-- 인증이 필요한 화면(대시보드 /bids/dashboard/) 로그인 상태 진입 검증
+- 인증이 필요한 화면(비교 분석 /bids/compare/) 로그인 상태 진입 검증
 - 비인증 접근 시 로그인 화면 리다이렉트 검증
 """
 
@@ -50,18 +50,18 @@ async def test_authenticated_access_to_protected_page(
     live_server_url: str,
     e2e_test_user: dict[str, Any],
 ) -> None:
-    """세션 쿠키 주입 Fixture 를 통해 인증 필요 화면(/bids/dashboard/)에 정상 진입함을 검증합니다."""
-    response = await authenticated_page.goto(f"{live_server_url}/bids/dashboard/")
+    """세션 쿠키 주입 Fixture 를 통해 인증 필요 화면(/bids/compare/)에 정상 진입함을 검증합니다."""
+    response = await authenticated_page.goto(f"{live_server_url}/bids/compare/")
     assert response is not None
     assert response.status == 200
 
-    # 리다이렉트 없이 대시보드 URL 유지 확인
-    assert authenticated_page.url.rstrip("/").endswith("/bids/dashboard")
+    # 리다이렉트 없이 비교 분석 URL 유지 확인
+    assert authenticated_page.url.rstrip("/").endswith("/bids/compare")
 
-    # 브라우저 DOM 에 페이지 헤더 및 대시보드 콘텐츠 렌더링 확인
+    # 브라우저 DOM 에 페이지 헤더 및 비교 분석 콘텐츠 렌더링 확인
     await expect(
         authenticated_page.locator("h1, header, span.font-semibold")
-        .filter(has_text="대시보드")
+        .filter(has_text="비교 분석")
         .first
     ).to_be_visible()
 
@@ -81,7 +81,7 @@ async def test_unauthenticated_access_redirects_to_login(
     live_server_url: str,
 ) -> None:
     """비인증 사용자가 보호된 화면 접근 시 로그인 페이지로 리다이렉트됨을 검증합니다."""
-    response = await page.goto(f"{live_server_url}/bids/dashboard/")
+    response = await page.goto(f"{live_server_url}/bids/compare/")
     assert response is not None
     assert response.status == 200
 
