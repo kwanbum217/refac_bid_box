@@ -92,6 +92,9 @@ description: 배포 전, 큰 병합 뒤, 주간 점검에서 프로젝트 기능
 | 질문 세트 실측 | `uv run python scripts/measure_chat_user_questions.py --limit 5` | 종료 코드 0, 실패 문항 0건. `heuristic: true` 문항은 답변을 직접 읽어 확정 |
 | 품질 정본 측정 | `uv run python scripts/measure_llm_quality.py --fixture data/eval/llm_quality_fixture_v2.json --model-label <모델 라벨> --expected-model <OLLAMA_MODEL 값> --output <결과 JSON 경로>` | 종료 코드 0, `canonical` 이 true. 시작·종료 모델이 `--expected-model` 과 일치하고 작업 트리가 dirty 가 아님 |
 
+- fixture 별 manifest: `llm_quality_fixture_v2.json` 은 `data/eval/llm_quality_evidence_manifest_v2.json`, v1 은 `data/eval/llm_quality_evidence_manifest.json` 을 기본으로 씁니다.
+- v2 manifest 생성(정본 ChromaDB 가 있는 주 저장소에서): `uv run python scripts/build_llm_fixture_manifest.py --fixture data/eval/llm_quality_fixture_v2.json --chroma-db-path chroma_db/chroma.sqlite3`
+
 ### 2.6 크론·재학습·원장
 
 | 점검 항목 | 확인 방법 | 통과 기준 |

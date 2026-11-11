@@ -1,11 +1,12 @@
 """
 scripts/validate_llm_quality_fixture.py
 
-LLM 품질 평가 fixture (data/eval/llm_quality_fixture_v1.json) 스키마 및 무결성 검증기.
+LLM 품질 평가 fixture 스키마 및 무결성 검증기.
 표준 라이브러리만을 사용하여 필수 필드 누락, 타입 불일치, ID 중복, context_sufficient
 문항 수 하한 미달, 채점 가능성, 자기모순 금지 규칙, 복합 numeric 팩트 검출,
-경량 evidence manifest(data/eval/llm_quality_evidence_manifest.json) 대조 (fail-closed),
-그리고 로컬 ChromaDB bidding_kb 실재 근거 ID 존재성을 엄격히 검증합니다.
+fixture 에 맞는 경량 evidence manifest 대조 (fail-closed), 그리고 로컬 ChromaDB
+bidding_kb 실재 근거 ID 존재성을 엄격히 검증합니다. --manifest-path 를 지정하지
+않으면 fixture 파일명에 맞는 manifest 를 기본으로 씁니다.
 
 규약:
 - 종료 코드 0: 검증 통과
@@ -27,6 +28,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from scripts.build_llm_fixture_manifest import (  # noqa: E402
+    DEFAULT_MANIFEST_PATH,
+    V2_MANIFEST_PATH,
+    manifest_path_for_fixture,
+)
+
 REQUIRED_FIELDS = (
     "id",
     "question",
@@ -42,7 +53,6 @@ REQUIRED_FIELDS = (
 )
 
 DEFAULT_MIN_CONTEXT_SUFFICIENT = 15
-DEFAULT_MANIFEST_PATH = Path("data/eval/llm_quality_evidence_manifest.json")
 DEFAULT_COLLECTION_NAME = "bidding_kb"
 
 # manifest 스키마 필수 필드
@@ -539,16 +549,23 @@ def validate_file(
     file_path: Path | str,
     min_context_sufficient: int = DEFAULT_MIN_CONTEXT_SUFFICIENT,
     quiet: bool = False,
-    manifest_path: Path | str | None = DEFAULT_MANIFEST_PATH,
+    manifest_path: Path | str | None = None,
     check_manifest: bool = True,
     collection_name: str = DEFAULT_COLLECTION_NAME,
 ) -> int:
-    """파일을 읽어 검증하고 규약에 따른 종료 코드를 반환합니다."""
+    """파일을 읽어 검증하고 규약에 따른 종료 코드를 반환합니다.
+
+    manifest_path 를 지정하지 않으면 fixture 파일명에 맞는 manifest 를 씁니다.
+    """
     path = Path(file_path)
     if not path.exists() or not path.is_file():
         if not quiet:
             print(f"오류: 파일 '{path}' 을(를) 찾을 수 없습니다.", file=sys.stderr)
         return 2
+
+    resolved_manifest_path = (
+        manifest_path if manifest_path is not None else manifest_path_for_fixture(path)
+    )
 
     try:
         content = path.read_text(encoding="utf-8")
@@ -562,7 +579,7 @@ def validate_file(
         data,
         min_context_sufficient=min_context_sufficient,
         check_kb_existence=True,
-        manifest_path=manifest_path,
+        manifest_path=resolved_manifest_path,
         check_manifest=check_manifest,
         collection_name=collection_name,
     )
@@ -608,8 +625,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--manifest-path",
-        default=str(DEFAULT_MANIFEST_PATH),
-        help=f"대조할 경량 evidence manifest 경로 (기본값: {DEFAULT_MANIFEST_PATH})",
+        default=None,
+        help=(
+            "대조할 경량 evidence manifest 경로 (미지정 시 fixture 에 맞는 경로: "
+            f"v2 는 {V2_MANIFEST_PATH}, v1 은 {DEFAULT_MANIFEST_PATH})"
+        ),
     )
     parser.add_argument(
         "--collection",
