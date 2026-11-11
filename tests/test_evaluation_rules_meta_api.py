@@ -6,10 +6,18 @@ GET /api/v1/evaluations/rules 가 그 상수를 값을 만들지 않고 문자�
 공고 식별자를 주면 매칭된 별표를 matched_rule 로 돌려주는지를 확인합니다.
 
 실물 DB 는 쓰지 않고 conftest 의 isolated_db (SQLite 인메모리) 위에서 동작합니다.
-규칙은 공개 정보라 이 엔드포인트는 인증을 요구하지 않습니다.
+규칙 목록은 공개 정보라 bid_id 없는 호출은 인증을 요구하지 않습니다. bid_id 로 공고·
+첨부 판별 정보를 조회하는 호출만 로그인을 요구하므로, 그 시험은 요청 사용자 대역을
+쓴다.
 """
 
+from types import SimpleNamespace
+
+import pytest
+
+from src.app.api.v1.accounts import get_current_user
 from src.app.core.timeutil import utcnow
+from src.app.main import app
 from src.app.models.bids import BidAnnouncement
 from src.app.services.evaluation_rules import INSTITUTION_RULES, LOCAL_RULES, POST_20260727_RULES
 from src.app.services.evaluation_scoring import format_decimal_plain
@@ -36,6 +44,15 @@ DISPLAY_KEYS = ("table_name", "service_type", "base_rate", "lwlt_rate", "effecti
 # 시설분야용역 5억원 미만. 현행(제2026-390호) 벌의 1번 별표이며 개정 전후가 같은 객체입니다.
 FACILITY_METHOD = "시설분야용역 적격심사 추정가격 5억원 미만"
 FACILITY_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_01"
+
+
+@pytest.fixture
+def as_logged_in_user():
+    """bid_id 조회는 로그인을 요구하므로 요청 사용자만 인증 상태로 바꾼다."""
+
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=7, is_active=True)
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def _create_bid(
@@ -178,7 +195,7 @@ def test_confirmed_score_table_is_string_and_unconfirmed_is_null(client):
     assert "미확인" in general["score_table_source"]
 
 
-def test_matched_rule_carries_declared_score_table(client, isolated_db):
+def test_matched_rule_carries_declared_score_table(client, isolated_db, as_logged_in_user):
     """bid_id 로 매칭된 별표도 선언 배점표를 함께 돌려준다."""
     bid = _create_bid(isolated_db)
 
@@ -255,7 +272,7 @@ def _create_institution_bid(db) -> BidAnnouncement:
     return bid
 
 
-def test_bid_id_returns_institution_matched_rule(client, isolated_db):
+def test_bid_id_returns_institution_matched_rule(client, isolated_db, as_logged_in_user):
     """수요기관이 기관 규칙 대상이면 matched_rule 이 그 기관 규칙이다."""
     bid = _create_institution_bid(isolated_db)
 
@@ -266,7 +283,7 @@ def test_bid_id_returns_institution_matched_rule(client, isolated_db):
     assert len(payload["rules"]) == 20
 
 
-def test_bid_id_returns_matched_rule(client, isolated_db):
+def test_bid_id_returns_matched_rule(client, isolated_db, as_logged_in_user):
     """공고 식별자를 주면 그 공고에 매칭된 별표를 matched_rule 로 함께 돌려준다."""
     bid = _create_bid(isolated_db)
 
@@ -279,7 +296,7 @@ def test_bid_id_returns_matched_rule(client, isolated_db):
     assert len(payload["rules"]) == 20
 
 
-def test_bid_id_without_match_returns_null_and_list_only(client, isolated_db):
+def test_bid_id_without_match_returns_null_and_list_only(client, isolated_db, as_logged_in_user):
     """용역이 아니어서 별표를 매칭하지 못하면 matched_rule 은 null 이고 목록만 온다."""
     bid = _create_bid(isolated_db, category="Thng")
 
@@ -289,7 +306,7 @@ def test_bid_id_without_match_returns_null_and_list_only(client, isolated_db):
     assert len(payload["rules"]) == 20
 
 
-def test_unknown_bid_id_returns_404(client):
+def test_unknown_bid_id_returns_404(client, as_logged_in_user):
     """존재하지 않는 공고 식별자는 404 로 알린다."""
     response = client.get(RULES_URL, params={"bid_id": 999_999})
 

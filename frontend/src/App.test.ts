@@ -51,3 +51,14 @@ test('경고가 하나도 없으면 경고 영역을 그리지 않는다', () =>
 test('경고 문구를 HTML 로 주입하지 않는다', () => {
   assert.ok(!source.includes('dangerouslySetInnerHTML'));
 });
+
+test('예측 결과의 features_used 원문을 화면에 그리지 않는다', () => {
+  assert.ok(
+    !source.includes('산출에 사용된 핵심 특징'),
+    '내부 특징명을 노출하는 핵심 특징 블록이 남아 있습니다',
+  );
+  assert.ok(
+    !source.includes('JSON.stringify(predictionResult.features_used'),
+    'features_used 원값을 직렬화해 렌더합니다',
+  );
+});
