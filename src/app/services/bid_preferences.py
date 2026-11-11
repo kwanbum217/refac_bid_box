@@ -25,20 +25,19 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.core.cache import cache
 from src.app.core.timeutil import kst_now
 from src.app.models.bid_preferences import AccountBidPreference
-from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement
 from src.app.services.bid_queries import (
     BID_INDUSTRY_CODE_SET,
     _participation_region_match_clause,
     latest_announcement_filter,
+    license_match_clause,
     normalize_license_codes,
     normalize_region_code,
 )
@@ -112,30 +111,6 @@ def save_bid_preferences(
     return BidPreferenceView(license_codes=list(codes), region_code=region)
 
 
-def _license_match_clause(codes: list[str]) -> Any:
-    """업종 코드 중 하나라도 참가자격에 포함되는 공고만 통과시킵니다.
-
-    bid_queries.list_announcements 의 업종 필터 절과 같은 조건입니다. 그 절은
-    함수로 분리돼 있지 않고 bid_queries 는 이 과업에서 수정하지 않으므로 같은
-    식을 여기에 둡니다. 두 곳이 어긋나면
-    tests/test_bid_preferences_20261111.py 가 공고 탐색 결과와 대조해 잡습니다.
-    """
-    like_clauses: list[Any] = []
-    for code in codes:
-        pattern = f"%/{code}%"
-        like_clauses.append(BidAnnouncementLicenseLimit.lcns_lmt_nm.like(pattern))
-        like_clauses.append(BidAnnouncementLicenseLimit.permsn_indstryty_list.like(pattern))
-    return (
-        select(1)
-        .where(
-            BidAnnouncementLicenseLimit.bid_ntce_no == BidAnnouncement.bid_ntce_no,
-            BidAnnouncementLicenseLimit.bid_ntce_ord == BidAnnouncement.bid_ntce_ord,
-            or_(*like_clauses),
-        )
-        .exists()
-    )
-
-
 def _count_cache_key(prefs: BidPreferenceView) -> str:
     return f"{OPEN_BID_COUNT_CACHE_PREFIX}:{','.join(prefs.license_codes)}:{prefs.region_code}"
 
@@ -172,7 +147,7 @@ def count_open_servc_matching(
     if prefs.region_code:
         stmt = stmt.where(_participation_region_match_clause(prefs.region_code))
     if prefs.license_codes:
-        stmt = stmt.where(_license_match_clause(prefs.license_codes))
+        stmt = stmt.where(license_match_clause(prefs.license_codes))
     stmt = latest_announcement_filter(stmt)
 
     count = int(db.scalar(stmt) or 0)

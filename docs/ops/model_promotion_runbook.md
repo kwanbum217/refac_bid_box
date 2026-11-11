@@ -63,6 +63,24 @@ flowchart TD
 
 `--force` 는 담당자 확인을 거친 경우에만 씁니다.
 
+### 4.0 쌍대검정 판정 파일 만들기 (2026-11-11)
+
+승격 게이트는 챌린저 디렉터리의 `paired_verdict.json` 이 `approved` 여야 통과합니다(`src/ml/promotion.py::check_promotion_criteria`). 파일이 없으면 "운영 쌍대검정 미판정" 으로 막힙니다. 새 모델·새 카테고리는 쌍대 비교를 마친 뒤 아래 명령으로 판정 파일을 만듭니다.
+
+```bash
+uv run python scripts/promote_model.py create-verdict \
+  --model <모델> --version <챌린저 버전> --champion-version <서빙 버전> \
+  --verdict approved --sample-hash <표본 해시> --code-commit <비교 코드 커밋> \
+  --evidence <비교 보고서 경로>
+```
+
+| 항목 | 규칙 |
+| --- | --- |
+| `approved` | `--sample-hash`, `--code-commit` 이 없으면 거부됩니다. `--decided-at` 을 생략하면 현재 시각을 씁니다 |
+| 체크섬 | 명령이 챔피언·챌린저 아티팩트 체크섬을 직접 계산해 넣습니다. 손으로 쓴 판정 파일은 쓰지 않습니다 |
+| `rejected` | 이 판정을 받은 버전은 `--force` 로도 승격되지 않습니다 |
+| `--force` | 구조적 조건(분할, 누수, 특징) 위반만 무시합니다. 판정 파일 부재·기각은 우회하지 않습니다 |
+
 ### 4.1 champion 은 서빙 슬롯에서 읽습니다 (2026-08-06)
 
 재학습의 비교 대상은 **실제 서빙 중인 모델**입니다(`data/model_files/<모델>/metadata.json` 의 `source_metrics`). 레지스트리의 최신 버전이 아닙니다.

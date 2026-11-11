@@ -253,6 +253,27 @@ def normalize_license_codes(lic: str | None) -> list[str]:
     return codes
 
 
+def license_match_clause(license_codes: Iterable[str]) -> Any:
+    """업종 코드 중 하나라도 참가자격에 들어 있는 공고만 통과시키는 EXISTS 절입니다.
+
+    공고 탐색 DB 경로와 회원 관심 조건 셈이 같은 정의를 쓰도록 한 곳에 둡니다.
+    """
+    like_clauses: list[Any] = []
+    for code in license_codes:
+        pattern = f"%/{code}%"
+        like_clauses.append(BidAnnouncementLicenseLimit.lcns_lmt_nm.like(pattern))
+        like_clauses.append(BidAnnouncementLicenseLimit.permsn_indstryty_list.like(pattern))
+    return (
+        select(1)
+        .where(
+            BidAnnouncementLicenseLimit.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+            BidAnnouncementLicenseLimit.bid_ntce_ord == BidAnnouncement.bid_ntce_ord,
+            or_(*like_clauses),
+        )
+        .exists()
+    )
+
+
 def _region_match_clause(aliases) -> Any:
     clauses = []
     for alias in aliases:
@@ -738,22 +759,7 @@ def list_announcements(
         stmt = stmt.where(_participation_region_match_clause(region_code))
 
     if license_codes:
-        # 여러 코드는 각 코드의 LIKE 조건을 OR 로 묶어, 하나라도 참가자격이면 통과시킵니다.
-        like_clauses: list[Any] = []
-        for code in license_codes:
-            pattern = f"%/{code}%"
-            like_clauses.append(BidAnnouncementLicenseLimit.lcns_lmt_nm.like(pattern))
-            like_clauses.append(BidAnnouncementLicenseLimit.permsn_indstryty_list.like(pattern))
-        has_license = (
-            select(1)
-            .where(
-                BidAnnouncementLicenseLimit.bid_ntce_no == BidAnnouncement.bid_ntce_no,
-                BidAnnouncementLicenseLimit.bid_ntce_ord == BidAnnouncement.bid_ntce_ord,
-                or_(*like_clauses),
-            )
-            .exists()
-        )
-        stmt = stmt.where(has_license)
+        stmt = stmt.where(license_match_clause(license_codes))
 
     # 필터와 무관하게 동일 공고번호·업무구분의 최신 차수만 노출합니다.
     stmt = latest_announcement_filter(stmt)
