@@ -730,6 +730,13 @@ class RecommendationPrediction(BaseModel):
     institution_rate_is_fallback: bool = Field(
         False, description="이력 표본 부족으로 카테고리 기본값을 썼는지"
     )
+    # 예측 불확실성 경고. predict_price_api 응답의 경고를 화면까지 전달합니다.
+    extreme_prediction_warning: bool = Field(
+        False, description="클리핑 전 예측 낙찰률이 정상 범위(80%~100%) 이탈 여부"
+    )
+    wide_interval_warning: bool = Field(False, description="예측 구간 폭이 임계값(15%p) 초과 여부")
+    lwlt_missing: bool = Field(False, description="낙찰하한율 결측 여부 (제도적 부재)")
+    uncertainty_warning: str | None = Field(None, description="불확실성 안내 및 경고 메시지")
 
 
 class ParticipantCountStats(BaseModel):

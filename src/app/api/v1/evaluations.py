@@ -2467,6 +2467,10 @@ def _recommend_prediction(
     fallback_reason: str | None = None
     optimal_price: int | None = None
     predicted_rate: float | None = None
+    extreme_prediction_warning = False
+    wide_interval_warning = False
+    lwlt_missing = False
+    uncertainty_warning: str | None = None
     try:
         response = predict_price_api(
             PredictPriceRequest(bid_id=bid.id, selected_model=selected_model, user_price=None),
@@ -2488,6 +2492,10 @@ def _recommend_prediction(
         fallback_reason = response.fallback_reason
         optimal_price = response.optimal_price
         predicted_rate = response.prediction_rate
+        extreme_prediction_warning = response.extreme_prediction_warning
+        wide_interval_warning = response.wide_interval_warning
+        lwlt_missing = response.lwlt_missing
+        uncertainty_warning = response.uncertainty_warning
 
     stats = lookup_institution_stats(_recommend_institution_features(bid), db)
     sample_count = int(stats.get("inst_sample_cnt", 0.0))
@@ -2502,6 +2510,10 @@ def _recommend_prediction(
         institution_average_rate=round(average_rate, 4),
         institution_sample_count=sample_count,
         institution_rate_is_fallback=sample_count <= 0,
+        extreme_prediction_warning=extreme_prediction_warning,
+        wide_interval_warning=wide_interval_warning,
+        lwlt_missing=lwlt_missing,
+        uncertainty_warning=uncertainty_warning,
     )
 
 
