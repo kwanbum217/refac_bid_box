@@ -247,8 +247,8 @@ class TestReproducibilityMetadata:
                     return "true"
                 if command[3] == "{{json .NetworkSettings.Ports}}":
                     return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
-                if command[3] == "{{.NetworkSettings.IPAddress}}":
-                    return "172.18.0.3"
+                if command[3] == "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}":
+                    return "172.18.0.3 "
                 if command[3] == "{{json .RepoDigests}}":
                     return '["refac-app@sha256:digest123"]'
                 if command[3] == "{{json .Mounts}}":
@@ -339,6 +339,66 @@ class TestReproducibilityMetadata:
         with pytest.raises(BuildProvenanceError, match="target_source_git_dirty"):
             reproducibility_metadata(
                 service_name="app", strict=True, base_url="http://127.0.0.1:8000"
+            )
+
+    def _network_ip_mock(self, ip_output: str):
+        def mock_command(command: list[str]) -> str:
+            if command == ["git", "rev-parse", "HEAD"]:
+                return "git_sha_123"
+            if command == ["docker", "compose", "images", "-q", "app"]:
+                return "compose_img_sha"
+            if command == ["docker", "compose", "ps", "-q", "app"]:
+                return "cnt_id_123"
+            if command[0] == "docker" and command[1] == "inspect":
+                if command[3] == "{{.Image}}":
+                    return "target_img_sha"
+                if command[3] == "{{.Name}}":
+                    return "/refac-app"
+                if command[3] == "{{.State.Running}}":
+                    return "true"
+                if command[3] == "{{json .NetworkSettings.Ports}}":
+                    return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
+                if command[3] == "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}":
+                    return ip_output
+                if command[3] == "{{json .RepoDigests}}":
+                    return '["refac-app@sha256:digest123"]'
+                if command[3] == "{{json .Mounts}}":
+                    return "[]"
+                if command[3] == "{{json .Config.Env}}":
+                    return "[]"
+                if command[3] == "{{json .Config.Cmd}}":
+                    return '["uvicorn", "src.app.main:app", "--workers", "1"]'
+            return "unknown"
+
+        return mock_command
+
+    def test_network_ip_template_uses_first_network_address(self, monkeypatch):
+        monkeypatch.setattr(
+            benchmark_provenance,
+            "_command_output",
+            self._network_ip_mock("172.18.0.5 172.19.0.7 "),
+        )
+
+        meta = reproducibility_metadata(
+            service_name="app",
+            strict=True,
+            base_url="http://172.18.0.5:8000",
+        )
+
+        assert meta["container_id"] == "cnt_id_123"
+
+    def test_network_ip_template_empty_output_fails_port_binding(self, monkeypatch):
+        monkeypatch.setattr(
+            benchmark_provenance,
+            "_command_output",
+            self._network_ip_mock(""),
+        )
+
+        with pytest.raises(BuildProvenanceError, match="not bound to target container"):
+            reproducibility_metadata(
+                service_name="app",
+                strict=True,
+                base_url="http://172.18.0.5:8000",
             )
 
 

@@ -154,10 +154,15 @@ uv run python scripts/report_lwlt_mismatch.py --method-code 낙030001
 
 # 파일을 쓰지 않고 기존 지표와 비교만
 uv run python scripts/report_lwlt_mismatch.py --check
+
+# 점검 기준일을 지표를 만든 날로 고정
+uv run python scripts/report_lwlt_mismatch.py --check --as-of 2026-11-11
 ```
 
 `--check` 는 기존 YAML 과 새 집계가 다르면 종료 코드 `1`, 같으면 `0` 입니다. 비교에서
 `generated_at` 과 `window.from`, `window.to` 는 제외합니다.
+기준일은 `--as-of YYYY-MM-DD` 가 있으면 그 값, 없으면 기존 지표의 `window.to`,
+그것도 없으면 오늘입니다. `--check` 없이 다시 만들 때는 지금처럼 오늘 기준입니다.
 
 ### 4.2 정기 실행
 

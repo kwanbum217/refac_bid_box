@@ -602,8 +602,14 @@ def test_reproducibility_metadata_direct_container_ip_binding(monkeypatch):
             return "true"
         if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt123"]:
             return '{"8000/tcp":null}'
-        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt123"]:
-            return "172.18.0.2"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
+            "cnt123",
+        ]:
+            return "172.18.0.2 "
         return "unknown"
 
     monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
