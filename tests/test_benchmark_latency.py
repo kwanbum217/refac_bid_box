@@ -952,6 +952,7 @@ def test_benchmark_latency_main_fails_when_container_swapped_during_measurement(
     # 벤치마크 루틴 및 부하 모니터 mock
     sample = Samples("dummy", values=[10.0])
     monkeypatch.setattr(benchmark_latency, "benchmark_predict", lambda *a, **kw: sample)
+    monkeypatch.setattr(benchmark_latency, "benchmark_predict_keepalive", lambda *a, **kw: sample)
     monkeypatch.setattr(
         benchmark_latency, "benchmark_sse_canonical", lambda *a, **kw: (sample, sample, sample)
     )
