@@ -165,6 +165,9 @@ class Settings(BaseSettings):
     # 익명 챗봇 API 요청 쿼터(기본 IP별 60초당 30회)
     ANONYMOUS_API_RATE_LIMIT_MAX_REQUESTS: int = 30
     ANONYMOUS_API_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    # 로그인 사용자 API 한도 면제 목록 (쉼표 구분). 측정 전용 계정만 넣습니다.
+    # 기본값은 빈 문자열이며, ENVIRONMENT=production 이면 값이 있어도 무시합니다.
+    RATE_LIMIT_EXEMPT_USERNAMES: str = ""
     # 회원가입 시도 제한: IP 축 고정 윈도우 (기본 3600초당 10회)
     SIGNUP_RATE_LIMIT_MAX: int = 10
     SIGNUP_RATE_LIMIT_WINDOW_SECONDS: int = 3600
