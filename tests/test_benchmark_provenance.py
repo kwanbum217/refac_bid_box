@@ -230,6 +230,21 @@ class TestRuntimeConfigSnapshot:
 class TestReproducibilityMetadata:
     """reproducibility_metadata identity 및 포트 바인딩 fail-closed 검증 테스트."""
 
+    def test_docker_server_version_failure_is_unknown(self):
+        def runner(command: list[str]) -> str:
+            if command[:2] == ["docker", "version"]:
+                raise RuntimeError("docker daemon unavailable")
+            return "unknown"
+
+        meta = reproducibility_metadata(
+            service_name="app",
+            strict=False,
+            base_url="http://127.0.0.1:8000",
+            command_runner=runner,
+        )
+
+        assert meta["docker_server_version"] == "unknown"
+
     def test_strict_mode_success(self, monkeypatch):
         def mock_command(command: list[str]) -> str:
             if command == ["git", "rev-parse", "HEAD"]:
@@ -261,6 +276,8 @@ class TestReproducibilityMetadata:
                 return "src_sha_123"
             if command == ["git", "-C", "/test/src", "status", "--porcelain"]:
                 return ""
+            if command == ["docker", "version", "--format", "{{.Server.Version}}"]:
+                return "29.9.3"
             return "unknown"
 
         monkeypatch.setattr(benchmark_provenance, "_command_output", mock_command)
@@ -272,6 +289,7 @@ class TestReproducibilityMetadata:
         )
 
         assert meta["git_sha"] == "git_sha_123"
+        assert meta["docker_server_version"] == "29.9.3"
         assert meta["docker_image_id"] == "compose_img_sha"
         assert meta["container_id"] == "cnt_id_123"
         assert meta["target_container_image_id"] == "target_img_sha"

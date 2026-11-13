@@ -810,11 +810,20 @@ def reproducibility_metadata(
     # 7. 성능 관련 런타임 설정 스냅샷 (허용 목록 방식 + effective workers)
     perf_config = runtime_config_snapshot(container_id, command_runner=cmd_fn)
 
+    # 8. Docker 서버 버전. 호스트 포트 전달 비용이 버전에 따라 달라 날짜 간 비교에 필요합니다.
+    try:
+        docker_server_version = (
+            cmd_fn(["docker", "version", "--format", "{{.Server.Version}}"]) or "unknown"
+        )
+    except Exception:
+        docker_server_version = "unknown"
+
     return {
         "git_sha": git_sha,
         "measured_at_utc": datetime.now(UTC).isoformat(),
         "python_version": platform.python_version(),
         "platform": platform.platform(),
+        "docker_server_version": docker_server_version,
         "docker_image_id": docker_image_id,
         "container_id": container_id,
         "target_container_image_id": target_container_image_id,
