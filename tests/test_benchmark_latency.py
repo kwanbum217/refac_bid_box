@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from scripts import benchmark_latency
 from scripts.benchmark_latency import (
     PERF_CONFIG_ALLOWLIST,
@@ -5,6 +8,7 @@ from scripts.benchmark_latency import (
     Samples,
     _query_for_round,
     benchmark_predict,
+    benchmark_predict_keepalive,
     build_evidence,
     compute_host_load_stats,
     host_load_metadata,
@@ -1480,3 +1484,155 @@ def test_missing_session_cookie_leaves_sse_and_query_anonymous(monkeypatch):
     benchmark_latency.benchmark_query("http://test", 1)
 
     assert [kwargs["cookies"] for kwargs in recorded] == [None, None]
+
+
+def _install_keepalive_client(monkeypatch) -> list[dict]:
+    created: list[dict] = []
+
+    class Response:
+        status_code = 200
+
+    class Client:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.posts = 0
+            created.append({"kwargs": kwargs, "client": self})
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def post(self, *args, **kwargs):
+            self.posts += 1
+            return Response()
+
+    monkeypatch.delenv("BENCHMARK_SESSION_COOKIE", raising=False)
+    monkeypatch.setattr(benchmark_latency.httpx, "Client", Client)
+    return created
+
+
+def test_predict_keepalive_reuses_one_client_per_worker(monkeypatch):
+    created = _install_keepalive_client(monkeypatch)
+
+    samples = benchmark_predict_keepalive("http://test", rounds=6, concurrency=3)
+
+    assert len(created) == 3
+    assert [entry["client"].posts for entry in created] == [3, 3, 3]
+    assert len(samples.values) == 6
+
+
+def test_predict_keepalive_forwards_session_cookie(monkeypatch):
+    created = _install_keepalive_client(monkeypatch)
+
+    benchmark_predict_keepalive(
+        "http://test", rounds=2, concurrency=2, session_cookie="test-cookie"
+    )
+
+    assert [entry["kwargs"]["cookies"] for entry in created] == [
+        {"bidbox_session": "test-cookie"},
+        {"bidbox_session": "test-cookie"},
+    ]
+
+
+def test_build_evidence_records_predict_keepalive_samples(monkeypatch):
+    monkeypatch.setattr(
+        benchmark_latency, "reproducibility_metadata", lambda **kwargs: {"git_sha": "abc"}
+    )
+    predict = Samples("낙찰가 예측 API", values=[10.0])
+    keepalive = Samples("낙찰가 예측 API (연결 재사용, 보조)", values=[6.0])
+
+    evidence = build_evidence(
+        "http://test",
+        100,
+        10,
+        predict=predict,
+        predict_keepalive=keepalive,
+        host_load={"cpu_count": 4, "load_1m": {"min": None, "median": None, "max": None}},
+    )
+
+    assert evidence["samples"]["predict"]["p50_ms"] == 10.0
+    assert evidence["samples"]["predict_keepalive"]["p50_ms"] == 6.0
+    assert (
+        evidence["samples"]["predict_keepalive"]["label"] == "낙찰가 예측 API (연결 재사용, 보조)"
+    )
+
+
+def _patch_benchmark_main(monkeypatch, tmp_path, extra_args: list[str]) -> Path:
+    class MockHealthResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    class FastLoadMonitor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            return self
+
+        def stop(self):
+            return {"cpu_count": 4, "load_1m": {"min": None, "median": None, "max": None}}
+
+    monkeypatch.setattr(benchmark_latency.httpx, "get", lambda *a, **kw: MockHealthResponse())
+    monkeypatch.setattr(
+        benchmark_latency, "reproducibility_metadata", lambda **kwargs: {"git_sha": "abc"}
+    )
+    monkeypatch.setattr(
+        benchmark_latency, "query_db_buffer_pool_pages_data", lambda **kwargs: {"pages_data": 1}
+    )
+    monkeypatch.setattr(benchmark_latency, "HostLoadMonitor", FastLoadMonitor)
+    monkeypatch.setattr(
+        benchmark_latency,
+        "benchmark_predict",
+        lambda *a, **kw: Samples("낙찰가 예측 API", values=[10.0]),
+    )
+    monkeypatch.setattr(
+        benchmark_latency,
+        "benchmark_sse_canonical",
+        lambda *a, **kw: (Samples("sse", values=[1.0]),) * 3,
+    )
+    monkeypatch.setattr(
+        benchmark_latency,
+        "benchmark_query",
+        lambda *a, **kw: Samples("단발 질의 API (비스트리밍)", values=[1.0]),
+    )
+
+    out_file = tmp_path / "out.json"
+    monkeypatch.setattr(
+        benchmark_latency.sys,
+        "argv",
+        ["benchmark_latency.py", "--output", str(out_file), *extra_args],
+    )
+    return out_file
+
+
+def test_main_skip_predict_keepalive_flag_records_no_keepalive_samples(monkeypatch, tmp_path):
+    def fail(*args, **kwargs):
+        raise AssertionError("keepalive 측정이 호출되면 안 됩니다")
+
+    out_file = _patch_benchmark_main(monkeypatch, tmp_path, ["--no-predict-keepalive"])
+    monkeypatch.setattr(benchmark_latency, "benchmark_predict_keepalive", fail)
+
+    assert benchmark_latency.main() == 0
+
+    samples = json.loads(out_file.read_text(encoding="utf-8"))["samples"]
+    assert "predict" in samples
+    assert "predict_keepalive" not in samples
+
+
+def test_main_keepalive_failure_does_not_change_exit_code_or_gate(monkeypatch, tmp_path):
+    out_file = _patch_benchmark_main(monkeypatch, tmp_path, [])
+    failing_keepalive = Samples("낙찰가 예측 API (연결 재사용, 보조)", values=[500.0], errors=1)
+    monkeypatch.setattr(
+        benchmark_latency, "benchmark_predict_keepalive", lambda *a, **kw: failing_keepalive
+    )
+
+    assert benchmark_latency.main() == 0
+
+    samples = json.loads(out_file.read_text(encoding="utf-8"))["samples"]
+    assert samples["predict"]["p95_ms"] == 10.0
+    assert samples["predict_keepalive"]["p95_ms"] == 500.0
+    assert samples["predict_keepalive"]["errors"] == 1

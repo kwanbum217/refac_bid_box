@@ -7,6 +7,13 @@ from src.app.core.timeutil import utcnow
 
 
 class PredictionRequest(BaseModel):
+    """특징 직접 입력 예측 요청.
+
+    보내지 않은 특징(낙찰하한율, 재발주 6종, 공고 시점)은
+    ``src/ml/features.py`` 의 ``build_default_feature_map`` 기본값으로 채웁니다.
+    누락을 422 로 거부하지 않습니다(2026-11-13 결정).
+    """
+
     bid_notice_no: str | None = Field(None, description="공고번호 (선택)")
     presumed_price: float = Field(..., gt=0, description="추정가격")
     base_price: float = Field(..., gt=0, description="기초금액")

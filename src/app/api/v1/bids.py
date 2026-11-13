@@ -127,6 +127,11 @@ def list_bids(
     db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
 ):
+    """입찰공고 목록을 반환합니다.
+
+    REST 응답은 SSR 화면보다 좁습니다. 기관 지역, 참가 지역, 계약 체계,
+    낙찰 방식, 후속 공고, 제한 사항은 포함하지 않습니다(2026-11-13 결정).
+    """
     enforce_anonymous_api_quota(request, user)
     try:
         page_obj = bid_queries.list_announcements(
@@ -282,6 +287,11 @@ def get_bid_detail(
     db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
 ):
+    """입찰공고 상세를 반환합니다.
+
+    REST 응답은 SSR 화면보다 좁습니다. 기관 지역, 참가 지역, 계약 체계,
+    낙찰 방식, 후속 공고, 제한 사항은 포함하지 않습니다(2026-11-13 결정).
+    """
     enforce_anonymous_api_quota(request, user)
     detail = bid_queries.get_announcement_detail(db, pk)
     if detail is None:
