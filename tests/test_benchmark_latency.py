@@ -52,6 +52,7 @@ def test_reproducibility_metadata_marks_failed_docker_lookup_unknown(monkeypatch
         "measured_at_utc",
         "python_version",
         "platform",
+        "docker_server_version",
         "docker_image_id",
         "container_id",
         "target_container_image_id",
