@@ -149,6 +149,32 @@ def _isolate_process_cache(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_schedule_run_log_db(monkeypatch):
+    """스케줄 실행 이력 기록이 운영 MySQL 대신 테스트마다 새 SQLite 로 가게 합니다.
+
+    src/tasks/worker.py 의 `_record_schedule_run` 은 모듈 전역 `SessionLocal` 로 행을
+    INSERT 합니다. 이 경로는 FastAPI 의존성 주입을 거치지 않아 `isolated_db` 로도 막히지
+    않습니다. 그래서 2026-11-11 에 호스트에서 돈 pytest 실행이 운영 `schedule_run_log`
+    에 시험 행을 남겼습니다(2026-11-13 확정: 963행 중 960행이 호스트 워커 ID, 컨테이너
+    워커가 남긴 진짜 행은 3행). `ScheduleRunLog` 테이블 하나만 가진 인메모리 SQLite 로
+    기본을 격리합니다. 기록 내용을 직접 검증하는 테스트는 이 뒤에 다시 덮어씁니다.
+    """
+    from src.app.models.schedule_run_log import ScheduleRunLog
+    from src.tasks import worker
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine, tables=[ScheduleRunLog.__table__])
+    factory = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+    yield factory
+    engine.dispose()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_promotion_audit_log(tmp_path):
     """승격 감사 로그가 테스트마다 임시 디렉터리로 가게 합니다.
 
