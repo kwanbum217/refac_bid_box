@@ -373,6 +373,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="지표 출력 경로",
     )
     parser.add_argument(
+        "--as-of",
+        type=date.fromisoformat,
+        default=None,
+        help="기준일 YYYY-MM-DD. 없으면 --check 는 기존 지표의 window.to, 그 외는 오늘",
+    )
+    parser.add_argument(
         "--check", action="store_true", help="파일을 쓰지 않고 기존 지표와 차이만 보고"
     )
     return parser.parse_args(argv)
@@ -418,7 +424,11 @@ def main(argv: list[str] | None = None) -> int:
     if output.exists():
         existing = yaml.safe_load(output.read_text(encoding="utf-8"))
 
-    today = date.today()
+    today = coverage.resolve_as_of(
+        args.as_of,
+        ((existing or {}).get("window") or {}).get("to"),
+        check=args.check,
+    )
     window = {"from": coverage._months_ago(today, args.months).isoformat(), "to": today.isoformat()}
     samples = collect_samples(
         months=args.months,

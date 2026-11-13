@@ -14,10 +14,13 @@
 uv run python scripts/report_rule_coverage.py
 uv run python scripts/report_rule_coverage.py --months 12 --category Servc
 uv run python scripts/report_rule_coverage.py --check
+uv run python scripts/report_rule_coverage.py --check --as-of 2026-11-11
 ```
 
 `--check` 는 파일을 쓰지 않고 기존 원장과 다시 계산한 원장의 구조·값 차이만 출력합니다.
 `generated_at`, 조회 창, 사람이 채우는 `investigation` 은 차이에서 제외합니다.
+기준일은 `--as-of YYYY-MM-DD` 가 있으면 그 값, 없으면 기존 원장의 `filter.window_to`,
+그것도 없으면 오늘입니다. `--check` 없이 다시 만들 때는 지금처럼 오늘 기준입니다.
 
 ## 2. 파일 구조
 
