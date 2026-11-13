@@ -180,6 +180,7 @@ __all__ = [
     "_parse_source_mount",
     "benchmark_dashboard_stats",
     "benchmark_predict",
+    "benchmark_predict_keepalive",
     "benchmark_query",
     "benchmark_sse_canonical",
     "build_evidence",
@@ -507,6 +508,58 @@ def benchmark_predict(
     return samples
 
 
+def benchmark_predict_keepalive(
+    base_url: str,
+    rounds: int,
+    concurrency: int,
+    session_cookie: str | None = None,
+) -> Samples:
+    samples = Samples("낙찰가 예측 API (연결 재사용, 보조)")
+    cookies = _session_cookies(session_cookie)
+
+    def request(client: httpx.Client, index: int) -> tuple[bool, float]:
+        payload = {
+            "presumed_price": 500_000_000 + index,
+            "base_price": 495_000_000 + index,
+            "category_code": "Thng",
+        }
+        start = time.perf_counter()
+        response = client.post("/api/v1/predictions/predict", json=payload)
+        if response.status_code == 429 and not cookies:
+            raise RuntimeError("익명 쿼터로 차단됨, --session-cookie 필요")
+        return response.status_code == 200, (time.perf_counter() - start) * 1000.0
+
+    def worker(indexes: list[int]) -> list[float | None]:
+        results: list[float | None] = []
+        with httpx.Client(
+            base_url=base_url,
+            cookies=cookies,
+            timeout=60.0,
+        ) as client:
+            # 모델 로드와 첫 배치를 데우되, 이 요청은 측정 표본에 넣지 않습니다.
+            with suppress(httpx.HTTPError):
+                request(client, -1)
+            for index in indexes:
+                try:
+                    succeeded, elapsed = request(client, index)
+                except httpx.HTTPError:
+                    results.append(None)
+                    continue
+                results.append(elapsed if succeeded else None)
+        return results
+
+    buckets = [list(range(offset, rounds, concurrency)) for offset in range(concurrency)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
+        futures = [executor.submit(worker, bucket) for bucket in buckets]
+        for future in concurrent.futures.as_completed(futures):
+            for elapsed in future.result():
+                if elapsed is None:
+                    samples.errors += 1
+                else:
+                    samples.add(elapsed)
+    return samples
+
+
 def benchmark_dashboard_stats(
     base_url: str,
     rounds: int = 10,
@@ -556,6 +609,7 @@ def build_evidence(
     final: Samples | None = None,
     predict: Samples | None = None,
     query: Samples | None = None,
+    predict_keepalive: Samples | None = None,
     host_load: dict[str, object] | None = None,
     strict_provenance: bool = True,
     service_name: str = "app",
@@ -629,6 +683,8 @@ def build_evidence(
         evidence_samples["final_new"] = final.as_dict()
     if predict is not None:
         evidence_samples["predict"] = predict.as_dict()
+    if predict_keepalive is not None:
+        evidence_samples["predict_keepalive"] = predict_keepalive.as_dict()
     if query is not None:
         evidence_samples["query"] = query.as_dict()
     if dashboard_stats is not None:
@@ -746,6 +802,12 @@ def main() -> int:
     parser.add_argument("--predict-rounds", type=int, default=100)
     parser.add_argument("--predict-concurrency", type=int, default=10)
     parser.add_argument(
+        "--no-predict-keepalive",
+        action="store_true",
+        default=False,
+        help="연결 재사용 보조 측정을 건너뜁니다 (게이트 판정에는 쓰이지 않습니다)",
+    )
+    parser.add_argument(
         "--dashboard-rounds",
         type=int,
         default=10,
@@ -811,6 +873,7 @@ def main() -> int:
     load_monitor = HostLoadMonitor(interval_seconds=5.0, min_samples=3).start()
 
     predict = None
+    predict_keepalive = None
     first_stage = None
     new_first_token = None
     final = None
@@ -826,6 +889,15 @@ def main() -> int:
             args.predict_concurrency,
             session_cookie=args.session_cookie,
         )
+
+        if not args.no_predict_keepalive:
+            print("    연결 재사용 보조 측정")
+            predict_keepalive = benchmark_predict_keepalive(
+                args.base_url,
+                args.predict_rounds,
+                args.predict_concurrency,
+                session_cookie=args.session_cookie,
+            )
 
         print(f"\n[2/3] 정본 SSE 스트리밍 ({args.sse_rounds}회)")
         first_stage, new_first_token, final = benchmark_sse_canonical(
@@ -881,6 +953,8 @@ def main() -> int:
             first_stage.report()
         if predict is not None:
             results.append(predict.report(PREDICT_TARGET_MS))
+        if predict_keepalive is not None:
+            predict_keepalive.report()
         if query is not None:
             query.report()
 
@@ -901,6 +975,7 @@ def main() -> int:
             final,
             predict,
             query,
+            predict_keepalive=predict_keepalive,
             host_load=host_load,
             strict_provenance=strict_provenance,
             service_name=args.target_service,

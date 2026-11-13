@@ -135,6 +135,7 @@ description: 배포 전, 큰 병합 뒤, 주간 점검에서 프로젝트 기능
 - 성능 개선 판정은 쌍대 비교와 홀드아웃 설계를 따릅니다. 절차는 [servc-model-tuning](../servc-model-tuning/SKILL.md) 을 참고합니다.
 - 사용자 API 한도(60초 120요청)에 걸리는 측정은 `RATE_LIMIT_EXEMPT_USERNAMES` 에 측정 계정만 넣고 `app` 을 재시작한 뒤 측정합니다. 끝나면 값을 비우고 다시 재시작합니다. `ENVIRONMENT=production` 에서는 이 값이 무시됩니다.
 - `benchmark_latency.py` 는 측정 쿠키를 예측 요청에만 붙여 SSE·단발 질의는 익명 한도(60초 30회)에 걸립니다. SSE 판정은 쿠키를 받는 `python -m scripts.benchmark_sse_gate` 로 합니다. 스크립트 경로(`python scripts/benchmark_sse_gate.py`)로 부르면 `scripts` 모듈을 찾지 못해 실행되지 않습니다.
+- `predict_keepalive` 는 연결 재사용 보조 지표로 Docker 포트 전달 비용을 분리해 보는 용도이며 게이트에 쓰지 않습니다.
 
 ## 4. 데이터 무손실 점검
 
