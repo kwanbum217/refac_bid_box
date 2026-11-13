@@ -119,7 +119,7 @@ description: 배포 전, 큰 병합 뒤, 주간 점검에서 프로젝트 기능
 | 예측 API c10 P95 | `make benchmark` 또는 `uv run python scripts/benchmark_latency.py --base-url http://127.0.0.1:8000` | 100ms 이하 (CURRENT_STATE `slo_alerts`). 정본 기록값 c10 48.14ms (`prediction_latency`) | 회차당 표본 600 이상, 3회 반복 최악값, warmup 제외. `PREDICTION_GC_MODE=freeze` 확인 |
 | 예측 API 100ms 초과율 | 위 벤치마크의 초과율 산출값 | 0.5% 이하 (CURRENT_STATE `slo_alerts` 벤치마크 게이트) | 표본 600 미만은 판정 불가. Wilson 상한을 함께 기록 |
 | 예측 API c1·c2·c4 P95 | 위 벤치마크 | 기준 미정. 정본 기록값 c1 15.03ms·c2 19.66ms·c4 32.77ms (`prediction_latency`). 회귀 감시는 `docs/ops/latency_gate_protocol.md` 4.2·4.3 | c10 최적화의 부작용 감시 지점이며 절대 기준이 아님 |
-| RAG SSE 첫 토큰 P95 | `uv run python scripts/benchmark_sse_gate.py --concurrency 1 --rounds 60 --round-num <회차>` | 3초 이하 (CURRENT_STATE `slo_alerts`). 정본 기록값 2664.19ms (`rag_sse_latency`) | 순차(c1) 측정값. c2 이상에 3초를 적용하지 않음. 회차당 60 이상 |
+| RAG SSE 첫 토큰 P95 | `uv run python -m scripts.benchmark_sse_gate --concurrency 1 --rounds 60 --round-num <회차>` | 3초 이하 (CURRENT_STATE `slo_alerts`). 정본 기록값 2664.19ms (`rag_sse_latency`) | 순차(c1) 측정값. c2 이상에 3초를 적용하지 않음. 회차당 60 이상 |
 | RAG SSE 전체 P95 | 위 SSE 벤치마크 | 20초 이하 (CURRENT_STATE `slo_alerts`). 정본 기록값 3353.98ms (`rag_sse_latency`) | 동시성 수준별 기준은 아직 없음. c1 값만 판정에 씀 |
 | RAG 품질 | `uv run python scripts/measure_llm_quality.py --fixture data/eval/llm_quality_fixture_v2.json --model-label <모델 라벨> --expected-model <OLLAMA_MODEL 값> --output <결과 JSON 경로>` | 정본 기록값은 blind_fixture_v2 96요청 numeric 144/144, evidence recall 1.0000, citation 72/72, refusal 24/24, 과잉응답 0 (`rag_quality`) | `--expected-model` 필수. dirty 트리는 canonical=false. proposition 은 자동 채점하지 않음 |
 | 웜 비교 통계 | `uv run python scripts/benchmark_compare_stats.py --base-url http://127.0.0.1:8000` | 기준 미정. 정본 기록값 `/api/v1/bids/stats` 3.34ms(P95 3.80ms) (`compare_stats_latency`), compare-stats 종단 4.9ms (`compare_stats_snapshot`) | 콜드 SQL·캐시 미적중은 게이트가 아님(`coldsql_metric`). 버퍼풀 크기와 DB 가동 시간 기록 |
@@ -134,6 +134,7 @@ description: 배포 전, 큰 병합 뒤, 주간 점검에서 프로젝트 기능
 - `통과 추정` 같은 표현을 쓰지 않습니다. 근거가 빠지면 `미달` 또는 `판정 불가` 입니다.
 - 성능 개선 판정은 쌍대 비교와 홀드아웃 설계를 따릅니다. 절차는 [servc-model-tuning](../servc-model-tuning/SKILL.md) 을 참고합니다.
 - 사용자 API 한도(60초 120요청)에 걸리는 측정은 `RATE_LIMIT_EXEMPT_USERNAMES` 에 측정 계정만 넣고 `app` 을 재시작한 뒤 측정합니다. 끝나면 값을 비우고 다시 재시작합니다. `ENVIRONMENT=production` 에서는 이 값이 무시됩니다.
+- `benchmark_latency.py` 는 측정 쿠키를 예측 요청에만 붙여 SSE·단발 질의는 익명 한도(60초 30회)에 걸립니다. SSE 판정은 쿠키를 받는 `python -m scripts.benchmark_sse_gate` 로 합니다. 스크립트 경로(`python scripts/benchmark_sse_gate.py`)로 부르면 `scripts` 모듈을 찾지 못해 실행되지 않습니다.
 
 ## 4. 데이터 무손실 점검
 
