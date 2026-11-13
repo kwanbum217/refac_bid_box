@@ -282,6 +282,107 @@ def test_build_command_auto_false_omits_trust_and_yolo():
         assert "--yolo" not in cmd
 
 
+def test_build_command_default_has_no_skill_flags():
+    """스킬 인자를 주지 않으면 기존 명령과 같아야 합니다."""
+    assert build_command(MODEL, "지시문") == ["cmd", "--model", MODEL, "지시문"]
+    assert build_command(MODEL, "지시문", skills=None, no_skills=False) == [
+        "cmd",
+        "--model",
+        MODEL,
+        "지시문",
+    ]
+
+
+def test_build_command_places_skill_flags_before_prompt(tmp_path: Path):
+    """--no-skills 와 반복 --skill 이 prompt 위치 인자 앞에 순서대로 붙어야 합니다."""
+    first = tmp_path / "ponytail"
+    second = tmp_path / "bundle"
+    first.mkdir()
+    second.mkdir()
+
+    cmd = build_command(
+        MODEL,
+        "지시문",
+        auto=True,
+        skills=[first.as_posix(), second.as_posix()],
+        no_skills=True,
+    )
+    assert cmd == [
+        "cmd",
+        "--model",
+        MODEL,
+        "--trust",
+        "--yolo",
+        "--no-skills",
+        "--skill",
+        first.as_posix(),
+        "--skill",
+        second.as_posix(),
+        "지시문",
+    ]
+
+
+def test_build_command_places_skill_flags_before_one_shot_prompt(tmp_path: Path):
+    """단발 모드에서도 스킬 플래그는 -p 앞에 붙어야 합니다."""
+    skill_dir = tmp_path / "ponytail"
+    skill_dir.mkdir()
+
+    cmd = build_command(MODEL, "지시문", one_shot=True, skills=[skill_dir.as_posix()])
+    assert cmd == [
+        "cmd",
+        "--model",
+        MODEL,
+        "--skill",
+        skill_dir.as_posix(),
+        "-p",
+        "지시문",
+    ]
+
+
+def test_main_rejects_missing_skill_path(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    """존재하지 않는 --skill 경로는 종료 코드 2 로 거부하고 cmd 를 호출하지 않습니다."""
+    target = tmp_path / "preamble_skill_missing.txt"
+    target.write_text("지시문", encoding="utf-8")
+    missing = tmp_path / "missing-skill"
+
+    with patch("scripts.orca_cmd_launch.run_cmd") as mock_run, pytest.raises(SystemExit) as exc:
+        main(["--model", MODEL, "--preamble", str(target), "--skill", str(missing)])
+    assert exc.value.code == 2
+    mock_run.assert_not_called()
+    assert str(missing) in capsys.readouterr().err
+
+
+@patch("scripts.orca_cmd_launch.run_cmd", return_value=0)
+def test_main_passes_skill_flags_to_cmd(mock_run: MagicMock, tmp_path: Path):
+    """main 이 --skill 과 --no-skills 를 cmd 인자로 그대로 전달합니다."""
+    skill_dir = tmp_path / "ponytail"
+    skill_dir.mkdir()
+    target = tmp_path / "preamble_skill_pass.txt"
+    target.write_text("지시문", encoding="utf-8")
+
+    code = main(
+        [
+            "--model",
+            MODEL,
+            "--preamble",
+            str(target),
+            "--skill",
+            str(skill_dir),
+            "--no-skills",
+            "--one-shot",
+            "--no-keep-open",
+            "--no-commit-notice",
+        ]
+    )
+    assert code == 0
+    executed = mock_run.call_args[0][0]
+    skill_index = executed.index("--skill")
+    assert executed[skill_index + 1] == skill_dir.as_posix()
+    assert executed.index("--no-skills") < skill_index
+    assert executed[skill_index + 2] == "-p"
+    assert executed[-1] == "지시문"
+
+
 @patch("scripts.orca_cmd_launch.run_cmd", return_value=0)
 @patch("scripts.orca_cmd_launch.open_interactive_shell")
 def test_main_consumes_and_deletes_unique_preamble(
