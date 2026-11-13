@@ -691,7 +691,18 @@ def reproducibility_metadata(
         raw_ports = cmd_fn(
             ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", container_id]
         )
-        raw_ip = cmd_fn(["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", container_id])
+        raw_ip = cmd_fn(
+            [
+                "docker",
+                "inspect",
+                "-f",
+                "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
+                container_id,
+            ]
+        )
+        if raw_ip != "unknown":
+            ip_tokens = raw_ip.split()
+            raw_ip = ip_tokens[0] if ip_tokens else ""
         raw_mounts = cmd_fn(["docker", "inspect", "-f", "{{json .Mounts}}", container_id])
     else:
         target_container_image_id = "unknown"
