@@ -20,6 +20,7 @@ import xml.etree.ElementTree as ET  # nosec B405 - 신뢰하는 공공데이터 
 from collections.abc import Callable, Iterable
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -82,13 +83,31 @@ BIGINT_MIN = -9_223_372_036_854_775_808
 BIGINT_MAX = 9_223_372_036_854_775_807
 
 
+SERVICE_KEY_NAMES = ("G2B_SERVICE_KEY", "serviceKey", "SERVICE_KEY")
+SERVICE_KEY_DOTENV_PATH = Path(__file__).resolve().parents[3] / ".env"
+
+
 def get_service_key() -> str:
-    """G2B 서비스 키. 값은 .env 에서만 읽고 코드/로그에 노출하지 않습니다."""
-    return (
-        os.getenv("G2B_SERVICE_KEY", "")
-        or os.getenv("serviceKey", "")
-        or os.getenv("SERVICE_KEY", "")
-    )
+    """G2B 서비스 키. 값은 .env 에서만 읽고 코드/로그에 노출하지 않습니다.
+
+    환경변수를 먼저 보고, 비어 있으면 저장소 루트 .env 를 읽습니다. 호스트에서
+    `uv run python scripts/...` 로 실행하면 .env 가 환경변수로 올라오지 않아
+    키가 빈 값으로 전송되고 게이트웨이가 401·429 를 돌려줬습니다(2026-11-13).
+    """
+    for name in SERVICE_KEY_NAMES:
+        value = os.getenv(name, "")
+        if value:
+            return value
+    if not SERVICE_KEY_DOTENV_PATH.is_file():
+        return ""
+    from dotenv import dotenv_values
+
+    values = dotenv_values(SERVICE_KEY_DOTENV_PATH)
+    for name in SERVICE_KEY_NAMES:
+        value = values.get(name) or ""
+        if value:
+            return value
+    return ""
 
 
 CREDENTIAL_QUERY_PARAM_RE = re.compile(

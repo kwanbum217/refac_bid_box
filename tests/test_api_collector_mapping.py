@@ -62,6 +62,24 @@ def test_service_key_accepts_canonical_and_legacy_environment_names(monkeypatch)
     assert get_service_key() == "legacy"
 
 
+def test_service_key_falls_back_to_dotenv_when_environment_is_empty(monkeypatch, tmp_path):
+    import src.app.services.api_collector as collector
+
+    for name in collector.SERVICE_KEY_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("G2B_SERVICE_KEY=\nserviceKey=from-dotenv\n", encoding="utf-8")
+    monkeypatch.setattr(collector, "SERVICE_KEY_DOTENV_PATH", dotenv)
+    assert get_service_key() == "from-dotenv"
+
+    monkeypatch.setenv("G2B_SERVICE_KEY", "from-env")
+    assert get_service_key() == "from-env"
+
+    monkeypatch.delenv("G2B_SERVICE_KEY")
+    monkeypatch.setattr(collector, "SERVICE_KEY_DOTENV_PATH", tmp_path / "missing.env")
+    assert get_service_key() == ""
+
+
 @pytest.fixture
 def announcement() -> dict:
     item = ET.fromstring(ANNOUNCEMENT_XML)  # noqa: S314
