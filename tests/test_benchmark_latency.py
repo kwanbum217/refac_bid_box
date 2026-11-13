@@ -259,10 +259,10 @@ def test_reproducibility_metadata_queries_app_service_and_inspect(monkeypatch):
             "docker",
             "inspect",
             "-f",
-            "{{.NetworkSettings.IPAddress}}",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
             "container_id_bbb",
         ]:
-            return "172.18.0.4"
+            return "172.18.0.4 "
         if command == [
             "docker",
             "inspect",
@@ -378,8 +378,14 @@ def test_reproducibility_metadata_detects_port_mismatch(monkeypatch):
             return "true"
         if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt123"]:
             return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
-        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt123"]:
-            return "172.18.0.2"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
+            "cnt123",
+        ]:
+            return "172.18.0.2 "
         return "unknown"
 
     monkeypatch.setattr(benchmark_latency, "_command_output", mock_command)
@@ -472,10 +478,10 @@ def test_reproducibility_metadata_supports_explicit_target_container(monkeypatch
             "docker",
             "inspect",
             "-f",
-            "{{.NetworkSettings.IPAddress}}",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
             "custom_cnt_id_999",
         ]:
-            return "172.18.0.9"
+            return "172.18.0.9 "
         if command == [
             "docker",
             "inspect",
@@ -650,10 +656,10 @@ def test_reproducibility_metadata_key_separation(monkeypatch):
             "docker",
             "inspect",
             "-f",
-            "{{.NetworkSettings.IPAddress}}",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
             "compose_cnt_id_222",
         ]:
-            return "172.18.0.5"
+            return "172.18.0.5 "
         if command == ["docker", "inspect", "-f", "{{json .RepoDigests}}", "running_img_id_333"]:
             return '["registry.example.com/app@sha256:repodigest444"]'
         return "unknown"
@@ -930,8 +936,8 @@ def test_benchmark_latency_main_fails_when_container_swapped_during_measurement(
                 return "true"
             if command[3] == "{{json .NetworkSettings.Ports}}":
                 return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
-            if command[3] == "{{.NetworkSettings.IPAddress}}":
-                return "172.18.0.5"
+            if command[3] == "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}":
+                return "172.18.0.5 "
             if command[3] == "{{json .RepoDigests}}":
                 return '["registry.example.com/app@sha256:repodigest444"]'
         return "unknown"
@@ -999,8 +1005,14 @@ def test_reproducibility_metadata_bind_mount_clean_success(monkeypatch):
             return "true"
         if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt_123"]:
             return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
-        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt_123"]:
-            return "172.18.0.2"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
+            "cnt_123",
+        ]:
+            return "172.18.0.2 "
         if command == ["docker", "inspect", "-f", "{{json .RepoDigests}}", "sha256:running_img"]:
             return '["app:latest"]'
         if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "cnt_123"]:
@@ -1044,8 +1056,14 @@ def test_reproducibility_metadata_bind_mount_dirty_rejected_in_strict_mode(monke
             return "true"
         if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt_123"]:
             return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
-        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt_123"]:
-            return "172.18.0.2"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
+            "cnt_123",
+        ]:
+            return "172.18.0.2 "
         if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "cnt_123"]:
             return '[{"Type":"bind","Source":"/Users/test/workspace/src","Destination":"/app/src"}]'
         if command == ["git", "-C", "/Users/test/workspace/src", "rev-parse", "HEAD"]:
@@ -1096,8 +1114,14 @@ def test_reproducibility_metadata_image_only_container_has_null_source_mount(mon
             return "true"
         if command == ["docker", "inspect", "-f", "{{json .NetworkSettings.Ports}}", "cnt_123"]:
             return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
-        if command == ["docker", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", "cnt_123"]:
-            return "172.18.0.2"
+        if command == [
+            "docker",
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
+            "cnt_123",
+        ]:
+            return "172.18.0.2 "
         if command == ["docker", "inspect", "-f", "{{json .RepoDigests}}", "sha256:running_img"]:
             return '["app:latest"]'
         if command == ["docker", "inspect", "-f", "{{json .Mounts}}", "cnt_123"]:
@@ -1150,8 +1174,8 @@ def test_benchmark_latency_main_fails_on_dirty_runtime_source(monkeypatch, tmp_p
                 return "true"
             if command[3] == "{{json .NetworkSettings.Ports}}":
                 return '{"8000/tcp":[{"HostIp":"0.0.0.0","HostPort":"8000"}]}'
-            if command[3] == "{{.NetworkSettings.IPAddress}}":
-                return "172.18.0.5"
+            if command[3] == "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}":
+                return "172.18.0.5 "
             if command[3] == "{{json .RepoDigests}}":
                 return '["registry.example.com/app@sha256:repodigest444"]'
             if command[3] == "{{json .Mounts}}":
@@ -1313,10 +1337,10 @@ def test_runtime_config_snapshot_in_reproducibility_metadata(monkeypatch):
             "docker",
             "inspect",
             "-f",
-            "{{.NetworkSettings.IPAddress}}",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}",
             "container_id_123",
         ]:
-            return "172.18.0.2"
+            return "172.18.0.2 "
         if command == [
             "docker",
             "inspect",
