@@ -392,7 +392,22 @@ def _query_for_round(index: int) -> str:
     return f"{base} (성능 측정 표본 {index + 1})"
 
 
-def benchmark_sse_canonical(base_url: str, rounds: int) -> tuple[Samples, Samples, Samples]:
+def _session_cookies(session_cookie: str | None) -> dict[str, str] | None:
+    cookie_value = (
+        session_cookie if session_cookie is not None else os.getenv("BENCHMARK_SESSION_COOKIE")
+    )
+    if not cookie_value:
+        return None
+    if cookie_value.startswith("bidbox_session="):
+        cookie_value = cookie_value.split("=", 1)[1]
+    return {"bidbox_session": cookie_value}
+
+
+def benchmark_sse_canonical(
+    base_url: str,
+    rounds: int,
+    session_cookie: str | None = None,
+) -> tuple[Samples, Samples, Samples]:
     """정본 SSE 스트림에서 first_stage_ms, first_token_ms, final_ms를 측정합니다.
 
     기존 legacy GET /api/v1/chatbot/stream은 제거되었고,
@@ -402,7 +417,11 @@ def benchmark_sse_canonical(base_url: str, rounds: int) -> tuple[Samples, Sample
     first_token = Samples("정본 SSE 첫 token (first_token_ms)")
     final = Samples("정본 SSE 완료 (final_ms)")
 
-    with httpx.Client(base_url=base_url, timeout=180.0) as client:
+    with httpx.Client(
+        base_url=base_url,
+        timeout=180.0,
+        cookies=_session_cookies(session_cookie),
+    ) as client:
         for i in range(rounds):
             query = _query_for_round(i)
             start = time.perf_counter()
@@ -448,14 +467,7 @@ def benchmark_predict(
     session_cookie: str | None = None,
 ) -> Samples:
     samples = Samples("낙찰가 예측 API")
-    cookie_value = (
-        session_cookie if session_cookie is not None else os.getenv("BENCHMARK_SESSION_COOKIE")
-    )
-    cookies: dict[str, str] | None = None
-    if cookie_value:
-        if cookie_value.startswith("bidbox_session="):
-            cookie_value = cookie_value.split("=", 1)[1]
-        cookies = {"bidbox_session": cookie_value}
+    cookies = _session_cookies(session_cookie)
 
     def request(index: int) -> tuple[bool, float]:
         payload = {
@@ -679,9 +691,17 @@ def build_evidence(
     return sanitize_nan_to_none(evidence)
 
 
-def benchmark_query(base_url: str, rounds: int) -> Samples:
+def benchmark_query(
+    base_url: str,
+    rounds: int,
+    session_cookie: str | None = None,
+) -> Samples:
     samples = Samples("단발 질의 API (비스트리밍)")
-    with httpx.Client(base_url=base_url, timeout=180.0) as client:
+    with httpx.Client(
+        base_url=base_url,
+        timeout=180.0,
+        cookies=_session_cookies(session_cookie),
+    ) as client:
         for i in range(rounds):
             start = time.perf_counter()
             query = _query_for_round(i)
@@ -809,11 +829,13 @@ def main() -> int:
 
         print(f"\n[2/3] 정본 SSE 스트리밍 ({args.sse_rounds}회)")
         first_stage, new_first_token, final = benchmark_sse_canonical(
-            args.base_url, args.sse_rounds
+            args.base_url, args.sse_rounds, session_cookie=args.session_cookie
         )
 
         print(f"\n[3/3] 단발 질의 API ({args.query_rounds}회)")
-        query = benchmark_query(args.base_url, args.query_rounds)
+        query = benchmark_query(
+            args.base_url, args.query_rounds, session_cookie=args.session_cookie
+        )
 
     if args.target in ("dashboard", "all"):
         print(

@@ -1407,3 +1407,75 @@ def test_perf_config_allowlist_excludes_secrets():
             assert pattern not in key.upper(), (
                 f"Secret pattern '{pattern}' found in allowlist key '{key}'"
             )
+
+
+def _install_fake_client(monkeypatch) -> list[dict]:
+    recorded: list[dict] = []
+
+    class Response:
+        status_code = 200
+
+        def iter_lines(self):
+            return iter(())
+
+    class Stream:
+        def __enter__(self):
+            return Response()
+
+        def __exit__(self, *exc):
+            return False
+
+    class Client:
+        def __init__(self, **kwargs):
+            recorded.append(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def stream(self, *args, **kwargs):
+            return Stream()
+
+        def post(self, *args, **kwargs):
+            return Response()
+
+    monkeypatch.delenv("BENCHMARK_SESSION_COOKIE", raising=False)
+    monkeypatch.setattr(benchmark_latency.httpx, "Client", Client)
+    return recorded
+
+
+def test_session_cookie_is_forwarded_to_sse_and_query(monkeypatch):
+    recorded = _install_fake_client(monkeypatch)
+
+    benchmark_latency.benchmark_sse_canonical("http://test", 1, session_cookie="test-cookie")
+    benchmark_latency.benchmark_query("http://test", 1, session_cookie="test-cookie")
+
+    assert [kwargs["cookies"] for kwargs in recorded] == [
+        {"bidbox_session": "test-cookie"},
+        {"bidbox_session": "test-cookie"},
+    ]
+
+
+def test_session_cookie_prefix_is_stripped_for_sse_and_query(monkeypatch):
+    recorded = _install_fake_client(monkeypatch)
+
+    benchmark_latency.benchmark_sse_canonical(
+        "http://test", 1, session_cookie="bidbox_session=test-cookie"
+    )
+    benchmark_latency.benchmark_query("http://test", 1, session_cookie="bidbox_session=test-cookie")
+
+    assert [kwargs["cookies"] for kwargs in recorded] == [
+        {"bidbox_session": "test-cookie"},
+        {"bidbox_session": "test-cookie"},
+    ]
+
+
+def test_missing_session_cookie_leaves_sse_and_query_anonymous(monkeypatch):
+    recorded = _install_fake_client(monkeypatch)
+
+    benchmark_latency.benchmark_sse_canonical("http://test", 1)
+    benchmark_latency.benchmark_query("http://test", 1)
+
+    assert [kwargs["cookies"] for kwargs in recorded] == [None, None]
