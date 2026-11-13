@@ -842,6 +842,11 @@ def predict_winning_price(
 
     db 는 inst_hist_rate 를 실제 기관 이력으로 채우기 위해 필요합니다.
     빼면 상수로 떨어져 학습과 정의가 갈립니다.
+
+    보내지 않은 특징(낙찰하한율, 재발주 6종, 공고 시점)은
+    ``src/ml/features.py`` 의 ``build_default_feature_map`` 기본값으로 채우며,
+    응답에 ``lwlt_rate_missing=1``, ``feature_time_basis=request_time`` 으로
+    표시합니다. 누락을 422 로 거부하지 않습니다(2026-11-13 결정).
     """
     enforce_anonymous_api_quota(request, user)
     t_start = time.perf_counter()

@@ -92,6 +92,12 @@ class RegionGroup(BaseModel):
 
 
 class BidListResponse(BaseModel):
+    """GET /api/v1/bids 응답 계약.
+
+    SSR 화면보다 좁은 응답이며 기관 지역, 참가 지역, 계약 체계, 낙찰 방식,
+    후속 공고, 제한 사항은 포함하지 않습니다(2026-11-13 결정).
+    """
+
     bids: list[BidAnnouncementResponse]
     page_obj: PageMeta
     is_paginated: bool
@@ -114,6 +120,12 @@ class BidResultListResponse(BaseModel):
 
 
 class BidDetailResponse(BaseModel):
+    """GET /api/v1/bids/{pk} 응답 계약.
+
+    SSR 화면보다 좁은 응답이며 기관 지역, 참가 지역, 계약 체계, 낙찰 방식,
+    후속 공고, 제한 사항은 포함하지 않습니다(2026-11-13 결정).
+    """
+
     bid: BidAnnouncementResponse
     similar_bids: list[BidAnnouncementResponse] = Field(default_factory=list)
     past_results: list[BidResultResponse] = Field(default_factory=list)

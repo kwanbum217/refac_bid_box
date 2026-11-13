@@ -118,7 +118,11 @@ class ChatSessionState(Base):
 
 
 class AutomationSubscription(Base):
-    """자동화 구독 테이블 (원본 db_table: automation_subscriptions)"""
+    """자동화 구독 테이블 (원본 db_table: automation_subscriptions).
+
+    G1 스키마 보존용으로 유지하는 미사용 테이블이며 API·서비스·스케줄 소비
+    코드가 없습니다. 구독 기능은 범위 제외입니다(2026-11-13 결정).
+    """
 
     __tablename__ = "automation_subscriptions"
     __table_args__ = (
