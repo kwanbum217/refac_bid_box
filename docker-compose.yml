@@ -39,6 +39,8 @@ services:
       # 와일드카드면 기동을 거부합니다. 전달하지 않으면 컨테이너가 기동 즉시 죽습니다.
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
       - CORS_DEV_ALLOW_ALL=${CORS_DEV_ALLOW_ALL:-false}
+      # 측정 전용 계정만 로그인 사용자 API 한도에서 면제합니다. 비우면 면제 없음입니다.
+      - RATE_LIMIT_EXEMPT_USERNAMES=${RATE_LIMIT_EXEMPT_USERNAMES:-}
       - DATABASE_URL=mysql+pymysql://root:${MYSQL_ROOT_PASSWORD:-rootpassword}@db:3306/procurement
       - DB_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootpassword}
       - REDIS_URL=redis://redis:6379/0

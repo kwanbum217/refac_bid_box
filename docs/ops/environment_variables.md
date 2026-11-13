@@ -33,6 +33,7 @@ refac_bid_box에서 사용하는 모든 환경변수의 **단일 명세**입니�
 | `MAX_REQUEST_BODY_SIZE` | 아니오 | `10485760` | HTTP 요청 본문 크기 상한 (바이트, 10MB) |
 | `ANONYMOUS_API_RATE_LIMIT_MAX_REQUESTS` | 아니오 | `30` | 익명 API 요청 쿼터 (IP별 윈도우당 최대 횟수) |
 | `ANONYMOUS_API_RATE_LIMIT_WINDOW_SECONDS` | 아니오 | `60` | 익명 API 요청 쿼터 윈도우 (초) |
+| `RATE_LIMIT_EXEMPT_USERNAMES` | 아니오 | - | 로그인 사용자 API 한도에서 면제할 사용자 이름 목록 (콤마 구분). 성능 측정 전용이며 `ENVIRONMENT=production` 에서는 값이 있어도 무시합니다 |
 | `READINESS_REQUIRE_WARMUP` | 아니오 | `false` | warmup 미완료를 503(`not_ready`)으로 승격할지 여부. 운영 compose 는 `true` |
 | `READINESS_REQUIRE_LLM` | 아니오 | `false` | LLM 미가용을 503(`not_ready`)으로 승격할지 여부. 운영 compose 는 `false` 라 LLM 장애는 `degraded` 로 통과합니다 |
 | `SIGNUP_RATE_LIMIT_MAX` | 아니오 | `10` | IP 축 회원가입 최대 허용 횟수 (고정 윈도우). Redis 장애 시 로그인·회원가입은 503, 익명 API 는 통과 |
