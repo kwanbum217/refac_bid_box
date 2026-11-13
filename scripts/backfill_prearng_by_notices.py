@@ -84,12 +84,14 @@ def select_backfill_candidates(
     since: date,
     until: date,
     limit: int,
+    excluded_out: list[int] | None = None,
 ) -> list[tuple[str, datetime]]:
     """일일 증분과 같은 후보 조건에 개찰일 범위와 정렬을 더합니다.
 
     후보 조건(용역, 예비가격 없음)은 일일 증분 `select_new_servc_notices` 를
     그대로 import 해 씁니다. 그 함수는 하한만 받으므로 상한과 최근순 정렬은
-    돌려받은 공고번호에 개찰일 범위를 걸어 좁힙니다.
+    돌려받은 공고번호에 개찰일 범위를 걸어 좁힙니다. 자료 없음으로 기록된
+    공고를 빼는 것도 그 함수 안에서 함께 적용됩니다.
     """
     until_dt = datetime.combine(until, time.max)
     since_dt = datetime.combine(since, time.min)
@@ -98,6 +100,7 @@ def select_backfill_candidates(
         now=until_dt,
         lookback_days=(until - since).days + 1,
         limit=CANDIDATE_POOL_LIMIT,
+        excluded_out=excluded_out,
     )
     if not pool:
         return []
@@ -168,12 +171,18 @@ def run(argv: Sequence[str] | None = None) -> int:
         return 2
 
     session = SessionLocal()
+    excluded: list[int] = []
     try:
-        candidates = select_backfill_candidates(session, since=since, until=until, limit=args.limit)
+        candidates = select_backfill_candidates(
+            session, since=since, until=until, limit=args.limit, excluded_out=excluded
+        )
     finally:
         session.close()
 
-    print(f"후보 공고 {len(candidates)}건 (개찰일 {since} ~ {until}, 상한 {args.limit}건)")
+    print(
+        f"후보 공고 {len(candidates)}건 (개찰일 {since} ~ {until}, 상한 {args.limit}건), "
+        f"자료 없음 제외 {excluded[0] if excluded else 0}건"
+    )
     if not candidates:
         print("수집할 공고가 없습니다.")
         return 0
