@@ -106,6 +106,8 @@ description: 배포 전, 큰 병합 뒤, 주간 점검에서 프로젝트 기능
 | 규칙 커버리지 원장 | `uv run python scripts/report_rule_coverage.py --check` | 출력의 `차이 0건`. 이 스크립트는 차이가 있어도 종료 코드 0 이므로 출력으로 판정 |
 | 낙찰하한율 불일치 지표 | `uv run python scripts/report_lwlt_mismatch.py --check` | 종료 코드 0, 출력의 `차이 0건` |
 
+두 `--check` 는 `--as-of YYYY-MM-DD` 가 없으면 기존 원장·지표의 창 끝 날짜를 기준일로 씁니다. 원장을 만든 날과 같은 창으로 다시 계산하므로, 날짜가 바뀌었다는 이유만으로는 차이가 나지 않습니다. 다른 날짜로 비교하려면 `--as-of` 를 명시합니다.
+
 재학습·승격의 상세 절차는 [retraining-pipeline](../retraining-pipeline/SKILL.md) 을 따릅니다. 크론 등록 시각과 태스크 이름은 `src/tasks/worker.py` 의 `cron_jobs` 가 정본입니다.
 
 ## 3. 성능 점검 표

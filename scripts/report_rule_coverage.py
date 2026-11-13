@@ -655,6 +655,22 @@ def diff_ledgers(
     return differences
 
 
+def resolve_as_of(as_of: date | None, window_to: Any, *, check: bool) -> date:
+    """기준일. --as-of 명시값, --check 이면 기존 파일의 창 끝, 그 외는 오늘입니다.
+
+    --check 를 오늘 기준으로 돌리면 날짜가 바뀔 때마다 조회 창이 밀려 차이가 납니다.
+    그래서 점검은 파일을 만든 날과 같은 창으로 다시 계산합니다.
+    """
+    if as_of is not None:
+        return as_of
+    if check and window_to:
+        try:
+            return date.fromisoformat(str(window_to))
+        except ValueError:
+            pass
+    return date.today()
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="적격심사 규칙 커버리지 원장 생성기")
     parser.add_argument("--months", type=int, default=12, help="조회 기간(개월, 기본 12)")
@@ -668,6 +684,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--min-announcements", type=int, default=5, help="기관 개별 항목 최소 공고 수(기본 5)"
     )
     parser.add_argument("--output", default=DEFAULT_OUTPUT, help="원장 출력 경로")
+    parser.add_argument(
+        "--as-of",
+        type=date.fromisoformat,
+        default=None,
+        help="기준일 YYYY-MM-DD. 없으면 --check 는 기존 원장의 window_to, 그 외는 오늘",
+    )
     parser.add_argument(
         "--check", action="store_true", help="파일을 쓰지 않고 기존 원장과 차이만 보고"
     )
@@ -718,7 +740,11 @@ def main(argv: list[str] | None = None) -> int:
     if output.exists():
         existing = yaml.safe_load(output.read_text(encoding="utf-8"))
 
-    today = date.today()
+    today = resolve_as_of(
+        args.as_of,
+        ((existing or {}).get("filter") or {}).get("window_to"),
+        check=args.check,
+    )
     filter_meta = {
         "months": args.months,
         "category": args.category,
