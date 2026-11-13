@@ -78,6 +78,8 @@ def build_command(
     effort: str | None = None,
     one_shot: bool = False,
     auto: bool = False,
+    skills: list[str] | None = None,
+    no_skills: bool = False,
 ) -> list[str]:
     """cmd 기동 명령 배열을 조립합니다.
 
@@ -95,6 +97,10 @@ def build_command(
         cmd.extend(["--effort", effort])
     if auto:
         cmd.extend(["--trust", "--yolo"])
+    if no_skills:
+        cmd.append("--no-skills")
+    for skill_path in skills or ():
+        cmd.extend(["--skill", skill_path])
     if one_shot:
         cmd.extend(["-p", prompt])
         return cmd
@@ -161,6 +167,17 @@ def main(argv: list[str] | None = None) -> int:
         "다르며 MODEL_POOL 의 effort_levels 에 없는 값은 거부합니다. default 와 "
         "미지정은 모두 --effort 를 붙이지 않고 모델 기본값으로 기동합니다.",
     )
+    parser.add_argument(
+        "--skill",
+        action="append",
+        metavar="PATH",
+        help="추가로 로드할 스킬 디렉터리 또는 묶음 디렉터리. 반복 지정할 수 있습니다.",
+    )
+    parser.add_argument(
+        "--no-skills",
+        action="store_true",
+        help="저장소 스킬 탐색을 생략합니다. --skill 로 준 경로는 그대로 로드합니다.",
+    )
     parser.add_argument("--preamble", type=Path, default=DEFAULT_PREAMBLE)
     parser.add_argument("--timeout-sec", type=float, default=300.0)
     parser.add_argument(
@@ -203,6 +220,10 @@ def main(argv: list[str] | None = None) -> int:
                 f"허용 등급: {', '.join(allowed)}"
             )
 
+    for skill_path in args.skill or ():
+        if not Path(skill_path).is_dir():
+            parser.error(f"--skill {skill_path} 경로가 디렉터리가 아닙니다.")
+
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
         prompt = wait_for_preamble(args.preamble, args.timeout_sec)
@@ -228,6 +249,8 @@ def main(argv: list[str] | None = None) -> int:
         effort=args.effort,
         one_shot=args.one_shot,
         auto=args.auto,
+        skills=args.skill,
+        no_skills=args.no_skills,
     )
 
     common.schedule_permission_setup(
