@@ -934,9 +934,38 @@ def enforce_document_extraction_quota(request: Any, user: Any) -> None:
     document_extraction_rate_limiter.record_request(user_id, ip)
 
 
+_rate_limit_exempt_production_warned = False
+
+
+def _parse_rate_limit_exempt_usernames(raw: str) -> set[str]:
+    """쉼표 구분 면제 목록을 이름 집합으로 해석합니다. 앞뒤 공백과 빈 항목은 버립니다."""
+    return {name.strip() for name in raw.split(",") if name.strip()}
+
+
+def is_rate_limit_exempt_user(user: Any) -> bool:
+    """로그인 사용자 API 한도 면제 대상인지 호출 시점 설정으로 판정합니다."""
+    global _rate_limit_exempt_production_warned
+
+    raw = str(getattr(settings, "RATE_LIMIT_EXEMPT_USERNAMES", "") or "")
+    exempt = _parse_rate_limit_exempt_usernames(raw)
+    if not exempt:
+        return False
+    if settings.ENVIRONMENT == "production":
+        if not _rate_limit_exempt_production_warned:
+            _rate_limit_exempt_production_warned = True
+            logger.warning(
+                "RATE_LIMIT_EXEMPT_USERNAMES 가 설정되었으나 production 에서는 무시합니다."
+            )
+        return False
+    username = getattr(user, "username", None)
+    return bool(username) and username in exempt
+
+
 def enforce_anonymous_api_quota(request: Any, user: Any) -> None:
     """API 요청 쿼터를 적용합니다. 로그인 사용자는 인증 제한기, 아니면 익명 제한기를 씁니다."""
     if user is not None:
+        if is_rate_limit_exempt_user(user):
+            return
         user_id = getattr(user, "id", None)
         authenticated_api_rate_limiter.check_rate_limit(user_id)
         authenticated_api_rate_limiter.record_request(user_id)
