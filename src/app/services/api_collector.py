@@ -17,7 +17,7 @@ import logging
 import os
 import re
 import xml.etree.ElementTree as ET  # nosec B405 - 신뢰하는 공공데이터 XML 응답만 파싱합니다
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -27,6 +27,7 @@ import httpx
 from defusedxml import ElementTree as DefusedET
 from defusedxml.common import DefusedXmlException
 
+from src.app.core.cache import CacheLayer
 from src.app.models.bids import extract_business_budget, normalize_bid_ntce_ord
 
 logger = logging.getLogger(__name__)
@@ -750,6 +751,37 @@ PREARNG_PRICE_API_URL = (
 PREARNG_PAGE_SIZE = 500
 PREARNG_RESULT_ERROR_CODES = frozenset({"06", "07"})
 
+# 정상 응답인데 행이 0건이던 공고를 이 기간 동안 후보에서 뺍니다. 나라장터
+# 예비가격은 개찰 뒤 늦게 올라올 수 있어 영구 제외하지 않습니다.
+PREARNG_EMPTY_SKIP_PREFIX = "prearng:empty:"
+PREARNG_EMPTY_SKIP_TTL_SECONDS = 3 * 24 * 3600
+
+_prearng_empty_cache = CacheLayer()
+
+
+def mark_prearng_notice_empty(bid_ntce_no: str) -> None:
+    """정상 응답이 0건이던 공고를 TTL 동안 후보에서 빼도록 기록합니다."""
+    try:
+        _prearng_empty_cache.set(
+            f"{PREARNG_EMPTY_SKIP_PREFIX}{bid_ntce_no}", 1, PREARNG_EMPTY_SKIP_TTL_SECONDS
+        )
+    except Exception as exc:
+        logger.warning("예비가격 자료 없음 기록 실패 (%s): %s", bid_ntce_no, exc)
+
+
+def is_prearng_notice_empty(bid_ntce_no: str) -> bool:
+    """자료 없음으로 기록된 공고인지 확인합니다. 캐시 오류는 False 로 봅니다."""
+    try:
+        return bool(_prearng_empty_cache.get(f"{PREARNG_EMPTY_SKIP_PREFIX}{bid_ntce_no}"))
+    except Exception as exc:
+        logger.warning("예비가격 자료 없음 조회 실패 (%s): %s", bid_ntce_no, exc)
+        return False
+
+
+def filter_prearng_empty_notices(notices: Sequence[str]) -> list[str]:
+    """자료 없음으로 기록된 공고를 뺍니다. 남은 공고의 순서는 그대로 둡니다."""
+    return [notice for notice in notices if not is_prearng_notice_empty(notice)]
+
 
 class PrearngResponseError(RuntimeError):
     """예비가격 상세 응답이 오류 봉투이거나 JSON 이 아닐 때 발생합니다.
@@ -1156,6 +1188,7 @@ async def stream_servc_prearng_by_notices(
         async def _one(bid_ntce_no: str) -> int:
             rows = await _fetch_prearng_notice(client, sem, bid_ntce_no, num_of_rows)
             if not rows:
+                await asyncio.to_thread(mark_prearng_notice_empty, bid_ntce_no)
                 return 0
             async with sink_lock:
                 saved = await asyncio.to_thread(sink, rows)

@@ -44,6 +44,7 @@ from src.app.models.prearng_prices import BidPrearngPrice
 from src.app.models.predictions import RetrainLog
 from src.app.services.api_collector import (
     RangeCollectionError,
+    filter_prearng_empty_notices,
     mask_credentials,
     stream_servc_prearng_by_notices,
 )
@@ -2565,12 +2566,16 @@ def select_new_servc_notices(
     now: datetime | None = None,
     lookback_days: int = PREARNG_DAILY_LOOKBACK_DAYS,
     limit: int = PREARNG_DAILY_MAX_NOTICES,
+    excluded_out: list[int] | None = None,
 ) -> list[str]:
     """최근 개찰한 용역 공고 중 예비가격이 아직 없는 공고번호만 고릅니다.
 
     과거 기간 소급이 아니라 일일 증분이므로 개찰일이 lookback_days 이내인
     공고만 봅니다. bid_prearng_prices 에 같은 업무구분(Servc) 행이 있는
     공고번호는 제외해 INSERT IGNORE 멱등 적재와 함께 재수집을 막습니다.
+    정상 응답이 0건이던 공고는 Redis 기록이 남아 있는 동안 제외하고, 그 뒤에도
+    limit 을 채우도록 SQL 은 3배를 먼저 가져옵니다. 제외 건수는 로그와
+    excluded_out 에 남깁니다.
     """
     from sqlalchemy import select
 
@@ -2589,9 +2594,16 @@ def select_new_servc_notices(
         )
         .distinct()
         .order_by(BidAnnouncement.bid_ntce_no)
-        .limit(limit)
+        .limit(limit * 3)
     )
-    return [row[0] for row in db.execute(stmt).all() if row[0]]
+    rows = [row[0] for row in db.execute(stmt).all() if row[0]]
+    remaining = filter_prearng_empty_notices(rows)
+    excluded = len(rows) - len(remaining)
+    if excluded:
+        logger.info("예비가격 자료 없음으로 후보 %d건을 제외했습니다.", excluded)
+    if excluded_out is not None:
+        excluded_out.append(excluded)
+    return remaining[:limit]
 
 
 def _select_new_servc_notices_thread() -> list[str]:
