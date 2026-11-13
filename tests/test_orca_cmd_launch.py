@@ -377,7 +377,7 @@ def test_main_passes_skill_flags_to_cmd(mock_run: MagicMock, tmp_path: Path):
     assert code == 0
     executed = mock_run.call_args[0][0]
     skill_index = executed.index("--skill")
-    assert executed[skill_index + 1] == skill_dir.as_posix()
+    assert Path(executed[skill_index + 1]) == skill_dir
     assert executed.index("--no-skills") < skill_index
     assert executed[skill_index + 2] == "-p"
     assert executed[-1] == "지시문"
