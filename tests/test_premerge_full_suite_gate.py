@@ -601,6 +601,39 @@ def test_extract_failed_nodeids_from_stderr_only():
     assert extract_failed_nodeids(output) == ["tests/test_err.py::test_e"]
 
 
+def test_extract_failed_nodeids_strips_ansi_color_codes():
+    """색상 코드가 섞인 FAILED/ERROR 줄에서도 nodeid 를 추출합니다."""
+    output = (
+        "\x1b[31mFAILED\x1b[0m tests/test_x.py::\x1b[1mtest_a\x1b[0m - AssertionError\n"
+        "\x1b[31mERROR\x1b[0m tests/test_y.py::\x1b[1mtest_b\x1b[0m - RuntimeError\n"
+    )
+    assert extract_failed_nodeids(output) == ["tests/test_x.py::test_a", "tests/test_y.py::test_b"]
+
+
+def test_extract_failed_nodeids_plain_output_unchanged():
+    """색상 코드가 없는 기존 형식의 추출 결과는 그대로입니다."""
+    output = (
+        "FAILED tests/test_p.py::test_one - AssertionError: boom\n"
+        "FAILED tests/test_p.py::test_one - AssertionError: boom\n"
+        "ERROR tests/test_q.py - ImportError\n"
+        "1 failed, 1 error, 3 passed in 0.50s\n"
+    )
+    assert extract_failed_nodeids(output) == ["tests/test_p.py::test_one", "tests/test_q.py"]
+
+
+def test_extract_failed_nodeids_ignores_colored_lines_before_summary_header():
+    """색상 코드가 섞여 있어도 요약 머리줄 이전의 FAILED 줄은 무시합니다."""
+    output = "\n".join(
+        [
+            "\x1b[31mFAILED body-log-line-before-header\x1b[0m",
+            "\x1b[1m==================== short test summary info ====================\x1b[0m",
+            "\x1b[31mFAILED\x1b[0m tests/test_x.py::\x1b[1mtest_alpha\x1b[0m - AssertionError",
+            "1 failed, 10 passed in 1.00s",
+        ]
+    )
+    assert extract_failed_nodeids(output) == ["tests/test_x.py::test_alpha"]
+
+
 def test_record_evidence_success_records_empty_failed_tests(tmp_path: Path):
     """통과 시 증거 JSON 에 failed_tests 빈 목록과 truncated false 가 기록됩니다."""
     evidence_path = tmp_path / "pass_evidence.json"
