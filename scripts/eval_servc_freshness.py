@@ -52,6 +52,8 @@ SPLITS = [
 def paired(err_a: np.ndarray, err_b: np.ndarray) -> tuple[float, float]:
     d = np.abs(err_b) - np.abs(err_a)
     se = d.std(ddof=1) / np.sqrt(len(d))
+    if not np.isfinite(se) or se == 0:
+        return float(d.mean()), float("nan")
     return float(d.mean()), float(d.mean() / se)
 
 
