@@ -130,6 +130,7 @@ STDOUT_ERROR_MARKERS: tuple[str, ...] = (
     "invalid api key",
     "unauthorized",
     "model not found",
+    "service is busy",
 )
 
 
@@ -220,6 +221,12 @@ PROBE_CONFIG: dict[str, dict[str, Any]] = {
             "low",
         ],
         "timeout": 60,
+    },
+    "kilo": {
+        # Kilo CLI(OpenCode 포크) 단발 실행. 제공자(exaone, coarena)와 실행기가 달라
+        # 풀 항목의 probe_transport 로 이 키를 고릅니다.
+        "probe_cmd": ["kilo", "run", "-m", "{model}", "ping"],
+        "timeout": 90,
     },
     "grok": {
         # SuperGrok 로컬 Grok CLI 전용 probe 설정.
@@ -699,6 +706,37 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         # 에이전트를 주입합니다. CLI 는 모르는 등급을 무시하므로 등급은 런처가 제한합니다. probe_cmd 의 openrouter 항목은 opencode 로 부르므로
         # 이 모델은 dispatch 에 --no-probe 를 줍니다.
         "notes": "Kilo CLI 경유 OpenRouter Space Bunny Alpha 리뷰어. 2026-09-28 kilo run 실호출 통과. 빌더가 openrouter 계열이면 독립성이 깨지므로 배정하지 않는다. 자동 배정에서 제외한다.",
+    },
+    "kilo-exaone": {
+        "id": "exaone/k-exaone_v2.5",
+        "provider": "exaone",
+        "probe_transport": "kilo",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 524_288,
+        "suitable_for": [
+            "investigator",
+            "reviewer",
+        ],
+        # 2026-11-14 사용자 지정으로 등록했습니다. 실행기는 Kilo CLI 이며
+        # scripts/orca_opencode_launch.py --binary kilo --model exaone/k-exaone_v2.5 로 띄웁니다.
+        # 키는 ~/.config/kilo/exaone.env 의 EXAONE_API_KEY 를 셸이 읽어 둡니다.
+        "notes": "Kilo CLI 경유 LG EXAONE K-EXAONE 2.5. variant low/high/max. 2026-11-14 kilo run 3회 중 1회 성공, 2회는 서버 혼잡(service is busy, too many concurrent requests) 으로 실패. 같은 날 Orca 워커 시험(task_6c9c1bf77544, 읽기 전용 조사)은 Capsule 읽기와 도구 호출까지 동작했으나 같은 혼잡 오류로 재시도를 소진하고 보고서 없이 정지했다. 서버 용량이 회복되기 전에는 배정하지 않는다. 자동 배정에서 제외한다.",
+    },
+    "kilo-coarena-deepseek-flash": {
+        "id": "coarena/deepseek-v4-1-flash-1017",
+        "provider": "coarena",
+        "probe_transport": "kilo",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 128_000,
+        "suitable_for": [
+            "investigator",
+            "reviewer",
+        ],
+        # 2026-11-14 사용자 지정으로 등록했습니다. Kilo CLI 기본 모델입니다.
+        # Coarena 는 OpenAI 호환 중개 제공자라 cmd 의 deepseek 와 제공자가 다릅니다.
+        "notes": "Kilo CLI 경유 Coarena DeepSeek V4.1 Flash 1017. variant low/medium/high. 키는 ~/.config/kilo/coarena.env 의 COARENA_API_KEY. 자동 배정에서 제외한다.",
     },
     "glm": {
         "id": "glm-5.2",
@@ -1587,6 +1625,8 @@ MODEL_PROVIDER_PREFIXES: tuple[tuple[str, str], ...] = (
     ("cursor", "cursor"),
     ("opencode", "opencode"),
     ("cerebras", "cerebras"),
+    ("exaone/", "exaone"),
+    ("coarena/", "coarena"),
     ("openrouter/", "openrouter"),
     ("or-free", "kimi-openrouter"),
     ("kimi", "kimi-openrouter"),

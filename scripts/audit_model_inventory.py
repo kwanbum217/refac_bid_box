@@ -96,6 +96,8 @@ LISTING_COMMANDS: dict[str, list[str] | None] = {
     "codex": None,
     "cursor": None,
     "kimi-openrouter": None,
+    "exaone": ["kilo", "models", "exaone"],
+    "coarena": ["kilo", "models", "coarena"],
 }
 
 # `agy models` 는 비대화형 실행에서 응답이 늦어 기본 경로에서 뺐습니다.
