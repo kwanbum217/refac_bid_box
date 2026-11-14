@@ -721,7 +721,7 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
         # 2026-11-14 사용자 지정으로 등록했습니다. 실행기는 Kilo CLI 이며
         # scripts/orca_opencode_launch.py --binary kilo --model exaone/k-exaone_v2.5 로 띄웁니다.
         # 키는 ~/.config/kilo/exaone.env 의 EXAONE_API_KEY 를 셸이 읽어 둡니다.
-        "notes": "Kilo CLI 경유 LG EXAONE K-EXAONE 2.5. variant low/high/max. 2026-11-14 kilo run 3회 중 1회 성공, 2회는 서버 혼잡(service is busy, too many concurrent requests) 으로 실패. 자동 배정에서 제외한다.",
+        "notes": "Kilo CLI 경유 LG EXAONE K-EXAONE 2.5. variant low/high/max. 2026-11-14 kilo run 3회 중 1회 성공, 2회는 서버 혼잡(service is busy, too many concurrent requests) 으로 실패. 같은 날 Orca 워커 시험(task_6c9c1bf77544, 읽기 전용 조사)은 Capsule 읽기와 도구 호출까지 동작했으나 같은 혼잡 오류로 재시도를 소진하고 보고서 없이 정지했다. 서버 용량이 회복되기 전에는 배정하지 않는다. 자동 배정에서 제외한다.",
     },
     "kilo-coarena-deepseek-flash": {
         "id": "coarena/deepseek-v4-1-flash-1017",
