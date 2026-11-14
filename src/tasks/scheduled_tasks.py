@@ -50,6 +50,7 @@ from src.app.services.api_collector import (
 )
 from src.app.services.automation_orchestrator import STATUS_RUNNING
 from src.app.services.collector_service import _bulk_insert
+from src.app.services.home_summary import warm_home_summary_cache
 from src.app.services.prearng_dminstt_link import link_prearng_dminstt
 from src.app.services.sajeong_rate_stats import rebuild_institution_sajeong_rate_stats
 from src.ml.dataset import build_training_dataset
@@ -2786,3 +2787,71 @@ async def prearng_daily_task(ctx: dict[str, Any]) -> dict[str, Any]:
         }
     followup = await _run_sajeong_stats_followup(saved)
     return {"status": "success", "notice_count": len(notices), "saved": saved, **followup}
+
+
+# --------------------------------------------------------------------------- #
+# 메인 화면 요약 예열
+# --------------------------------------------------------------------------- #
+#
+# 365일·입찰 중 건수는 bid_announcements 대형 테이블 집계라 요청 경로에서
+# 세면 6분 넘게 걸리고 동시 요청이 같은 질의를 겹쳐 실행합니다. 이 크론이
+# 10분마다 캐시를 채워 요청 경로는 캐시만 읽게 합니다. 캐시 TTL(2시간)이
+# 주기보다 훨씬 길어 예열이 한두 번 실패해도 화면이 비지 않습니다.
+# 같은 시각 중복 실행은 arq cron 의 unique 기본값이 막습니다.
+HOME_SUMMARY_WARM_SCHEDULE_NAME = "home_summary_warm"
+# 기본 job_timeout(1800초)보다 길게 둡니다. 집계 한 건이 6분을 넘길 수 있고
+# 두 지표를 이어서 세기 때문입니다. 이 때문에 10분 주기와 겹칠 수 있어 앞
+# 실행이 진행 중이면 아래 선점으로 건너뜁니다.
+HOME_SUMMARY_WARM_JOB_TIMEOUT_SECONDS = 3600
+HOME_SUMMARY_WARM_MINUTES = {0, 10, 20, 30, 40, 50}
+HOME_SUMMARY_WARM_CLAIM_KEY = "bidbox:schedule:home_summary_warm_claim"
+
+
+def _warm_home_summary_thread() -> dict[str, int]:
+    """예열 집계를 스레드 전용 세션에서 수행합니다.
+
+    Session 은 생성 스레드 밖으로 나가면 안 되므로 여기서 만들고 닫습니다.
+    """
+    session = SessionLocal()
+    try:
+        return warm_home_summary_cache(session)
+    finally:
+        session.close()
+
+
+@traced_worker_task
+@_record_schedule(HOME_SUMMARY_WARM_SCHEDULE_NAME)
+async def warm_home_summary_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """메인 화면의 365일·입찰 중 건수 캐시를 미리 채웁니다.
+
+    집계 1회가 6분을 넘길 수 있어 실패를 예외로 올리지 않고 status 로 드러냅니다.
+    다음 주기가 다시 시도하므로 실패가 곧 화면 장애가 되지 않습니다.
+    잡 타임아웃(3600초)이 주기(10분)보다 길어 앞 실행이 남아 있을 수 있으므로
+    드리프트 감시와 같은 선점으로 겹친 실행을 건너뜁니다.
+    """
+    claim = acquire_schedule_claim(
+        "home_summary_warm",
+        key=HOME_SUMMARY_WARM_CLAIM_KEY,
+        ttl_seconds=HOME_SUMMARY_WARM_JOB_TIMEOUT_SECONDS,
+    )
+    if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+        logger.info("메인 화면 요약 예열이 이미 실행 중이어서 건너뜁니다.")
+        return {"status": "skipped", "reason": "already_running"}
+    if not claim.acquired:
+        logger.warning(
+            "Redis 접근 불가로 메인 화면 요약 예열 선점 없이 진행합니다 (key=%s, status=%s)",
+            HOME_SUMMARY_WARM_CLAIM_KEY,
+            claim.status.value,
+        )
+
+    try:
+        counts = await asyncio.to_thread(_warm_home_summary_thread)
+    except Exception as exc:
+        logger.exception("메인 화면 요약 예열 실패")
+        return {"status": "failed", **safe_error(exc)}
+    finally:
+        # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
+        if claim.acquired and claim.token:
+            release_schedule_claim(key=HOME_SUMMARY_WARM_CLAIM_KEY, token=claim.token)
+    logger.info("메인 화면 요약 예열 완료: %s", counts)
+    return {"status": "success", **counts}

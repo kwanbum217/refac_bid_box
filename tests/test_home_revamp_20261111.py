@@ -275,6 +275,12 @@ def test_accuracy_placeholder_when_metadata_missing(auth_client, monkeypatch, tm
 
 
 def test_summary_counts_are_not_recounted_on_second_request(isolated_db, monkeypatch, tmp_path):
+    """요청 경로는 집계하지 않고, 예열 뒤에도 캐시를 써서 다시 세지 않습니다.
+
+    2026-11-14: 요청 경로 동기 집계를 없앴습니다. 첫 요청은 캐시가 비어 있어
+    건수가 None 이고 집계 질의를 실행하지 않습니다. 예열 작업이 캐시를 채운
+    뒤에도 요청 경로는 캐시만 읽습니다.
+    """
     monkeypatch.setattr(home_summary, "SERVING_ROOT", tmp_path)
     _add(isolated_db, bid_ntce_no="ANN-CACHE")
 
@@ -283,16 +289,28 @@ def test_summary_counts_are_not_recounted_on_second_request(isolated_db, monkeyp
     def record(conn, cursor, statement, parameters, context, executemany) -> None:
         statements.append(statement)
 
+    def count_statements() -> list[str]:
+        return [s for s in statements if "count(" in s.lower()]
+
     connection = isolated_db.get_bind()
     event.listen(connection, "before_cursor_execute", record)
     try:
-        home_summary.get_home_summary(isolated_db)
-        first_counts = [s for s in statements if "count(" in s.lower()]
+        first = home_summary.get_home_summary(isolated_db)
+        first_counts = count_statements()
         statements.clear()
-        home_summary.get_home_summary(isolated_db)
-        second_counts = [s for s in statements if "count(" in s.lower()]
+
+        warmed = home_summary.warm_home_summary_cache(isolated_db)
+        statements.clear()
+
+        second = home_summary.get_home_summary(isolated_db)
+        second_counts = count_statements()
     finally:
         event.remove(connection, "before_cursor_execute", record)
 
-    assert len(first_counts) == 2
+    assert first["recent_year_count"] is None
+    assert first["open_count"] is None
+    assert first_counts == []
+    # 예열이 채운 값을 요청 경로가 그대로 쓰고 다시 세지 않는다.
+    assert second["recent_year_count"] == warmed["recent_year_count"]
+    assert second["open_count"] == warmed["open_count"]
     assert second_counts == []
