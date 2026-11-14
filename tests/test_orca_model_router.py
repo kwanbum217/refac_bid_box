@@ -329,6 +329,9 @@ class TestModelPoolAndSelection:
             "or-qwen-coder-next",
             # 2026-09-28 사용자 지정. Kilo CLI 경유 리뷰어, 수동 지정 전용입니다.
             "kilo-space-bunny",
+            # 2026-11-14 사용자 지정. Kilo CLI 경유 EXAONE 과 Coarena, 수동 지정 전용입니다.
+            "kilo-exaone",
+            "kilo-coarena-deepseek-flash",
             "gemini-3.7-flash-high",
             "gemini-3.7-flash-medium",
             "gemini-3.7-flash-low",
