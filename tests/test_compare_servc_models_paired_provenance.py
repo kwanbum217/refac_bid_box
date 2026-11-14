@@ -135,6 +135,40 @@ def test_missing_provenance_alone_blocks_promotion():
     assert eval_res["fail_closed"] is True
 
 
+def test_api_error_only_blocks_with_api_error_verdict():
+    frame = _sample_frame([80.0, 85.0, 90.0])
+    eval_res = evaluate_paired_samples(frame, api_error_count=1)
+
+    assert eval_res["invalid_provenance_count"] == 0
+    assert eval_res["api_error_count"] == 1
+    assert eval_res["fail_closed"] is True
+    assert eval_res["decision"]["verdict"] == "판정 불가 (API 오류)"
+    assert eval_res["reporting"]["verdict"] == "판정 불가 (API 오류)"
+
+
+def test_provenance_error_verdict_wins_over_api_error():
+    frame = _sample_frame(
+        actuals=[80.0, 85.0, 90.0],
+        challenger_fallbacks=[False, True, False],
+    )
+    eval_res = evaluate_paired_samples(frame, api_error_count=1)
+
+    assert eval_res["invalid_provenance_count"] == 1
+    assert eval_res["fail_closed"] is True
+    assert eval_res["decision"]["verdict"] == "판정 불가 (대체 모델 발생)"
+    assert eval_res["reporting"]["verdict"] == "판정 불가 (대체 모델 발생)"
+
+
+def test_clean_pairs_are_not_fail_closed():
+    frame = _sample_frame([80.0, 85.0, 90.0])
+    eval_res = evaluate_paired_samples(frame, api_error_count=0)
+
+    assert eval_res["invalid_provenance_count"] == 0
+    assert eval_res["api_error_count"] == 0
+    assert eval_res["fail_closed"] is False
+    assert eval_res["decision"]["verdict"] != "판정 불가 (API 오류)"
+
+
 def test_no_sensitive_info_exposure_on_api_error(monkeypatch, capsys):
     def _mock_raise_sensitive(*args, **kwargs):
         raise RuntimeError(
@@ -234,7 +268,8 @@ def test_main_blocks_promotion_on_partial_api_error(monkeypatch, capsys):
 
     assert exit_code == 1
     assert "api_error: 1건 (25.0%)" in output
-    assert "판정 불가 (대체 모델 발생)" in output
+    assert "판정 불가 (API 오류)" in output
+    assert "판정 불가 (대체 모델 발생)" not in output
 
 
 def test_main_all_api_errors_reports_counts_and_exits_nonzero(monkeypatch, capsys):
@@ -246,7 +281,8 @@ def test_main_all_api_errors_reports_counts_and_exits_nonzero(monkeypatch, capsy
     assert "완전 쌍(Complete): 0건 (0.0%)" in output
     assert "유효 쌍(Valid): 0건 (0.0%)" in output
     assert "api_error: 3건 (100.0%)" in output
-    assert "판정 불가 (대체 모델 발생)" in output
+    assert "판정 불가 (API 오류)" in output
+    assert "판정 불가 (대체 모델 발생)" not in output
 
 
 def test_main_output_exposes_only_fixed_categories(monkeypatch, capsys):
