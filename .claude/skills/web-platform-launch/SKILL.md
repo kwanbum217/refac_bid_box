@@ -146,3 +146,40 @@ docker compose logs -f app
 2. 브라우저를 열 수 없는 환경(원격 셸, 헤드리스)이면 열지 않고 4장 주소 표만 안내합니다.
 3. 실패하면 추측으로 명령을 바꾸지 않고 `docker compose logs --tail 100 app` 를 먼저 읽습니다. 데이터를 지우는 명령은 사용자가 요청해도 실행하지 않고 0장을 근거로 거절합니다.
 4. 확인이 끝나면 계속 띄울지 사용자에게 묻고, 종료 요청에는 7장 `docker compose stop` 을 씁니다.
+
+## 10. 팀원용 프롬프트
+
+사람이 에이전트에게 붙여 넣는 문구입니다. 스킬 경로를 직접 적어 두어 스킬을 자동으로 찾지 못하는 에이전트(Grok 등)도 같은 절차를 따릅니다.
+
+### 10.1 매일 쓰는 프롬프트 (pull, 서버 기동, 브라우저 확인)
+
+```text
+이 저장소의 AGENTS.md 를 먼저 읽고, 그다음 .agents/skills/web-platform-launch/SKILL.md 를 끝까지 읽은 뒤 그 절차대로 진행해 줘.
+
+1. git status 로 내 작업 트리에 커밋하지 않은 변경이 있는지 먼저 확인해. 변경이 있으면 pull 하지 말고 목록만 보여 주고 멈춰.
+2. 변경이 없으면 main 브랜치에서 git pull 로 최신 커밋을 받아. 받은 커밋 목록(git log --oneline)을 보여 줘.
+3. 받은 변경에 pyproject.toml, uv.lock, Dockerfile, docker-compose.yml 이 있으면 docker compose up -d --build 로 이미지를 다시 만들어. 없으면 docker compose up -d 로 띄우고, 이미 떠 있었다면 docker compose restart app worker 로 새 코드를 반영해.
+4. 스킬의 준비 대기 절차대로 /api/v1/health/ready 가 ready 또는 degraded 가 될 때까지 기다린 다음, 브라우저로 http://localhost:8000 을 열어 줘.
+5. 마지막에 docker compose ps 결과와 접속 주소를 표로 정리해 줘.
+
+지켜야 할 것: docker compose down -v 나 볼륨 삭제는 절대 하지 말 것, .env 값을 화면에 출력하지 말 것, 명령이 실패하면 추측으로 다시 시도하지 말고 docker compose logs --tail 100 app 을 먼저 보고 원인을 알려 줄 것.
+```
+
+### 10.2 상황별 짧은 프롬프트
+
+| 상황 | 프롬프트 |
+| --- | --- |
+| 처음 클론한 노트북 | `.agents/skills/windows-onboarding/SKILL.md 를 읽고 그 절차대로 설치 점검부터 웹 접속까지 진행해 줘. 설치가 필요하면 winget 명령 목록을 먼저 보여 주고 내 승인을 받아.` |
+| 서버만 띄우기 | `.agents/skills/web-platform-launch/SKILL.md 를 읽고 서버를 띄운 뒤 브라우저로 http://localhost:8000 을 열어 줘.` |
+| 상태와 로그 확인 | `.agents/skills/web-platform-launch/SKILL.md 의 상태·로그 절차대로 지금 서버 상태와 최근 app 로그를 보여 줘.` |
+| 작업 끝내고 종료 | `.agents/skills/web-platform-launch/SKILL.md 의 종료 절차대로 docker compose stop 으로 서버를 내려 줘. 데이터는 지우지 마.` |
+| 기능 점검까지 | `.agents/skills/platform-health-checklist/SKILL.md 를 읽고 기능 점검 항목을 확인해서 결과를 표로 정리해 줘.` |
+
+### 10.3 알아 둘 점
+
+| 항목 | 내용 |
+| --- | --- |
+| 짧은 호출 | Claude Code·OpenCode 는 스킬을 자동 인식하므로 "web-platform-launch 스킬로 서버 띄워 줘" 로도 됩니다. 경로를 적으면 어느 에이전트에서나 결과가 같습니다. |
+| 메인 "집계 중" | 기동 직후 메인 화면 건수가 "집계 중" 으로 보일 수 있습니다. worker 예열이 30초 안팎에 채우므로 새로고침하면 됩니다. 오류가 아닙니다. |
+| 챗봇 | AI 어드바이저는 호스트에 Ollama 가 실행 중이어야 동작합니다(6장). 나머지 화면은 Ollama 없이 볼 수 있습니다. |
+| 커밋까지 맡길 때 | "main 에 직접 커밋하지 말고 작업 브랜치에서 해" 를 함께 적습니다. `AGENTS.md` 6장이 main 직접 커밋을 금지합니다. |
