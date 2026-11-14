@@ -9,10 +9,14 @@
 
 사용법:
     uv run python scripts/eval_servc_freshness.py
+    uv run python scripts/eval_servc_freshness.py --parquet PATH \
+        --split '제목|stale_cut|fresh_cut|eval_end' --output result.json
 """
 
 from __future__ import annotations
 
+import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -51,12 +55,42 @@ def paired(err_a: np.ndarray, err_b: np.ndarray) -> tuple[float, float]:
     return float(d.mean()), float(d.mean() / se)
 
 
-def main() -> int:
+def parse_split(
+    parser: argparse.ArgumentParser, raw: str
+) -> tuple[str, pd.Timestamp, pd.Timestamp, pd.Timestamp]:
+    parts = raw.split("|")
+    if len(parts) != 4:
+        parser.error(f"--split 형식은 '제목|stale_cut|fresh_cut|eval_end' 입니다: {raw}")
+    title = parts[0]
+    try:
+        stale_cut, fresh_cut, end = (pd.Timestamp(part) for part in parts[1:])
+    except ValueError:
+        parser.error(f"--split 날짜를 해석할 수 없습니다: {raw}")
+    if not pd.notna(stale_cut) or not (stale_cut < fresh_cut <= end):
+        parser.error(f"--split 은 stale_cut < fresh_cut <= eval_end 여야 합니다: {raw}")
+    return title, stale_cut, fresh_cut, end
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--parquet", type=Path, default=PARQUET)
+    parser.add_argument(
+        "--split",
+        action="append",
+        metavar="제목|stale_cut|fresh_cut|eval_end",
+        help="반복 지정 가능. 하나라도 주면 기본 분할 대신 이것만 씁니다.",
+    )
+    parser.add_argument("--output", type=Path, help="분할·집단별 지표를 JSON 으로 저장")
+    args = parser.parse_args(argv)
+
+    splits = [parse_split(parser, raw) for raw in args.split] if args.split else list(SPLITS)
+
     t0 = time.perf_counter()
-    frame = build_frame(PARQUET)
+    frame = build_frame(args.parquet)
     print(f"프레임 {len(frame):,}행 {time.perf_counter() - t0:.0f}초")
     features = list(TRAINING_FEATURES)
-    for title, stale_cut, fresh_cut, end in SPLITS:
+    records = []
+    for title, stale_cut, fresh_cut, end in splits:
         stale_cut, fresh_cut, end = map(pd.Timestamp, (stale_cut, fresh_cut, end))
         valid = frame[(frame.openg_dt >= fresh_cut) & (frame.openg_dt <= end)]
         y = valid.winning_rate.to_numpy(float)
@@ -78,6 +112,23 @@ def main() -> int:
                 f"차이 {diff:+.4f} t={t:+.2f} 적중0.5 stale {(np.abs(a) <= 0.5).mean() * 100:.2f} fresh {(np.abs(b) <= 0.5).mean() * 100:.2f} "
                 f"편향 stale {a.mean():+.4f} fresh {b.mean():+.4f}"
             )
+            records.append(
+                {
+                    "split": title,
+                    "group": label,
+                    "n": int(mask.sum()),
+                    "mae_stale": float(np.abs(a).mean()),
+                    "mae_fresh": float(np.abs(b).mean()),
+                    "diff": diff,
+                    "t": t,
+                    "hit_stale": float((np.abs(a) <= 0.5).mean()),
+                    "hit_fresh": float((np.abs(b) <= 0.5).mean()),
+                    "bias_stale": float(a.mean()),
+                    "bias_fresh": float(b.mean()),
+                }
+            )
+    if args.output is not None:
+        args.output.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0
 
 
