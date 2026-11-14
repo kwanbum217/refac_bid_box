@@ -11,7 +11,7 @@ list_announcements)와 같습니다. 업종·지역 코드 정의와 정규화�
 | --- | --- |
 | 분야 | `Servc` |
 | 마감 | `bid_clse_dt >= now` (마감 전) |
-| 차수 | 최신 차수만 (`latest_announcement_filter`) |
+| 차수 | 최신 차수만 (`similar_announcement_latest_filter`) |
 | 업종 | 관심 코드 중 하나라도 참가자격에 포함 |
 | 지역 | 참가가능지역이 관심 지역과 일치 |
 | 스캔 범위 | `bid_ntce_dt >= now - 90일` (ix_bid_ann_cat_dt) |
@@ -36,10 +36,10 @@ from src.app.models.bids import BidAnnouncement
 from src.app.services.bid_queries import (
     BID_INDUSTRY_CODE_SET,
     _participation_region_match_clause,
-    latest_announcement_filter,
     license_match_clause,
     normalize_license_codes,
     normalize_region_code,
+    similar_announcement_latest_filter,
 )
 
 OPEN_BID_CATEGORY = "Servc"
@@ -148,7 +148,7 @@ def count_open_servc_matching(
         stmt = stmt.where(_participation_region_match_clause(prefs.region_code))
     if prefs.license_codes:
         stmt = stmt.where(license_match_clause(prefs.license_codes))
-    stmt = latest_announcement_filter(stmt)
+    stmt = similar_announcement_latest_filter(stmt)
 
     count = int(db.scalar(stmt) or 0)
     if now is None:

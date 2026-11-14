@@ -113,10 +113,20 @@ def test_weekly_retrain_cron_runs_monday_at_three():
     assert next_run.date() == date(2026, 8, 10)
 
 
+# 기동 직후 실행해도 되는 크론의 허용 목록입니다. 경량이고 캐시를 미리 채우는
+# 작업만 여기 둡니다. 이름으로 고정해 새 크론이 실수로 startup 실행되면 실패합니다.
+CRON_STARTUP_ALLOWED = frozenset({"warm_home_summary_task"})
+
+
 def test_cron_jobs_do_not_run_at_startup():
     """워커를 재기동할 때마다 야간 번들이 도는 사고를 막습니다."""
     for job in WorkerSettings.cron_jobs:
-        assert job.run_at_startup is False
+        target = getattr(job, "coroutine", job)
+        name = getattr(target, "__name__", "")
+        if name in CRON_STARTUP_ALLOWED:
+            assert job.run_at_startup is True, name
+            continue
+        assert job.run_at_startup is False, name
 
 
 def test_cron_timeout_exceeds_default_job_timeout():

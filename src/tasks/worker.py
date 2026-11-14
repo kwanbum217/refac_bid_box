@@ -57,6 +57,8 @@ from src.tasks.scheduled_tasks import (
     BAND_REGIME_DAILY_MINUTE,
     DRIFT_MONITOR_CATCHUP_JOB_NAME,
     DRIFT_MONITOR_JOB_TIMEOUT_SECONDS,
+    HOME_SUMMARY_WARM_JOB_TIMEOUT_SECONDS,
+    HOME_SUMMARY_WARM_MINUTES,
     PREARNG_DAILY_HOUR,
     PREARNG_DAILY_JOB_TIMEOUT_SECONDS,
     PREARNG_DAILY_MINUTE,
@@ -74,6 +76,7 @@ from src.tasks.scheduled_tasks import (
     run_result_coverage_catchup_task,
     run_schedule_catchup_task,
     run_weekly_retrain_catchup_task,
+    warm_home_summary_task,
     weekly_retrain_task,
 )
 from src.tasks.summary_tasks import (
@@ -511,6 +514,7 @@ class WorkerSettings:
         refresh_institution_catalog_task,
         collect_demand_institutions_task,
         result_coverage_monitor_task,
+        warm_home_summary_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
     # 워커가 여러 대여도 arq 는 크론을 한 번만 실행합니다.
@@ -573,6 +577,14 @@ class WorkerSettings:
             minute=PREARNG_DAILY_MINUTE,
             run_at_startup=False,
             timeout=PREARNG_DAILY_JOB_TIMEOUT_SECONDS,
+        ),
+        # 메인 화면 365일·입찰 중 건수 캐시 예열. 요청 경로에서 대형 집계를
+        # 돌리지 않게 10분마다 미리 채우고, 기동 직후에도 한 번 채웁니다.
+        cron(
+            cast(Any, warm_home_summary_task),
+            minute=HOME_SUMMARY_WARM_MINUTES,
+            run_at_startup=True,
+            timeout=HOME_SUMMARY_WARM_JOB_TIMEOUT_SECONDS,
         ),
     ]
     # 첨부 원문을 외부에서 내려받는 크론이라 플래그가 켜질 때만 등록합니다.
