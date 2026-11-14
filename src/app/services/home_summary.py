@@ -5,7 +5,7 @@ src/app/services/home_summary.py
 
 | 지표 | 조건 |
 | --- | --- |
-| 정확도 | 서빙 중인 용역 모델 `metadata.json` 의 `source_metrics.rmse` |
+| 정확도 | 서빙 버전과 일치하는 사이드카 실측 `rmse`, 없으면 `source_metrics.rmse` |
 | 최근 365일 | `category='Servc'` AND `bid_ntce_dt >= now-365일` 의 최신 차수 공고 수 |
 | 입찰 중 | `category='Servc'` AND `bid_clse_dt >= now` AND `bid_ntce_dt >= now-90일` |
 | 내 조건 | 관심 업종·지역에 맞는 입찰 중 용역 공고 수 |
@@ -41,7 +41,7 @@ from src.app.services.bid_preferences import (
 )
 from src.app.services.bid_queries import similar_announcement_latest_filter
 from src.ml.model_registry import resolve_serving_tree
-from src.ml.promotion import SERVING_ROOT, load_serving_metrics
+from src.ml.promotion import METRICS_ROOT, SERVING_ROOT, load_serving_metrics
 
 SERVC_CATEGORY = "Servc"
 SERVC_MODEL_NAME = "servc_institution_v1"
@@ -62,17 +62,21 @@ def _to_float(value: Any) -> float | None:
     return number
 
 
-def _promoted_date(serving_root: Path) -> str | None:
-    """서빙 트리의 metadata.json 에서 승격일만 읽습니다.
-
-    `load_serving_metrics` 는 지표만 돌려주므로 승격일은 같은 파일을 직접 읽습니다.
-    파일이 없거나 형식이 깨졌으면 None 이고, 화면은 날짜 없이 문구를 만듭니다.
-    """
+def _serving_metadata(serving_root: Path) -> dict[str, Any]:
+    """서빙 트리의 metadata.json 을 읽습니다. 없거나 깨졌으면 빈 dict 입니다."""
     meta_path = resolve_serving_tree(serving_root / SERVC_MODEL_NAME) / "metadata.json"
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _promoted_date(meta: dict[str, Any]) -> str | None:
+    """metadata.json 의 승격일을 화면 표기 형식으로 돌려줍니다.
+
+    날짜가 없거나 형식이 깨졌으면 None 이고, 화면은 날짜 없이 문구를 만듭니다.
+    """
     promoted_at = meta.get("promoted_at")
     if not isinstance(promoted_at, str) or not promoted_at:
         return None
@@ -82,21 +86,48 @@ def _promoted_date(serving_root: Path) -> str | None:
         return None
 
 
-def load_serving_accuracy(serving_dir: Path | str | None = None) -> dict[str, Any]:
+def _measured_rmse(version: str, metrics_dir: Path) -> float | None:
+    """서빙 버전과 일치하는 사이드카 실측 rmse 입니다.
+
+    버전이 다르거나 파일이 없거나 형식이 깨졌으면 None 이며 호출부는
+    metadata.json 의 `source_metrics` 로 물러납니다.
+    """
+    sidecar = metrics_dir / f"{SERVC_MODEL_NAME}.json"
+    try:
+        measured = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(measured, dict) or str(measured.get("version") or "") != version:
+        return None
+    metrics = measured.get("metrics")
+    return _to_float(metrics.get("rmse")) if isinstance(metrics, dict) else None
+
+
+def load_serving_accuracy(
+    serving_dir: Path | str | None = None,
+    metrics_dir: Path | str | None = None,
+) -> dict[str, Any]:
     """서빙 중인 용역 모델의 실측 오차를 화면 표시 형태로 돌려줍니다.
 
-    숫자는 코드나 템플릿에 두지 않고 metadata.json 에서 읽습니다. 읽지 못하면
-    available=False 이며 화면은 '측정값 준비 중' 을 보여 줍니다.
+    사이드카의 실측값이 서빙 버전과 일치하면 그것을 씁니다. 없거나 버전이
+    다르면 승격이 기록한 metadata.json 의 `source_metrics` 로 물러납니다.
+    읽지 못하면 available=False 이며 화면은 '측정값 준비 중' 을 보여 줍니다.
     """
     serving_root = Path(SERVING_ROOT) if serving_dir is None else Path(serving_dir)
-    _version, metrics = load_serving_metrics(SERVC_MODEL_NAME, serving_dir=serving_root)
-    rmse = _to_float(metrics.get("rmse")) if isinstance(metrics, dict) else None
+    metrics_root = Path(METRICS_ROOT) if metrics_dir is None else Path(metrics_dir)
+    meta = _serving_metadata(serving_root)
+
+    version = str(meta.get("version") or "")
+    rmse = _measured_rmse(version, metrics_root) if version else None
+    if rmse is None:
+        _version, metrics = load_serving_metrics(SERVC_MODEL_NAME, serving_dir=serving_root)
+        rmse = _to_float(metrics.get("rmse")) if isinstance(metrics, dict) else None
     if rmse is None:
         return {"available": False, "rmse_display": None, "promoted_date": None}
     return {
         "available": True,
         "rmse_display": f"{rmse:.2f}",
-        "promoted_date": _promoted_date(serving_root),
+        "promoted_date": _promoted_date(meta),
     }
 
 
