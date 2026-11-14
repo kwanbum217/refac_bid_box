@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from typing import Any
 
@@ -59,6 +60,9 @@ class RedisConnection:
         self._label = label
         self._client: Any = None
         self._next_attempt_at = 0.0
+        # 연결 시도 구간을 직렬화합니다. 진행 중인 시도가 끝난 뒤에 들어온
+        # 호출자는 새 시도 대신 그 결과를 그대로 받습니다.
+        self._lock = threading.Lock()
 
     @property
     def url(self) -> str:
@@ -69,30 +73,38 @@ class RedisConnection:
         if self._client is not None:
             return self._client
 
-        now = time.time()
-        if now < self._next_attempt_at:
-            return None
-        self._next_attempt_at = now + self._backoff
+        with self._lock:
+            # 잠금을 기다리는 동안 다른 호출자가 연결을 마쳤을 수 있습니다.
+            if self._client is not None:
+                return self._client
 
-        try:
-            import redis
+            now = time.time()
+            if now < self._next_attempt_at:
+                return None
+            self._next_attempt_at = now + self._backoff
 
-            client = redis.Redis.from_url(
-                self.url,
-                decode_responses=True,
-                socket_connect_timeout=CONNECT_TIMEOUT_SECONDS,
-                socket_timeout=SOCKET_TIMEOUT_SECONDS,
-            )
-            client.ping()
-        except Exception as exc:
-            logger.warning(
-                "[%s] Redis 연결 실패, %.0f초 뒤 재시도합니다: %s", self._label, self._backoff, exc
-            )
-            return None
+            try:
+                import redis
 
-        self._client = client
-        logger.info("[%s] Redis 연결됨", self._label)
-        return client
+                client = redis.Redis.from_url(
+                    self.url,
+                    decode_responses=True,
+                    socket_connect_timeout=CONNECT_TIMEOUT_SECONDS,
+                    socket_timeout=SOCKET_TIMEOUT_SECONDS,
+                )
+                client.ping()
+            except Exception as exc:
+                logger.warning(
+                    "[%s] Redis 연결 실패, %.0f초 뒤 재시도합니다: %s",
+                    self._label,
+                    self._backoff,
+                    exc,
+                )
+                return None
+
+            self._client = client
+            logger.info("[%s] Redis 연결됨", self._label)
+            return client
 
     def invalidate(self, exc: Exception) -> None:
         """운영 중 끊긴 클라이언트를 버려 백오프 이후 다시 붙게 합니다."""
