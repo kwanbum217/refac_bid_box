@@ -117,7 +117,7 @@ description: 배포 전, 큰 병합 뒤, 주간 점검에서 프로젝트 기능
 | 지표 | 측정 명령 | 기준값 (출처) | 측정 함정 |
 | --- | --- | --- | --- |
 | 예측 API c10 P95 | `make benchmark` 또는 `uv run python scripts/benchmark_latency.py --base-url http://127.0.0.1:8000` | 100ms 이하 (CURRENT_STATE `slo_alerts`). 정본 기록값 c10 48.14ms (`prediction_latency`) | 회차당 표본 600 이상, 3회 반복 최악값, warmup 제외. `PREDICTION_GC_MODE=freeze` 확인 |
-| 예측 API 100ms 초과율 | 위 벤치마크의 초과율 산출값 | 0.5% 이하 (CURRENT_STATE `slo_alerts` 벤치마크 게이트) | 표본 600 미만은 판정 불가. Wilson 상한을 함께 기록 |
+| 예측 API 100ms 초과율 | 위 벤치마크의 `predict_keepalive`(연결 재사용) 초과율 | 0.5% 이하 (CURRENT_STATE `slo_alerts` 벤치마크 게이트) | 표본 600 미만은 판정 불가. Wilson 상한을 함께 기록. 새 연결 초과율은 보조 지표로 함께 기록 |
 | 예측 API c1·c2·c4 P95 | 위 벤치마크 | 기준 미정. 정본 기록값 c1 15.03ms·c2 19.66ms·c4 32.77ms (`prediction_latency`). 회귀 감시는 `docs/ops/latency_gate_protocol.md` 4.2·4.3 | c10 최적화의 부작용 감시 지점이며 절대 기준이 아님 |
 | RAG SSE 첫 토큰 P95 | `uv run python -m scripts.benchmark_sse_gate --concurrency 1 --rounds 60 --round-num <회차>` | 3초 이하 (CURRENT_STATE `slo_alerts`). 정본 기록값 2664.19ms (`rag_sse_latency`) | 순차(c1) 측정값. c2 이상에 3초를 적용하지 않음. 회차당 60 이상 |
 | RAG SSE 전체 P95 | 위 SSE 벤치마크 | 20초 이하 (CURRENT_STATE `slo_alerts`). 정본 기록값 3353.98ms (`rag_sse_latency`) | 동시성 수준별 기준은 아직 없음. c1 값만 판정에 씀 |
@@ -135,7 +135,7 @@ description: 배포 전, 큰 병합 뒤, 주간 점검에서 프로젝트 기능
 - 성능 개선 판정은 쌍대 비교와 홀드아웃 설계를 따릅니다. 절차는 [servc-model-tuning](../servc-model-tuning/SKILL.md) 을 참고합니다.
 - 사용자 API 한도(60초 120요청)에 걸리는 측정은 `RATE_LIMIT_EXEMPT_USERNAMES` 에 측정 계정만 넣고 `app` 을 재시작한 뒤 측정합니다. 끝나면 값을 비우고 다시 재시작합니다. `ENVIRONMENT=production` 에서는 이 값이 무시됩니다.
 - `benchmark_latency.py` 는 측정 쿠키를 예측 요청에만 붙여 SSE·단발 질의는 익명 한도(60초 30회)에 걸립니다. SSE 판정은 쿠키를 받는 `python -m scripts.benchmark_sse_gate` 로 합니다. 스크립트 경로(`python scripts/benchmark_sse_gate.py`)로 부르면 `scripts` 모듈을 찾지 못해 실행되지 않습니다.
-- `predict_keepalive` 는 연결 재사용 보조 지표로 Docker 포트 전달 비용을 분리해 보는 용도이며 게이트에 쓰지 않습니다.
+- 초과율은 연결 재사용(`predict_keepalive`)으로, P95 는 새 연결(`predict`)로 판정합니다(2026-11-14 사용자 결정). 브라우저는 연결을 재사용하고, 새 연결 경로의 100ms 초과는 Docker Desktop 호스트 포트 전달 비용(연결당 약 4ms)에서 나오기 때문입니다. P95 는 정본 기록값과의 연속성 때문에 새 연결을 유지합니다. 새 연결 초과율은 환경 변화를 감시하는 보조 지표로 계속 기록합니다.
 
 ## 4. 데이터 무손실 점검
 
