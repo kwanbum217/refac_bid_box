@@ -84,6 +84,7 @@ PAIRED_COLUMNS = (
 )
 
 FAIL_CLOSED_VERDICT = "판정 불가 (대체 모델 발생)"
+FAIL_CLOSED_API_ERROR_VERDICT = "판정 불가 (API 오류)"
 
 
 def _valid_model_id(value: object) -> str | None:
@@ -221,8 +222,11 @@ def evaluate_paired_samples(
 
     fail_closed = invalid_provenance_count > 0 or api_error_count > 0
     if fail_closed:
-        decision["verdict"] = FAIL_CLOSED_VERDICT
-        reporting["verdict"] = FAIL_CLOSED_VERDICT
+        verdict = (
+            FAIL_CLOSED_VERDICT if invalid_provenance_count > 0 else FAIL_CLOSED_API_ERROR_VERDICT
+        )
+        decision["verdict"] = verdict
+        reporting["verdict"] = verdict
 
     return {
         "requested_pairs": requested_pairs,

@@ -86,6 +86,7 @@ def parse_pytest_counts(summary: str) -> dict[str, int]:
 
 
 SUMMARY_HEADER_MARKER = "short test summary info"
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def extract_failed_nodeids(output: str) -> list[str]:
@@ -93,9 +94,9 @@ def extract_failed_nodeids(output: str) -> list[str]:
 
     줄 앞뒤 공백과 ' - ' 뒤 실패 메시지를 버리고, 중복을 제거하되 출현 순서를 유지합니다.
     요약 머리줄이 있으면 마지막 머리줄 뒤만 훑어 테스트 본문 로그나 traceback 의
-    'FAILED ' 로 시작하는 줄을 잡지 않습니다.
+    'FAILED ' 로 시작하는 줄을 잡지 않습니다. 색상 코드(ANSI escape)는 판정 전에 제거합니다.
     """
-    lines = output.splitlines()
+    lines = [ANSI_ESCAPE_RE.sub("", raw_line) for raw_line in output.splitlines()]
     header_indexes = [i for i, line in enumerate(lines) if SUMMARY_HEADER_MARKER in line]
     if header_indexes:
         lines = lines[header_indexes[-1] + 1 :]
