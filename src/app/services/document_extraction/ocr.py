@@ -87,9 +87,10 @@ def verify_model_files(model_dir: str | Path) -> None:
 
 
 def _create_engine(model_dir: Path) -> RapidOCR:
+    verify_model_files(model_dir)
+
     from rapidocr import ModelType, OCRVersion, RapidOCR
 
-    verify_model_files(model_dir)
     return RapidOCR(
         params={
             "Global.log_level": "error",
