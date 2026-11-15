@@ -247,11 +247,11 @@ review_checklist:
 뜨고 작업 브랜치에서 같은 명령을 돌린 뒤, 차이를 대상 목록과 대조해 종료 코드
 0 을 확인합니다.
 
-    git switch main
+    # 주 저장소(main)에서 기준을 뜹니다. 주 저장소에서 브랜치를 바꾸지 않습니다.
     uv run python scripts/judge_snapshot_diff.py dump --output <기준.tsv>
-    git switch <작업 브랜치>
+    # 작업 브랜치의 워크트리에서 같은 명령으로 변경을 뜹니다.
     uv run python scripts/judge_snapshot_diff.py dump --output <변경.tsv>
-    diff <기준.tsv> <변경.tsv> --expect <대상 목록>
+    uv run python scripts/judge_snapshot_diff.py diff <기준.tsv> <변경.tsv> --expect <대상 목록>
 
 2026-11-15 에 규칙 변경 병합마다 전체 판정을 비교해 의도 밖 변경까지 막히는 일이
 있었고, 그 비교를 `scripts/judge_snapshot_diff.py` 로 정식화했습니다.
