@@ -140,18 +140,24 @@ _KDHC_CDW_CITATION = (
 )
 # 한국지역난방공사 지사·사업소 수요기관 코드입니다. 2026-11-06 읽기 전용 DB 조회로
 # RULE_NOT_FOUND 32건 중 기타용역 17건의 dminsttCd 를 확인했고, 2026-11-07 결정 D29 로
-# regime_lag_65 4.3절 지사 공고의 코드(D325103·D325105·D325117)를 더했습니다. 대역 접두가
-# 아니라 명시 목록이므로 다른 기관 코드에는 적용되지 않습니다.
+# regime_lag_65 4.3절 지사 공고의 코드(D325103·D325105·D325117)를 더했습니다. 2026-11-15
+# 읽기 전용 DB 조회로 용인지사 D325100·파주지사 D325101·고양사업소 D325111 을 더했습니다
+# (appstd_vs_pps_default_20261115.md 3.6절). 대역 접두가 아니라 명시 목록이므로 다른 기관
+# 코드에는 적용되지 않습니다.
 # 근거: docs/analysis/rule_not_found_32_source_20261106.md 2.4, 3.1, 4.1;
-#       docs/analysis/regime_lag_65_check_20261107.md 3.1, 3.2, 4.3
+#       docs/analysis/regime_lag_65_check_20261107.md 3.1, 3.2, 4.3;
+#       docs/analysis/appstd_vs_pps_default_20261115.md 3.6
 _KDHC_BRANCH_CODES: frozenset[str] = frozenset(
     {
+        "D325100",
+        "D325101",
         "D325102",
         "D325103",
         "D325104",
         "D325105",
         "D325107",
         "D325109",
+        "D325111",
         "D325112",
         "D325114",
         "D325115",
