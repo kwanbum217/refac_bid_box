@@ -2908,6 +2908,14 @@ JEONNAM_PPS_FALLBACK_WARNING = (
     "해당 별표가 없는 유형은 조달청 일반용역 적격심사 세부기준을 준용했습니다."
 )
 
+# 전남광주통합특별시 일반용역 적격심사 세부지침(예규 제3호, 2026-07-16 시행) 제4조 제1항
+# 단서는 지침 별표 1~6 에 없는 용역의 평가기준을 공고에 별도로 명시해 달리 정할 수 있게
+# 합니다. 지침 자체에는 조달청 준용 조항이 없으므로, 공고가 적용 기준을 조달청 일반용역
+# 적격심사 세부기준으로 명시한 경우에만 그 공고 명시를 근거로 조달청 별표로 계산합니다.
+JNGJ_STATED_PPS_WARNING = (
+    "공고가 적용 기준을 조달청 일반용역 적격심사 세부기준으로 명시해 조달청 별표로 계산했습니다."
+)
+
 # 지방공사·지방공단은 지방공기업법상 법인이고 대한적십자사는 대한적십자사조직법상
 # 법인이라 지방계약법 제2조의 적용 주체인 "지방자치단체"가 아닙니다. 시·도 매핑이 없어
 # 시·도 규칙을 고르지 못한 공고를 공고문이 인용한 조달청 기본 규칙으로 풀 때 붙입니다.
@@ -3058,6 +3066,46 @@ def _is_jeonnam_pps_fallback_announcement(
     else:
         service_type, _, _ = resolve_local_service_type(raw_data, method_name)
     return service_type != "ACADEMIC"
+
+
+# 통합특별시 지침의 효력 구간은 규칙 선언에서 유도합니다. 지침 별표가 추가·개정되면
+# 준용 조건의 시행일도 함께 따라가야 하므로 값을 따로 적지 않습니다.
+_JNGJ_LOCAL_RULE_PREFIX = "SERVC_LOCAL_JNGJ_"
+_JNGJ_LOCAL_RULES = tuple(
+    rule for rule in LOCAL_RULES if rule.rule_id.startswith(_JNGJ_LOCAL_RULE_PREFIX)
+)
+JNGJ_LOCAL_RULE_EFFECTIVE_DATE = min(
+    date.fromisoformat(rule.effective_date) for rule in _JNGJ_LOCAL_RULES
+)
+_JNGJ_REGION_NAME = "전남광주통합특별시"
+_JNGJ_PPS_STATED_MARKER = "조달청일반용역적격심사세부기준"
+
+
+def _is_jngj_pps_stated_announcement(
+    region_code: str | None,
+    region_name: str | None,
+    announced: date | None,
+    institution_name: str | None,
+    raw_data: dict[str, Any] | None,
+) -> bool:
+    """통합특별시 지침 적용 공고가 적용 기준을 조달청 기준으로 명시했는지 판정합니다.
+
+    수요기관이 통합특별시 계열이면 지역 축이 옛 계열 코드(46·29)로 남아 있어도 수요기관명이
+    통합 명칭으로 시작하는지로 함께 확인합니다. 공고의 낙찰방법 적용 기준
+    (sucsfbidMthdAppStd)에 조달청 일반용역 적격심사 세부기준이 적힌 경우만 참이며,
+    지침 자체 별표가 있는 유형은 호출부의 LOCAL_RULE_NOT_FOUND 조건이 가릅니다.
+    """
+    if announced is None or announced < JNGJ_LOCAL_RULE_EFFECTIVE_DATE:
+        return False
+    code = (region_code or "").strip()
+    name = re.sub(r"\s+", "", region_name or "")
+    if code != MERGED_REGION_CODE and name != _JNGJ_REGION_NAME:
+        institution = re.sub(r"\s+", "", institution_name or "")
+        if not institution.startswith(_JNGJ_REGION_NAME):
+            return False
+    data = raw_data if isinstance(raw_data, dict) else {}
+    stated = re.sub(r"\s+", "", str(data.get("sucsfbidMthdAppStd") or ""))
+    return _JNGJ_PPS_STATED_MARKER in stated
 
 
 # 조달청 일반용역 '추정가격 2억원 미만' 띠의 표 이름입니다. 전남 일반용역 2억미만
@@ -3660,6 +3708,13 @@ def resolve_evaluation_rule(
       조달청 별표에도 없으면 RULE_NOT_FOUND 로 남고, 시·도 매핑이 있으면 종전 판정을
       유지합니다. 조달청 기준으로 풀린 결과에만 경고(SIDO_RULE_EXCLUDED_PPS_WARNING)를
       붙입니다.
+    - 전남광주통합특별시 일반용역 적격심사 세부지침(예규 제3호, 2026-07-16 시행) 적용
+      공고 가운데 지침에 해당 유형 별표가 없어 LOCAL_RULE_NOT_FOUND 로 끝나고, 공고의
+      낙찰방법 적용 기준(sucsfbidMthdAppStd)이 조달청 일반용역 적격심사 세부기준을
+      명시하며, 조달청 매칭 결과가 있는 공고는 조달청 별표로 계산합니다. 지침 제4조
+      제1항 단서가 별표 1~6 에 없는 용역의 평가기준을 공고에 명시해 달리 정할 수 있게
+      하므로 근거는 지침 조항이 아니라 공고 명시입니다. 건설폐기물 띠 표기 공고는
+      제외하고, 조달청 기준으로 풀린 결과에만 경고(JNGJ_STATED_PPS_WARNING)를 붙입니다.
     - 수요기관 코드가 demand_institutions.PPS_CITED_LOCAL_INSTITUTION_CODES 에 들면
       contract_regime == "LOCAL" 이고 시·도 매핑이 있어도 시·도 규칙 후보를 만들지
       않고 조달청 매칭 결과를 씁니다. 공고문이 조달청 일반용역 적격심사 세부기준을
@@ -3927,6 +3982,34 @@ def resolve_evaluation_rule(
                     result = replace(
                         result, warnings=[*result.warnings, JEONNAM_PPS_FALLBACK_WARNING]
                     )
+            elif (
+                local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+                and result.rule is not None
+                and _is_jngj_pps_stated_announcement(
+                    region_code,
+                    region_name,
+                    announced,
+                    institution_name,
+                    raw_data,
+                )
+                and select_moe_cdw_rule(method_name) is None
+            ):
+                # 전남광주통합특별시 지침(예규 제3호)에 해당 유형 별표가 없고 공고가 적용
+                # 기준을 조달청 일반용역 적격심사 세부기준으로 명시한 공고는, 지침 제4조
+                # 제1항 단서의 공고 명시를 근거로 조달청 매칭 결과로 계산합니다. 조달청
+                # 매칭 결과가 없는 공고와 건설폐기물 띠 표기 공고는 종전 차단을 유지합니다.
+                result, scope_stage = _narrow_rule_scope(
+                    result,
+                    method_name=pps_method_name,
+                    allocated_rules=allocated_rules,
+                    institution_code=institution_code,
+                    institution_name=institution_name,
+                    region_code=region_code,
+                    region_name=region_name,
+                    contract_regime=contract_regime,
+                )
+                if result.rule is not None:
+                    result = replace(result, warnings=[*result.warnings, JNGJ_STATED_PPS_WARNING])
             else:
                 result = replace(
                     result,
