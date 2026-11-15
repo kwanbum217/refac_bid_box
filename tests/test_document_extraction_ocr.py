@@ -131,6 +131,25 @@ class _FakeEngine:
         return SimpleNamespace(txts=self.lines)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _preload_ocr_import():
+    """rapidocr import 비용을 추출 제한 시간 밖에서 한 번 치릅니다.
+
+    모델 파일이 없어도 ocr._create_engine 은 rapidocr import(ocr.py:90)를 먼저
+    하고 verify_model_files(ocr.py:92)로 넘어갑니다. 이 import 는 디스크에서
+    수 초를 쓰며, 전량 시험이 디스크를 함께 쓰면 요청 스레드 안에서 운영 예산을
+    넘겨 422 가 됩니다. 시험 파일 첫 시험 전에 한 번 import 해 두면 요청 안에서는
+    즉시 실패 경로만 지나므로 실행 부하와 무관하게 같은 결과가 나옵니다.
+    rapidocr 은 RapidOCR 을 지연 import 하므로(rapidocr/__init__.py 의
+    __getattr__), ocr.py:90 과 같은 이름을 그대로 가져와야 실제 비용이 사라집니다.
+    """
+    try:
+        from rapidocr import ModelType, OCRVersion, RapidOCR  # noqa: F401
+    except Exception:
+        # ocr.py:118-125 와 같은 이유로, 패키지를 쓸 수 없는 환경은 그대로 둡니다.
+        return
+
+
 @pytest.fixture(autouse=True)
 def _reset_ocr_engine(monkeypatch):
     """엔진 싱글톤과 사용 불가 표시를 시험마다 초기 상태로 되돌립니다."""
