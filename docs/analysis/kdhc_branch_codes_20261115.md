@@ -71,7 +71,7 @@ uv run python scripts/judge_snapshot_diff.py diff .orca/tmp/judge_before.tsv .or
 
 `R26BK01809261`(용인지사, 2026-11-04, 수리·점검용역)은 `sucsfbidMthdAppStd` 가 `조달청 일반용역 적격심사 세부기준` 인데도 기관 코드 우선 설계에 따라 `SERVC_INST_KDHC_20260818_REPAIR` 로 바뀌었습니다.
 
-- 현재 `_select_institution_rule`(`src/app/services/evaluation_rules.py:2632-2691`)은 공고 명시 기준을 보지 않고 수요기관 코드·납찰방법명으로 기관 규칙을 고릅니다.
+- 현재 `_select_institution_rule`(`src/app/services/evaluation_rules.py:2632-2691`)은 공고 명시 기준을 보지 않고 수요기관 코드·낙찰방법명으로 기관 규칙을 고릅니다.
 - 2026-11-15 코디네이터 결정(C)으로 이 1건의 변경을 허용했습니다. 공고 명시 기준과 기관 규칙이 충돌하는 경우의 처리 방침은 별도 사용자 결정 대기 항목입니다.
 - `evaluation_rules.py` 는 이번 작업에서 고치지 않았습니다.
 
@@ -109,7 +109,7 @@ uv run python scripts/judge_snapshot_diff.py diff .orca/tmp/judge_before.tsv .or
 
 1. `evaluation_rules.py:2665-2679` 는 `institution_code` 가 규칙의 본청 코드(`B550373`)와 다르고 규칙 ID 가 `INSTITUTION_RULE_EXACT_CODES` 에 있으면서 시행일이 공고일보다 늦으면 후보에서 뺍니다. 네 공고는 지사 코드로만 걸리므로 2026-01-01판·2026-08-18판 규칙이 모두 여기서 빠집니다.
 2. 남는 후보는 2023-07-19 시행판뿐입니다. 등록된 판본은 폐기물처리용역(`evaluation_rules_institution.py:2432-2441`), 기타용역(`4056-4085`), 여객 육상운송용역(`4097-4116`) 세 가지이고, `PREDECESSOR_INSTITUTION_RULES`(`4124-4127`)에도 기타·여객만 들어 있습니다.
-3. 따라서 시설분야용역과 수리·점검용역은 2023-07-19판 규칙이 없습니다. 남은 후보의 패턴(`폐기물처리`, `기타`, `여객육상운송`)은 네 공고의 납찰방법명(`수리ㆍ점검용역`, `시설분야용역`)과 맞지 않아 `_institution_match_score` 가 0 이 되고, `evaluation_rules.py:2711-2715` 에서 후보 없음으로 끝납니다.
+3. 따라서 시설분야용역과 수리·점검용역은 2023-07-19판 규칙이 없습니다. 남은 후보의 패턴(`폐기물처리`, `기타`, `여객육상운송`)은 네 공고의 낙찰방법명(`수리ㆍ점검용역`, `시설분야용역`)과 맞지 않아 `_institution_match_score` 가 0 이 되고, `evaluation_rules.py:2711-2715` 에서 후보 없음으로 끝납니다.
 
 결과적으로 기관 규칙 후보가 비어 종전 조달청 경로로 내려갔습니다. 이 4건을 공사 규칙으로 계산하려면 2023-07-19 시행판 원문에서 시설분야·수리점검 별표의 B·k·기준비율·통과점수·낙찰하한율을 확인해 판본 규칙으로 등록해야 합니다. 이번 작업 범위가 아니므로 코드는 고치지 않았습니다.
 
@@ -125,7 +125,7 @@ uv run python scripts/judge_snapshot_diff.py diff .orca/tmp/judge_before.tsv .or
 | `python3 scripts/validate_agent_rules.py --quiet` | 22/22 통과, 종료 코드 0 |
 | `judge_snapshot_diff.py diff --expect expect9.txt` | 10건 일치, 종료 코드 0 |
 
-- 회귀 시험 `tests/test_kdhc_branch_codes_20261115.py` 는 세 지사의 일반용역 대표 `raw_data`(시설분야·수리점검·폐기물)가 공사 규칙을 고르는지, 기술용역 대표 `raw_data` 가 종전 기술용역 규칙을 유지하는지, 그리고 3.2절 충돌 사례 1건의 현재 동작을 검사합니다. 실제 DB·Redis 에는 연결하지 않습니다.
+- 회귀 시험 `tests/test_kdhc_branch_codes_20261115.py` 는 세 지사의 일반용역 대표 `raw_data`(시설분야·수리점검·폐기물)가 공사 규칙을 고르는지, 기술용역 대표 `raw_data` 가 종전 기술용역 규칙을 유지하는지, 그리고 2.3절 충돌 사례 1건의 현재 동작을 검사합니다. 실제 DB·Redis 에는 연결하지 않습니다.
 - DB 조회는 모두 `scripts/db_readonly_query.py` 의 `SELECT` 였고 스키마·데이터를 변경하지 않았습니다.
 
 ---
