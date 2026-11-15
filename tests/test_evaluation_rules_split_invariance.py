@@ -41,10 +41,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # 예외: LOCAL_RULES 는 2026-11-07 건설폐기물 라우팅 결정(D01~D06)으로 A 계열 시·도 6개
 # 규칙에 cdw_exclusion="notice_cited" 를 선언해 값이 바뀌었습니다. 변경 이유와 대상 규칙은
 # docs/analysis/cdw_route_regression_20261107.md 4절에 적었습니다.
+# 2026-11-15 사용자 결정으로 MOE_CDW_RULES 6종 base_rate 를 0.90 -> 0.88 로 정정해
+# 8591a0e4ea7a888a -> 1b0da3fe5c5dce43 로 갱신했습니다.
 EXPECTED_FINGERPRINTS: dict[str, str] = {
     "POST_20260526_RULES": "92dfb7c194d68e3f",
     "POST_20260727_RULES": "dfad0fcd3f7e9987",
-    "MOE_CDW_RULES": "8591a0e4ea7a888a",
+    "MOE_CDW_RULES": "1b0da3fe5c5dce43",
     "PRE_20250901_RULES": "8462974964f16d17",
     "PRE_20230501_RULES": "77a16139ea892a07",
     "PRE_20260526_RULES": "a09f80a6e80bf80d",
