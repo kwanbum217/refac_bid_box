@@ -12,6 +12,7 @@ Redis 복구 후에도 영원히 다시 붙지 않았고, 인증 세션이 같�
 """
 
 import sys
+import threading
 
 import pytest
 
@@ -131,6 +132,44 @@ def test_runtime_failure_drops_client_and_reconnects(monkeypatch, clock):
     clock.advance(BACKOFF + 0.1)
     assert conn.client() is fake_client
     assert connector.attempts == 2
+
+
+def test_invalidate_uses_same_lock_as_client(monkeypatch, clock):
+    """폐기는 연결 시도 구간과 같은 잠금을 쓰므로 서로 끼어들 수 없습니다."""
+    fake_client = FakeRedis()
+    _install_connector(monkeypatch, RecordingConnector(client=fake_client))
+    conn = RedisConnection(url="redis://unused/0", backoff_seconds=BACKOFF, label="test")
+    assert conn.client() is fake_client
+
+    holding = threading.Event()
+    release = threading.Event()
+
+    def hold_lock() -> None:
+        with conn._lock:
+            holding.set()
+            release.wait(5)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert holding.wait(5)
+
+    discarded = threading.Event()
+
+    def discard() -> None:
+        conn.invalidate(ConnectionError("연결 끊김"))
+        discarded.set()
+
+    worker = threading.Thread(target=discard)
+    worker.start()
+    assert not discarded.wait(0.2)
+
+    release.set()
+    holder.join(5)
+    worker.join(5)
+
+    assert discarded.is_set()
+    assert not worker.is_alive()
+    assert conn._client is None
 
 
 def test_cache_layer_degrades_to_local_when_redis_down(monkeypatch, clock):

@@ -108,10 +108,11 @@ class RedisConnection:
 
     def invalidate(self, exc: Exception) -> None:
         """운영 중 끊긴 클라이언트를 버려 백오프 이후 다시 붙게 합니다."""
-        if self._client is not None:
-            logger.warning("[%s] Redis 연결을 폐기합니다: %s", self._label, exc)
-        self._client = None
-        self._next_attempt_at = time.time() + self._backoff
+        with self._lock:
+            if self._client is not None:
+                logger.warning("[%s] Redis 연결을 폐기합니다: %s", self._label, exc)
+            self._client = None
+            self._next_attempt_at = time.time() + self._backoff
 
 
 class CacheLayer:
