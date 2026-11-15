@@ -51,7 +51,8 @@ EXPECTED_FINGERPRINTS: dict[str, str] = {
     # 2026-11-07 D34(A) 시·도 세부유형 5건 추가로 갱신했습니다. 변경 이유와 영향은
     # docs/analysis/local_annex_30_regression_20261107.md 4절 표에 적었습니다. 통합 브랜치에서 건설폐기물
     # notice_cited 선언(D01~D06)과 합쳐 2fbac87191d73a54 로 다시 계산했습니다.
-    "LOCAL_RULES": "2fbac87191d73a54",
+    # 2026-11-15 광주광역시 구판 별표 1-2 소프트웨어용역(자치구·본청) 2종 추가로 갱신했습니다.
+    "LOCAL_RULES": "71684c07cd529398",
     "MOIS_ACADEMIC_BAND_RULES": "e7e2960460553ba0",
     "INSTITUTION_RULES": "f37501c91f5cf496",
 }

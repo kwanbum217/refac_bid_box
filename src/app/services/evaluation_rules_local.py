@@ -369,6 +369,15 @@ _SRC_GWANGJU_ATTACH_1_5 = (
     "제11조제1항 통과점수 95; "
     "낙찰하한율 원문 병기 85.495·85.495"
 )
+_SRC_GWANGJU_ATTACH_1_2 = (
+    f"{_GWANGJU_ELIS_RULE}; 별표 1-2 소프트웨어용역 적격심사 "
+    "1. 심사항목 및 배점한도 (Ⅱ. 입찰가격 5억원 이상 50·5억원 미만 2억원 이상 70·"
+    "2억원 미만 90, 합계 100), "
+    "별표 6 소프트웨어 행 (평점 = 50 - 2x|88 - 투찰율| / 70 - 4x|...| / 90 - 20x|...|, "
+    "투찰율 90.5%·89.25%·88.25% 이상은 45·65·85점), "
+    "제11조제1항 통과점수 95; "
+    "낙찰하한율 원문 병기 85.495·86.745·87.745"
+)
 
 # 세종 별표 3(소프트웨어)·별표 5(육상운송)는 같은 별표 안에서 중소기업자간 경쟁제품
 # 대상/비대상 여부로 k·낙찰하한율·통과점수가 갈립니다(별표 분리가 아니라 조건 분기).
@@ -1381,6 +1390,94 @@ LOCAL_RULES: tuple[EvaluationRule, ...] = (
         ),
         threshold_bands=_single_threshold(
             "95", "육상운송용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_5
+        ),
+    ),
+    # 광주광역시 소프트웨어용역은 같은 예규 제6조 2호가 별표 1-2 로 따로 정합니다.
+    # 원문 별표 1-2 는 입찰가격 배점한도를 5억원 이상 50·5억원 미만 2억원 이상 70·
+    # 2억원 미만 90 으로 인쇄하고, 세부 산식은 별표 6 소프트웨어 행을 인용합니다.
+    # 별표 6 소프트웨어 행의 평점계수는 2·4·20 이고 낙찰하한율은 85.495·86.745·87.745 입니다.
+    _local_rule(
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_2",
+        sido_code="29",
+        sido_name="광주광역시",
+        service_type="SW",
+        effective_date="2022-11-15",
+        superseded_date="2026-07-16",
+        source=_SRC_GWANGJU_ATTACH_1_2,
+        description="광주광역시 소프트웨어용역 적격심사 (별표 1-2, 통합 지침 이전)",
+        lwlt_rate="85.495",
+        price_bands=(
+            _local_price_band(
+                "200000000",
+                "90",
+                "20",
+                "추정가격 2억원 미만",
+                _SRC_GWANGJU_ATTACH_1_2,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "500000000",
+                "70",
+                "4",
+                "5억원 미만 2억원 이상",
+                _SRC_GWANGJU_ATTACH_1_2,
+                lwlt_rate="86.745",
+            ),
+            _local_price_band(
+                None,
+                "50",
+                "2",
+                "추정가격 5억원 이상",
+                _SRC_GWANGJU_ATTACH_1_2,
+                lwlt_rate="85.495",
+            ),
+        ),
+        threshold_bands=_single_threshold(
+            "95", "소프트웨어용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_2
+        ),
+    ),
+    # 별표 1-2 는 '지역제한 금액' 이 아니라 추정가격 5억·2억 경계만 쓰므로 본청·소속기관과
+    # 자치구의 값이 같습니다. 다만 _select_local_rule 이 광주광역시(광역) 본청·소속기관
+    # 공고에서 _METRO_ 가 없는 구판 규칙을 후보에서 빼므로, 같은 값을 _METRO_SW 로 한 번 더
+    # 등록해 광역 공고도 이 별표를 쓰게 합니다.
+    _local_rule(
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_2_METRO_SW",
+        sido_code="29",
+        sido_name="광주광역시",
+        service_type="SW",
+        effective_date="2022-11-15",
+        superseded_date="2026-07-16",
+        source=_SRC_GWANGJU_ATTACH_1_2,
+        description="광주광역시(광역) 소프트웨어용역 적격심사 (별표 1-2, 통합 지침 이전)",
+        lwlt_rate="85.495",
+        price_bands=(
+            _local_price_band(
+                "200000000",
+                "90",
+                "20",
+                "추정가격 2억원 미만",
+                _SRC_GWANGJU_ATTACH_1_2,
+                lwlt_rate="87.745",
+            ),
+            _local_price_band(
+                "500000000",
+                "70",
+                "4",
+                "5억원 미만 2억원 이상",
+                _SRC_GWANGJU_ATTACH_1_2,
+                lwlt_rate="86.745",
+            ),
+            _local_price_band(
+                None,
+                "50",
+                "2",
+                "추정가격 5억원 이상",
+                _SRC_GWANGJU_ATTACH_1_2,
+                lwlt_rate="85.495",
+            ),
+        ),
+        threshold_bands=_single_threshold(
+            "95", "소프트웨어용역 추정가격 무관 95", _SRC_GWANGJU_ATTACH_1_2
         ),
     ),
     # 광주광역시(광역) 본청·소속기관 전용 구판 규칙 (국제입찰 고시 금액 경계).
