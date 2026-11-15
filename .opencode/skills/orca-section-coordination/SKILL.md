@@ -171,7 +171,15 @@ docker build -t refac-bid-box-frontend:orca-gate frontend # docker_build:fronten
 인라인 코드로 참조하도록 고쳤고, 다른 보고서 열 곳은 원래부터 인라인 코드 방식이라
 같은 문제가 없었습니다. **`docs/` 에서 `.orca/` 아래를 링크하지 마십시오.**
 
+### 2.3.1 원문 조사 워커의 워크트리 준비
 
+원문을 조사하는 워커의 워크트리는 다음 명령으로 준비하십시오.
+
+    python3 scripts/orca_prepare_worktree.py <워크트리> --repo <주 저장소> --capsule <Capsule> --with-sources
+
+`data/sources/qualification/files/` 는 `.gitignore` 대상이라 `--with-sources` 없이
+만든 격리 트리에는 따라오지 않습니다. 2026-11-15 에 원문 재탐색 워커가 이 누락을
+모르고 대구 223호와 충남 신구대비표 2건을 "저장소 미보유" 로 오판했습니다.
 
 ### 2.4 서빙 모델을 로드하는 작업은 주 저장소에서 돌리십시오
 
@@ -232,6 +240,30 @@ review_checklist:
     defect_when: yes
     how: 보고와 터미널 이력에서 docker exec, docker compose exec, mysql 을 검색한다
 ```
+
+### 2.6 규칙 변경 병합은 판정 비교로 수용한다
+
+규칙 변경 병합의 합격 기준은 대상 판정 비교입니다. `main` 에서 기준 스냅숏을
+뜨고 작업 브랜치에서 같은 명령을 돌린 뒤, 차이를 대상 목록과 대조해 종료 코드
+0 을 확인합니다.
+
+    # 주 저장소(main)에서 기준을 뜹니다. 주 저장소에서 브랜치를 바꾸지 않습니다.
+    uv run python scripts/judge_snapshot_diff.py dump --output <기준.tsv>
+    # 작업 브랜치의 워크트리에서 같은 명령으로 변경을 뜹니다.
+    uv run python scripts/judge_snapshot_diff.py dump --output <변경.tsv>
+    uv run python scripts/judge_snapshot_diff.py diff <기준.tsv> <변경.tsv> --expect <대상 목록>
+
+2026-11-15 에 규칙 변경 병합마다 전체 판정을 비교해 의도 밖 변경까지 막히는 일이
+있었고, 그 비교를 `scripts/judge_snapshot_diff.py` 로 정식화했습니다.
+
+### 2.7 원문 판정은 원문 줄 인용으로 남기십시오
+
+원문 판정 기록을 "준용 근거 확인" 같은 요약으로 남기지 마십시오. 원문 파일의 줄
+인용을 함께 적고, 조달청 기준 준용, 지방계약 법령·행안부 기준 준용, 같은 예규
+안의 별표 선택을 구분해 적습니다. 세 가지는 서로 다른 근거입니다.
+
+2026-11-15 에 이 구분 없이 적힌 "준용 근거 확인" 을 믿고 조달청 준용 9건을
+구현했다가 되돌렸습니다. 판정 기록에는 문서 경로와 줄 번호를 남깁니다.
 
 ## 3. 감독 절차
 

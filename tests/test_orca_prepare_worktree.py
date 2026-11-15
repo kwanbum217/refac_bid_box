@@ -9,12 +9,15 @@ scripts/orca_prepare_worktree.py 의 단위 테스트.
 from __future__ import annotations
 
 import json
+import os
 import subprocess  # nosec B404
 from pathlib import Path
 
 import pytest
 
 from scripts import orca_prepare_worktree, orca_trust_worktree, orca_worker_env
+
+SOURCES_RELATIVE = Path("data") / "sources" / "qualification" / "files"
 
 
 @pytest.fixture
@@ -436,3 +439,174 @@ def test_prepare_worktree_sets_capsule_config(
         check=True,
     )
     assert res.stdout.strip() == str(cap_path)
+
+
+def _make_fake_sources_layout(tmp_path: Path) -> tuple[Path, Path]:
+    """주 저장소 원문 사본 디렉터리와 빈 워크트리를 tmp_path 에 구성합니다."""
+    repo = tmp_path / "main_repo"
+    wt = tmp_path / "worker_wt"
+    sources = repo / SOURCES_RELATIVE
+    (sources / "nested").mkdir(parents=True)
+    (sources / "notice.pdf").write_bytes(b"%PDF" + b"a" * 28)
+    (sources / "nested" / "compare.hwpx").write_bytes(b"b" * 64)
+    wt.mkdir(parents=True)
+    return repo, wt
+
+
+def test_sources_copied_into_worktree(tmp_path: Path):
+    """--with-sources 단계가 원문 사본을 워크트리의 같은 경로로 복사합니다."""
+    repo, wt = _make_fake_sources_layout(tmp_path)
+
+    success, message = orca_prepare_worktree.check_or_prepare_sources(
+        wt, repo, check=False, enabled=True
+    )
+
+    target = wt / SOURCES_RELATIVE
+    assert success is True
+    assert "복사 완료" in message
+    assert (target / "notice.pdf").read_bytes() == b"%PDF" + b"a" * 28
+    assert (target / "nested" / "compare.hwpx").read_bytes() == b"b" * 64
+    assert (target / "notice.pdf").is_symlink() is False
+    assert target.relative_to(wt).as_posix() == SOURCES_RELATIVE.as_posix()
+
+
+def test_sources_copy_skips_same_size_files(tmp_path: Path):
+    """반복 실행 시 크기가 같은 파일은 다시 쓰지 않아 mtime 이 유지됩니다."""
+    repo, wt = _make_fake_sources_layout(tmp_path)
+    orca_prepare_worktree.check_or_prepare_sources(wt, repo, check=False)
+    target_file = wt / SOURCES_RELATIVE / "notice.pdf"
+    os.utime(target_file, (1_000_000_000, 1_000_000_000))
+
+    success, message = orca_prepare_worktree.check_or_prepare_sources(
+        wt, repo, check=False, enabled=True
+    )
+
+    assert success is True
+    assert "이미 준비됨" in message
+    assert int(target_file.stat().st_mtime) == 1_000_000_000
+
+
+def test_sources_copy_rewrites_only_missing_or_resized(tmp_path: Path):
+    """새 파일과 크기가 바뀐 파일만 다시 쓰고 나머지 mtime 은 그대로 둡니다."""
+    repo, wt = _make_fake_sources_layout(tmp_path)
+    orca_prepare_worktree.check_or_prepare_sources(wt, repo, check=False)
+    untouched = wt / SOURCES_RELATIVE / "nested" / "compare.hwpx"
+    os.utime(untouched, (1_000_000_000, 1_000_000_000))
+    sources = repo / SOURCES_RELATIVE
+    (sources / "notice.pdf").write_bytes(b"%PDF" + b"a" * 44)
+    (sources / "added.txt").write_bytes(b"c" * 8)
+
+    success, message = orca_prepare_worktree.check_or_prepare_sources(
+        wt, repo, check=False, enabled=True
+    )
+
+    target = wt / SOURCES_RELATIVE
+    assert success is True
+    assert "2개 파일" in message
+    assert (target / "notice.pdf").stat().st_size == 48
+    assert (target / "added.txt").read_bytes() == b"c" * 8
+    assert int(untouched.stat().st_mtime) == 1_000_000_000
+
+
+def test_sources_check_reports_unprepared_then_prepared(tmp_path: Path):
+    """check 모드는 복사 없이 미준비/준비를 판정합니다."""
+    repo, wt = _make_fake_sources_layout(tmp_path)
+    target = wt / SOURCES_RELATIVE
+
+    unprepared, message = orca_prepare_worktree.check_or_prepare_sources(
+        wt, repo, check=True, enabled=True
+    )
+    assert unprepared is False
+    assert "미준비" in message
+    assert "2개 파일" in message
+    assert target.exists() is False
+
+    assert orca_prepare_worktree.check_or_prepare_sources(wt, repo, check=False)[0] is True
+    prepared, message = orca_prepare_worktree.check_or_prepare_sources(
+        wt, repo, check=True, enabled=True
+    )
+    assert prepared is True
+    assert "이미 준비됨" in message
+
+
+def test_sources_skipped_when_repo_has_no_sources(tmp_path: Path):
+    """주 저장소에 원문 디렉터리가 없으면 건너뛰고 성공으로 처리합니다."""
+    repo = tmp_path / "main_repo"
+    wt = tmp_path / "worker_wt"
+    repo.mkdir()
+    wt.mkdir()
+
+    success, message = orca_prepare_worktree.check_or_prepare_sources(
+        wt, repo, check=False, enabled=True
+    )
+
+    assert success is True
+    assert "건너뜀" in message
+    assert (wt / SOURCES_RELATIVE).exists() is False
+
+
+def test_sources_skipped_when_disabled(tmp_path: Path):
+    """옵션을 주지 않으면 check 여부와 관계없이 아무것도 하지 않습니다."""
+    repo, wt = _make_fake_sources_layout(tmp_path)
+
+    for check in (False, True):
+        success, message = orca_prepare_worktree.check_or_prepare_sources(
+            wt, repo, check=check, enabled=False
+        )
+        assert success is True
+        assert "--with-sources 미지정" in message
+        assert (wt / SOURCES_RELATIVE).exists() is False
+
+
+def test_sources_skipped_when_worktree_is_main_repo(tmp_path: Path):
+    """워크트리가 주 저장소 자신이면 복사하지 않습니다."""
+    repo, _ = _make_fake_sources_layout(tmp_path)
+
+    success, message = orca_prepare_worktree.check_or_prepare_sources(
+        repo, repo, check=False, enabled=True
+    )
+
+    assert success is True
+    assert "복사 생략" in message
+
+
+def test_prepare_worktree_default_skips_sources(
+    mock_gemini_env, fake_git_worktree, monkeypatch, capsys
+):
+    """기본 호출은 원문 복사 단계를 건너뛰어 기존 동작을 바꾸지 않습니다."""
+    wt = fake_git_worktree["worktree"]
+    repo = fake_git_worktree["repo"]
+    (repo / SOURCES_RELATIVE / "nested").mkdir(parents=True)
+    (repo / SOURCES_RELATIVE / "notice.pdf").write_bytes(b"%PDF" + b"a" * 28)
+    monkeypatch.setattr(
+        orca_prepare_worktree,
+        "install_pre_commit_hook",
+        _create_fake_pre_commit_installer(),
+    )
+
+    exit_code = orca_prepare_worktree.prepare_worktree(wt, repo, check=False)
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "[원문] --with-sources 미지정" in captured.out
+    assert (wt / SOURCES_RELATIVE).exists() is False
+
+
+def test_cli_with_sources_flag_copies(mock_gemini_env, fake_git_worktree, monkeypatch, capsys):
+    """--with-sources 지정 시 준비 파이프라인이 원문을 복사합니다."""
+    wt = fake_git_worktree["worktree"]
+    repo = fake_git_worktree["repo"]
+    (repo / SOURCES_RELATIVE / "nested").mkdir(parents=True)
+    (repo / SOURCES_RELATIVE / "notice.pdf").write_bytes(b"%PDF" + b"a" * 28)
+    monkeypatch.setattr(
+        orca_prepare_worktree,
+        "install_pre_commit_hook",
+        _create_fake_pre_commit_installer(),
+    )
+
+    ret = orca_prepare_worktree.main([str(wt), "--repo", str(repo), "--with-sources"])
+    captured = capsys.readouterr()
+
+    assert ret == 0
+    assert "[원문] 복사 완료" in captured.out
+    assert (wt / SOURCES_RELATIVE / "notice.pdf").read_bytes() == b"%PDF" + b"a" * 28
