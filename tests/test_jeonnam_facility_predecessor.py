@@ -14,11 +14,13 @@ from decimal import Decimal
 
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_RULE_REGIME_MISMATCH,
+    RULE_SCOPE_REGION,
     resolve_evaluation_rule_from_raw_data,
 )
 
 NEW_FACILITY_ID = "SERVC_LOCAL_JEONNAM_20230302_ATTACH_1_1_4"
 JNGJ_FACILITY_ID = "SERVC_LOCAL_JNGJ_20260716_ATTACH_01"
+GWANGJU_SW_ID = "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_2"
 
 
 def _raw(dminstt_nm: str, bid_ntce_dt: str, method: str, price: str) -> dict[str, str]:
@@ -94,7 +96,7 @@ def test_same_condition_after_cutoff_uses_current_jngj_rule() -> None:
     assert result.is_blocked is False
 
 
-def test_gwangju_chungsa_software_stays_blocked() -> None:
+def test_gwangju_software_uses_gwangju_annex_1_2() -> None:
     raw = _raw(
         "전남광주통합특별시 광산구",
         "2025-10-21 10:01:34",
@@ -109,7 +111,10 @@ def test_gwangju_chungsa_software_stays_blocked() -> None:
         region_name="전남광주통합특별시",
         estimated_price=Decimal("163636364"),
     )
-    assert result.is_blocked is True
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == GWANGJU_SW_ID
+    assert result.scope_stage == RULE_SCOPE_REGION
 
 
 def test_before_predecessor_effective_date_stays_blocked() -> None:
