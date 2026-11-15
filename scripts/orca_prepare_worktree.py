@@ -10,7 +10,10 @@ scripts/orca_prepare_worktree.py
   3. Git pre-commit 훅 확인 및 설치 (검증 생략 커밋 방지)
 
 옵션:
-  --check: 변경 없이 3개 항목의 준비 상태만 판정하여 미준비 시 종료 코드 1을 반환합니다.
+  --check: 변경 없이 준비 상태만 판정하여 미준비 시 종료 코드 1을 반환합니다.
+  --with-sources: 주 저장소의 원문 사본 디렉터리(data/sources/qualification/files)를
+    워크트리의 같은 경로로 복사합니다. gitignore 대상이라 git worktree 에 딸려오지
+    않는 원문을 격리 워크트리에서도 찾을 수 있게 합니다.
 """
 
 from __future__ import annotations
@@ -19,9 +22,13 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess  # nosec B404 - 고정된 인자 목록으로만 git 및 pre-commit 을 호출합니다
 import sys
+from collections.abc import Callable
 from pathlib import Path
+
+SOURCES_RELATIVE_DIR = Path("data") / "sources" / "qualification" / "files"
 
 try:
     from scripts import orca_trust_worktree, orca_worker_env
@@ -352,11 +359,96 @@ def check_or_prepare_capsule(
     return set_worktree_capsule(resolved_wt, capsule_path)
 
 
+def missing_source_files(source_dir: Path, target_dir: Path) -> list[Path]:
+    """원본에 있으나 대상에 없거나 크기가 다른 파일의 상대 경로를 모읍니다."""
+    missing: list[Path] = []
+    for source_file in source_dir.rglob("*"):
+        if not source_file.is_file():
+            continue
+        relative = source_file.relative_to(source_dir)
+        target_file = target_dir / relative
+        try:
+            if target_file.is_file() and target_file.stat().st_size == source_file.stat().st_size:
+                continue
+        except OSError:
+            pass
+        missing.append(relative)
+    return missing
+
+
+def _up_to_date_ignore(source_dir: Path, target_dir: Path) -> Callable[[str, list[str]], list[str]]:
+    """이미 같은 크기로 복사된 파일을 copytree 대상에서 제외하는 ignore 콜백."""
+
+    def ignore(directory: str, names: list[str]) -> list[str]:
+        skipped: list[str] = []
+        for name in names:
+            source_file = Path(directory) / name
+            if not source_file.is_file():
+                continue
+            relative = source_file.relative_to(source_dir)
+            target_file = target_dir / relative
+            try:
+                if (
+                    target_file.is_file()
+                    and target_file.stat().st_size == source_file.stat().st_size
+                ):
+                    skipped.append(name)
+            except OSError:
+                continue
+        return skipped
+
+    return ignore
+
+
+def check_or_prepare_sources(
+    worktree: Path,
+    repo: Path,
+    check: bool,
+    enabled: bool = True,
+) -> tuple[bool, str]:
+    """5단계: 주 저장소의 원문 사본 디렉터리를 워크트리의 같은 경로로 복사.
+
+    data/sources/qualification/files 는 gitignore 대상이라 git worktree 에 딸려오지
+    않습니다. 심볼릭 링크는 크로스 플랫폼 문제로 쓰지 않고 실제 파일을 복사하며,
+    크기가 같은 파일은 다시 쓰지 않아 반복 실행을 빠르게 유지합니다.
+    """
+    if not enabled:
+        return True, "[원문] --with-sources 미지정 (건너뜀)"
+
+    resolved_wt = worktree.resolve()
+    resolved_repo = repo.resolve()
+    if resolved_wt == resolved_repo:
+        return True, "[원문] 워크트리가 주 저장소와 같아 복사 생략 (건너뜀)"
+
+    source_dir = resolved_repo / SOURCES_RELATIVE_DIR
+    target_dir = resolved_wt / SOURCES_RELATIVE_DIR
+    if not source_dir.is_dir():
+        return True, f"[원문] 주 저장소에 원문 디렉터리가 없음 (건너뜀): {source_dir}"
+
+    missing = missing_source_files(source_dir, target_dir)
+    if not missing:
+        return True, f"[원문] 이미 준비됨: {target_dir}"
+    if check:
+        return False, f"[원문] 미준비: 원문 {len(missing)}개 파일 누락 ({target_dir})"
+
+    try:
+        shutil.copytree(
+            source_dir,
+            target_dir,
+            dirs_exist_ok=True,
+            ignore=_up_to_date_ignore(source_dir, target_dir),
+        )
+    except OSError as exc:
+        return False, f"[원문] 복사 실패: {exc}"
+    return True, f"[원문] 복사 완료: {len(missing)}개 파일 -> {target_dir}"
+
+
 def prepare_worktree(
     worktree_path: Path,
     main_repo_path: Path | None = None,
     capsule_path: Path | str | None = None,
     check: bool = False,
+    with_sources: bool = False,
 ) -> int:
     """워크트리 준비 전체 파이프라인을 실행합니다."""
     wt = worktree_path.resolve()
@@ -376,6 +468,7 @@ def prepare_worktree(
         check_or_prepare_trust(wt, check),
         check_or_prepare_pre_commit(wt, repo, check),
         check_or_prepare_capsule(wt, capsule_path, check),
+        check_or_prepare_sources(wt, repo, check, with_sources),
     ]
 
     all_passed = True
@@ -389,7 +482,11 @@ def prepare_worktree(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="워커 워크트리 준비 도구 (최소 .env 생성, Antigravity 신뢰 등록, pre-commit 훅 설치, Capsule 설정)"
+        description=(
+            "워커 워크트리 준비 도구 "
+            "(최소 .env 생성, Antigravity 신뢰 등록, pre-commit 훅 설치, "
+            "Capsule 설정, 원문 사본 복사)"
+        )
     )
     parser.add_argument("worktree", type=Path, help="준비할 워크트리 경로")
     parser.add_argument(
@@ -417,11 +514,20 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="상태를 변경하지 않고 준비 여부만 검사 (미준비 시 종료 코드 1)",
     )
+    parser.add_argument(
+        "--with-sources",
+        action="store_true",
+        help="주 저장소의 원문 사본 디렉터리(data/sources/qualification/files)를 워크트리로 복사",
+    )
 
     args = parser.parse_args(argv)
     explicit_repo = args.repo_opt or args.repo
     return prepare_worktree(
-        args.worktree, explicit_repo, capsule_path=args.capsule, check=args.check
+        args.worktree,
+        explicit_repo,
+        capsule_path=args.capsule,
+        check=args.check,
+        with_sources=args.with_sources,
     )
 
 
