@@ -262,6 +262,9 @@ def test_predecessor_rules_declare_supersede_window() -> None:
         PREDECESSOR_LAND_TRANSPORT_ID,
         GWANGJU_PREDECESSOR_WASTE_ID,
         GWANGJU_PREDECESSOR_LAND_TRANSPORT_ID,
+        # 2026-11-15 광주광역시 구판 별표 1-2 소프트웨어용역(자치구·본청) 규칙.
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_2",
+        "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_2_METRO_SW",
         *metro_windows,
         *daejeon_windows,
         *gb_windows,
