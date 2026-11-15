@@ -304,12 +304,35 @@ def is_pps_cited_local_institution(institution_code: str | None) -> bool:
     return code in PPS_CITED_LOCAL_INSTITUTION_CODES
 
 
+def is_national_school(
+    institution: G2BDemandInstitution | dict[str, Any] | None,
+) -> bool:
+    """수요기관이 국립 학교(초등학교·중학교·고등학교·특수학교·유치원)인지 판정합니다.
+
+    국립 학교는 국가기관이므로 지방계약 교육 계열(is_education_institution)과 달리
+    국가계약(조달청) 기준으로 판정합니다.
+    """
+    if institution is None:
+        return False
+    large = (
+        _institution_value(institution, "instt_ty_lrgclsfc_nm", "insttTyCdLrgclsfcNm") or ""
+    ).strip()
+    small = (
+        _institution_value(institution, "instt_ty_smlclsfc_nm", "insttTyCdSmlclsfcNm") or ""
+    ).strip()
+    return large in {"초등학교", "중학교", "고등학교", "특수학교", "유치원"} and small == "국립"
+
+
 def classify_contract_regime(
     institution: G2BDemandInstitution | dict[str, Any] | None,
 ) -> str | None:
     if institution is None:
         return None
     jurisdiction = _institution_value(institution, "jrsdctn_div_nm", "jrsdctnDivNm")
+    if is_national_school(institution) and jurisdiction is not None:
+        # 국립 학교는 국가기관입니다. 소관구분이 지방자치단체로 적혀 있어도 국가계약으로
+        # 판정합니다. 소관구분이 비어 있는 기준정보는 종전처럼 미상(None)으로 둡니다.
+        return "NATIONAL"
     if is_education_institution(institution):
         return "LOCAL"
     if jurisdiction in {"지방자치단체", "지방공기업"}:

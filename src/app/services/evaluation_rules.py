@@ -2103,6 +2103,8 @@ _METHOD_SERVICE_MARKERS: tuple[tuple[str, str], ...] = (
 _PROCUREMENT_SERVICE_MARKERS: tuple[tuple[str, str], ...] = (
     ("폐기물", "WASTE"),
     ("소프트웨어", "SW"),
+    ("학술연구", "ACADEMIC"),
+    ("임대", "LEASE"),
 )
 _PROCUREMENT_CLASS_KEYS = (
     "pubPrcrmntLrgClsfcNm",
@@ -2476,6 +2478,23 @@ def _select_local_rule(
         basis = "USER_SELECTION"
     else:
         service_type, basis, _ = resolve_local_service_type(raw_data, method_name)
+        if (
+            service_type == "ACADEMIC"
+            and basis == "PROCUREMENT_CLASS"
+            and not _is_band_only_method(method_name)
+            and select_mois_academic_band_rule(method_name, raw_data) is not None
+        ):
+            # 행안부 예규 학술연구 띠 규칙이 이미 적용되는 낙찰방법명 표기는 종전 판정을
+            # 유지합니다. 조달분류 학술연구 표지만으로 세부유형을 앞당겨 확정하면 이
+            # 공고들의 적용 규칙이 행안부 띠에서 시·도 일반 별표로 바뀝니다.
+            service_type, basis = "GENERAL", "UNRESOLVED"
+        if basis == "PROCUREMENT_CLASS" and service_type in {"ACADEMIC", "LEASE"}:
+            has_own_rule = any(rule.service_type == service_type for rule in region_rules)
+            has_general_rule = any(rule.service_type == "GENERAL" for rule in region_rules)
+            if not has_own_rule and not has_general_rule:
+                # 새 표지로 계산할 별표가 없는 지역은 종전 UNRESOLVED 판정을 유지해
+                # 차단 코드(LOCAL_SERVICE_TYPE_UNRESOLVED 등)를 바꾸지 않습니다.
+                service_type, basis = "GENERAL", "UNRESOLVED"
 
     if basis == "UNRESOLVED":
         general = [rule for rule in region_rules if rule.service_type == "GENERAL"]
