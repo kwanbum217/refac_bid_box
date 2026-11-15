@@ -21,7 +21,7 @@ from src.app.services.evaluation_rules import (
 
 MOIS_APP_STD = "지방자치단체 입찰시 낙찰자 결정기준"
 PPS_APP_STD = "조달청 기술용역 적격심사 세부기준"
-INSTITUTION_APP_STD = "한국지역난방공사 기술용역 적격심사 세부기준"
+INSTITUTION_APP_STD = "한국도로공사 기술용역 적격심사 세부기준"
 METHOD_NAME = "적격심사제-추정가격이 10억원 미만 5억원 이상인 P.Q 대상 기술용역의 평가기준"
 
 
