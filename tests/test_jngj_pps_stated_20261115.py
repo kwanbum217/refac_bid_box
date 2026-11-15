@@ -6,8 +6,10 @@
   조달청 일반용역 적격심사 세부기준을 명시하며, 조달청 매칭 결과가 있는 공고는
   조달청 별표로 계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다.
 - 수요기관명이 통합 명칭으로 시작하면 지역 축이 옛 계열 코드(46·29)로 남아 있어도 같다.
+- 같은 세부유형의 지침 별표가 있어도 공고가 조달청 기준을 명시하면 조달청 별표로
+  계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다(사용자 결정, 2026-11-15).
 - 명시 기준이 없거나 다른 값이면 종전처럼 차단하고, 시행일 이전 공고·다른 지역·
-  지침 자체 별표가 있는 유형·건설폐기물 띠 표기 공고는 가로채지 않는다.
+  건설폐기물 띠 표기 공고는 가로채지 않는다.
 
 DB·Redis·.env 를 쓰지 않습니다.
 """
@@ -37,6 +39,7 @@ PPS_REPAIR_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_15"
 PPS_REPAIR_OVER_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_16"
 PPS_LEASE_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_17"
 PPS_INSURANCE_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_02"
+PPS_WASTE_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_08"
 JNGJ_WASTE_RULE_ID = "SERVC_LOCAL_JNGJ_20260716_ATTACH_03"
 
 STATED_PPS = "조달청 일반용역 적격심사 세부기준"
@@ -209,13 +212,30 @@ def test_other_region_stays_blocked() -> None:
     assert JNGJ_STATED_PPS_WARNING not in result.warnings
 
 
-def test_own_annex_type_is_not_intercepted() -> None:
+def test_stated_pps_uses_pps_rule_even_with_own_annex_type() -> None:
+    """지침에 같은 세부유형 별표가 있어도 공고 명시 조달청 기준을 우선합니다."""
     result = _resolve(
         method=WASTE_METHOD,
         announced="2026-08-01 10:00:00",
         institution_name="전남광주통합특별시 화순군",
         institution_code="5890000",
         price="163636364",
+    )
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == PPS_WASTE_RULE_ID
+    assert JNGJ_STATED_PPS_WARNING in result.warnings
+
+
+def test_missing_stated_standard_keeps_own_annex_type() -> None:
+    """공고 명시가 없으면 지침 자체 별표를 그대로 씁니다."""
+    result = _resolve(
+        method=WASTE_METHOD,
+        announced="2026-08-01 10:00:00",
+        institution_name="전남광주통합특별시 화순군",
+        institution_code="5890000",
+        price="163636364",
+        app_std=None,
     )
     assert result.is_blocked is False
     assert result.rule is not None

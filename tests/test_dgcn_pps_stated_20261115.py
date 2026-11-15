@@ -5,7 +5,10 @@
   LOCAL_RULE_NOT_FOUND 로 끝나고, 공고의 낙찰방법 적용 기준(sucsfbidMthdAppStd)이
   조달청 일반용역 적격심사 세부기준을 명시하며, 조달청 매칭 결과가 있는 공고는
   조달청 별표로 계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다.
-- 명시 기준이 없거나 다른 값이면 종전처럼 차단하고, 다른 지역은 가로채지 않는다.
+- 같은 세부유형의 시·도 별표가 있어도 공고가 조달청 기준을 명시하면 조달청 별표로
+  계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다(사용자 결정, 2026-11-15).
+- 명시 기준이 없거나 다른 값이면 종전처럼 차단하고, 공고 명시가 없는 다른 지역 공고는
+  시·도 자체 별표를 유지한다.
 - 대구 예규 제238호(2026-05-11 시행)·충남 공고 제2026-1235호(2026-07-13 시행) 이후
   공고도 같은 근거로 계산합니다(사용자 결정, 2026-11-15).
 
@@ -230,7 +233,8 @@ def test_other_region_stays_blocked() -> None:
     assert JNGJ_STATED_PPS_WARNING not in result.warnings
 
 
-def test_other_region_keeps_own_local_rule() -> None:
+def test_other_region_stated_pps_uses_pps_rule() -> None:
+    """공고 명시 조달청 기준은 다른 지역의 같은 세부유형 별표보다 우선합니다."""
     result = _resolve(
         method=INSURANCE_UNDER_METHOD,
         announced="2026-02-27 10:00:00",
@@ -238,6 +242,23 @@ def test_other_region_keeps_own_local_rule() -> None:
         institution_code="6110000",
         region_code="11",
         region_name="서울특별시",
+    )
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == PPS_INSURANCE_RULE_ID
+    assert JNGJ_STATED_PPS_WARNING in result.warnings
+
+
+def test_other_region_without_stated_standard_keeps_local_rule() -> None:
+    """공고 명시가 없으면 다른 지역의 자체 별표를 그대로 씁니다."""
+    result = _resolve(
+        method=INSURANCE_UNDER_METHOD,
+        announced="2026-02-27 10:00:00",
+        institution_name="서울특별시",
+        institution_code="6110000",
+        region_code="11",
+        region_name="서울특별시",
+        app_std=None,
     )
     assert result.is_blocked is False
     assert result.rule is not None
