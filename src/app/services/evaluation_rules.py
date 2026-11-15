@@ -3108,6 +3108,63 @@ def _is_jngj_pps_stated_announcement(
     return _JNGJ_PPS_STATED_MARKER in stated
 
 
+# 대구광역시 예규 제238호(2026-05-11 시행)와 충청남도 공고 제2026-1235호(2026-07-13 시행)
+# 이전 판본에는 보험·수요기관 지정형 별표가 없고 준용 조항도 조달청을 지목하지 않습니다.
+# 구판 적용 구간은 해당 시·도 구판 규칙의 effective_date·superseded_date 로 선언돼 있으므로
+# 값을 따로 적지 않습니다. 경고는 통합특별시 분기와 같은 JNGJ_STATED_PPS_WARNING 문구를
+# 공유합니다.
+_DGCN_LEGACY_LOCAL_RULE_PREFIXES: dict[str, str] = {
+    "27": "SERVC_LOCAL_DAEGU_",
+    "44": "SERVC_LOCAL_CHUNGNAM_",
+}
+
+
+def _local_legacy_window(prefix: str) -> tuple[date, date] | None:
+    """시·도 구판 규칙 선언에서 (구판 시행일, 현행 판본 시행일) 구간을 뽑습니다."""
+    effective_dates: list[date] = []
+    superseded_dates: list[date] = []
+    for rule in LOCAL_RULES:
+        if not rule.rule_id.startswith(prefix) or rule.superseded_date is None:
+            continue
+        effective_dates.append(date.fromisoformat(rule.effective_date))
+        superseded_dates.append(date.fromisoformat(rule.superseded_date))
+    if not effective_dates:
+        return None
+    return min(effective_dates), max(superseded_dates)
+
+
+_DGCN_LEGACY_WINDOWS: dict[str, tuple[date, date]] = {
+    code: window
+    for code, prefix in _DGCN_LEGACY_LOCAL_RULE_PREFIXES.items()
+    if (window := _local_legacy_window(prefix)) is not None
+}
+
+
+def _is_dgcn_legacy_pps_stated_announcement(
+    region_code: str | None,
+    announced: date | None,
+    raw_data: dict[str, Any] | None,
+) -> bool:
+    """대구·충남 구판 적용 공고가 적용 기준을 조달청 기준으로 명시했는지 판정합니다.
+
+    대구 예규 제223호와 충남 공고 제2019-2047호 판에는 보험·수요기관 지정형 별표가 없고
+    준용 조항도 조달청을 지목하지 않으므로, 공고의 낙찰방법 적용 기준
+    (sucsfbidMthdAppStd)에 조달청 일반용역 적격심사 세부기준이 적힌 경우만 참입니다.
+    해당 유형 자체 별표가 있는 공고는 호출부의 LOCAL_RULE_NOT_FOUND 조건이 가릅니다.
+    """
+    if announced is None:
+        return False
+    window = _DGCN_LEGACY_WINDOWS.get((region_code or "").strip())
+    if window is None:
+        return False
+    start, end = window
+    if not start <= announced < end:
+        return False
+    data = raw_data if isinstance(raw_data, dict) else {}
+    stated = re.sub(r"\s+", "", str(data.get("sucsfbidMthdAppStd") or ""))
+    return _JNGJ_PPS_STATED_MARKER in stated
+
+
 # 조달청 일반용역 '추정가격 2억원 미만' 띠의 표 이름입니다. 전남 일반용역 2억미만
 # 공고는 전남 자체 GENERAL 별표가 없어 이 띠를 조달청 기준으로 준용합니다(D24).
 _PPS_UNDER_2E_TABLE_NAME = "추정가격 2억원 미만인 용역"
@@ -3715,6 +3772,12 @@ def resolve_evaluation_rule(
       제1항 단서가 별표 1~6 에 없는 용역의 평가기준을 공고에 명시해 달리 정할 수 있게
       하므로 근거는 지침 조항이 아니라 공고 명시입니다. 건설폐기물 띠 표기 공고는
       제외하고, 조달청 기준으로 풀린 결과에만 경고(JNGJ_STATED_PPS_WARNING)를 붙입니다.
+    - 대구광역시 예규 제223호·충청남도 공고 제2019-2047호 적용 구간(각 현행 판본 시행일
+      이전) 공고 가운데 해당 시·도 규칙에 유형 별표가 없어 LOCAL_RULE_NOT_FOUND 로 끝나고,
+      공고의 낙찰방법 적용 기준(sucsfbidMthdAppStd)이 조달청 일반용역 적격심사 세부기준을
+      명시하며, 조달청 매칭 결과가 있는 공고도 같은 방식으로 조달청 별표로 계산합니다.
+      두 판본 모두 해당 유형 별표가 없고 준용 조항이 조달청을 지목하지 않으므로 근거는
+      공고 명시이며, 조달청 기준으로 풀린 결과에만 같은 경고를 붙입니다.
     - 수요기관 코드가 demand_institutions.PPS_CITED_LOCAL_INSTITUTION_CODES 에 들면
       contract_regime == "LOCAL" 이고 시·도 매핑이 있어도 시·도 규칙 후보를 만들지
       않고 조달청 매칭 결과를 씁니다. 공고문이 조달청 일반용역 적격심사 세부기준을
@@ -3998,6 +4061,29 @@ def resolve_evaluation_rule(
                 # 기준을 조달청 일반용역 적격심사 세부기준으로 명시한 공고는, 지침 제4조
                 # 제1항 단서의 공고 명시를 근거로 조달청 매칭 결과로 계산합니다. 조달청
                 # 매칭 결과가 없는 공고와 건설폐기물 띠 표기 공고는 종전 차단을 유지합니다.
+                result, scope_stage = _narrow_rule_scope(
+                    result,
+                    method_name=pps_method_name,
+                    allocated_rules=allocated_rules,
+                    institution_code=institution_code,
+                    institution_name=institution_name,
+                    region_code=region_code,
+                    region_name=region_name,
+                    contract_regime=contract_regime,
+                )
+                if result.rule is not None:
+                    result = replace(result, warnings=[*result.warnings, JNGJ_STATED_PPS_WARNING])
+            elif (
+                local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+                and result.rule is not None
+                and _is_dgcn_legacy_pps_stated_announcement(region_code, announced, raw_data)
+                and select_moe_cdw_rule(method_name) is None
+            ):
+                # 대구 예규 제223호와 충남 공고 제2019-2047호 판에는 보험·수요기관 지정형
+                # 별표가 없고 준용 조항도 조달청을 지목하지 않습니다. 공고가 적용 기준을
+                # 조달청 일반용역 적격심사 세부기준으로 명시한 공고만 통합특별시와 같은
+                # 공고 명시 근거로 조달청 매칭 결과를 씁니다. 개정 후 판본 적용 공고와
+                # 조달청 매칭 결과가 없는 공고는 종전 차단을 유지합니다.
                 result, scope_stage = _narrow_rule_scope(
                     result,
                     method_name=pps_method_name,
