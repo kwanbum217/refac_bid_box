@@ -1232,6 +1232,22 @@ MOIS_TECH_BASE_RATE_WARNING = (
     "기준비율 88/100을 적용했습니다."
 )
 
+# 수요기관 자체 기술용역 적격심사 세부기준을 명시한 공고는 해당 판본의 기준비율을 씁니다.
+# 한국지역난방공사 2026-01-01 판 기준비율 88/100:
+# data/sources/qualification/files/kdhc/5511b7e2c6e6_기술용역적격심사세부기준(개정전문)(2026.01.01).lines.txt:75
+# 2026-08-18 판은 90/100(:78)이라 현행 규칙 값과 같아 바꾸지 않습니다.
+# 인천국제공항공사 재무처-8933호 기준비율 88/100:
+# data/sources/qualification/files/iiac/9ae88bc02e11_기술용역적격심사세부기준(재무처-8933).lines.txt:64
+KDHC_TECH_APP_STD_MARKER = "한국지역난방공사기술용역적격심사세부기준"
+IIAC_TECH_APP_STD_MARKER = "인천국제공항공사기술용역적격심사세부기준"
+KDHC_TECH_20260101_EFFECTIVE_DATE = date(2026, 1, 1)
+KDHC_TECH_20260818_EFFECTIVE_DATE = date(2026, 8, 18)
+IIAC_TECH_20230724_EFFECTIVE_DATE = date(2023, 7, 24)
+INST_TECH_BASE_RATE_WARNING = (
+    "공고가 수요기관 자체 기술용역 적격심사 세부기준을 명시해 해당 판본의 "
+    "기준비율 88/100을 적용했습니다."
+)
+
 # 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 제1~4호.
 # 낙찰방법명에 추정가격 띠만 적힌 폐기물처리용역 적격심사 공고가 이 기준으로 계산되게 합니다.
 # 값은 환경부고시 제2024-287호(시행 2025-01-02)·제2025-165호(시행 2025-10-07) 원문에서
@@ -3873,6 +3889,30 @@ def resolve_evaluation_rule(
             result,
             base_rate=Decimal("0.88"),
             warnings=[*result.warnings, MOIS_TECH_BASE_RATE_WARNING],
+        )
+    elif (
+        result.rule is not None
+        and result.rule.rule_id == SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT.rule_id
+        and announced is not None
+        and (
+            (
+                app_std == KDHC_TECH_APP_STD_MARKER
+                and KDHC_TECH_20260101_EFFECTIVE_DATE
+                <= announced
+                < KDHC_TECH_20260818_EFFECTIVE_DATE
+            )
+            or (
+                app_std == IIAC_TECH_APP_STD_MARKER
+                and announced >= IIAC_TECH_20230724_EFFECTIVE_DATE
+            )
+        )
+    ):
+        # 수요기관 자체 기술용역 기준을 명시한 공고도 규칙 선택은 조달청 현행 판본 그대로
+        # 두고, 공고일이 속한 기관 원문 판본의 기준비율만 채웁니다.
+        result = replace(
+            result,
+            base_rate=Decimal("0.88"),
+            warnings=[*result.warnings, INST_TECH_BASE_RATE_WARNING],
         )
     scope_stage: str | None = None
     institution_selected: EvaluationRule | None = None
