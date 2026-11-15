@@ -2908,24 +2908,6 @@ JEONNAM_PPS_FALLBACK_WARNING = (
     "해당 별표가 없는 유형은 조달청 일반용역 적격심사 세부기준을 준용했습니다."
 )
 
-# 전남광주통합특별시 세부지침(예규 제3호, 시행 2026-07-16)과 광주광역시 세부기준
-# (예규 제377호, 2026-07-16 폐지)도 같은 방식으로 정하지 않은 사항을 조달청 기준에
-# 따르도록 준용합니다. 자체 별표가 없는 유형만 조달청 매칭 결과로 계산하고, 각 예규가
-# 효력을 갖는 기간의 공고에만 인용합니다.
-JNGJ_PPS_FALLBACK_WARNING = (
-    "전남광주통합특별시 일반용역 적격심사 세부지침(예규 제3호)의 준용 조항에 따라 "
-    "해당 별표가 없는 유형은 조달청 일반용역 적격심사 세부기준을 준용했습니다."
-)
-GWANGJU_PPS_FALLBACK_WARNING = (
-    "광주광역시 일반용역 적격심사 세부 기준(예규 제377호)의 준용 조항에 따라 "
-    "해당 별표가 없는 유형은 조달청 일반용역 적격심사 세부기준을 준용했습니다."
-)
-
-# 광주광역시 예규 제377호에서 자체 별표가 없는 것으로 원문 확인된 세부유형입니다.
-# 소프트웨어용역은 같은 예규의 별표 1-1~1-6 가운데 자체 별표가 있을 수 있어 준용하지
-# 않고, 규칙 등록 전까지 종전 차단을 유지합니다.
-_GWANGJU_PPS_FALLBACK_SERVICE_TYPES = frozenset({"INSURANCE"})
-
 # 지방공사·지방공단은 지방공기업법상 법인이고 대한적십자사는 대한적십자사조직법상
 # 법인이라 지방계약법 제2조의 적용 주체인 "지방자치단체"가 아닙니다. 시·도 매핑이 없어
 # 시·도 규칙을 고르지 못한 공고를 공고문이 인용한 조달청 기본 규칙으로 풀 때 붙입니다.
@@ -3025,100 +3007,6 @@ def _is_jeonnam_local_announcement(
     code = (region_code or "").strip()
     name = re.sub(r"\s+", "", region_name or "")
     return code in _JEONNAM_REGION_CODES or name in _JEONNAM_REGION_NAMES
-
-
-# 전남광주통합특별시 규칙의 지역 축과 효력 구간은 규칙 선언에서 유도합니다. 준용 분기는
-# 통합 명칭으로 지역이 잡히는 region 12 공고만 대상으로 합니다. 옛 계열 코드(46·29)는
-# 각 계열 예규의 준용 분기(전남·광주)가 따로 처리하므로 여기서 넓히지 않습니다.
-_JNGJ_LOCAL_RULE_PREFIX = "SERVC_LOCAL_JNGJ_"
-_JNGJ_LOCAL_RULES = tuple(
-    rule for rule in LOCAL_RULES if rule.rule_id.startswith(_JNGJ_LOCAL_RULE_PREFIX)
-)
-_JNGJ_REGION_CODES = frozenset(
-    code for rule in _JNGJ_LOCAL_RULES if (code := rule.region_code) is not None
-)
-_JNGJ_REGION_NAMES = frozenset(
-    re.sub(r"\s+", "", name) for rule in _JNGJ_LOCAL_RULES if (name := rule.region_name) is not None
-)
-JNGJ_LOCAL_RULE_EFFECTIVE_DATE = min(
-    date.fromisoformat(rule.effective_date) for rule in _JNGJ_LOCAL_RULES
-)
-JNGJ_LOCAL_RULE_SUPERSEDED_DATE = min(
-    (
-        date.fromisoformat(rule.superseded_date)
-        for rule in _JNGJ_LOCAL_RULES
-        if rule.superseded_date is not None
-    ),
-    default=None,
-)
-
-_GWANGJU_LOCAL_RULE_PREFIX = "SERVC_LOCAL_GWANGJU_"
-_GWANGJU_LOCAL_RULES = tuple(
-    rule for rule in LOCAL_RULES if rule.rule_id.startswith(_GWANGJU_LOCAL_RULE_PREFIX)
-)
-_GWANGJU_REGION_CODES = frozenset(
-    code for rule in _GWANGJU_LOCAL_RULES if (code := rule.region_code) is not None
-)
-_GWANGJU_REGION_NAMES = frozenset(
-    {
-        re.sub(r"\s+", "", name)
-        for rule in _GWANGJU_LOCAL_RULES
-        if (name := rule.region_name) is not None
-    }
-)
-# 광주광역시 규칙은 같은 예규의 판본(지역제한 금액 경계 3.3억/3.5억)이 함께 등록돼
-# 있어 폐지일은 판본별 superseded_date 가운데 가장 늦은 값입니다.
-GWANGJU_LOCAL_RULE_SUPERSEDED_DATE = max(
-    (
-        date.fromisoformat(rule.superseded_date)
-        for rule in _GWANGJU_LOCAL_RULES
-        if rule.superseded_date is not None
-    ),
-    default=None,
-)
-
-
-def _is_jngj_local_announcement(
-    region_code: str | None, region_name: str | None, announced: date | None
-) -> bool:
-    """전남광주통합특별시 세부지침(예규 제3호)이 적용되는 공고인지 판정합니다.
-
-    공고일이 지침 시행일 이후이고 후속 지침으로 대체되기 전일 때만 참입니다.
-    지역 축은 _select_local_rule 에 넘기는 region_code/region_name 그대로 보며,
-    통합 지침은 옛 계열(전라남도·광주광역시) 코드도 대체하므로 함께 인정합니다.
-    """
-    if announced is None or announced < JNGJ_LOCAL_RULE_EFFECTIVE_DATE:
-        return False
-    if JNGJ_LOCAL_RULE_SUPERSEDED_DATE is not None and announced >= JNGJ_LOCAL_RULE_SUPERSEDED_DATE:
-        return False
-    code = (region_code or "").strip()
-    name = re.sub(r"\s+", "", region_name or "")
-    return code in _JNGJ_REGION_CODES or name in _JNGJ_REGION_NAMES
-
-
-def _is_gwangju_local_announcement(
-    region_code: str | None,
-    region_name: str | None,
-    announced: date | None,
-    institution_name: str | None,
-) -> bool:
-    """광주광역시 세부기준(예규 제377호)이 적용되는 공고인지 판정합니다.
-
-    폐지일(2026-07-16) 이전 공고만 대상으로 합니다. 통합 명칭 때문에 지역 코드가
-    12 로 잡힌 공고는 수요기관명으로 옛 계열(광주광역시 29)을 확인합니다.
-    """
-    if announced is None or GWANGJU_LOCAL_RULE_SUPERSEDED_DATE is None:
-        return False
-    if announced >= GWANGJU_LOCAL_RULE_SUPERSEDED_DATE:
-        return False
-    code = (region_code or "").strip()
-    name = re.sub(r"\s+", "", region_name or "")
-    if code in _GWANGJU_REGION_CODES or name in _GWANGJU_REGION_NAMES:
-        return True
-    if code != MERGED_REGION_CODE and name != "전남광주통합특별시":
-        return False
-    legacy = _legacy_merged_institution_code(institution_name)
-    return legacy is not None and legacy[0] in _GWANGJU_REGION_CODES
 
 
 # 조달청 일반용역 '추정가격 2억원 미만' 띠의 표 이름입니다. 전남 일반용역 2억미만
@@ -3760,10 +3648,6 @@ def resolve_evaluation_rule(
       공고는 다른 구간 규칙으로 근사하지 않고 RULE_NOT_FOUND 로 차단합니다(D17).
     - 전남 지역의 '추정가격 2억미만 1억이상' 띠 표기 공고는 조달분류가 학술연구 계열이
       아닐 때 조달청 일반용역 '추정가격 2억원 미만인 용역' 규칙으로 준용합니다(D24).
-    - 전남광주통합특별시(예규 제3호, 시행 2026-07-16)와 광주광역시(예규 제377호,
-      2026-07-16 폐지)의 준용 조항에 따라, 그 예규에 자체 별표가 없는 유형의
-      LOCAL_RULE_NOT_FOUND 공고는 조달청 매칭 결과로 계산하고 경고를 붙입니다.
-      광주광역시 분기는 폐지일 이전 공고만, 통합 분기는 시행일 이후 공고만 대상입니다.
     - '추정가격 2억미만 1억이상' 띠는 조달분류가 학술연구 계열이면 행안부 예규
       제2장의2 [별표 4] 학술연구용역 해당 열로 확정합니다. attachment_regime 이 없어도
       됩니다(D25).
@@ -3993,60 +3877,6 @@ def resolve_evaluation_rule(
                 if result.rule is not None:
                     result = replace(
                         result, warnings=[*result.warnings, JEONNAM_PPS_FALLBACK_WARNING]
-                    )
-            elif (
-                local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-                and result.rule is not None
-                and _is_jngj_local_announcement(region_code, region_name, announced)
-                and select_moe_cdw_rule(method_name) is None
-            ):
-                # 전남광주통합특별시 예규 제3호의 준용 조항으로, 통합 지침에 자체 별표가
-                # 없는 유형만 조달청 매칭 결과로 계산합니다. 건설폐기물 띠 표기 공고는 뒤의
-                # 환경부고시 경로가 처리하므로 전남 분기와 같게 여기서 가로채지 않습니다.
-                if result.rule is not None:
-                    result, scope_stage = _narrow_rule_scope(
-                        result,
-                        method_name=pps_method_name,
-                        allocated_rules=allocated_rules,
-                        institution_code=institution_code,
-                        institution_name=institution_name,
-                        region_code=region_code,
-                        region_name=region_name,
-                        contract_regime=contract_regime,
-                    )
-                if result.rule is not None:
-                    result = replace(result, warnings=[*result.warnings, JNGJ_PPS_FALLBACK_WARNING])
-            elif (
-                local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-                and result.rule is not None
-                and _is_gwangju_local_announcement(
-                    region_code,
-                    region_name,
-                    announced,
-                    institution_name or announcement_institution_name,
-                )
-                and resolve_local_service_type(raw_data, method_name)[0]
-                in _GWANGJU_PPS_FALLBACK_SERVICE_TYPES
-                and select_moe_cdw_rule(method_name) is None
-            ):
-                # 광주광역시 예규 제377호의 준용 조항으로, 폐지일 이전 공고 가운데 자체
-                # 별표가 없는 것으로 원문 확인된 유형만 조달청 매칭 결과로 계산합니다.
-                # 자체 별표가 있을 수 있는 유형(소프트웨어용역)은 가로채지 않습니다.
-                # 건설폐기물 띠 표기 공고는 전남·통합 분기와 같게 여기서 가로채지 않습니다.
-                if result.rule is not None:
-                    result, scope_stage = _narrow_rule_scope(
-                        result,
-                        method_name=pps_method_name,
-                        allocated_rules=allocated_rules,
-                        institution_code=institution_code,
-                        institution_name=institution_name,
-                        region_code=region_code,
-                        region_name=region_name,
-                        contract_regime=contract_regime,
-                    )
-                if result.rule is not None:
-                    result = replace(
-                        result, warnings=[*result.warnings, GWANGJU_PPS_FALLBACK_WARNING]
                     )
             else:
                 result = replace(

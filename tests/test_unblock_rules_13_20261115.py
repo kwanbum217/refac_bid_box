@@ -1,12 +1,8 @@
 """정량평가 산식 판정 차단 용역 공고 보완 시험.
 
-정본: .orca/capsules/task_unblock_rules_13_20261115/capsule.yaml
 - 조달분류 표지에 학술연구(ACADEMIC)·임대(LEASE)를 더하고, 지역에 해당 별표가 없으면
   기존 GENERAL 폴백으로 계산한다.
 - 국립 학교는 국가기관이므로 국가계약(조달청) 기준으로 판정한다.
-- 전남광주통합특별시 예규 제3호(시행 2026-07-16)와 광주광역시 예규 제377호
-  (2026-07-16 폐지)의 준용 조항에 따라, 자체 별표가 없는 유형만 조달청 규칙으로 계산한다.
-- 위 보완은 해당 예규의 효력 기간과 LOCAL_RULE_NOT_FOUND 차단에만 적용한다.
 
 DB·.env 에 연결하지 않습니다.
 """
@@ -22,10 +18,7 @@ from src.app.services.demand_institutions import (
 )
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
-    GWANGJU_PPS_FALLBACK_WARNING,
     JEONNAM_PPS_FALLBACK_WARNING,
-    JNGJ_PPS_FALLBACK_WARNING,
-    MOE_CDW_WARNING,
     RULE_SCOPE_ALL,
     RULE_SCOPE_REGION,
     resolve_evaluation_rule_from_raw_data,
@@ -35,24 +28,10 @@ from src.app.services.evaluation_rules import (
 METHOD_BAND_2E = "적격심사제-추정가격 2억미만 1억이상"
 METHOD_BAND_2E_NAME = "적격심사제-추정가격 2억원 미만인 용역"
 METHOD_REPAIR_UNDER = "적격심사제-수리ㆍ점검용역 적격심사 고시금액 미만"
-METHOD_REPAIR_ABOVE = "적격심사제-수리ㆍ점검용역 적격심사 5억원 미만 고시금액 이상"
-METHOD_LEASE_UNDER = "적격심사제-임대차 적격심사 추정가격 고시금액 미만"
-METHOD_INSURANCE_UNDER = "적격심사제-보험용역 적격심사 추정가격 5억원미만"
-METHOD_SW_NON_SME_UNDER = (
-    "적격심사제-소프트웨어용역(중소기업자간 경쟁제품 비대상) 추정가격 고시금액미만"
-)
-METHOD_SW_NON_SME_ABOVE = (
-    "적격심사제-소프트웨어용역(중소기업자간 경쟁제품 비대상) 적격심사 "
-    "추정가격 5억원 미만-추정가격 고시금액이상"
-)
 METHOD_PASSENGER_UNDER = "적격심사제-여객 육상운송용역 적격심사 추정가격 5억원미만"
-METHOD_WASTE = "적격심사제-폐기물처리용역 적격심사 추정가격 5억원미만"
-METHOD_FACILITY = "적격심사제-시설분야용역 적격심사 추정가격 5억원 이상"
 
 ACADEMIC_CLASS = ("연구조사서비스", "학술연구서비스", "기타연구조사서비스")
 LEASE_CLASS = ("임대*위탁 및 수리서비스", "임대", "사무용기기임대서비스")
-INSURANCE_CLASS = ("여행*숙박*음식*운송 및 보험서비스", "보험서비스", "자동차보험")
-SW_CLASS = ("ICT 서비스", "운영 및 유지관리", "소프트웨어유지및지원서비스")
 
 
 def _raw(
@@ -250,251 +229,7 @@ def test_national_school_passenger_uses_pps_rule() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# (3) 전남광주통합특별시 예규 제3호 준용
-# --------------------------------------------------------------------------- #
-
-
-def test_jngj_repair_uses_pps_rule() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_REPAIR_UNDER,
-            announced="2026-07-20",
-            institution_name="전남광주통합특별시 무안청사",
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-    )
-    assert result.is_blocked is False
-    assert result.rule is not None
-    assert result.rule.rule_id == "SERVC_QUAL_POST_20260526_ATTACH_15"
-    assert result.scope_stage == RULE_SCOPE_ALL
-    assert JNGJ_PPS_FALLBACK_WARNING in result.warnings
-
-
-def test_jngj_lease_uses_pps_rule() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_LEASE_UNDER,
-            announced="2026-08-10",
-            institution_name="전남광주통합특별시교육청 전남광주통합특별시무안교육지원청",
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-        education_institution=True,
-    )
-    assert result.is_blocked is False
-    assert result.rule is not None
-    assert result.rule.rule_id.startswith("SERVC_QUAL_")
-    assert result.rule.service_type == "LEASE"
-    assert result.scope_stage == RULE_SCOPE_ALL
-    assert JNGJ_PPS_FALLBACK_WARNING in result.warnings
-
-
-def test_jngj_insurance_uses_pps_rule() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_INSURANCE_UNDER,
-            announced="2026-09-21",
-            institution_name="전남광주통합특별시 영암군",
-            classes=INSURANCE_CLASS,
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-    )
-    assert result.is_blocked is False
-    assert result.rule is not None
-    assert result.rule.service_type == "INSURANCE"
-    assert result.scope_stage == RULE_SCOPE_ALL
-    assert JNGJ_PPS_FALLBACK_WARNING in result.warnings
-
-
-def test_jngj_pre_effective_announcement_stays_blocked() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_REPAIR_UNDER,
-            announced="2026-07-15",
-            institution_name="전남광주통합특별시 무안청사",
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-    )
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert result.rule is None
-    assert JNGJ_PPS_FALLBACK_WARNING not in result.warnings
-
-
-def test_jngj_legacy_region_code_stays_blocked() -> None:
-    """옛 계열 코드(46)로 지역이 잡힌 공고는 통합 준용 분기가 가로채지 않는다."""
-    result = _resolve(
-        _raw(
-            method=METHOD_REPAIR_UNDER,
-            announced="2026-08-12",
-            institution_name="전남광주통합특별시 신안군",
-        ),
-        region_code="46",
-        region_name="전라남도",
-    )
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert result.rule is None
-    assert JNGJ_PPS_FALLBACK_WARNING not in result.warnings
-
-
-def test_jngj_own_rule_is_not_intercepted() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_FACILITY,
-            announced="2026-08-01",
-            institution_name="전남광주통합특별시 무안청사",
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-    )
-    assert result.is_blocked is False
-    assert result.rule is not None
-    assert result.rule.rule_id == "SERVC_LOCAL_JNGJ_20260716_ATTACH_01"
-    assert result.scope_stage == RULE_SCOPE_REGION
-    assert JNGJ_PPS_FALLBACK_WARNING not in result.warnings
-
-
-def test_jngj_cdw_band_keeps_moe_path() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_BAND_2E_NAME,
-            announced="2026-08-01",
-            institution_name="전남광주통합특별시 무안청사",
-            bid_name="2026년 건설폐기물 처리용역",
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-    )
-    assert result.is_blocked is False
-    assert result.rule is not None
-    assert result.rule.rule_id.startswith("SERVC_QUAL_MOE_CDW_")
-    assert MOE_CDW_WARNING in result.warnings
-    assert JNGJ_PPS_FALLBACK_WARNING not in result.warnings
-
-
-# --------------------------------------------------------------------------- #
-# (4) 광주광역시 예규 제377호 준용
-# --------------------------------------------------------------------------- #
-
-
-def test_gwangju_insurance_uses_pps_rule() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_INSURANCE_UNDER,
-            announced="2026-06-19",
-            institution_name="전남광주통합특별시광산구시설관리공단",
-            classes=INSURANCE_CLASS,
-        ),
-        region_code="29",
-        region_name="광주광역시",
-    )
-    assert result.is_blocked is False
-    assert result.rule is not None
-    assert result.rule.rule_id == "SERVC_QUAL_POST_20260526_ATTACH_02"
-    assert result.scope_stage == RULE_SCOPE_ALL
-    assert GWANGJU_PPS_FALLBACK_WARNING in result.warnings
-
-
-def test_gwangju_legacy_region_from_institution_name_uses_pps_rule() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_INSURANCE_UNDER,
-            announced="2026-04-09",
-            institution_name="전남광주통합특별시 광주청사",
-            classes=INSURANCE_CLASS,
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-    )
-    assert result.is_blocked is False
-    assert result.rule is not None
-    assert result.rule.service_type == "INSURANCE"
-    assert result.scope_stage == RULE_SCOPE_ALL
-    assert GWANGJU_PPS_FALLBACK_WARNING in result.warnings
-
-
-def test_gwangju_after_abolition_stays_blocked() -> None:
-    """폐지일 이후에는 광주 예규 준용 분기를 적용하지 않는다.
-
-    통합 지침 준용 분기는 region 12(통합 명칭) 공고만 대상으로 하므로, 옛 계열 코드로
-    지역이 잡힌 이 공고는 종전 차단을 유지한다.
-    """
-    result = _resolve(
-        _raw(
-            method=METHOD_INSURANCE_UNDER,
-            announced="2026-07-20",
-            institution_name="전남광주통합특별시광산구시설관리공단",
-            classes=INSURANCE_CLASS,
-        ),
-        region_code="29",
-        region_name="광주광역시",
-    )
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert result.rule is None
-    assert GWANGJU_PPS_FALLBACK_WARNING not in result.warnings
-    assert JNGJ_PPS_FALLBACK_WARNING not in result.warnings
-
-
-def test_gwangju_own_rule_is_not_intercepted() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_WASTE,
-            announced="2026-06-01",
-            institution_name="전남광주통합특별시 서구",
-            classes=("환경", "폐기물처리", "생활폐기물"),
-        ),
-        region_code="29",
-        region_name="광주광역시",
-    )
-    assert result.is_blocked is False
-    assert result.rule is not None
-    assert result.rule.rule_id == "SERVC_LOCAL_GWANGJU_20221115_ATTACH_1_3"
-    assert result.scope_stage == RULE_SCOPE_REGION
-    assert GWANGJU_PPS_FALLBACK_WARNING not in result.warnings
-
-
-def test_gwangju_sw_stays_blocked() -> None:
-    """광주 예규에는 소프트웨어 자체 별표가 있을 수 있어 준용하지 않는다."""
-    result = _resolve(
-        _raw(
-            method=METHOD_SW_NON_SME_UNDER,
-            announced="2025-11-21",
-            institution_name="전남광주통합특별시 서구",
-            classes=SW_CLASS,
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-    )
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert result.rule is None
-    assert GWANGJU_PPS_FALLBACK_WARNING not in result.warnings
-
-
-def test_gwangju_sw_legacy_region_stays_blocked() -> None:
-    result = _resolve(
-        _raw(
-            method=METHOD_SW_NON_SME_ABOVE,
-            announced="2026-04-09",
-            institution_name="전남광주통합특별시 광주청사",
-            classes=SW_CLASS,
-        ),
-        region_code="12",
-        region_name="전남광주통합특별시",
-    )
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert result.rule is None
-    assert GWANGJU_PPS_FALLBACK_WARNING not in result.warnings
-
-
-# --------------------------------------------------------------------------- #
-# (5) 대상 밖 지역·차단 코드는 그대로 둔다
+# (3) 대상 밖 지역·차단 코드는 그대로 둔다
 # --------------------------------------------------------------------------- #
 
 
@@ -511,6 +246,4 @@ def test_other_region_keeps_local_rule_not_found() -> None:
     assert result.is_blocked is True
     assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
     assert result.rule is None
-    assert JNGJ_PPS_FALLBACK_WARNING not in result.warnings
-    assert GWANGJU_PPS_FALLBACK_WARNING not in result.warnings
     assert JEONNAM_PPS_FALLBACK_WARNING not in result.warnings
