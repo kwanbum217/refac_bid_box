@@ -252,7 +252,8 @@ def test_request_path_reads_cached_counts(isolated_db, fake_cache, monkeypatch):
 # --------------------------------------------------------------------------- #
 
 
-def test_warm_task_fills_cache_with_long_ttl(isolated_db, fake_cache):
+def test_warm_task_fills_cache_with_long_ttl(isolated_db, fake_cache, monkeypatch):
+    monkeypatch.setattr(home_summary, "kst_now", lambda: BASE_TIME)
     _add(isolated_db, bid_ntce_no="WARM-OPEN")
 
     counts = home_summary.warm_home_summary_cache(isolated_db)
@@ -266,6 +267,7 @@ def test_warm_task_fills_cache_with_long_ttl(isolated_db, fake_cache):
 
 
 def test_warm_schedule_task_returns_counts(isolated_db, fake_cache, monkeypatch):
+    monkeypatch.setattr(home_summary, "kst_now", lambda: BASE_TIME)
     _add(isolated_db, bid_ntce_no="WARM-TASK")
     monkeypatch.setattr(scheduled_tasks, "SessionLocal", lambda: isolated_db)
     monkeypatch.setattr("src.tasks.worker.record_schedule_result", lambda *args, **kwargs: None)
