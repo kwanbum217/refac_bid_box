@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | 1 | 주간 재학습 후보 판정(2026-11-16 월요일) | `docs/design/servc_freshness_retrain_20261114.md` 절차(최신성 쌍대, 운영 쌍대, 승인 후 승격) |
 | 2 | 예비가격 소급 이어서 실행 | `G2B_MAX_CONCURRENT=2 uv run python scripts/backfill_prearng_by_notices.py --since 2026-10-12 --until 2026-10-27 --limit 2000 --execute`. 실패 96건은 다음 실행 후보에 남습니다. 실패가 다시 많으면 동시 요청을 1로 낮춥니다 |
-| 3 | K-EXAONE 2.5 운용 결정 | 2절 시험 결과. 권고는 `auto_selectable` False 유지, 비임계 보조 조사용. 사용자 결정 대기 |
+| 3 | K-EXAONE 2.5 운용 | 결정 완료(2026-11-15 사용자). 비임계 보조 조사(investigator) 전용, `auto_selectable` False 유지. 라우터 `suitable_for` 에서 reviewer 를 뺐습니다 |
 | 4 | Coarena DeepSeek V4.1 Flash 워커 시험 | 등록·probe 만 통과. 이번 세션도 미시험 |
 | 5 | cmd 크레딧 잔량 확인 | 리뷰어 화면에 `Plan: 83% used, 11.9 credits left` 경고. 소진 시 리뷰어 대체가 필요합니다 |
 | 6 | Docker 스택 유지 | 사용자 결정(2026-11-13)대로 worker 를 포함해 내리지 않았습니다 |
