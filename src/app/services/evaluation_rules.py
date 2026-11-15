@@ -1222,10 +1222,21 @@ SERVC_TECH_QUAL_RULE_IDS = frozenset(
     }
 )
 
+# 공고의 낙찰방법 적용 기준(sucsfbidMthdAppStd)이 행안부 예규 「지방자치단체 입찰시
+# 낙찰자 결정기준」을 지목하면, 조달청 현행 판본의 기준비율(90/100) 대신 예규의 88/100 을
+# 씁니다. 근거: data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt
+# 7484~7493, 8501~8513, 7636행.
+MOIS_BIDDER_DECISION_STANDARD_MARKER = "지방자치단체입찰시낙찰자결정기준"
+MOIS_TECH_BASE_RATE_WARNING = (
+    "공고가 지방자치단체 입찰시 낙찰자 결정기준을 명시해 행안부 예규의 "
+    "기준비율 88/100을 적용했습니다."
+)
+
 # 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 제1~4호.
 # 낙찰방법명에 추정가격 띠만 적힌 폐기물처리용역 적격심사 공고가 이 기준으로 계산되게 합니다.
 # 값은 환경부고시 제2024-287호(시행 2025-01-02)·제2025-165호(시행 2025-10-07) 원문에서
 # 확정했습니다. 두 판의 배점한도·계수·기준비율·통과점수·낙찰하한율이 같아 한 벌로 둡니다.
+# 기준비율 88/100: data/sources/qualification/files/me/ad08e6bf33bf_me_byl1_text.txt:55-58
 _MOE_CDW_SOURCE = (
     "환경부고시 「건설폐기물처리용역 적격업체 평가기준」 제2024-287호(시행 2025-01-02)·"
     "제2025-165호(시행 2025-10-07) [별표] 평가항목 및 배점기준 제1~4호"
@@ -1245,7 +1256,7 @@ MOE_CDW_RULES: tuple[EvaluationRule, ...] = (
             "추정가격 2억미만인 용역",
         ),
         lwlt_rate=Decimal("87.745"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.88"),
         max_price_score=Decimal("70"),
         multiplier=Decimal("20"),
         pass_threshold=Decimal("95"),
@@ -1265,7 +1276,7 @@ MOE_CDW_RULES: tuple[EvaluationRule, ...] = (
             "추정가격 5억원 미만 2억원이상인 용역",
         ),
         lwlt_rate=Decimal("86.745"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.88"),
         max_price_score=Decimal("60"),
         multiplier=Decimal("4"),
         pass_threshold=Decimal("95"),
@@ -1285,7 +1296,7 @@ MOE_CDW_RULES: tuple[EvaluationRule, ...] = (
             "추정가격 15억원 미만 5억원이상인 용역",
         ),
         lwlt_rate=Decimal("85.495"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.88"),
         max_price_score=Decimal("50"),
         multiplier=Decimal("2"),
         pass_threshold=Decimal("95"),
@@ -1305,7 +1316,7 @@ MOE_CDW_RULES: tuple[EvaluationRule, ...] = (
             "추정가격 30억원 미만 15억원이상인 용역",
         ),
         lwlt_rate=Decimal("82.995"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.88"),
         max_price_score=Decimal("30"),
         multiplier=Decimal("1"),
         pass_threshold=Decimal("95"),
@@ -1325,7 +1336,7 @@ MOE_CDW_RULES: tuple[EvaluationRule, ...] = (
             "추정가격 100억원 미만 30억원이상인 용역",
         ),
         lwlt_rate=Decimal("77.995"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.88"),
         max_price_score=Decimal("30"),
         multiplier=Decimal("1"),
         pass_threshold=Decimal("90"),
@@ -1345,7 +1356,7 @@ MOE_CDW_RULES: tuple[EvaluationRule, ...] = (
             "추정가격 100억이상인 용역",
         ),
         lwlt_rate=Decimal("72.995"),
-        base_rate=Decimal("0.90"),
+        base_rate=Decimal("0.88"),
         max_price_score=Decimal("30"),
         multiplier=Decimal("1"),
         pass_threshold=Decimal("85"),
@@ -3253,6 +3264,7 @@ class RuleResolutionResult:
     rule: EvaluationRule | None = None
     effective_lwlt_rate: Decimal | None = None
     rate_source: str | None = None  # "ANNOUNCEMENT" 또는 "RULE_DEFAULT"
+    base_rate: Decimal | None = None
     warnings: list[str] = field(default_factory=list)
     negotiation_tech_eval_rate: Decimal | None = None
     negotiation_price_eval_rate: Decimal | None = None
@@ -3825,6 +3837,23 @@ def resolve_evaluation_rule(
         srvce_div_nm=srvce_div_nm,
         announced=announced,
     )
+    app_std = (
+        re.sub(r"\s+", "", str(raw_data.get("sucsfbidMthdAppStd") or ""))
+        if isinstance(raw_data, dict)
+        else ""
+    )
+    if (
+        result.rule is not None
+        and result.rule.rule_id == SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT.rule_id
+        and MOIS_BIDDER_DECISION_STANDARD_MARKER in app_std
+    ):
+        # 기술용역 분기는 공고 명시 기준과 무관하게 조달청 현행 판본을 고릅니다. 공고가
+        # 행안부 예규를 명시한 경우에만 기준비율을 예규 값으로 바꾸고 규칙 선택은 그대로 둡니다.
+        result = replace(
+            result,
+            base_rate=Decimal("0.88"),
+            warnings=[*result.warnings, MOIS_TECH_BASE_RATE_WARNING],
+        )
     scope_stage: str | None = None
     institution_selected: EvaluationRule | None = None
     institution_block: tuple[str, str] | None = None

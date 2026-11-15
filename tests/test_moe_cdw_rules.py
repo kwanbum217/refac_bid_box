@@ -91,7 +91,7 @@ class TestMoeCdwDeclarations:
             assert rule.max_price_score == b
             assert rule.multiplier == k
             assert rule.pass_threshold == t
-            assert rule.base_rate == Decimal("0.90")
+            assert rule.base_rate == Decimal("0.88")
             assert rule.effective_date == "2025-01-02"
             assert "별표" in (rule.score_table_source or "")
 
