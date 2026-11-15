@@ -5,8 +5,9 @@
   LOCAL_RULE_NOT_FOUND 로 끝나고, 공고의 낙찰방법 적용 기준(sucsfbidMthdAppStd)이
   조달청 일반용역 적격심사 세부기준을 명시하며, 조달청 매칭 결과가 있는 공고는
   조달청 별표로 계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다.
-- 명시 기준이 없거나 다른 값이면 종전처럼 차단하고, 개정 후 판본 기간 공고·다른 지역은
-  가로채지 않는다.
+- 명시 기준이 없거나 다른 값이면 종전처럼 차단하고, 다른 지역은 가로채지 않는다.
+- 대구 예규 제238호(2026-05-11 시행)·충남 공고 제2026-1235호(2026-07-13 시행) 이후
+  공고도 같은 근거로 계산합니다(사용자 결정, 2026-11-15).
 
 DB·Redis·.env 를 쓰지 않습니다.
 """
@@ -184,7 +185,7 @@ def test_other_stated_standard_stays_blocked() -> None:
     assert JNGJ_STATED_PPS_WARNING not in result.warnings
 
 
-def test_daegu_new_version_announcement_stays_blocked() -> None:
+def test_daegu_new_version_announcement_uses_pps_rule() -> None:
     result = _resolve(
         method=INSURANCE_UNDER_METHOD,
         announced="2026-05-11 00:00:00",
@@ -193,13 +194,13 @@ def test_daegu_new_version_announcement_stays_blocked() -> None:
         region_code=DAEGU_CODE,
         region_name=DAEGU_NAME,
     )
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert result.rule is None
-    assert JNGJ_STATED_PPS_WARNING not in result.warnings
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == PPS_INSURANCE_RULE_ID
+    assert JNGJ_STATED_PPS_WARNING in result.warnings
 
 
-def test_chungnam_new_version_announcement_stays_blocked() -> None:
+def test_chungnam_new_version_announcement_uses_pps_rule() -> None:
     result = _resolve(
         method=INSURANCE_UNDER_METHOD,
         announced="2026-07-13 00:00:00",
@@ -208,10 +209,10 @@ def test_chungnam_new_version_announcement_stays_blocked() -> None:
         region_code=CHUNGNAM_CODE,
         region_name=CHUNGNAM_NAME,
     )
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert result.rule is None
-    assert JNGJ_STATED_PPS_WARNING not in result.warnings
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == PPS_INSURANCE_RULE_POST_20260526_ID
+    assert JNGJ_STATED_PPS_WARNING in result.warnings
 
 
 def test_other_region_stays_blocked() -> None:

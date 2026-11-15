@@ -198,10 +198,10 @@ def test_other_region_stays_blocked() -> None:
     result = _resolve(
         method=REPAIR_UNDER_METHOD,
         announced="2026-08-01 10:00:00",
-        institution_name="대구광역시청",
-        institution_code="5100000",
-        region_code="27",
-        region_name="대구광역시",
+        institution_name="강원특별자치도청",
+        institution_code="4200000",
+        region_code="42",
+        region_name="강원특별자치도",
     )
     assert result.is_blocked is True
     assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
