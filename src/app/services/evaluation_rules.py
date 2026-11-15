@@ -3009,6 +3009,57 @@ def _is_jeonnam_local_announcement(
     return code in _JEONNAM_REGION_CODES or name in _JEONNAM_REGION_NAMES
 
 
+def _is_legacy_jeonnam_announcement(
+    region_code: str | None,
+    region_name: str | None,
+    announced: date | None,
+    institution_name: str | None,
+) -> bool:
+    """통합특별시 출범 전 코드 12 공고를 수요기관명으로 전남(46)으로 판정합니다."""
+    if announced is None:
+        return False
+    if announced < JEONNAM_LOCAL_RULE_EFFECTIVE_DATE:
+        return False
+    if (
+        JEONNAM_LOCAL_RULE_SUPERSEDED_DATE is not None
+        and announced >= JEONNAM_LOCAL_RULE_SUPERSEDED_DATE
+    ):
+        return False
+    code = (region_code or "").strip()
+    name = re.sub(r"\s+", "", region_name or "")
+    if code != MERGED_REGION_CODE and name != "전남광주통합특별시":
+        return False
+    legacy = _legacy_merged_institution_code(institution_name)
+    return legacy is not None and legacy[0] in _JEONNAM_REGION_CODES
+
+
+def _is_jeonnam_pps_fallback_announcement(
+    region_code: str | None,
+    region_name: str | None,
+    announced: date | None,
+    institution_name: str | None,
+    raw_data: dict[str, Any] | None,
+    method_name: str | None,
+    configured_service_type: str | None,
+) -> bool:
+    """전남 예규 제1075호 제11조 ① 준용 대상 공고인지 판정합니다.
+
+    통합특별시 출범 전 공고는 지역 코드가 12(통합)로만 잡혀 지역명만으로는 전남을
+    판별하지 못하므로 수요기관명으로 옛 계열(전라남도 46)을 확인합니다. 학술연구용역은
+    원문 제2조 제1항이 일반용역에서 제외하고 준용 조항의 적용 범위도 확정되지 않아
+    종전처럼 차단합니다.
+    """
+    if _is_jeonnam_local_announcement(region_code, region_name, announced):
+        return True
+    if not _is_legacy_jeonnam_announcement(region_code, region_name, announced, institution_name):
+        return False
+    if configured_service_type and configured_service_type.strip():
+        service_type = configured_service_type.strip().upper()
+    else:
+        service_type, _, _ = resolve_local_service_type(raw_data, method_name)
+    return service_type != "ACADEMIC"
+
+
 # 조달청 일반용역 '추정가격 2억원 미만' 띠의 표 이름입니다. 전남 일반용역 2억미만
 # 공고는 전남 자체 GENERAL 별표가 없어 이 띠를 조달청 기준으로 준용합니다(D24).
 _PPS_UNDER_2E_TABLE_NAME = "추정가격 2억원 미만인 용역"
@@ -3034,19 +3085,7 @@ def _is_jeonnam_general_band_announcement(
         return False
     if _is_jeonnam_local_announcement(region_code, region_name, announced):
         return True
-    if announced < JEONNAM_LOCAL_RULE_EFFECTIVE_DATE:
-        return False
-    if (
-        JEONNAM_LOCAL_RULE_SUPERSEDED_DATE is not None
-        and announced >= JEONNAM_LOCAL_RULE_SUPERSEDED_DATE
-    ):
-        return False
-    code = (region_code or "").strip()
-    name = re.sub(r"\s+", "", region_name or "")
-    if code != MERGED_REGION_CODE and name != "전남광주통합특별시":
-        return False
-    legacy = _legacy_merged_institution_code(institution_name)
-    return legacy is not None and legacy[0] in _JEONNAM_REGION_CODES
+    return _is_legacy_jeonnam_announcement(region_code, region_name, announced, institution_name)
 
 
 def _is_band_only_method(method_name: str | None) -> bool:
@@ -3857,12 +3896,22 @@ def resolve_evaluation_rule(
                     )
             elif (
                 local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-                and _is_jeonnam_local_announcement(region_code, region_name, announced)
+                and _is_jeonnam_pps_fallback_announcement(
+                    region_code,
+                    region_name,
+                    announced,
+                    institution_name,
+                    raw_data,
+                    method_name,
+                    local_service_type,
+                )
                 and select_moe_cdw_rule(method_name) is None
             ):
                 # 전남 예규 제1075호 제11조 ① 의 준용 조항으로, 전남 자체 별표가 없는
-                # 유형만 조달청 매칭 결과로 계산합니다. 건설폐기물 띠 표기 공고는 뒤의
-                # 환경부고시 경로가 처리하므로 여기서 가로채지 않습니다.
+                # 유형만 조달청 매칭 결과로 계산합니다. 통합특별시 출범 전 공고는 지역
+                # 코드가 12 로 잡혀도 수요기관명이 전남 계열이면 같은 준용을 적용하며,
+                # 학술연구용역은 적용 범위가 확정되지 않아 제외합니다. 건설폐기물 띠 표기
+                # 공고는 뒤의 환경부고시 경로가 처리하므로 여기서 가로채지 않습니다.
                 if result.rule is not None:
                     result, scope_stage = _narrow_rule_scope(
                         result,
