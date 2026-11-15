@@ -7,9 +7,10 @@
   결과가 있는 공고는 조달청 별표로 계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다.
 - 개정 후 판본의 별표 선택 조항도 조달청을 지목하지 않으므로 근거는 지침 조항이 아니라
   구판과 같은 '공고 명시' 다.
-- 명시 기준이 없거나 다른 값이면 종전처럼 차단하고, 다른 지역·자체 별표가 있는 유형·
-  건설폐기물 띠 표기 공고는 가로채지 않는다. 구판(예규 제223호·공고 제2019-2047호)
-  판정도 그대로다.
+- 같은 세부유형의 시·도 별표가 있어도 공고가 조달청 기준을 명시하면 조달청 별표로
+  계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다(사용자 결정, 2026-11-15).
+- 명시 기준이 없거나 다른 값이면 종전처럼 차단하고, 건설폐기물 띠 표기 공고는
+  가로채지 않는다. 구판(예규 제223호·공고 제2019-2047호) 판정도 그대로다.
 
 DB·Redis·.env 를 쓰지 않습니다.
 """
@@ -34,8 +35,8 @@ CDW_BAND_METHOD = "적격심사제-추정가격 2억원 미만인 용역"
 PPS_INSURANCE_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_02"
 PPS_LEASE_OVER_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_18"
 PPS_INSURANCE_PRE_20250901_RULE_ID = "SERVC_QUAL_PRE_20250901_ATTACH_02"
+PPS_WASTE_RULE_ID = "SERVC_QUAL_POST_20260526_ATTACH_08"
 LOCAL_DAEGU_WASTE_RULE_ID = "SERVC_LOCAL_DAEGU_20260511_ATTACH_04"
-LOCAL_CHUNGNAM_WASTE_RULE_ID = "SERVC_LOCAL_CHUNGNAM_20260713_ATTACH_03"
 
 STATED_PPS = "조달청 일반용역 적격심사 세부기준"
 
@@ -273,8 +274,8 @@ def test_other_region_in_revised_window_is_not_intercepted() -> None:
     assert JNGJ_STATED_PPS_WARNING not in result.warnings
 
 
-def test_daegu_revised_own_annex_type_is_not_intercepted() -> None:
-    """대구 예규 제238호 별표 4(폐기물처리용역)가 있는 유형은 지역 규칙을 유지한다."""
+def test_daegu_revised_stated_pps_uses_pps_waste_rule() -> None:
+    """대구 예규 제238호 별표 4가 있어도 공고 명시 조달청 기준을 우선합니다."""
     result = _resolve(
         method=WASTE_METHOD,
         announced="2026-06-15 10:00:00",
@@ -286,12 +287,12 @@ def test_daegu_revised_own_annex_type_is_not_intercepted() -> None:
     )
     assert result.is_blocked is False
     assert result.rule is not None
-    assert result.rule.rule_id == LOCAL_DAEGU_WASTE_RULE_ID
-    assert JNGJ_STATED_PPS_WARNING not in result.warnings
+    assert result.rule.rule_id == PPS_WASTE_RULE_ID
+    assert JNGJ_STATED_PPS_WARNING in result.warnings
 
 
-def test_chungnam_revised_own_annex_type_is_not_intercepted() -> None:
-    """충남 공고 제2026-1235호 별표 3(폐기물처리용역)이 있는 유형은 지역 규칙을 유지한다."""
+def test_chungnam_revised_stated_pps_uses_pps_waste_rule() -> None:
+    """충남 공고 제2026-1235호 별표 3이 있어도 공고 명시 조달청 기준을 우선합니다."""
     result = _resolve(
         method=WASTE_METHOD,
         announced="2026-11-09 10:00:00",
@@ -303,7 +304,25 @@ def test_chungnam_revised_own_annex_type_is_not_intercepted() -> None:
     )
     assert result.is_blocked is False
     assert result.rule is not None
-    assert result.rule.rule_id == LOCAL_CHUNGNAM_WASTE_RULE_ID
+    assert result.rule.rule_id == PPS_WASTE_RULE_ID
+    assert JNGJ_STATED_PPS_WARNING in result.warnings
+
+
+def test_daegu_revised_without_stated_standard_keeps_local_rule() -> None:
+    """공고 명시가 없으면 대구 예규 제238호 별표 4를 그대로 씁니다."""
+    result = _resolve(
+        method=WASTE_METHOD,
+        announced="2026-06-15 10:00:00",
+        institution_name="대구광역시",
+        institution_code="5100000",
+        region_code=DAEGU_CODE,
+        region_name=DAEGU_NAME,
+        price="199128182",
+        app_std=None,
+    )
+    assert result.is_blocked is False
+    assert result.rule is not None
+    assert result.rule.rule_id == LOCAL_DAEGU_WASTE_RULE_ID
     assert JNGJ_STATED_PPS_WARNING not in result.warnings
 
 

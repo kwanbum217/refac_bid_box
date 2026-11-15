@@ -1369,6 +1369,15 @@ MOE_CDW_WARNING = (
     "「건설폐기물처리용역 적격업체 평가기준」 [별표] 제1~4호를 적용했습니다."
 )
 
+# 공고의 낙찰방법 적용 기준(sucsfbidMthdAppStd)이 환경부고시 「건설폐기물처리용역
+# 적격업체 평가기준」을 명시했는지 판정하는 표지입니다. 지역 규칙으로 확정된 공고도
+# 공고 명시를 근거로 고시 별표로 계산할 때 씁니다(사용자 결정 2026-11-15).
+MOE_CDW_STATED_MARKER = "건설폐기물처리용역적격업체평가기준"
+MOE_CDW_STATED_WARNING = (
+    "공고가 적용 기준을 환경부고시 「건설폐기물처리용역 적격업체 평가기준」으로 명시해 "
+    "환경부고시 [별표] 제1~4호로 계산했습니다."
+)
+
 
 MOE_CDW_EFFECTIVE_DATE = "2025-01-02"
 
@@ -3089,7 +3098,11 @@ JNGJ_LOCAL_RULE_EFFECTIVE_DATE = min(
     date.fromisoformat(rule.effective_date) for rule in _JNGJ_LOCAL_RULES
 )
 _JNGJ_REGION_NAME = "전남광주통합특별시"
-_JNGJ_PPS_STATED_MARKER = "조달청일반용역적격심사세부기준"
+
+# 공고의 낙찰방법 적용 기준(sucsfbidMthdAppStd)이 조달청 일반용역 적격심사 세부기준을
+# 명시했는지 판정하는 표지입니다. 통합특별시·대구·충남 분기와 지역 규칙 명시 우선
+# 분기가 같은 표지를 씁니다.
+_PPS_STATED_MARKER = "조달청일반용역적격심사세부기준"
 
 
 def _is_jngj_pps_stated_announcement(
@@ -3116,7 +3129,7 @@ def _is_jngj_pps_stated_announcement(
             return False
     data = raw_data if isinstance(raw_data, dict) else {}
     stated = re.sub(r"\s+", "", str(data.get("sucsfbidMthdAppStd") or ""))
-    return _JNGJ_PPS_STATED_MARKER in stated
+    return _PPS_STATED_MARKER in stated
 
 
 # 대구광역시 예규 제223호·제238호(2026-05-11 시행)와 충청남도 공고 제2019-2047호·
@@ -3166,7 +3179,7 @@ def _is_dgcn_pps_stated_announcement(
         return False
     data = raw_data if isinstance(raw_data, dict) else {}
     stated = re.sub(r"\s+", "", str(data.get("sucsfbidMthdAppStd") or ""))
-    return _JNGJ_PPS_STATED_MARKER in stated
+    return _PPS_STATED_MARKER in stated
 
 
 # 조달청 일반용역 '추정가격 2억원 미만' 띠의 표 이름입니다. 전남 일반용역 2억미만
@@ -3788,6 +3801,13 @@ def resolve_evaluation_rule(
       않고 조달청 매칭 결과를 씁니다. 공고문이 조달청 일반용역 적격심사 세부기준을
       인용한 지방공기업을 기관 단위로 옮긴 것입니다(사용자 결정 3). 조달청 기준으로
       풀린 결과에만 경고(PPS_CITED_LOCAL_INSTITUTION_WARNING)를 붙입니다.
+    - 시·도 규칙을 확정한 공고라도 낙찰방법 적용 기준(sucsfbidMthdAppStd)이 조달청
+      일반용역 적격심사 세부기준을 명시하면 조달청 매칭 결과로 계산하고
+      JNGJ_STATED_PPS_WARNING 을 붙입니다(D13, 사용자 결정 2026-11-15). 같은 값이
+      건설폐기물처리용역 적격업체 평가기준을 명시하면 낙찰방법명 띠에 맞는 환경부고시
+      [별표] 제1~4호로 계산하고 MOE_CDW_STATED_WARNING 을 붙입니다. 조달청·환경부 쪽
+      매칭 결과가 없거나 범위를 좁히지 못하면 시·도 판정을 그대로 둡니다. 명시가 없거나
+      다른 기준을 명시한 공고, 기관 규칙·차단 공고는 종전 판정을 유지합니다.
     - 별표가 확정돼도 공고일이 별표 시행일보다 앞서면 계산 차단 (RULE_REGIME_MISMATCH).
       공고일이 없으면 대조하지 않고, 있는데 읽을 수 없으면 차단 대신 경고만 남깁니다.
     - 공고 하한율이 없으면 estimated_price 로 고른 구간의 하한율을 씁니다. 구간별
@@ -3977,6 +3997,9 @@ def resolve_evaluation_rule(
         and result.block_reason_code in (None, BLOCK_CODE_RULE_NOT_FOUND)
         and not (result.rule is not None and result.rule.rule_id in SERVC_TECH_QUAL_RULE_IDS)
     ):
+        # 시·도 규칙을 확정하면 아래에서 result 를 덮어쓰므로, 공고 명시 기준 우선
+        # 분기가 쓸 조달청 매칭 결과를 먼저 붙잡아 둡니다.
+        pps_match_result = result
         selected, local_code, local_reason, local_warnings = _select_local_rule(
             method_name,
             raw_data,
@@ -4141,6 +4164,55 @@ def resolve_evaluation_rule(
             if local_warnings:
                 result = replace(result, warnings=[*result.warnings, *local_warnings])
             scope_stage = RULE_SCOPE_REGION
+            # 시·도 규칙을 확정했더라도 공고의 낙찰방법 적용 기준(sucsfbidMthdAppStd)이
+            # 다음 기준을 명시하면 그 기준을 우선합니다(사용자 결정 2026-11-15, D13 확대).
+            # (가) 조달청 일반용역 적격심사 세부기준: 조달청 매칭 결과로 계산합니다.
+            #      조달청 매칭 결과가 없거나 범위를 좁히지 못하면 시·도 판정을 그대로 둡니다.
+            # (나) 건설폐기물처리용역 적격업체 평가기준: 환경부고시 [별표] 제1~4호로
+            #      계산합니다. 띠 표기가 고시 6종에 맞지 않아 고를 규칙이 없으면 시·도
+            #      판정을 그대로 둡니다.
+            # 명시 없음, 학술연구용역 등 다른 기준 명시, 기관 규칙·차단 공고는 이 분기에
+            # 걸리지 않으므로 종전 판정을 유지합니다. 시·도 규칙 시행일이 공고일보다 늦어
+            # 종전에 RULE_REGIME_MISMATCH 로 막히던 공고도 대상이 아닙니다.
+            local_applies = announced is None or announced >= date.fromisoformat(
+                selected.effective_date
+            )
+            if (
+                local_applies
+                and _PPS_STATED_MARKER in app_std
+                and select_moe_cdw_rule(method_name) is None
+                and not pps_match_result.is_blocked
+            ):
+                if pps_match_result.rule is not None:
+                    stated_result, stated_scope = _narrow_rule_scope(
+                        pps_match_result,
+                        method_name=pps_method_name,
+                        allocated_rules=allocated_rules,
+                        institution_code=institution_code,
+                        institution_name=institution_name,
+                        region_code=region_code,
+                        region_name=region_name,
+                        contract_regime=contract_regime,
+                    )
+                    if stated_result.rule is not None:
+                        result = replace(
+                            stated_result,
+                            warnings=[*stated_result.warnings, JNGJ_STATED_PPS_WARNING],
+                        )
+                        scope_stage = stated_scope
+            elif local_applies and MOE_CDW_STATED_MARKER in app_std:
+                stated_moe_rule = select_moe_cdw_rule(method_name)
+                if stated_moe_rule is not None:
+                    result = replace(
+                        _apply_rule_lwlt(
+                            result, stated_moe_rule, sucsfbid_lwlt_rate, estimated_price
+                        ),
+                        is_blocked=False,
+                        block_reason_code=None,
+                        block_reason_message=None,
+                        warnings=[*result.warnings, MOE_CDW_STATED_WARNING],
+                    )
+                    scope_stage = RULE_SCOPE_ALL
     elif result.rule is not None and result.rule.rule_id not in SERVC_TECH_QUAL_RULE_IDS:
         result, scope_stage = _narrow_rule_scope(
             result,
