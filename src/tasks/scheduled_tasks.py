@@ -49,7 +49,7 @@ from src.app.services.api_collector import (
     stream_servc_prearng_by_notices,
 )
 from src.app.services.automation_orchestrator import STATUS_RUNNING
-from src.app.services.collector_service import _bulk_insert
+from src.app.services.collector_service import _bulk_insert, collect_bids
 from src.app.services.home_summary import warm_home_summary_cache
 from src.app.services.prearng_dminstt_link import link_prearng_dminstt
 from src.app.services.sajeong_rate_stats import rebuild_institution_sajeong_rate_stats
@@ -1519,9 +1519,12 @@ def _as_utc(dt: datetime) -> datetime:
 
 
 def get_latest_collection_time(db: Session | None = None) -> datetime | None:
-    """bid_announcements 테이블의 최신 collected_at 시각을 조회합니다.
+    """야간 수집 체크포인트로 쓸 최신 collected_at 시각을 조회합니다.
 
-    데이터가 없으면 None 을 반환합니다.
+    낮 시간 증분 수집이 오늘 공고를 넣으면 collected_at 이 계속 최신이 되어
+    02:00 슬롯을 놓쳐도 따라잡기 판정이 돌지 않습니다. 날짜 범위 체크포인트와
+    같은 기준인 오늘(KST) 0시 이전 게시 공고만 봅니다. 데이터가 없으면 None 을
+    반환합니다.
     """
     from sqlalchemy import func, select
 
@@ -1534,10 +1537,132 @@ def get_latest_collection_time(db: Session | None = None) -> datetime | None:
         session = db
         own_session = False
     try:
-        return session.execute(select(func.max(BidAnnouncement.collected_at))).scalar()
+        today_start = datetime.combine(kst_today(utcnow()), datetime.min.time())
+        stmt = select(func.max(BidAnnouncement.collected_at)).where(
+            BidAnnouncement.bid_ntce_dt < today_start
+        )
+        return session.execute(stmt).scalar()
     finally:
         if own_session:
             session.close()
+
+
+INTRADAY_COLLECT_SCHEDULE_NAME = "intraday_collect"
+# 실제 회차는 30초 안팎이지만 워커 기본 job_timeout(1800초)보다 짧은 크론 타임아웃을
+# 두면 공용 정책 검사(test_cron_timeout_exceeds_default_job_timeout)와 어긋납니다.
+# 수집 claim TTL(1800초) 안에서 넉넉히 끝나도록 기본값과 같은 3600초를 씁니다.
+INTRADAY_COLLECT_JOB_TIMEOUT_SECONDS = 3600
+INTRADAY_COLLECT_CLAIM_TTL_SECONDS = 1800
+
+
+def _intraday_collect_thread(
+    today: str,
+    collected_since: datetime,
+) -> dict[str, Any]:
+    """오늘 공고 수집과 이번 회차 색인 반영을 스레드 전용 세션에서 수행합니다.
+
+    collect_bids 는 async 지만 동기 Session 으로 배치 적재를 하고, 색인 동기화도
+    동기 경로입니다. 관리 API 처럼 스레드 전용 이벤트 루프에서 돌려 워커 루프를
+    막지 않습니다. Session 은 생성한 스레드 안에서만 쓰고 닫습니다.
+    """
+    session = SessionLocal()
+    try:
+        metrics = asyncio.run(
+            collect_bids(
+                session,
+                start_date=today,
+                end_date=today,
+                fetch_type="announce",
+                refresh_aggregates=False,
+            )
+        )
+        indexed = {"announcements": 0, "results": 0}
+        if settings.MEILI_ENABLED:
+            from src.app.services.search_index import sync_search_index
+
+            indexed = sync_search_index(session, collected_since=collected_since)
+        return {"collect": metrics, "indexed": indexed}
+    finally:
+        session.close()
+
+
+@traced_worker_task
+@_record_schedule(INTRADAY_COLLECT_SCHEDULE_NAME)
+async def intraday_collect_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """오늘(KST) 입찰공고만 증분 수집해 검색 색인에 반영합니다.
+
+    낙찰·개찰 결과, KB 재구축, 대시보드 집계 재계산은 하지 않습니다. 무거운
+    작업이 도는 중이면 대기하지 않고 건너뛰며, 야간 수집·따라잡기와 같은 수집
+    claim 키를 공유해 서로 겹치지 않습니다.
+    """
+    if not settings.INTRADAY_COLLECT_ENABLED:
+        logger.info("낮 시간 증분 수집이 비활성화되어 있어 건너뜁니다.")
+        return {"status": "skipped", "reason": "disabled"}
+
+    from src.tasks.worker import get_heavy_task_lock, heavy_task_guard
+
+    if get_heavy_task_lock().locked():
+        logger.info("무거운 작업이 실행 중이라 낮 시간 증분 수집을 건너뜁니다.")
+        return {"status": "skipped", "reason": "heavy_task_running"}
+
+    claim = await asyncio.to_thread(
+        acquire_schedule_claim,
+        INTRADAY_COLLECT_SCHEDULE_NAME,
+        key=SCHEDULE_COLLECTION_CLAIM_KEY,
+        ttl_seconds=INTRADAY_COLLECT_CLAIM_TTL_SECONDS,
+    )
+    if not claim.acquired:
+        logger.info(
+            "낮 시간 증분 수집 실행 건너뜀 (claim status=%s, key=%s)",
+            claim.status.value,
+            claim.key,
+        )
+        return {
+            "status": "skipped",
+            "reason": claim.status.value,
+            "claim": claim.to_dict(),
+        }
+
+    started_at = utcnow()
+    started_monotonic = time.monotonic()
+    today = kst_today(started_at).strftime("%Y%m%d")
+    try:
+        async with heavy_task_guard(INTRADAY_COLLECT_SCHEDULE_NAME):
+            result = await asyncio.to_thread(
+                _intraday_collect_thread,
+                today,
+                started_at,
+            )
+    except Exception as exc:
+        logger.exception("낮 시간 증분 수집 실패")
+        return {"status": "failed", "start_date": today, **safe_error(exc)}
+    finally:
+        await asyncio.to_thread(release_schedule_claim, claim.key, token=claim.token)
+
+    metrics = result["collect"]
+    indexed = result.get("indexed") or {}
+    collect_status = str(metrics.get("status") or "failed")
+    if collect_status not in ("success", "partial_success", "failed"):
+        collect_status = "failed"
+    outcome: dict[str, Any] = {
+        "status": collect_status,
+        "start_date": today,
+        "announcement_count": int(metrics.get("announcement_count") or 0),
+        "license_limit_count": int(metrics.get("license_limit_count") or 0),
+        "participation_region_count": int(metrics.get("participation_region_count") or 0),
+        "indexed": indexed,
+        "elapsed_seconds": round(time.monotonic() - started_monotonic, 2),
+    }
+    if metrics.get("status") == "error":
+        outcome["error"] = metrics.get("message")
+    logger.info(
+        "낮 시간 증분 수집 완료 (%s): 공고 %s건, 색인 %s건, %.1f초",
+        today,
+        outcome["announcement_count"],
+        indexed.get("announcements", 0),
+        outcome["elapsed_seconds"],
+    )
+    return outcome
 
 
 def build_catchup_ledger(

@@ -27,9 +27,14 @@
 | `weekly_retrain_task` | 매주 월 03:00 | **False** | 카테고리별 모델 자동 재학습 파이프라인 (fan-out) |
 | `drift_monitor_task` | 매일 04:00 | **False** | 7일 윈도우 개찰 데이터 기반 다차원 PSI 드리프트 모니터링 |
 | `backup_schedule_task` | 매일 03:00 | **False** | MySQL/ChromaDB/가중치 정기 통합 스냅샷 백업 |
+| `intraday_collect_task` | 평일 07~20시 매시 10분 | **True** | 오늘(KST) 공고 4종과 면허제한·참가가능지역만 증분 수집, 이번 회차 적재분만 검색 색인 반영 |
+| `intraday_collect_task` | 토·일 12:10 | **True** | 주말 낮 1회 증분 수집 (평일과 같은 범위) |
 
 - `development_data_refresh_task`와 `nightly_schedule_task`는 상호 배타적입니다. `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED=True`인 경우 `development_data_refresh_task`는 `skipped:nightly_schedule_enabled`로 안전하게 건너뜁니다.
 - 개발 환경 및 도커 컴포즈 표준 구성에서는 가벼운 `development_data_refresh_task`가 기본 활성화(True)되며, 전체 검증·재학습을 수반하는 `nightly_schedule_task`는 비활성화(False)됩니다.
+- `intraday_collect_task`는 `INTRADAY_COLLECT_ENABLED`(기본 True)로 끌 수 있습니다. 낙찰·개찰 결과 수집, KB 재구축, 대시보드 집계 재계산은 하지 않습니다.
+- 겹침 방지: 낮 수집은 무거운 작업 잠금이 잡혀 있으면 대기하지 않고 `skipped:heavy_task_running`으로 끝납니다. 수집 claim 키(`bidbox:schedule:collection_claim`)를 야간 수집·기동 따라잡기와 공유하고, 해제는 `finally`에서 자기 토큰으로만 수행합니다.
+- 야간 누락일 계산과 기동 따라잡기 판정은 오늘(KST) 0시 이전 게시 공고만 체크포인트로 봅니다. 낮 수집분이 야간 슬롯 누락을 가리지 않습니다.
 
 ---
 

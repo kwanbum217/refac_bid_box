@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     AUTOMATION_CALLBACK_BASE_URL: str = ""
     # 개발 DB 최신화 전용 크론(매일 02:00). 수집·KB·집계를 수행하며 기본값은 활성(True)입니다.
     AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED: bool = True
+    # 낮 시간 증분 수집 크론. 평일 07~20시 매시 10분, 주말 12시 10분에 오늘(KST)
+    # 공고만 수집하고 이번 회차 적재분만 검색 색인에 반영합니다. 기본값은 활성(True)입니다.
+    INTRADAY_COLLECT_ENABLED: bool = True
     # 원본 Harness 야간 트리거(매일 02:00) 대체. 전체 예측 검증·재학습을 포함하며 기본값은 비활성(False)입니다.
     AUTOMATION_NIGHTLY_SCHEDULE_ENABLED: bool = False
     # 기동 시 스케줄 따라잡기(catch-up) 활성화 여부.
