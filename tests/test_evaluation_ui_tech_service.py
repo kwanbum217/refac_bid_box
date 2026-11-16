@@ -23,17 +23,15 @@ def test_blocked_reason_code_prefix_is_stripped_without_losing_server_message():
     assert "rawReason.slice(codePrefix[0].length).trim()" in function
 
 
-def test_scope_badge_is_reset_for_general_tech_and_negotiation_responses():
+def test_scope_badge_is_set_on_every_recommend_response():
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
-    start = template.index("function setEvaluationScopeBadge")
-    end = template.index("function renderNegotiation", start)
-    setter = template[start:end]
-    assert "일반용역 적격심사만 지원 (약 6%)" in setter
-    assert "data.rule_id.startsWith('SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT')" in setter
-    assert "기술용역 적격심사 공고 (공고 하한율 적용)" in setter
-    assert "협상에의한계약 평가비율 제공" in setter
-    assert "별표" not in setter
-    assert "배점표" not in setter
+    assert "일반용역 적격심사만 지원 (약 6%)" not in template
     assert (
         "setEvaluationScopeBadge(data);" in template[template.index("function renderNegotiation") :]
     )
+    error_start = template.index(
+        "error: function(xhr)", template.index("function requestRecommend")
+    )
+    error_handler = template[error_start : template.index("complete: function()", error_start)]
+    assert "applyEvaluationScopeBadge('gray', '로그인 후 확인')" in error_handler
+    assert "setEvaluationScopeBadge(null)" in error_handler
