@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Integer, and_, case, func, or_, select, tuple_
+from sqlalchemy import Integer, and_, case, exists, func, or_, select, tuple_
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased
 
@@ -400,9 +400,14 @@ def _region_sort_rank():
     ).cast(Integer)
 
 
-def latest_announcement_filter(stmt):
-    """공고번호+카테고리별 최신 차수 ID를 한 번만 계산해 결합합니다."""
-    ranked_ids = select(
+def latest_announcement_filter(stmt, *, collected_since: datetime | None = None):
+    """공고번호+카테고리별 최신 차수 ID를 한 번만 계산해 결합합니다.
+
+    `collected_since` 를 주면 이번 수집분이 들어 있는 공고번호·카테고리 파티션만
+    순위를 매깁니다. 파티션 안의 다른 차수도 그대로 순위 대상이므로, 고르는 행은
+    전체를 순위 매긴 뒤 수집일 조건으로 거른 것과 같습니다.
+    """
+    ranked = select(
         BidAnnouncement.id.label("id"),
         func.row_number()
         .over(
@@ -415,7 +420,19 @@ def latest_announcement_filter(stmt):
             ),
         )
         .label("latest_rank"),
-    ).subquery("latest_ann")
+    )
+    if collected_since is not None:
+        incremental = aliased(BidAnnouncement, name="incremental_ann")
+        ranked = ranked.where(
+            exists(
+                select(1).where(
+                    incremental.collected_at >= collected_since,
+                    incremental.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+                    incremental.category == BidAnnouncement.category,
+                )
+            )
+        )
+    ranked_ids = ranked.subquery("latest_ann")
     return stmt.join(ranked_ids, ranked_ids.c.id == BidAnnouncement.id).where(
         ranked_ids.c.latest_rank == 1
     )
