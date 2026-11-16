@@ -371,6 +371,18 @@
                                     </div>
                                 </div>
 
+                                <!-- 내 조건 추천가. AI 예측가를 내 정량점수 기준 통과 구간 안으로 옮긴 값이다. -->
+                                <div id="res-member-recommendation" class="hidden mt-3 p-3 bg-white border border-primary/20 rounded-lg text-xs text-slate-700">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <i class="fas fa-user-check text-primary text-[10px] shrink-0" aria-hidden="true"></i>
+                                            <div class="detail-label text-primary mb-0 whitespace-nowrap">내 조건 추천가</div>
+                                        </div>
+                                        <div id="res-member-price" class="price-amount text-slate-900">-</div>
+                                    </div>
+                                    <p id="res-member-reason" class="mt-1 leading-relaxed"></p>
+                                </div>
+
                                 <!-- 예측 불확실성 경고. 서버가 보낸 경고가 없으면 숨긴다. -->
                                 <div id="res-prediction-warning" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
                                     <div class="flex items-start gap-2">
@@ -1900,6 +1912,35 @@ $(document).ready(function() {
             + rate + '로 예측했습니다.' + fallback;
     }
 
+    // AI 예측가는 시장 낙찰가 예측이라 정량점수와 무관하다. 내 정량점수로 정해지는
+    // 통과 구간을 벗어난 경우에만 서버가 구간 끝으로 옮긴 금액을 보낸다.
+    function memberRecommendationText(data) {
+        const basis = data.member_recommendation_basis;
+        const score = scoreText(data.non_price_score);
+        const scoreLabel = score == null ? '내 정량점수' : '정량점수 ' + score + '점';
+        const aiPrice = amountText(data.prediction ? data.prediction.optimal_price : null);
+        if (basis === 'raised_to_min') {
+            return 'AI 예측가 ' + aiPrice + '은 ' + scoreLabel + '으로는 어떤 예정가격에서도 적격 통과점수에 못 미쳐 최저가로 올렸습니다.';
+        }
+        if (basis === 'lowered_to_max') {
+            return 'AI 예측가 ' + aiPrice + '은 ' + scoreLabel + ' 기준 최상가를 넘어 최상가로 내렸습니다.';
+        }
+        return scoreLabel + ' 기준 통과 구간(최저가~최상가) 안이라 AI 예측가를 그대로 추천합니다.';
+    }
+
+    function renderMemberRecommendation(data, boundsReady) {
+        const price = data.member_recommended_price;
+        const basis = data.member_recommendation_basis;
+        const show = boundsReady && price != null && basis != null;
+        const box = $('#res-member-recommendation').toggleClass('hidden', !show);
+        if (!show) return;
+        const adjusted = basis !== 'ai';
+        box.toggleClass('bg-white border-primary/20', !adjusted)
+            .toggleClass('bg-amber-50 border-amber-200', adjusted);
+        $('#res-member-price').text(amountText(price));
+        $('#res-member-reason').text(memberRecommendationText(data));
+    }
+
     function boundReasonText(data, bound) {
         const bounds = data.price_bounds || {};
         const priceScore = scoreText(data.max_price_score);
@@ -2090,6 +2131,7 @@ $(document).ready(function() {
         );
         $('#res-min-price').text(boundsReady ? amountText(bounds.min_bid_amount) : '-');
         $('#res-max-price').text(boundsReady ? amountText(bounds.max_bid_amount) : '-');
+        renderMemberRecommendation(data, boundsReady);
 
         $('#res-ai-reason').text(aiReasonText(data)).toggleClass('hidden', !data.prediction);
         $('#res-min-reason').text(boundsReady ? boundReasonText(data, 'min') : '').toggleClass('hidden', !boundsReady);

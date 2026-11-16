@@ -822,6 +822,15 @@ class EvaluationRecommendResponse(BaseModel):
     )
     prediction: RecommendationPrediction | None = Field(None, description="AI 예측가와 근거 재료")
     price_bounds: RecommendationPriceBounds | None = Field(None, description="최저가·최상가 구간")
+    member_recommended_price: int | None = Field(
+        None,
+        description="내 조건 추천가 (원). AI 예측가를 회원 정량점수 기준 통과 구간 안으로 옮긴 값",
+    )
+    member_recommendation_basis: Literal["ai", "raised_to_min", "lowered_to_max"] | None = Field(
+        None,
+        description="내 조건 추천가 근거. ai 는 예측가 그대로, raised_to_min 은 최저가로 올림, "
+        "lowered_to_max 는 최상가로 내림",
+    )
     participant_stats: ParticipantCountStats = Field(
         default_factory=ParticipantCountStats, description="발주처 과거 참여업체 수 요약"
     )
