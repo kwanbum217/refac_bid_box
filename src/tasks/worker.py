@@ -59,6 +59,7 @@ from src.tasks.scheduled_tasks import (
     DRIFT_MONITOR_JOB_TIMEOUT_SECONDS,
     HOME_SUMMARY_WARM_JOB_TIMEOUT_SECONDS,
     HOME_SUMMARY_WARM_MINUTES,
+    INTRADAY_COLLECT_JOB_TIMEOUT_SECONDS,
     PREARNG_DAILY_HOUR,
     PREARNG_DAILY_JOB_TIMEOUT_SECONDS,
     PREARNG_DAILY_MINUTE,
@@ -70,6 +71,7 @@ from src.tasks.scheduled_tasks import (
     band_regime_daily_task,
     development_data_refresh_task,
     drift_monitor_task,
+    intraday_collect_task,
     nightly_schedule_task,
     prearng_daily_task,
     run_drift_monitor_catchup_task,
@@ -515,6 +517,7 @@ class WorkerSettings:
         collect_demand_institutions_task,
         result_coverage_monitor_task,
         warm_home_summary_task,
+        intraday_collect_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
     # 워커가 여러 대여도 arq 는 크론을 한 번만 실행합니다.
@@ -585,6 +588,25 @@ class WorkerSettings:
             minute=HOME_SUMMARY_WARM_MINUTES,
             run_at_startup=True,
             timeout=HOME_SUMMARY_WARM_JOB_TIMEOUT_SECONDS,
+        ),
+        # 낮 시간 증분 수집. 야간 수집(02:00)까지 기다리지 않고 그날 공고를 웹에
+        # 노출하기 위해 평일 07~20시 매시 10분, 주말 12:10 에 오늘(KST) 공고만
+        # 수집합니다. 무거운 작업이 도는 중이면 대기하지 않고 건너뜁니다.
+        cron(
+            cast(Any, intraday_collect_task),
+            weekday={0, 1, 2, 3, 4},
+            hour=set(range(7, 21)),
+            minute=10,
+            run_at_startup=False,
+            timeout=INTRADAY_COLLECT_JOB_TIMEOUT_SECONDS,
+        ),
+        cron(
+            cast(Any, intraday_collect_task),
+            weekday={5, 6},
+            hour=12,
+            minute=10,
+            run_at_startup=False,
+            timeout=INTRADAY_COLLECT_JOB_TIMEOUT_SECONDS,
         ),
     ]
     # 첨부 원문을 외부에서 내려받는 크론이라 플래그가 켜질 때만 등록합니다.

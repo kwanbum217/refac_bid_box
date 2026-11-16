@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, insert, select
@@ -130,6 +130,7 @@ def resolve_collection_window(
 
     체크포인트 선택 규칙:
     - 요청 카테고리만 대상으로 MIN(MAX(date) per category) 를 계산합니다.
+    - 오늘(KST) 0시 이후 행은 낮 시간 증분 수집분이므로 체크포인트에서 제외합니다.
     - 공고/결과 두 타입 중 더 오래된 쪽을 전체 체크포인트로 사용합니다.
     - 희소 분류(외자 Frgcpt)는 체크포인트 계산에서 제외합니다. 단 요청
       분류가 전부 제외 대상이면 그대로 계산합니다.
@@ -144,6 +145,10 @@ def resolve_collection_window(
     """
     yesterday: date = kst_today(utcnow()) - timedelta(days=1)
     yesterday_str = yesterday.strftime("%Y%m%d")
+    # 낮 시간 증분 수집이 오늘 공고를 적재하면 MAX(date) 체크포인트가 오늘로
+    # 올라가, 며칠 꺼져 있던 뒤 야간 수집이 빠진 날을 건너뜁니다. 체크포인트는
+    # 야간 수집이 보는 범위와 같게 오늘(KST) 0시 이전 행만 봅니다.
+    today_start = datetime.combine(yesterday + timedelta(days=1), datetime.min.time())
 
     if start_date is not None:
         return start_date, end_date or yesterday_str, False
@@ -185,7 +190,10 @@ def resolve_collection_window(
 
     if fetch_type in ("both", "announce"):
         ann_q = select(func.max(BidAnnouncement.bid_ntce_dt).label("max_dt"))
-        ann_q = ann_q.where(BidAnnouncement.category.in_(ckpt_categories))
+        ann_q = ann_q.where(
+            BidAnnouncement.category.in_(ckpt_categories),
+            BidAnnouncement.bid_ntce_dt < today_start,
+        )
         per_cat = ann_q.group_by(BidAnnouncement.category).subquery()
         row = db.scalar(select(func.min(per_cat.c.max_dt)))
         if row is not None:
@@ -195,7 +203,10 @@ def resolve_collection_window(
 
     if fetch_type in ("both", "result"):
         res_q = select(func.max(BidResult.rl_openg_dt).label("max_dt"))
-        res_q = res_q.where(BidResult.category.in_(ckpt_categories))
+        res_q = res_q.where(
+            BidResult.category.in_(ckpt_categories),
+            BidResult.rl_openg_dt < today_start,
+        )
         per_cat = res_q.group_by(BidResult.category).subquery()
         row = db.scalar(select(func.min(per_cat.c.max_dt)))
         if row is not None:

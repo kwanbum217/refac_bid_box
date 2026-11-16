@@ -194,6 +194,7 @@ Meilisearch는 원본 MySQL 테이블의 검색 인덱스를 바꾸지 않습니
 | `AUTOMATION_CALLBACK_BASE_URL` | 아니오 | (없음) | 워커를 별도 배포해 DB 를 공유하지 않을 때 결과를 되돌려 보낼 API 주소 |
 | `AUTOMATION_REUSE_RECENT` | 아니오 | `true` | 고비용 작업(`full_validation`)의 최근 72시간 성공 이력 재사용 |
 | `AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED` | 아니오 | `true` | 매일 02:00 KST 개발 DB 수집·최근 24시간 KB 델타 upsert·집계 최신화. 예측 검증·재학습은 제외 |
+| `INTRADAY_COLLECT_ENABLED` | 아니오 | `true` | 평일 07~20시 매시 10분, 주말 12:10 에 오늘(KST) 공고 4종과 면허제한·참가가능지역만 수집하고 이번 회차 적재분만 검색 색인에 반영하는 낮 시간 증분 수집 크론 사용 여부 |
 | `AUTOMATION_NIGHTLY_SCHEDULE_ENABLED` | 아니오 | `false` | 매일 02:00 야간 번들 크론 사용 여부 (운영 compose 기본 true, 개발 기본 false) |
 | `AUTOMATION_SCHEDULE_CATCHUP_ENABLED` | 아니오 | `false` | 워커 기동 시 누락된 일일 정기 수집을 1회 따라잡을지 여부 (운영 compose worker 기본 true) |
 | `AUTOMATION_SCHEDULE_CATCHUP_THRESHOLD_HOURS` | 아니오 | `24` | 마지막 수집 이후 이 시간을 넘겼을 때만 따라잡기를 실행합니다 |
