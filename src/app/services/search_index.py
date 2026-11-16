@@ -353,7 +353,7 @@ class MeiliSearchClient:
 def _latest_announcements(db: Session, collected_since: datetime | None):
     from src.app.services.bid_queries import latest_announcement_filter
 
-    stmt = latest_announcement_filter(select(BidAnnouncement))
+    stmt = latest_announcement_filter(select(BidAnnouncement), collected_since=collected_since)
     if collected_since:
         stmt = stmt.where(BidAnnouncement.collected_at >= collected_since)
     return (
