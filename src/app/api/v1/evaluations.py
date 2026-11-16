@@ -111,6 +111,7 @@ from src.app.services.evaluation_recommendation import (
     disqualification_status,
     extract_participant_count,
     has_disqualification,
+    member_recommended_price,
     summarize_participant_counts,
     theoretical_rate_range,
 )
@@ -2787,6 +2788,13 @@ def recommend_evaluation(
         rate_low, rate_high = theoretical_rate_range(theoretical.range_rate)
     price_bounds = _recommend_price_bounds(inputs, breakdown, rate_low, rate_high)
     bounds_blocked = price_bounds.status != "ok"
+    member_recommendation = (
+        None
+        if bounds_blocked
+        else member_recommended_price(
+            prediction.optimal_price, price_bounds.min_bid_amount, price_bounds.max_bid_amount
+        )
+    )
 
     return EvaluationRecommendResponse(
         status="blocked" if bounds_blocked else "success",
@@ -2832,6 +2840,12 @@ def recommend_evaluation(
         ),
         prediction=prediction,
         price_bounds=price_bounds,
+        member_recommended_price=(
+            member_recommendation.price if member_recommendation is not None else None
+        ),
+        member_recommendation_basis=(
+            member_recommendation.basis if member_recommendation is not None else None
+        ),
         participant_stats=participant_stats,
         warnings=[
             *warnings,

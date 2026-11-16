@@ -34,7 +34,7 @@ class TestEvaluationUITemplate:
     def test_evaluation_card_header(self, template_content):
         """카드 헤더에 제목과 범위 배지가 있다."""
         assert "공고 기준 분석" in template_content
-        assert "일반용역 적격심사만 지원" in template_content
+        assert "지원 여부 확인 중" in template_content
         assert 'id="evaluation-scope-badge"' in template_content
 
     # ---------------------------------------------------------------------

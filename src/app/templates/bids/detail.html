@@ -18,6 +18,7 @@
     .badge-gray { background-color: #F3F4F6; color: #374151; }
     .badge-red { background-color: #FEE2E2; color: #B91C1C; }
     .badge-green { background-color: #D1FAE5; color: #065F46; }
+    .badge-amber { background-color: #FEF3C7; color: #92400E; }
 
     .detail-label {
         font-size: 0.625rem;
@@ -370,6 +371,18 @@
                                     </div>
                                 </div>
 
+                                <!-- 내 조건 추천가. AI 예측가를 내 정량점수 기준 통과 구간 안으로 옮긴 값이다. -->
+                                <div id="res-member-recommendation" class="hidden mt-3 p-3 bg-white border border-primary/20 rounded-lg text-xs text-slate-700">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <div class="flex items-center gap-2 min-w-0">
+                                            <i class="fas fa-user-check text-primary text-[10px] shrink-0" aria-hidden="true"></i>
+                                            <div class="detail-label text-primary mb-0 whitespace-nowrap">내 조건 추천가</div>
+                                        </div>
+                                        <div id="res-member-price" class="price-amount text-slate-900">-</div>
+                                    </div>
+                                    <p id="res-member-reason" class="mt-1 leading-relaxed"></p>
+                                </div>
+
                                 <!-- 예측 불확실성 경고. 서버가 보낸 경고가 없으면 숨긴다. -->
                                 <div id="res-prediction-warning" class="hidden mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
                                     <div class="flex items-start gap-2">
@@ -430,7 +443,7 @@
                         공고 기준 분석
                     </h2>
                     <span id="evaluation-scope-badge" class="badge badge-gray text-[10px]">
-                        일반용역 적격심사만 지원 (약 6%)
+                        {% if prediction_supported|default(true) %}지원 여부 확인 중{% else %}계산 미지원 분야{% endif %}
                     </span>
                 </div>
 
@@ -1713,15 +1726,71 @@ $(document).ready(function() {
         updateReputationTotal();
     });
 
+    // 배지는 이 공고가 계산 가능한지를 보여 준다. 사유 전문은 title 로 둔다.
+    const scopeBadgeInputCodes = {
+        'LOCAL_SERVICE_TYPE_UNRESOLVED': '용역 세부유형 선택',
+        'LOCAL_RULE_NOT_FOUND': '지자체 기준값 입력',
+        'LOCAL_QUANT_REQUIRED': '정량점수 입력',
+        'MISSING_SCORE_TABLE': '배점표 입력',
+        'QUANT_BAND_UNRESOLVED': '정량 입력 확인',
+        'QUANT_GRADE_UNKNOWN': '정량 입력 확인',
+        'QUANT_ITEM_NOT_IN_TABLE': '정량 입력 확인',
+        'QUANT_LIMIT_EXCEEDED': '정량 입력 확인'
+    };
+    const scopeBadgeUnsupportedCodes = {
+        'NOT_SERVC': '용역 공고 아님',
+        'NON_PRED_PRICE': '비예가',
+        'MANUAL_EVALUATION': '수기심사',
+        'RULE_NOT_FOUND': '적용 별표 미확정',
+        'NOT_QUALIFICATION_METHOD': '적격심사 아님',
+        'RULE_REGIME_MISMATCH': '개정 전 공고',
+        'NEGOTIATION_CONTRACT': '협상에의한계약',
+        'TECH_SERVICE_MISSING_LWLT': '공고 하한율 없음',
+        'LWLT_RATE_UNRESOLVED': '하한율 미확정',
+        'PRED_PRICE_UNAVAILABLE': '예정가격 없음',
+        'RULE_SCOPE_AMBIGUOUS': '기관 기준 중복'
+    };
+
+    function applyEvaluationScopeBadge(tone, text, title) {
+        $('#evaluation-scope-badge')
+            .removeClass('badge-gray badge-green badge-amber badge-red badge-blue')
+            .addClass('badge-' + tone)
+            .text(text)
+            .attr('title', title || text);
+    }
+
     function setEvaluationScopeBadge(data) {
-        const defaultText = '일반용역 적격심사만 지원 (약 6%)';
-        let badgeText = defaultText;
-        if (data && data.negotiation_variant != null) {
-            badgeText = '협상에의한계약 평가비율 제공';
-        } else if (data && typeof data.rule_id === 'string' && data.rule_id.startsWith('SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT')) {
-            badgeText = '기술용역 적격심사 공고 (공고 하한율 적용)';
+        if (!data) {
+            applyEvaluationScopeBadge('gray', '지원 여부 확인 실패');
+            return;
         }
-        $('#evaluation-scope-badge').text(badgeText);
+        if (data.negotiation_variant != null) {
+            applyEvaluationScopeBadge('blue', '협상에의한계약 · 평가비율 제공');
+            return;
+        }
+        const isTech = typeof data.rule_id === 'string'
+            && data.rule_id.startsWith('SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT');
+        if (!data.blocked) {
+            const text = isTech ? '계산 지원 · 기술용역 공고 하한율' : '계산 지원';
+            applyEvaluationScopeBadge('green', text, data.rule_name || text);
+            return;
+        }
+        const code = blockedCodeOf(data.blocked_reason);
+        const reasonText = getBlockedReasonText(data.blocked_reason);
+        if (code === 'PRICE_BOUNDS_UNRESOLVED') {
+            if (!hasMemberQuantData(data)) {
+                applyEvaluationScopeBadge('amber', '입력하면 계산 가능 · 회원 정량정보', reasonText);
+            } else {
+                applyEvaluationScopeBadge('red', '계산 미지원 · 투찰 범위 미확정', reasonText);
+            }
+            return;
+        }
+        if (scopeBadgeInputCodes[code]) {
+            applyEvaluationScopeBadge('amber', '입력하면 계산 가능 · ' + scopeBadgeInputCodes[code], reasonText);
+            return;
+        }
+        const label = scopeBadgeUnsupportedCodes[code];
+        applyEvaluationScopeBadge('red', label ? '계산 미지원 · ' + label : '계산 미지원', reasonText);
     }
 
     function renderNegotiation(data) {
@@ -1841,6 +1910,35 @@ $(document).ready(function() {
         return '발주처의 기존 낙찰 데이터 ' + prediction.institution_sample_count + '건 분석 시 평균 '
             + Number(prediction.institution_average_rate).toFixed(2) + '%의 낙찰률을 보이며, 금번 입찰의 낙찰률은 '
             + rate + '로 예측했습니다.' + fallback;
+    }
+
+    // AI 예측가는 시장 낙찰가 예측이라 정량점수와 무관하다. 내 정량점수로 정해지는
+    // 통과 구간을 벗어난 경우에만 서버가 구간 끝으로 옮긴 금액을 보낸다.
+    function memberRecommendationText(data) {
+        const basis = data.member_recommendation_basis;
+        const score = scoreText(data.non_price_score);
+        const scoreLabel = score == null ? '내 정량점수' : '정량점수 ' + score + '점';
+        const aiPrice = amountText(data.prediction ? data.prediction.optimal_price : null);
+        if (basis === 'raised_to_min') {
+            return 'AI 예측가 ' + aiPrice + '은 ' + scoreLabel + '으로는 어떤 예정가격에서도 적격 통과점수에 못 미쳐 최저가로 올렸습니다.';
+        }
+        if (basis === 'lowered_to_max') {
+            return 'AI 예측가 ' + aiPrice + '은 ' + scoreLabel + ' 기준 최상가를 넘어 최상가로 내렸습니다.';
+        }
+        return scoreLabel + ' 기준 통과 구간(최저가~최상가) 안이라 AI 예측가를 그대로 추천합니다.';
+    }
+
+    function renderMemberRecommendation(data, boundsReady) {
+        const price = data.member_recommended_price;
+        const basis = data.member_recommendation_basis;
+        const show = boundsReady && price != null && basis != null;
+        const box = $('#res-member-recommendation').toggleClass('hidden', !show);
+        if (!show) return;
+        const adjusted = basis !== 'ai';
+        box.toggleClass('bg-white border-primary/20', !adjusted)
+            .toggleClass('bg-amber-50 border-amber-200', adjusted);
+        $('#res-member-price').text(amountText(price));
+        $('#res-member-reason').text(memberRecommendationText(data));
     }
 
     function boundReasonText(data, bound) {
@@ -2033,6 +2131,7 @@ $(document).ready(function() {
         );
         $('#res-min-price').text(boundsReady ? amountText(bounds.min_bid_amount) : '-');
         $('#res-max-price').text(boundsReady ? amountText(bounds.max_bid_amount) : '-');
+        renderMemberRecommendation(data, boundsReady);
 
         $('#res-ai-reason').text(aiReasonText(data)).toggleClass('hidden', !data.prediction);
         $('#res-min-reason').text(boundsReady ? boundReasonText(data, 'min') : '').toggleClass('hidden', !boundsReady);
@@ -2171,9 +2270,11 @@ $(document).ready(function() {
                 $('#prediction-result').addClass('hidden');
                 $('#recommend-blocked-gap').addClass('hidden');
                 if (xhr.status === 401) {
+                    applyEvaluationScopeBadge('gray', '로그인 후 확인');
                     $('#recommend-blocked').addClass('hidden');
                     $('#recommend-member-missing').removeClass('hidden');
                 } else {
+                    setEvaluationScopeBadge(null);
                     $('#recommend-member-missing').addClass('hidden');
                     $('#recommend-blocked').removeClass('hidden');
                     const err = xhr.responseJSON

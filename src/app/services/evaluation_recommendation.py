@@ -34,6 +34,38 @@ THEORETICAL_RATE_NOTICE = (
 )
 
 
+MemberRecommendationBasis = Literal["ai", "raised_to_min", "lowered_to_max"]
+
+
+@dataclass(frozen=True)
+class MemberRecommendation:
+    """회원 정량점수로 확정한 통과 구간 안으로 옮긴 AI 예측가."""
+
+    price: int
+    basis: MemberRecommendationBasis
+
+
+def member_recommended_price(
+    ai_price: int | None,
+    min_bid_amount: int | None,
+    max_bid_amount: int | None,
+) -> MemberRecommendation | None:
+    """AI 예측가를 회원 조건의 최저가·최상가 구간 안으로 옮깁니다.
+
+    AI 예측가는 공고의 시장 낙찰가 예측이라 회원 정량점수와 무관합니다. 최저가는 사정률
+    하한 시나리오에서도 통과점수를 넘기는 가장 낮은 금액이므로, 그보다 낮은 예측가로
+    투찰하면 어떤 예정가격에서도 적격심사를 통과하지 못합니다. 구간이 없으면 옮길 근거가
+    없어 None 을 돌려줍니다.
+    """
+    if ai_price is None or min_bid_amount is None or max_bid_amount is None:
+        return None
+    if ai_price < min_bid_amount:
+        return MemberRecommendation(price=min_bid_amount, basis="raised_to_min")
+    if ai_price > max_bid_amount:
+        return MemberRecommendation(price=max_bid_amount, basis="lowered_to_max")
+    return MemberRecommendation(price=ai_price, basis="ai")
+
+
 def disqualification_status(value: bool | None) -> Literal["not_checked", "clear", "disqualified"]:
     """결격 입력을 응답 상태 문구로 바꿉니다. 생략(None)은 '미확인'입니다."""
     if value is None:
