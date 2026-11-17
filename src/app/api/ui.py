@@ -211,6 +211,13 @@ def bid_list(
         return _login_redirect(request)
     industry_codes = bid_queries.industry_filter_codes(",".join(lic))
     normalized_lic = ",".join(industry_codes)
+    # 질의 조건은 업종을 고르지 않아도 4개 업종 전체(industry_codes)지만, 화면 체크
+    # 상태는 사용자가 실제로 고른 코드만 반영합니다. 첫 화면에서는 모두 해제됩니다.
+    selected_industry_codes = [
+        code
+        for code in bid_queries.normalize_license_codes(",".join(lic))
+        if code in bid_queries.BID_INDUSTRY_CODE_SET
+    ]
     qualification_only = qual == "1"
     try:
         page_obj = bid_queries.list_announcements(
@@ -249,7 +256,7 @@ def bid_list(
         "region": bid_queries.normalize_region_code(region),
         "lic": normalized_lic,
         "qual": "1" if qualification_only else "",
-        "industry_groups": bid_queries.industry_groups_payload(industry_codes),
+        "industry_groups": bid_queries.industry_groups_payload(selected_industry_codes),
         "region_groups": bid_queries.region_groups_payload(),
     }
     return _render(request, "bids/list.html", context, user, "bids")
