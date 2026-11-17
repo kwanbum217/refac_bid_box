@@ -4,7 +4,7 @@
 {% block page_header %}홈{% endblock %}
 
 {% block content %}
-<div class="bg-harness-bg px-6 py-8">
+<div class="bg-harness-bg px-6 py-8 dark:bg-slate-950">
     <div class="mx-auto max-w-[1500px] space-y-6">
 
         <section class="overflow-hidden rounded-2xl bg-harness-sidebar px-8 py-8 text-white">
@@ -31,127 +31,133 @@
             </div>
         </section>
 
-        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section class="grid gap-4 md:grid-cols-2">
             <article data-home-metric="accuracy" class="h-card flex min-w-0 flex-col p-5">
                 <div class="flex items-center justify-between gap-3">
-                    <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">모델 정확도</p>
-                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">모델 정확도</p>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary dark:bg-primary/20">
                         <i class="fas fa-bullseye"></i>
                     </span>
                 </div>
                 {% if accuracy.available %}
-                <p class="mt-4 text-3xl font-black tracking-tight text-slate-900">
-                    ±{{ accuracy.rmse_display }}<span class="ml-1 text-sm font-bold text-slate-500">%p</span>
+                <p class="mt-4 text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                    ±{{ accuracy.rmse_display }}<span class="ml-1 text-sm font-bold text-slate-500 dark:text-slate-400">%p</span>
                 </p>
-                <p class="mt-2 text-xs leading-5 text-slate-500">
+                <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
                     용역 낙찰률 예측 평균 오차(RMSE){% if accuracy.promoted_date %} · {{ accuracy.promoted_date }} 승격 모델{% endif %}
                 </p>
                 {% else %}
-                <p class="mt-4 text-2xl font-black tracking-tight text-slate-400">측정값 준비 중</p>
-                <p class="mt-2 text-xs leading-5 text-slate-500">서빙 모델의 실측 지표를 읽는 중입니다.</p>
+                <p class="mt-4 text-2xl font-black tracking-tight text-slate-400 dark:text-slate-500">측정값 준비 중</p>
+                <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">서빙 모델의 실측 지표를 읽는 중입니다.</p>
                 {% endif %}
             </article>
 
             <article data-home-metric="recent-year" class="h-card flex min-w-0 flex-col p-5">
                 <div class="flex items-center justify-between gap-3">
-                    <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">최근 365일 공고</p>
-                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-600">
+                    <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">최근 365일 공고</p>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300">
                         <i class="fas fa-calendar-days"></i>
                     </span>
                 </div>
                 {% if recent_year_count is not none %}
-                <p class="mt-4 text-3xl font-black tracking-tight text-slate-900">
-                    {{ recent_year_count|intcomma }}<span class="ml-1 text-sm font-bold text-slate-500">건</span>
+                <p class="mt-4 text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                    {{ recent_year_count|intcomma }}<span class="ml-1 text-sm font-bold text-slate-500 dark:text-slate-400">건</span>
                 </p>
                 {% else %}
-                <p class="mt-4 text-2xl font-black tracking-tight text-slate-400">집계 중</p>
+                <p class="mt-4 text-2xl font-black tracking-tight text-slate-400 dark:text-slate-500">집계 중</p>
                 {% endif %}
-                <p class="mt-2 text-xs leading-5 text-slate-500">용역 분야 전체 공고(최신 차수 기준)</p>
+                <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">용역 분야 전체 공고(최신 차수 기준)</p>
             </article>
+        </section>
 
-            <article data-home-metric="open" class="h-card flex min-w-0 flex-col p-5">
+        <section class="grid gap-4 lg:grid-cols-2">
+            <article data-home-panel="open" class="h-card flex min-w-0 flex-col p-5">
                 <div class="flex items-center justify-between gap-3">
-                    <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">입찰 중 공고</p>
-                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">입찰 중 공고</p>
+                        <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">마감 전인 용역 공고</p>
+                    </div>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
                         <i class="fas fa-gavel"></i>
                     </span>
                 </div>
                 {% if open_count is not none %}
-                <p class="mt-4 text-3xl font-black tracking-tight text-slate-900">
-                    {{ open_count|intcomma }}<span class="ml-1 text-sm font-bold text-slate-500">건</span>
+                <p class="mt-4 text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                    {{ open_count|intcomma }}<span class="ml-1 text-sm font-bold text-slate-500 dark:text-slate-400">건</span>
                 </p>
                 {% else %}
-                <p class="mt-4 text-2xl font-black tracking-tight text-slate-400">집계 중</p>
+                <p class="mt-4 text-2xl font-black tracking-tight text-slate-400 dark:text-slate-500">집계 중</p>
                 {% endif %}
-                <p class="mt-2 text-xs leading-5 text-slate-500">마감 전인 용역 공고</p>
+
+                {% if open_deadline_buckets %}
+                {% set bucket_max = (open_deadline_buckets | max(attribute="count")).count %}
+                <div class="mt-5 space-y-2.5" data-home-deadline-buckets>
+                    {% for bucket in open_deadline_buckets %}
+                    <div class="flex items-center gap-3 text-xs" data-home-deadline-bucket="{{ bucket.key }}">
+                        <span class="w-16 shrink-0 text-slate-500 dark:text-slate-400">{{ bucket.label }}</span>
+                        <span class="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            <span class="block h-full rounded-full bg-emerald-500 dark:bg-emerald-400" style="width: {{ (bucket.count / bucket_max * 100) | round(1) if bucket_max else 0 }}%"></span>
+                        </span>
+                        <span class="w-14 shrink-0 text-right font-bold text-slate-700 dark:text-slate-200">{{ bucket.count|intcomma }}건</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </article>
 
-            <article data-home-metric="matching" class="h-card flex min-w-0 flex-col p-5">
+            <article data-home-panel="matching" class="h-card flex min-w-0 flex-col p-5">
                 <div class="flex items-center justify-between gap-3">
-                    <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">내 조건 입찰 중</p>
-                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">내 조건 입찰 중</p>
+                        <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">관심 업종·지역에 맞는 마감 전 용역 공고</p>
+                    </div>
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
                         <i class="fas fa-user-check"></i>
                     </span>
                 </div>
+
                 {% if has_preferences %}
-                <p data-home-matching-count="{{ matching_count }}" class="mt-4 text-3xl font-black tracking-tight text-slate-900">
-                    {{ matching_count|intcomma }}<span class="ml-1 text-sm font-bold text-slate-500">건</span>
+                <p data-home-matching-count="{{ matching_count }}" class="mt-4 text-3xl font-black tracking-tight text-slate-900 dark:text-white">
+                    {{ matching_count|intcomma }}<span class="ml-1 text-sm font-bold text-slate-500 dark:text-slate-400">건</span>
                 </p>
-                <p class="mt-2 text-xs leading-5 text-slate-500">관심 업종·지역에 맞는 마감 전 용역 공고</p>
+
+                {% if matching_bids %}
+                <ul class="mt-4 divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
+                    {% for bid in matching_bids %}
+                    <li class="flex items-center gap-3 py-3" data-home-matching-bid="{{ bid.id }}">
+                        <span class="min-w-0 flex-1">
+                            <a href="{{ url('bids:bid_detail', bid.id) }}" class="block truncate text-sm font-bold text-slate-900 transition-colors hover:text-primary dark:text-white dark:hover:text-blue-300" title="{{ bid.bid_ntce_nm }}">
+                                {{ bid.bid_ntce_nm }}
+                            </a>
+                            <span class="mt-1 block truncate text-xs text-slate-500 dark:text-slate-400" title="{{ bid.dminstt_nm }}">{{ bid.dminstt_nm }}</span>
+                        </span>
+                        <span class="shrink-0 text-right">
+                            <span class="block text-xs text-slate-500 dark:text-slate-400">{{ bid.deadline_label }}</span>
+                            <span class="mt-0.5 inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">{{ bid.dday_label }}</span>
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
                 {% else %}
-                <p class="mt-4 text-base font-black tracking-tight text-slate-900">관심 조건이 아직 없습니다</p>
-                <a href="{{ url('accounts:mypage_edit') }}" class="mt-2 inline-flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary-hover">
+                <p class="mt-4 text-sm text-slate-500 dark:text-slate-400">조건에 맞는 입찰 중 공고가 없습니다.</p>
+                {% endif %}
+
+                {% if matching_count > 5 %}
+                {% set more_url = url('bids:bid_list') ~ '?lic=' ~ (matching_license_codes|join(',')) %}
+                {% if matching_region_code %}{% set more_url = more_url ~ '&region=' ~ matching_region_code %}{% endif %}
+                <a data-home-matching-more href="{{ more_url }}" class="mt-4 inline-flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary-hover dark:text-blue-400 dark:hover:text-blue-300">
+                    내 조건 공고 더보기
+                    <i class="fas fa-arrow-right text-[10px]"></i>
+                </a>
+                {% endif %}
+                {% else %}
+                <p class="mt-4 text-base font-black tracking-tight text-slate-900 dark:text-white">관심 조건이 아직 없습니다</p>
+                <a href="{{ url('accounts:mypage_edit') }}" class="mt-2 inline-flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary-hover dark:text-blue-400 dark:hover:text-blue-300">
                     마이페이지에서 관심 업종·지역 입력
                     <i class="fas fa-arrow-right text-[10px]"></i>
                 </a>
                 {% endif %}
             </article>
-        </section>
-
-        <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <a data-home-shortcut="bid-list" href="{{ url('bids:bid_list') }}" class="h-card flex min-w-0 items-center gap-4 p-5">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <i class="fas fa-search"></i>
-                </span>
-                <span class="min-w-0">
-                    <span class="block text-sm font-black text-slate-900">공고 탐색</span>
-                    <span class="mt-1 block text-xs text-slate-500">조건별 용역 공고 찾기</span>
-                </span>
-                <i class="fas fa-chevron-right ml-auto text-xs text-slate-300"></i>
-            </a>
-
-            <a data-home-shortcut="result-list" href="{{ url('bids:result_list') }}" class="h-card flex min-w-0 items-center gap-4 p-5">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                    <i class="fas fa-trophy"></i>
-                </span>
-                <span class="min-w-0">
-                    <span class="block text-sm font-black text-slate-900">낙찰 결과</span>
-                    <span class="mt-1 block text-xs text-slate-500">최근 낙찰률과 업체 확인</span>
-                </span>
-                <i class="fas fa-chevron-right ml-auto text-xs text-slate-300"></i>
-            </a>
-
-            <a data-home-shortcut="compare" href="{{ url('bids:compare') }}" class="h-card flex min-w-0 items-center gap-4 p-5">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-                    <i class="fas fa-chart-column"></i>
-                </span>
-                <span class="min-w-0">
-                    <span class="block text-sm font-black text-slate-900">비교 분석</span>
-                    <span class="mt-1 block text-xs text-slate-500">공고 대비 낙찰 흐름 비교</span>
-                </span>
-                <i class="fas fa-chevron-right ml-auto text-xs text-slate-300"></i>
-            </a>
-
-            <a data-home-shortcut="chatbot" href="{{ url('chatbot:chat_page') }}" class="h-card flex min-w-0 items-center gap-4 p-5">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                    <i class="fas fa-robot"></i>
-                </span>
-                <span class="min-w-0">
-                    <span class="block text-sm font-black text-slate-900">AI 어드바이저</span>
-                    <span class="mt-1 block text-xs text-slate-500">데이터 근거로 투찰 상담</span>
-                </span>
-                <i class="fas fa-chevron-right ml-auto text-xs text-slate-300"></i>
-            </a>
         </section>
     </div>
 </div>

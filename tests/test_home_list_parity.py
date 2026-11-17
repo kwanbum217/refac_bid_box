@@ -268,7 +268,7 @@ def test_double_slash_compare_url_redirects_to_canonical_url(auth_client):
 
 
 def test_index_page_renders_one_screen_home(auth_client, isolated_db):
-    """홈은 한 화면 요약(서비스 소개·4개 지표·바로가기)으로 렌더된다."""
+    """홈은 한 화면 요약(서비스 소개·상단 지표·하단 2열 패널)으로 렌더된다."""
     _add_announcement(isolated_db, bid_ntce_no="ANN-001", bid_ntce_nm="홈 노출 공고")
 
     body = auth_client.get("/").text
@@ -277,15 +277,14 @@ def test_index_page_renders_one_screen_home(auth_client, isolated_db):
         "공공조달 용역 입찰을 데이터로 해석합니다",
         'data-home-metric="accuracy"',
         'data-home-metric="recent-year"',
-        'data-home-metric="open"',
-        'data-home-metric="matching"',
-        'data-home-shortcut="bid-list"',
-        'data-home-shortcut="result-list"',
-        'data-home-shortcut="compare"',
-        'data-home-shortcut="chatbot"',
-        "/bids/compare/",
+        'data-home-panel="open"',
+        'data-home-panel="matching"',
     ):
         assert phrase in body, phrase
+    # 입찰 중·내 조건은 상단 지표에서 하단 패널로 옮겼고 바로가기는 삭제했다.
+    assert 'data-home-metric="open"' not in body
+    assert 'data-home-metric="matching"' not in body
+    assert "data-home-shortcut" not in body
     # 옛 스와이프 브리핑 마크업과 스크립트는 남지 않는다.
     assert "data-home-swipe-slide" not in body
     assert "data-home-swipe-track" not in body
