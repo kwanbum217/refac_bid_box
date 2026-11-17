@@ -48,6 +48,7 @@ from src.app.services.evaluation_flat_zones import (
     flat_zone_for,
     pps_axis_side,
     pps_flat_zone_for,
+    servc_tech_flat_zone_for,
 )
 from src.app.services.evaluation_rules import (
     EvaluationRule,
@@ -212,7 +213,8 @@ def _flat_zone_for_bid(
 ) -> FlatZone | None:
     """선택된 규칙·가격 구간의 원문 평탄 규정을 조회합니다.
 
-    지방 규칙은 추정가격으로 고른 price_bands 구간으로, 조달청 규칙은 실제 적용한
+    지방 규칙은 추정가격으로 고른 price_bands 구간으로, 기술용역은 고시금액 경계가
+    연도별로 달라 구간 순서(price_band_index)로, 조달청 일반용역 규칙은 실제 적용한
     B(5억)·k(고시금액) 값이 어느 축인지로 조회합니다. 조건부 축의 적용값이 없으면 규칙
     선언값으로 대체하지 않고, 평탄 데이터가 없으면 None 을 돌려줍니다.
     """
@@ -227,6 +229,9 @@ def _flat_zone_for_bid(
         index = resolution.price_band_index
         if index is None or index >= len(price_bands):
             return None
+        tech_zone = servc_tech_flat_zone_for(rule.rule_id, index)
+        if tech_zone is not None:
+            return tech_zone
         return flat_zone_for(rule.rule_id, price_bands[index].upper_bound)
     # 두 축을 선언하지 않은 시험용 규칙 객체는 건드리지 않습니다(기존 동작 보존).
     if not hasattr(rule, "max_price_score_by_500m"):

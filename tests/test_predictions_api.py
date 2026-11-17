@@ -24,12 +24,17 @@ CATEGORY_DEFAULT_MODELS 를 정본으로 삼아 재학습 승격을 따라갑니
 모델 ID 를 문자열로 박지 않고 정본 상수와 대조합니다.
 """
 
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.app.api.v1.evaluations import _score_table
 from src.app.core.timeutil import utcnow
 from src.app.models.bids import BidAnnouncement
+from src.app.schemas.evaluations import QualificationInput
+from src.app.services.evaluation_recommendation import compute_price_bounds
+from src.app.services.evaluation_rules import resolve_evaluation_rule_from_raw_data
 from src.ml.model_registry import (
     CATEGORY_DEFAULT_MODELS,
     MODEL_FILES_ROOT,
@@ -437,3 +442,89 @@ def test_predict_winning_price_invokes_enforce_anonymous_quota(mock_predict, moc
     assert response.status_code == 200
     mock_enforce.assert_called_once()
     assert response.json()["predicted_price"] == 475_000_000
+
+
+def _create_tech_bid(db, *, notice_no: str = "PRED-TECH-001") -> BidAnnouncement:
+    bid = BidAnnouncement(
+        bid_ntce_nm="기술용역 최상가 경로 비교",
+        bid_ntce_no=notice_no,
+        bid_ntce_ord="000",
+        ntce_instt_nm="테스트 공고기관",
+        dminstt_nm="테스트 수요기관",
+        base_amount=600_000_000,
+        presmpt_prce=600_000_000,
+        bid_ntce_dt=utcnow(),
+        bid_clse_dt=utcnow(),
+        openg_dt=utcnow(),
+        category="Servc",
+        raw_data={
+            "prearngPrceDcsnMthdNm": "복수예가",
+            "sucsfbidMthdNm": (
+                "적격심사제-추정가격이 10억원 미만 5억원 이상인 P.Q 대상 기술용역의 평가기준"
+            ),
+            "sucsfbidLwltRate": "87.495",
+            "srvceDivNm": "기술용역",
+            "bdgtAmt": 600_000_000,
+        },
+    )
+    db.add(bid)
+    db.commit()
+    db.refresh(bid)
+    return bid
+
+
+@patch("src.app.api.v1.predictions.ModelRegistry.get_model")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
+def test_tech_price_bounds_match_between_predictions_and_evaluations(
+    mock_predict, mock_get_model, client, isolated_db
+):
+    """같은 기술용역 공고에서 predictions 와 evaluations 가 같은 최저가·최상가를 낸다."""
+    bid = _create_tech_bid(isolated_db)
+    mock_predict.return_value = _outcome(0.95)
+    mock_get_model.return_value = _mock_wrapper("테스트 기술용역 모델")
+
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={
+            "bid_id": bid.id,
+            "user_price": "570000000",
+            "max_price_score": 50.0,
+            "multiplier": 2.0,
+            "pass_threshold": 95.0,
+            "non_price_score": 50.0,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    verdict = response.json()["score_verdict"]
+    assert verdict["verifiable"] is True, verdict
+    assert verdict["max_price_score"] == "50"
+    assert verdict["pass_range_status"] == "feasible"  # noqa: S105
+    assert verdict["effective_amount_low"] is not None
+    assert verdict["effective_amount_high"] is not None
+
+    rule_result = resolve_evaluation_rule_from_raw_data("Servc", bid.raw_data)
+    assert rule_result.rule is not None
+    table, missing, _, _ = _score_table(QualificationInput(), rule_result.rule, bid)
+    assert table is not None
+    assert missing == []
+    assert table.flat_ratio == Decimal("0.925")
+    assert table.flat_score == Decimal("45")
+
+    evaluations_bounds = compute_price_bounds(
+        base_amount=Decimal("600000000"),
+        rate_low=Decimal("1.0"),
+        rate_high=Decimal("1.0"),
+        pass_threshold=table.pass_threshold,
+        non_price_score=Decimal("50"),
+        base_rate=table.base_rate,
+        max_price_score=table.max_price_score,
+        multiplier=table.multiplier,
+        announcement_lwlt_rate=Decimal("87.495"),
+        flat_ratio=table.flat_ratio,
+        flat_score=table.flat_score,
+    )
+
+    assert evaluations_bounds.status == "ok", evaluations_bounds.reasons
+    assert evaluations_bounds.min_bid_amount == verdict["effective_amount_low"]
+    assert evaluations_bounds.max_bid_amount == verdict["effective_amount_high"]

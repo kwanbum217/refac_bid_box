@@ -88,7 +88,7 @@ YAML 키와 행:
 - B·k·T 선언: `src/app/services/evaluation_rules.py:1198-1320` (`_SERVC_TECH_SCORE_YAML`, `_servc_tech_price_bands`, `_servc_tech_threshold_bands`, 두 규칙)
 - 연도별 고시금액 치환: `src/app/services/evaluation_rules.py:690` (`resolve_score_params`) 와 `src/app/services/evaluation_rules.py:1273-1287` (`_servc_tech_price_bands_for_announcement`)
 - 평탄 데이터: `src/app/services/evaluation_flat_zones.py:672-774` (`_SERVC_TECH_FLAT_ZONES`, `servc_tech_flat_zone_for`, `servc_tech_flat_zone_entries`)
-- 평탄 선택 연결: `src/app/api/v1/evaluations.py:299-332` (`_selected_flat_zone`)
+- 평탄 선택 연결: `src/app/api/v1/evaluations.py:299-332` (`_selected_flat_zone`), `src/app/api/v1/predictions.py:206-235` (`_flat_zone_for_bid`)
 - 시험: `tests/test_tech_score_table_20261117.py`, `tests/test_evaluation_rules.py`, `tests/test_pps_flat_zones.py`
 
 ---
@@ -121,7 +121,7 @@ YAML 키와 행:
 
 - 기존 `_FLAT_ZONES`(지방 규칙, `PriceBand.upper_bound` 키)와 `_PPS_FLAT_ZONES`(조달청 일반용역, B 5억·k 고시금액 두 축 키)는 기술용역의 10억 경계를 표현하지 못한다. 기술용역은 추정가격 4구간이고, 첫 구간 상한(고시금액)이 연도별로 달라 안정적인 upper_bound 키가 없다.
 - 그래서 `src/app/services/evaluation_flat_zones.py` 에 기술용역 전용 `_SERVC_TECH_FLAT_ZONES` 를 추가했다. 키는 규칙 ID → `price_band_index`(추정가격 오름차순 0~3)이고, 값은 `FlatZone` 이다.
-- `servc_tech_flat_zone_for(rule_id, band_index)` 가 그 조회를 담당한다. `src/app/api/v1/evaluations.py::_selected_flat_zone` 은 `price_bands` 규칙이면 이 함수를 먼저 보고, 없으면 기존 `flat_zone_for` 로 넘어간다. 기존 지방·기관 규칙 경로는 호출 순서만 앞에 조회가 하나 붙을 뿐 결과가 같다.
+- `servc_tech_flat_zone_for(rule_id, band_index)` 가 그 조회를 담당한다. `src/app/api/v1/evaluations.py::_selected_flat_zone` 과 `src/app/api/v1/predictions.py::_flat_zone_for_bid` 가 `price_bands` 규칙이면 이 함수를 먼저 보고, 없으면 기존 `flat_zone_for` 로 넘어간다. 기존 지방·기관 규칙 경로는 호출 순서만 앞에 조회가 하나 붙을 뿐 결과가 같다.
 - 기존 `flat_zone_entries()`·`pps_flat_zone_for`·`_FLAT_ZONES` 는 건드리지 않았다. `tests/test_flat_zone_scoring.py::TestFlatZoneLinkedRuleIds` 가 요구하는 "평탄 항목은 LOCAL_RULES·INSTITUTION_RULES 안에 있다"는 계약도 그대로다.
 - 평탄값의 출처는 각 `FlatZone.source` 에 YAML 경로·키와 조달청지침 번호, 원문 평탄 문장을 적었다.
 
@@ -251,6 +251,7 @@ YAML 키와 행:
 | (f) 낙찰하한율은 여전히 공고 `sucsfbidLwltRate` | `test_tech_lwlt_still_comes_from_announcement_rate` |
 | 평탄 값·출처·구간 순서 | `test_flat_zones_match_reference_yaml`, `TestTechFlatZoneData`(4개) |
 | 평탄이 최상가·가격점수에 반영 | `test_flat_zone_is_applied_to_max_bid_amount`, `test_tech_analyze_applies_flat_zone_to_price_score` |
+| predictions·evaluations 최저가·최상가 일치 | `test_tech_price_bounds_match_between_predictions_and_evaluations` |
 | 비가격 0 일 때 일반용역과 동일 | `test_price_bounds_unresolved_matches_general_service_without_non_price_score` |
 | 기존 일반용역 평탄 동작 불변 | `tests/test_flat_zone_scoring.py`, `tests/test_flat_zone_rest.py`, `tests/test_pps_flat_zones.py` |
 
@@ -259,8 +260,8 @@ YAML 키와 행:
 | 명령 | 결과 |
 | --- | --- |
 | `uv run pytest tests/test_tech_score_table_20261117.py tests/test_evaluation_rules.py tests/test_evaluation_scoring.py tests/test_evaluation_recommend.py -q` | `114 passed` |
-| `uv run pytest tests/test_pps_flat_zones.py tests/test_flat_zone_scoring.py tests/test_flat_zone_rest.py tests/test_evaluations_api.py -q` | `247 passed` (기술용역 시험 포함 묶음) |
-| `uv run pytest tests/ -q -m 'not data_assets'` | `11159 passed, 41 skipped, 3 deselected, 2 xfailed` (264.78s) |
+| `uv run pytest tests/test_predictions_api.py tests/test_predictions_score_verification.py tests/test_tech_score_table_20261117.py tests/test_pps_flat_zones.py tests/test_evaluations_api.py tests/test_evaluation_recommend.py tests/test_evaluation_scoring.py tests/test_evaluation_rules.py -q` | `224 passed, 1 skipped` |
+| `uv run pytest tests/ -q -m 'not data_assets'` | `11160 passed, 41 skipped, 3 deselected, 2 xfailed` (285.77s) |
 | `uv run mypy src` | `Success: no issues found in 152 source files` |
 | `python3 scripts/validate_agent_rules.py --quiet` | 검증 통과: 22/22 건 (exit 0) |
 | `uv run python scripts/judge_snapshot_diff.py diff ... --expect ...` | 바뀐 공고 0건, 기대 목록 0건 일치, exit 0 |
@@ -277,7 +278,7 @@ YAML 키와 행:
 
 ## 9. 남은 위험
 
-- `/api/v1/predictions/predict-price` 의 점수 판정 경로는 `evaluation_flat_zones.flat_zone_for` 를 직접 쓴다. 기술용역 평탄은 `servc_tech_flat_zone_for` 에만 등록했고 이 파일은 이번 쓰기 범위가 아니라, 그 끝단의 점수 판정에는 기술용역 평탄이 아직 적용되지 않는다. 공고 상세 투찰가 계산(`/evaluations/analyze`, `/evaluations/recommend`)과는 별개다.
+- `/api/v1/evaluations/recommend` 의 `price_bounds` 와 `/api/v1/predictions/predict-price` 의 `score_verdict.effective_amount_low/high` 는 같은 기술용역 공고에서 같은 최저가·최상가를 낸다. 시험 `test_tech_price_bounds_match_between_predictions_and_evaluations` 가 같은 공고·같은 B·k·T·비가격 50점에서 두 경로의 유효 금액 하한·상한을 대조한다.
 - `/recommend` 는 기술용역 비가격 배점표가 아직 등록되지 않아 비가격 0점으로 계산한다. T=95 이고 B 최대 90 이므로 비가격 점수가 없으면 `PRICE_BOUNDS_UNRESOLVED` 가 된다. 일반용역과 같은 차단이지만, 기술용역 화면에서는 정량 항목을 입력해 풀 수 없다. 비가격 배점표 등록은 후속 과제다.
 - 공고일을 읽지 못하면 고시금액 경계와 평탄 구간 판정은 선언값인 2026년 230,000,000원 기준이 된다. 기술용역 규칙 판별은 공고일이 있어야 PRE/현행을 가르므로, 날짜가 없는 공고는 현행 규칙으로 간다.
 - 2018-04-01 ~ 2022-10-31 판은 B·k·T 가 같지만, 원문 판본 대조 범위를 넓히지 않기 위해 2022-11-01 이전은 적용하지 않는다. 이 기간 공고는 `RULE_REGIME_MISMATCH` 로 남는다.
