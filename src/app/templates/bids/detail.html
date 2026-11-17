@@ -900,7 +900,16 @@ $(document).ready(function() {
 
     // 차단 코드에 따라 필요한 입력만 노출한다.
     function renderLocalInputs(data) {
-        const code = data && data.blocked ? blockedCodeOf(data.blocked_reason) : '';
+        let code = data && data.blocked ? blockedCodeOf(data.blocked_reason) : '';
+        // 직접 입력한 점수로 계산이 풀린 뒤에도 입력란을 남겨 값을 바꿔 다시 계산할 수 있게 한다.
+        const solvedByUserInput = Boolean(
+            data && !data.blocked && data.quant_source === 'USER_INPUT_UNVERIFIED'
+        );
+        if (solvedByUserInput) {
+            code = String(data.rule_id || '').indexOf('SERVC_TECH_QUAL') === 0
+                ? 'TECH_NON_PRICE_REQUIRED'
+                : 'LOCAL_QUANT_REQUIRED';
+        }
         const isDirectInputBlock = Boolean(localInputCodes[code]);
         const hints = {
             'LOCAL_SERVICE_TYPE_UNRESOLVED': '용역 세부유형을 고르면 다시 판별합니다.',
@@ -922,7 +931,9 @@ $(document).ready(function() {
                 ? '비가격 점수(사업수행능력 등, 0~100)'
                 : '비가격 정량점수 (0~100)'
         );
-        $('#local-input-hint').text(hints[code] || '');
+        $('#local-input-hint').text(
+            solvedByUserInput ? '입력한 점수로 계산했습니다. 값을 바꾸면 다시 계산합니다.' : (hints[code] || '')
+        );
         $('#local-service-type-row').toggleClass('hidden', code !== 'LOCAL_SERVICE_TYPE_UNRESOLVED');
         $('#local-base-rate-row').toggleClass(
             'hidden',
