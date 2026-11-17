@@ -35,6 +35,7 @@
 - `intraday_collect_task`는 `INTRADAY_COLLECT_ENABLED`(기본 True)로 끌 수 있습니다. 낙찰·개찰 결과 수집, KB 재구축, 대시보드 집계 재계산은 하지 않습니다.
 - 겹침 방지: 낮 수집은 무거운 작업 잠금이 잡혀 있으면 대기하지 않고 `skipped:heavy_task_running`으로 끝납니다. 수집 claim 키(`bidbox:schedule:collection_claim`)를 야간 수집·기동 따라잡기와 공유하고, 해제는 `finally`에서 자기 토큰으로만 수행합니다.
 - 야간 누락일 계산과 기동 따라잡기 판정은 오늘(KST) 0시 이전 게시 공고만 체크포인트로 봅니다. 낮 수집분이 야간 슬롯 누락을 가리지 않습니다.
+- 회차 관측: 완료 시 `낮 시간 증분 수집 완료: 공고 N건, 색인 M건, API 요청 R회(429 Q회), 수집 X초, 색인 Y초` 한 줄을 남기고, 반환 dict 에 `api_requests`, `api_rate_limited`, `collect_seconds`(collect_bids 구간), `sync_seconds`(sync_search_index 구간)를 더합니다. 호출 계수는 `api_collector.api_call_counter()` 컨텍스트 안에서 발생한 요청만 세므로, 동시에 도는 야간 수집·소급 스크립트의 호출은 섞이지 않습니다.
 
 ---
 

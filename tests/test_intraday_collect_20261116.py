@@ -144,6 +144,11 @@ async def test_success_collects_today_and_indexes_this_round(
     assert outcome["start_date"] == TODAY
     assert outcome["announcement_count"] == 931
     assert outcome["indexed"] == {"announcements": 931, "results": 0}
+    # 회차 관측 키. collect_bids·sync_search_index 를 대체했으므로 요청 수는 0 입니다.
+    assert outcome["api_requests"] == 0
+    assert outcome["api_rate_limited"] == 0
+    assert outcome["collect_seconds"] >= 0.0
+    assert outcome["sync_seconds"] >= 0.0
 
     collect.assert_awaited_once()
     collect_kwargs = collect.await_args.kwargs

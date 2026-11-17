@@ -17,7 +17,9 @@ import logging
 import os
 import re
 import xml.etree.ElementTree as ET  # nosec B405 - 신뢰하는 공공데이터 XML 응답만 파싱합니다
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -187,6 +189,49 @@ def _resolve_announce_url(category: str) -> str:
     return info["announce_url"] if info else BID_ANNOUNCE_API_URL
 
 
+class ApiCallCounter:
+    """한 회차 안에서 실제로 보낸 HTTP 요청 수와 429 재시도 수를 담습니다."""
+
+    __slots__ = ("rate_limited", "requests")
+
+    def __init__(self) -> None:
+        self.requests = 0
+        self.rate_limited = 0
+
+
+_api_call_counter: ContextVar[ApiCallCounter | None] = ContextVar("api_call_counter", default=None)
+
+
+@contextmanager
+def api_call_counter() -> Iterator[ApiCallCounter]:
+    """이 컨텍스트 안에서 발생한 나라장터 HTTP 요청을 계수합니다.
+
+    계수기를 열지 않은 컨텍스트(다른 태스크, 스크립트)에서는 아무것도 세지 않습니다.
+    asyncio.gather 로 띄운 하위 작업과 asyncio.to_thread 로 넘긴 스레드는 컨텍스트를
+    복사해 같은 계수기 객체를 보므로, 동시에 도는 다른 회차와 섞이지 않습니다.
+    """
+    counter = ApiCallCounter()
+    token = _api_call_counter.set(counter)
+    try:
+        yield counter
+    finally:
+        _api_call_counter.reset(token)
+
+
+def _count_api_request() -> None:
+    counter = _api_call_counter.get()
+    if counter is None:
+        return
+    counter.requests += 1
+
+
+def _count_rate_limited() -> None:
+    counter = _api_call_counter.get()
+    if counter is None:
+        return
+    counter.rate_limited += 1
+
+
 async def _make_request_with_retry(
     client: httpx.AsyncClient, url: str, params: dict, max_retries: int = 5
 ) -> httpx.Response:
@@ -194,12 +239,15 @@ async def _make_request_with_retry(
     last_error: Exception | None = None
     for attempt in range(max_retries):
         try:
+            _count_api_request()
             resp = await client.get(url, params=params, timeout=120)
             resp.raise_for_status()
             return resp
         except httpx.HTTPStatusError as exc:
             last_error = exc
             if exc.response.status_code in (429, 502, 503, 504) and attempt < max_retries - 1:
+                if exc.response.status_code == 429:
+                    _count_rate_limited()
                 logger.warning(
                     "서버 응답 에러(%s). %s/%s 재시도 대기",
                     exc.response.status_code,

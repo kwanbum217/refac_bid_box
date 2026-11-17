@@ -44,6 +44,7 @@ from src.app.models.prearng_prices import BidPrearngPrice
 from src.app.models.predictions import RetrainLog
 from src.app.services.api_collector import (
     RangeCollectionError,
+    api_call_counter,
     filter_prearng_empty_notices,
     mask_credentials,
     stream_servc_prearng_by_notices,
@@ -1563,25 +1564,39 @@ def _intraday_collect_thread(
 
     collect_bids 는 async 지만 동기 Session 으로 배치 적재를 하고, 색인 동기화도
     동기 경로입니다. 관리 API 처럼 스레드 전용 이벤트 루프에서 돌려 워커 루프를
-    막지 않습니다. Session 은 생성한 스레드 안에서만 쓰고 닫습니다.
+    막지 않습니다. Session 은 생성한 스레드 안에서만 쓰고 닫습니다. 계수기는
+    이 스레드의 컨텍스트에서 열어 collect_bids 의 모든 HTTP 요청만 셉니다.
     """
     session = SessionLocal()
     try:
-        metrics = asyncio.run(
-            collect_bids(
-                session,
-                start_date=today,
-                end_date=today,
-                fetch_type="announce",
-                refresh_aggregates=False,
+        with api_call_counter() as counter:
+            collect_started = time.perf_counter()
+            metrics = asyncio.run(
+                collect_bids(
+                    session,
+                    start_date=today,
+                    end_date=today,
+                    fetch_type="announce",
+                    refresh_aggregates=False,
+                )
             )
-        )
+            collect_seconds = time.perf_counter() - collect_started
         indexed = {"announcements": 0, "results": 0}
+        sync_seconds = 0.0
         if settings.MEILI_ENABLED:
             from src.app.services.search_index import sync_search_index
 
+            sync_started = time.perf_counter()
             indexed = sync_search_index(session, collected_since=collected_since)
-        return {"collect": metrics, "indexed": indexed}
+            sync_seconds = time.perf_counter() - sync_started
+        return {
+            "collect": metrics,
+            "indexed": indexed,
+            "api_requests": counter.requests,
+            "api_rate_limited": counter.rate_limited,
+            "collect_seconds": round(collect_seconds, 2),
+            "sync_seconds": round(sync_seconds, 2),
+        }
     finally:
         session.close()
 
@@ -1651,16 +1666,22 @@ async def intraday_collect_task(ctx: dict[str, Any]) -> dict[str, Any]:
         "license_limit_count": int(metrics.get("license_limit_count") or 0),
         "participation_region_count": int(metrics.get("participation_region_count") or 0),
         "indexed": indexed,
+        "api_requests": int(result.get("api_requests") or 0),
+        "api_rate_limited": int(result.get("api_rate_limited") or 0),
+        "collect_seconds": float(result.get("collect_seconds") or 0.0),
+        "sync_seconds": float(result.get("sync_seconds") or 0.0),
         "elapsed_seconds": round(time.monotonic() - started_monotonic, 2),
     }
     if metrics.get("status") == "error":
         outcome["error"] = metrics.get("message")
     logger.info(
-        "낮 시간 증분 수집 완료 (%s): 공고 %s건, 색인 %s건, %.1f초",
-        today,
+        "낮 시간 증분 수집 완료: 공고 %s건, 색인 %s건, API 요청 %s회(429 %s회), 수집 %.1f초, 색인 %.1f초",
         outcome["announcement_count"],
         indexed.get("announcements", 0),
-        outcome["elapsed_seconds"],
+        outcome["api_requests"],
+        outcome["api_rate_limited"],
+        outcome["collect_seconds"],
+        outcome["sync_seconds"],
     )
     return outcome
 
