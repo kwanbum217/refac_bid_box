@@ -101,8 +101,25 @@
 
 ---
 
-## 4. 주의 사항
+## 4. 변경 파일
 
-- `tests/test_bid_detail_model_card_ui.py` 와 `tests/test_evaluation_ui.py` 는 Capsule 의 `allowed_write_files` 목록에 없었지만, 지운 요소를 단언해 전량 시험을 깨뜨리므로 Capsule 지침("기존 시험이 지운 요소를 단언하면 새 구조에 맞게 고친다")에 따라 고쳤습니다. 변경 범위는 위 표와 같습니다.
+| 파일 | 구분 | 내용 |
+| --- | --- | --- |
+| `src/app/templates/bids/detail.html` | 수정 | 피드백 5건 반영 |
+| `src/app/static/css/tailwind.css` | 재생성 | 새 유틸리티(`mx-4`, `top-6` 등) 반영 |
+| `tests/test_bid_detail_feedback_20261117.py` | 추가 | 이번 피드백 전용 회귀 시험 |
+| `tests/test_bid_detail_recommend_ui.py` | 수정 | 범위 그래프 시험 추가 |
+| `tests/test_ui_ssr.py` | 수정 | 헤더 좌측 기초금액 시험 추가 |
+| `tests/test_predictions_api.py` | 수정 | `selected_model: null` 기본 모델 처리 시험 추가 |
+| `tests/test_evaluations_api.py` | 수정 | null 모델 위임 시험 추가 |
+| `tests/test_bid_detail_model_card_ui.py` | 수정(범위 밖 승인) | 삭제된 모델 카드를 단언하던 6건을 삭제 상태 고정 회귀로 교체 |
+| `tests/test_evaluation_ui.py` | 수정(범위 밖 승인) | 규칙 표시 블록 단언을 삭제 상태 확인으로 교체, `selected-model` 단언 제거 |
+| `docs/analysis/web_feedback_detail_20261117.md` | 추가 | 이 보고서 |
+
+---
+
+## 5. 주의 사항
+
+- `tests/test_bid_detail_model_card_ui.py` 와 `tests/test_evaluation_ui.py` 는 당초 `allowed_write_files` 밖이었습니다. 지운 요소를 단언해 전량 시험이 9건 실패하므로 코디네이터 승인을 받아 `allowed_write_files` 에 추가한 뒤 고쳤습니다. 수정은 지운 모델 카드·적용 규칙 단언을 새 구조에 맞게 바꾸는 최소 범위이며, `contract-regime-range`, `negotiation-distribution`, 차단 안내, 경고 목록, 하한율 표시처럼 남겨야 할 요소를 검사하는 단언은 그대로 두었습니다.
 - `npm ci` 는 이 환경의 `omit=dev` 설정 때문에 dev 의존성을 설치하지 않습니다. CSS 빌드는 `npm ci --include=dev` 로 도구를 설치한 뒤 실행했습니다.
 - 운영 Docker·DB·Redis 는 건드리지 않았고 브라우저 확인은 하지 않았습니다.
