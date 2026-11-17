@@ -899,6 +899,9 @@ $(document).ready(function() {
     }
 
     // 차단 코드에 따라 필요한 입력만 노출한다.
+    // 한 번 직접 입력란을 띄운 공고는 다음 응답이 다른 이유로 막혀도 입력란을 남긴다.
+    let lastDirectInputCode = '';
+
     function renderLocalInputs(data) {
         let code = data && data.blocked ? blockedCodeOf(data.blocked_reason) : '';
         // 직접 입력한 점수로 계산이 풀린 뒤에도 입력란을 남겨 값을 바꿔 다시 계산할 수 있게 한다.
@@ -910,7 +913,12 @@ $(document).ready(function() {
                 ? 'TECH_NON_PRICE_REQUIRED'
                 : 'LOCAL_QUANT_REQUIRED';
         }
+        const hasManualValue = String($('#input-manual-non-price-score').val() || '').trim() !== '';
+        if (!localInputCodes[code] && lastDirectInputCode && hasManualValue) {
+            code = lastDirectInputCode;
+        }
         const isDirectInputBlock = Boolean(localInputCodes[code]);
+        if (isDirectInputBlock) lastDirectInputCode = code;
         const hints = {
             'LOCAL_SERVICE_TYPE_UNRESOLVED': '용역 세부유형을 고르면 다시 판별합니다.',
             'LOCAL_RULE_NOT_FOUND': 'B·k·기준비율·통과점수를 모두 입력하십시오.',

@@ -415,3 +415,15 @@ def test_direct_input_section_stays_after_user_input_solves_block():
     assert "data.quant_source === 'USER_INPUT_UNVERIFIED'" in render
     assert "SERVC_TECH_QUAL" in render
     assert "입력한 점수로 계산했습니다" in render
+
+
+def test_direct_input_section_stays_when_reblocked_with_manual_value():
+    from pathlib import Path
+
+    body = (Path(__file__).resolve().parents[1] / "src/app/templates/bids/detail.html").read_text(
+        encoding="utf-8"
+    )
+    start = body.index("function renderLocalInputs(data)")
+    render = body[start : body.index("function buildLocalInputs", start)]
+    assert "lastDirectInputCode && hasManualValue" in render
+    assert "lastDirectInputCode = code" in render
