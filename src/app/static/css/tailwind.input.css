@@ -102,3 +102,17 @@
 @utility text-blue-100\/72 {
   color: rgb(219 234 254 / 0.72);
 }
+
+/* harness.css 의 h-card 는 항상 흰 배경이라 다크 모드에서도 밝게 남는다.
+   harness.css 가 tailwind.css 뒤에 로드되므로 같은 특이도로는 이길 수 없어
+   `.dark .h-card` 로 특이도를 올려 덮는다. */
+.dark .h-card {
+  background-color: var(--color-slate-900);
+  border-color: var(--color-slate-800);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+}
+
+.dark .h-card:hover {
+  border-color: var(--color-slate-700);
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -1px rgb(0 0 0 / 0.3);
+}

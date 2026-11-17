@@ -104,17 +104,22 @@ def _add(db, **overrides) -> BidAnnouncement:
 # --------------------------------------------------------------------------- #
 
 
-def test_home_renders_four_metrics_and_shortcuts(auth_client, monkeypatch, tmp_path):
+def test_home_renders_top_metrics_and_bottom_panels(auth_client, monkeypatch, tmp_path):
     _write_metadata(tmp_path, rmse=3.4567, promoted_at="2026-01-02T03:04:05")
     monkeypatch.setattr(home_summary, "SERVING_ROOT", tmp_path)
 
     body = auth_client.get("/").text
 
-    for metric in ("accuracy", "recent-year", "open", "matching"):
+    for metric in ("accuracy", "recent-year"):
         assert f'data-home-metric="{metric}"' in body, metric
+    # 입찰 중·내 조건은 상단 지표가 아니라 하단 2열 패널로 옮겼다.
+    assert 'data-home-metric="open"' not in body
+    assert 'data-home-metric="matching"' not in body
+    for panel in ("open", "matching"):
+        assert f'data-home-panel="{panel}"' in body, panel
+    # 하단 바로가기 4개는 삭제했다.
     for shortcut in ("bid-list", "result-list", "compare", "chatbot"):
-        assert f'data-home-shortcut="{shortcut}"' in body, shortcut
-    assert "/bids/compare/" in body
+        assert f'data-home-shortcut="{shortcut}"' not in body, shortcut
     assert "±3.46" in body
     assert ">%p</span>" in body
     assert "2026-01-02" in body
@@ -141,7 +146,7 @@ def test_home_prompts_interest_input_when_preferences_missing(auth_client, monke
 
     body = auth_client.get("/").text
 
-    assert 'data-home-metric="matching"' in body
+    assert 'data-home-panel="matching"' in body
     assert "/accounts/mypage/edit/" in body
     assert "마이페이지에서 관심 업종·지역 입력" in body
     assert "data-home-matching-count" not in body
