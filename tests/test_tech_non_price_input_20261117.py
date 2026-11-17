@@ -402,3 +402,16 @@ def test_detail_uses_tech_specific_input_label(template_source: str) -> None:
     assert 'id="label-manual-non-price-score"' in template_source
     assert "'비가격 점수(사업수행능력 등, 0~100)'" in template_source
     assert "'비가격 정량점수 (0~100)'" in template_source
+
+
+def test_direct_input_section_stays_after_user_input_solves_block():
+    from pathlib import Path
+
+    body = (Path(__file__).resolve().parents[1] / "src/app/templates/bids/detail.html").read_text(
+        encoding="utf-8"
+    )
+    start = body.index("function renderLocalInputs(data)")
+    render = body[start : body.index("function buildLocalInputs", start)]
+    assert "data.quant_source === 'USER_INPUT_UNVERIFIED'" in render
+    assert "SERVC_TECH_QUAL" in render
+    assert "입력한 점수로 계산했습니다" in render
