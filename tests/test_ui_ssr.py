@@ -219,6 +219,18 @@ def test_bid_detail_renders(auth_client, seeded_bid):
     assert bid.bid_ntce_nm in response.text
 
 
+def test_bid_detail_places_base_amount_below_notice_name(auth_client, seeded_bid):
+    """기초금액은 헤더 우측 끝이 아니라 공고명·기관·게시일 아래 좌측에 둔다."""
+    bid, _ = seeded_bid
+    body = auth_client.get(f"/bids/{bid.id}/").text
+    header = body.split("<h1", 1)[1].split("h-content-padding", 1)[0]
+
+    assert "기초금액" in header
+    assert header.index("게시일") < header.index("기초금액")
+    assert f"₩{bid.base_amount:,}" in header
+    assert "items-end shrink-0" not in body
+
+
 def test_bid_detail_prediction_uses_json_api_contract(auth_client, seeded_bid):
     bid, _ = seeded_bid
     body = auth_client.get(f"/bids/{bid.id}/").text

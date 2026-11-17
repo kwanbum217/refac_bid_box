@@ -40,16 +40,18 @@ class TestEvaluationUITemplate:
     # ---------------------------------------------------------------------
     # 1. 적용 규칙 표시
     # ---------------------------------------------------------------------
-    def test_rule_display_section(self, template_content):
-        """적용 규칙 표시 영역이 있다."""
-        assert 'id="evaluation-rule"' in template_content
-        assert 'id="rule-id"' in template_content
-        assert 'id="rule-name"' in template_content
-        assert 'id="rule-basis"' in template_content
-        assert "적용 규칙" in template_content
-        assert "규칙 ID" in template_content
-        assert "규칙명" in template_content
-        assert "판별 근거" in template_content
+    def test_rule_display_section_removed(self, template_content):
+        """2026-11-17 피드백으로 규칙 표시 블록은 없어지고 나머지 표시는 남는다."""
+        for removed in (
+            'id="evaluation-rule"',
+            'id="rule-id"',
+            'id="rule-name"',
+            'id="rule-basis"',
+            "적용 규칙",
+        ):
+            assert removed not in template_content, f"삭제된 규칙 요소가 남아 있음: {removed}"
+        assert 'id="contract-regime-range"' in template_content
+        assert 'id="negotiation-distribution"' in template_content
 
     def test_blocked_display_section(self, template_content):
         """계산 차단 표시 영역이 있다."""
@@ -168,7 +170,9 @@ class TestEvaluationUITemplate:
     def test_ai_prediction_section_reused_for_three_amounts(self, template_content):
         """기존 AI 투찰 금액 분석기 카드가 세 금액 카드로 재사용된다."""
         assert "AI 투찰 금액 분석기" in template_content
-        assert 'id="selected-model"' in template_content
+        # 모델 선택 UI 는 2026-11-17 피드백으로 삭제됐다.
+        assert 'id="selected-model"' not in template_content
+        assert 'id="model-summary"' not in template_content
         assert 'id="prediction-result"' in template_content
         assert 'id="res-min-price"' in template_content
         assert 'id="res-optimal-price"' in template_content
@@ -282,10 +286,8 @@ class TestEvaluationUISchemaAlignment:
             assert field in schema_content, f"스키마에 {field} 필드 누락"
 
         # 템플릿에 대응하는 표시 요소가 있는지 확인 (id 또는 변수명)
+        # rule_id·rule_name·rule_basis 는 2026-11-17 피드백으로 화면에서 삭제됐다.
         template_checks = [
-            ("rule_id", 'id="rule-id"'),
-            ("rule_name", 'id="rule-name"'),
-            ("rule_basis", 'id="rule-basis"'),
             ("blocked", 'id="evaluation-blocked"'),
             ("blocked_reason", 'id="blocked-reason"'),
             ("warnings", 'id="warnings-list"'),
