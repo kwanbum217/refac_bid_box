@@ -195,6 +195,24 @@ def test_detail_shows_three_amounts_and_labels(auth_client, isolated_db):
     assert "사정률 상한에 맞춰 계산한 투찰금액입니다." in body
 
 
+def test_detail_shows_price_range_chart(auth_client, isolated_db):
+    """세 금액과 내 조건 추천가를 최저가~최상가 축의 가로 범위 그래프로 함께 보여 준다."""
+    bid = _create_render_bid(isolated_db)
+    body = auth_client.get(f"/bids/{bid.id}/").text
+
+    assert 'id="price-range-chart"' in body
+    assert 'id="price-range-markers"' in body
+    # 그래프는 세 칸 위에 있고, 값은 같은 응답 필드에서 온다.
+    assert body.index('id="price-range-chart"') < body.index('id="res-min-price-cell"')
+    assert "bounds.min_bid_amount" in body
+    assert "data.member_recommended_price" in body
+
+    amounts_fn = body.split("function renderRecommendAmounts", 1)[1].split("let recommendTimer", 1)[
+        0
+    ]
+    assert "renderPriceRangeChart(data, boundsReady)" in amounts_fn
+
+
 def test_detail_reason_sentence_templates(auth_client, isolated_db):
     """근거 문장 템플릿과 세 금액 명칭이 화면 스크립트에 있다."""
     bid = _create_render_bid(isolated_db)

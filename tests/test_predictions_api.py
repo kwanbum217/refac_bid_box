@@ -195,6 +195,26 @@ def test_predict_price_defaults_to_category_model_for_services(
 
 @patch("src.app.api.v1.predictions.ModelRegistry.get_model")
 @patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
+def test_predict_price_treats_explicit_null_selected_model_as_default(
+    mock_predict, mock_get_model, client, isolated_db
+):
+    """상세 화면이 보내는 selected_model null 은 공고 분야 기본 모델로 처리한다."""
+    bid = _create_bid(isolated_db, category="Servc")
+    mock_predict.return_value = _outcome(0.951)
+    mock_get_model.return_value = _mock_wrapper("용역 전용 모델")
+
+    response = client.post(
+        "/api/v1/predictions/predict-price",
+        json={"bid_id": bid.id, "user_price": "97000000", "selected_model": None},
+    )
+
+    assert response.status_code == 200, response.text
+    called_model_id, _ = mock_predict.call_args.args
+    assert called_model_id == CATEGORY_DEFAULT_MODELS["Servc"]
+
+
+@patch("src.app.api.v1.predictions.ModelRegistry.get_model")
+@patch("src.app.api.v1.predictions.predict_optimal_price_with_provenance")
 def test_predict_price_passes_selected_model(mock_predict, mock_get_model, client, isolated_db):
     bid = _create_bid(isolated_db)
     mock_predict.return_value = _outcome(0.97)

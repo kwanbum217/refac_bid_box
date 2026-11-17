@@ -158,3 +158,29 @@ def test_template_escapes_file_name():
 def test_template_hides_card_when_no_links():
     assert _render({}).strip() == ""
     assert _render({"stdNtceDocUrl": "http://www.g2b.go.kr/x"}).strip() == ""
+
+
+def test_standard_notice_hidden_when_same_as_attachment():
+    raw = {
+        "ntceSpecDocUrl1": "https://www.g2b.go.kr/a.hwp",
+        "ntceSpecFileNm1": "공고문.hwp",
+        "ntceSpecDocUrl2": "https://www.g2b.go.kr/std.pdf",
+        "ntceSpecFileNm2": "표준공고문.pdf",
+        "stdNtceDocUrl": "https://www.g2b.go.kr/std.pdf",
+    }
+    links = describe_announcement_links(raw)
+    assert [f["url"] for f in links["files"]] == [
+        "https://www.g2b.go.kr/a.hwp",
+        "https://www.g2b.go.kr/std.pdf",
+    ]
+    assert links["standard_notice_url"] is None
+
+
+def test_standard_notice_kept_when_not_in_attachments():
+    raw = {
+        "ntceSpecDocUrl1": "https://www.g2b.go.kr/a.hwp",
+        "stdNtceDocUrl": "https://www.g2b.go.kr/std.pdf",
+    }
+    assert (
+        describe_announcement_links(raw)["standard_notice_url"] == "https://www.g2b.go.kr/std.pdf"
+    )

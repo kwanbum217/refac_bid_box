@@ -258,11 +258,13 @@ def test_warm_task_fills_cache_with_long_ttl(isolated_db, fake_cache, monkeypatc
 
     counts = home_summary.warm_home_summary_cache(isolated_db)
 
-    assert counts == {"recent_year_count": 1, "open_count": 1}
+    assert counts["recent_year_count"] == 1
+    assert counts["open_count"] == 1
+    assert sum(bucket["count"] for bucket in counts["open_deadline_buckets"]) == 1
     assert home_summary.SERVIC_COUNTS_CACHE_TTL == EXPECTED_CACHE_TTL
     key, value, ttl = fake_cache.sets[-1]
     assert key == home_summary.SERVIC_COUNTS_CACHE_KEY
-    assert value == {"recent_year_count": 1, "open_count": 1}
+    assert value == counts
     assert ttl == EXPECTED_CACHE_TTL
 
 
@@ -275,7 +277,10 @@ def test_warm_schedule_task_returns_counts(isolated_db, fake_cache, monkeypatch)
 
     outcome = asyncio.run(scheduled_tasks.warm_home_summary_task({}))
 
-    assert outcome == {"status": "success", "recent_year_count": 1, "open_count": 1}
+    assert outcome["status"] == "success"
+    assert outcome["recent_year_count"] == 1
+    assert outcome["open_count"] == 1
+    assert sum(bucket["count"] for bucket in outcome["open_deadline_buckets"]) == 1
     assert fake_cache.sets[-1][2] == EXPECTED_CACHE_TTL
 
 

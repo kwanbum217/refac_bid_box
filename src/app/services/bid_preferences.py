@@ -1,9 +1,9 @@
 """
 src/app/services/bid_preferences.py
 
-회원 관심 업종(면허)·지역 저장과 '현재 입찰 중인 용역 공고 수' 셈.
+회원 관심 업종(면허)·지역 저장과 '현재 입찰 중인 용역 공고 수·목록' 조회.
 
-셈 조건은 공고 탐색 목록의 DB 경로(src/app/services/bid_queries.py 의
+셈·목록 조건은 공고 탐색 목록의 DB 경로(src/app/services/bid_queries.py 의
 list_announcements)와 같습니다. 업종·지역 코드 정의와 정규화도 그 모듈의
 함수를 그대로 씁니다.
 
@@ -16,8 +16,9 @@ list_announcements)와 같습니다. 업종·지역 코드 정의와 정규화�
 | 지역 | 참가가능지역이 관심 지역과 일치 |
 | 스캔 범위 | `bid_ntce_dt >= now - 90일` (ix_bid_ann_cat_dt) |
 
-업종·지역이 모두 비어 있으면 셈하지 않고 0 을 돌려줍니다. 호출자는
-BidPreferenceView.is_empty 로 입력 안내를 띄울 수 있습니다.
+건수와 목록은 같은 조건 함수를 공유해 서로 다른 공고를 고를 수 없습니다.
+업종·지역이 모두 비어 있으면 셈하지 않고 0 또는 빈 목록을 돌려줍니다.
+호출자는 BidPreferenceView.is_empty 로 입력 안내를 띄울 수 있습니다.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -47,6 +49,8 @@ OPEN_BID_CATEGORY = "Servc"
 OPEN_BID_LOOKBACK_DAYS = 90
 OPEN_BID_COUNT_CACHE_TTL = 60 * 10
 OPEN_BID_COUNT_CACHE_PREFIX = "bid_prefs:open_servc_count:v1"
+OPEN_BID_LIST_CACHE_PREFIX = "bid_prefs:open_servc_list:v1"
+OPEN_BID_LIST_DEFAULT_LIMIT = 5
 
 
 @dataclass(frozen=True)
@@ -111,8 +115,46 @@ def save_bid_preferences(
     return BidPreferenceView(license_codes=list(codes), region_code=region)
 
 
+def _prefs_cache_suffix(prefs: BidPreferenceView) -> str:
+    return f"{','.join(prefs.license_codes)}:{prefs.region_code}"
+
+
 def _count_cache_key(prefs: BidPreferenceView) -> str:
-    return f"{OPEN_BID_COUNT_CACHE_PREFIX}:{','.join(prefs.license_codes)}:{prefs.region_code}"
+    return f"{OPEN_BID_COUNT_CACHE_PREFIX}:{_prefs_cache_suffix(prefs)}"
+
+
+def _list_cache_key(prefs: BidPreferenceView, limit: int) -> str:
+    return f"{OPEN_BID_LIST_CACHE_PREFIX}:{_prefs_cache_suffix(prefs)}:{limit}"
+
+
+def _open_matching_conditions(prefs: BidPreferenceView, now_dt: datetime) -> list[Any]:
+    """건수와 목록이 함께 쓰는 입찰 중·관심 조건입니다.
+
+    두 함수가 각자 조건을 조립하면 한쪽만 바뀌어 서로 다른 공고를 고를 수
+    있으므로 조건은 이 함수 한 곳에서만 만듭니다.
+    """
+    conditions: list[Any] = [
+        BidAnnouncement.category == OPEN_BID_CATEGORY,
+        BidAnnouncement.bid_clse_dt >= now_dt,
+        BidAnnouncement.bid_ntce_dt >= now_dt - timedelta(days=OPEN_BID_LOOKBACK_DAYS),
+    ]
+    if prefs.region_code:
+        conditions.append(_participation_region_match_clause(prefs.region_code))
+    if prefs.license_codes:
+        conditions.append(license_match_clause(prefs.license_codes))
+    return conditions
+
+
+def _matching_row_view(row: Any, now_dt: datetime) -> dict[str, Any]:
+    close_dt = row.bid_clse_dt
+    days_left = (close_dt.date() - now_dt.date()).days if close_dt else 0
+    return {
+        "id": row.id,
+        "bid_ntce_nm": row.bid_ntce_nm or "공고명 없음",
+        "dminstt_nm": row.dminstt_nm or "-",
+        "deadline_label": close_dt.strftime("%Y.%m.%d %H:%M") if close_dt else "-",
+        "dday_label": "오늘 마감" if days_left <= 0 else f"D-{days_left}",
+    }
 
 
 def count_open_servc_matching(
@@ -138,19 +180,52 @@ def count_open_servc_matching(
     stmt = (
         select(func.count())
         .select_from(BidAnnouncement)
-        .where(
-            BidAnnouncement.category == OPEN_BID_CATEGORY,
-            BidAnnouncement.bid_clse_dt >= now_dt,
-            BidAnnouncement.bid_ntce_dt >= now_dt - timedelta(days=OPEN_BID_LOOKBACK_DAYS),
-        )
+        .where(*_open_matching_conditions(prefs, now_dt))
     )
-    if prefs.region_code:
-        stmt = stmt.where(_participation_region_match_clause(prefs.region_code))
-    if prefs.license_codes:
-        stmt = stmt.where(license_match_clause(prefs.license_codes))
     stmt = similar_announcement_latest_filter(stmt)
 
     count = int(db.scalar(stmt) or 0)
     if now is None:
         cache.set(cache_key, count, OPEN_BID_COUNT_CACHE_TTL)
     return count
+
+
+def list_open_servc_matching(
+    db: Session,
+    prefs: BidPreferenceView | None,
+    limit: int = OPEN_BID_LIST_DEFAULT_LIMIT,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """관심 조건에 맞는 입찰 중 용역 공고를 마감 임박 순으로 돌려줍니다.
+
+    조건은 count_open_servc_matching 과 같은 함수를 쓰고, 캐시도 같은 10분
+    정책입니다. now 를 넘기면 캐시를 건너뜁니다. 화면이 바로 쓰도록 캐시에
+    넣을 수 있는 원시값(dict)만 돌려줍니다.
+    """
+    if prefs is None or prefs.is_empty:
+        return []
+
+    now_dt = now or kst_now()
+    cache_key = _list_cache_key(prefs, limit)
+    if now is None:
+        cached = cache.get(cache_key)
+        if isinstance(cached, list):
+            return cached
+
+    stmt = (
+        select(
+            BidAnnouncement.id,
+            BidAnnouncement.bid_ntce_nm,
+            BidAnnouncement.dminstt_nm,
+            BidAnnouncement.bid_clse_dt,
+        )
+        .where(*_open_matching_conditions(prefs, now_dt))
+        .order_by(BidAnnouncement.bid_clse_dt.asc(), BidAnnouncement.id.asc())
+        .limit(limit)
+    )
+    stmt = similar_announcement_latest_filter(stmt)
+
+    items = [_matching_row_view(row, now_dt) for row in db.execute(stmt).all()]
+    if now is None:
+        cache.set(cache_key, items, OPEN_BID_COUNT_CACHE_TTL)
+    return items
