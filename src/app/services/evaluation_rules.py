@@ -678,8 +678,17 @@ def resolve_score_params(
             price = None
     except Exception:
         price = None
+    year = None
+    try:
+        if isinstance(announced_date, (date, datetime)):
+            year = announced_date.year
+        elif announced_date:
+            year = date.fromisoformat(str(announced_date)[:10]).year
+    except ValueError:
+        pass
     if rule.price_bands is not None:
-        price_band, price_index, price_reason = select_price_band(rule.price_bands, price)
+        price_bands = _servc_tech_price_bands_for_announcement(rule, year)
+        price_band, price_index, price_reason = select_price_band(price_bands, price)
         threshold_band, _, threshold_reason = select_threshold_band(
             rule.threshold_bands or (), price
         )
@@ -712,14 +721,6 @@ def resolve_score_params(
             threshold_band_label=threshold_band.label,
             warnings=(),
         )
-    year = None
-    try:
-        if isinstance(announced_date, (date, datetime)):
-            year = announced_date.year
-        elif announced_date:
-            year = date.fromisoformat(str(announced_date)[:10]).year
-    except ValueError:
-        pass
     name = method_name or ""
     method_notice = re.search(r"고시금액\s*(미만|이상)", name)
     method_b = method_name_500m_side(name)
@@ -1186,7 +1187,105 @@ PASSENGER_NOTICE_ABOVE_RULES: tuple[EvaluationRule, ...] = (
     ),
 )
 
-# 기술용역은 식별 문자열별 고정 규칙으로 환원하지 않고 공고 하한율만 사용합니다.
+# 기술용역은 식별 문자열별 고정 규칙으로 환원하지 않고 공고 하한율을 쓰며,
+# 가격배점표는 조달청 기술용역 적격심사 세부기준 별표1 의 추정가격 구간별 값을 선언합니다.
+# 값의 정본: data/reference/pps_tech_lwlt_pre_20260526.yaml
+#  - 개정 전: revisions[notice_key=2025-6352,2026-654].attachments[별표 1].bands
+#    (조달청지침 제6352호 시행 2025-09-01, 제654호 시행 2026-01-26)
+#  - 현행: boundary_reference (조달청지침 제5283호 시행 2026-05-26)
+# 고시금액 경계는 연도별 국가계약 고시금액이라 선언값은 2026년 값으로 두고,
+# resolve_score_params 가 공고일 연도 값으로 바꿔 씁니다.
+_SERVC_TECH_SCORE_YAML = "data/reference/pps_tech_lwlt_pre_20260526.yaml"
+_SERVC_TECH_NOTICE_BOUNDARY_LABEL = "추정가격이 고시금액 미만인 용역"
+_SERVC_TECH_FLAT_NOTE = "평탄 비율은 평탄 구간 데이터 미등록으로 계산에 넣지 않습니다."
+_SERVC_TECH_PRE_SCORE_SOURCE = (
+    f"{_SERVC_TECH_SCORE_YAML} revisions[notice_key=2025-6352,2026-654]"
+    ".attachments[별표 1].bands (조달청지침 제6352호 시행 2025-09-01·"
+    "제654호 시행 2026-01-26; 직전 판 제8983호 시행 2022-11-01 값과 같음. "
+    "기준비율 88, 평탄 비율 96/90.5/89.25/88.25. "
+    f"{_SERVC_TECH_FLAT_NOTE})"
+)
+_SERVC_TECH_POST_SCORE_SOURCE = (
+    f"{_SERVC_TECH_SCORE_YAML} boundary_reference (조달청지침 제5283호 시행 2026-05-26; "
+    "기준비율 90, 평탄 비율 98/92.5/91.25/90.25, B·k·T 는 개정 전과 같음. "
+    f"{_SERVC_TECH_FLAT_NOTE})"
+)
+
+
+def _servc_tech_band_source(base_source: str, band_no: int, label: str, b: str, k: str) -> str:
+    """기술용역 별표1 한 구간의 출처 문자열을 만듭니다."""
+    return f"{base_source} bands[{band_no}] '{label}': B={b}, k={k}"
+
+
+def _servc_tech_price_bands(base_rate: str, base_source: str) -> tuple[PriceBand, ...]:
+    """기술용역 별표1 의 추정가격 4구간 B·k 를 선언합니다.
+
+    구간은 추정가격 오름차순입니다. 첫 구간의 상한은 고시금액이며 선언값은 2026년
+    고시금액입니다. resolve_score_params 가 공고일 연도 값으로 바꿔 씁니다.
+    """
+    band_rows = (
+        (
+            4,
+            Decimal(str(notice_amount_for_year(2026))),
+            "90",
+            "20",
+            _SERVC_TECH_NOTICE_BOUNDARY_LABEL,
+        ),
+        (3, Decimal("500000000"), "70", "4", "추정가격이 5억원 미만 고시금액 이상인 용역"),
+        (2, Decimal("1000000000"), "50", "2", "추정가격이 10억원 미만 5억원 이상인 용역"),
+        (1, None, "30", "1", "추정가격이 10억원 이상인 용역"),
+    )
+    return tuple(
+        PriceBand(
+            upper_bound=upper_bound,
+            max_price_score=Decimal(b),
+            multiplier=Decimal(k),
+            base_rate=Decimal(base_rate),
+            label=label,
+            source=_servc_tech_band_source(base_source, band_no, label, b, k),
+        )
+        for band_no, upper_bound, b, k, label in band_rows
+    )
+
+
+def _servc_tech_threshold_bands(base_source: str) -> tuple[ThresholdBand, ...]:
+    """기술용역 별표1 의 적격통과점수 T 2구간을 선언합니다."""
+    source = (
+        f"{base_source} bands[].score_tiers[].pass_score "
+        "(제4조 제1항: 추정가격 10억원 이상 92점, 10억원 미만 95점)"
+    )
+    return (
+        ThresholdBand(
+            upper_bound=Decimal("1000000000"),
+            pass_threshold=Decimal("95"),
+            label="추정가격이 10억원 미만인 용역",
+            source=source,
+        ),
+        ThresholdBand(
+            upper_bound=None,
+            pass_threshold=Decimal("92"),
+            label="추정가격이 10억원 이상인 용역",
+            source=source,
+        ),
+    )
+
+
+def _servc_tech_price_bands_for_announcement(
+    rule: EvaluationRule, year: int | None
+) -> tuple[PriceBand, ...]:
+    """기술용역이면 고시금액 경계를 공고일 연도 값으로 바꾼 구간을 돌려줍니다."""
+    bands = rule.price_bands or ()
+    if year is None or rule.rule_id not in SERVC_TECH_QUAL_RULE_IDS:
+        return bands
+    notice_amount = Decimal(str(notice_amount_for_year(year)))
+    return tuple(
+        replace(band, upper_bound=notice_amount)
+        if band.label == _SERVC_TECH_NOTICE_BOUNDARY_LABEL
+        else band
+        for band in bands
+    )
+
+
 SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT = EvaluationRule(
     rule_id="SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT",
     service_type="TECH",
@@ -1197,6 +1296,9 @@ SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT = EvaluationRule(
     patterns=(),
     lwlt_rate=None,
     base_rate=Decimal("0.90"),
+    price_bands=_servc_tech_price_bands("0.90", _SERVC_TECH_POST_SCORE_SOURCE),
+    threshold_bands=_servc_tech_threshold_bands(_SERVC_TECH_POST_SCORE_SOURCE),
+    score_table_source=_SERVC_TECH_POST_SCORE_SOURCE,
 )
 
 # 2026-05-26 시행 전(2022-11-01 ~ 2026-05-25) 공고에 쓰는 기술용역 별표1 입니다.
@@ -1212,6 +1314,9 @@ SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526 = replace(
         "제6352호(시행 2025-09-01)·제654호(시행 2026-01-26), 공고별 sucsfbidLwltRate"
     ),
     base_rate=Decimal("0.88"),
+    price_bands=_servc_tech_price_bands("0.88", _SERVC_TECH_PRE_SCORE_SOURCE),
+    threshold_bands=_servc_tech_threshold_bands(_SERVC_TECH_PRE_SCORE_SOURCE),
+    score_table_source=_SERVC_TECH_PRE_SCORE_SOURCE,
 )
 
 # 현행·구판 두 기술용역 규칙 ID 를 함께 담는 비교용 집합입니다.

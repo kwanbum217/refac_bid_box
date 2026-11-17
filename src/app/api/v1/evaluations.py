@@ -99,6 +99,7 @@ from src.app.services.evaluation_flat_zones import (
     flat_zone_for,
     pps_axis_side,
     pps_flat_zone_for,
+    servc_tech_flat_zone_for,
 )
 from src.app.services.evaluation_recommendation import (
     RATE_SOURCE_MEASURED,
@@ -304,12 +305,16 @@ def _selected_flat_zone(
 ) -> FlatZone | None:
     """선택된 규칙·가격 구간의 원문 평탄 규정을 찾습니다.
 
-    지방 규칙은 price_bands 의 추정가격 구간으로, 조달청 규칙은 B(5억)·k(고시금액) 두 축의
-    해당 여부로 조회합니다. 평탄 데이터가 없으면 None 입니다.
+    지방 규칙은 price_bands 의 추정가격 구간으로, 조달청 일반용역 규칙은 B(5억)·k(고시금액)
+    두 축의 해당 여부로 조회합니다. 기술용역은 고시금액 경계가 연도별로 달라
+    price_band_index 로 조회합니다. 평탄 데이터가 없으면 None 입니다.
     """
     if rule.price_bands is not None:
         if resolution.price_band_index is None:
             return None
+        tech_zone = servc_tech_flat_zone_for(rule.rule_id, resolution.price_band_index)
+        if tech_zone is not None:
+            return tech_zone
         try:
             band = rule.price_bands[resolution.price_band_index]
         except IndexError:

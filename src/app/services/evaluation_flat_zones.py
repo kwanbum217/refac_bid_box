@@ -10,8 +10,10 @@ flat_score 아래로 내려가지 않습니다. flat_ratio 는 항상 기준비�
 
 [출처 원칙]
 모든 구간은 원문 평탄 문장이 인용된 수집 문서를 source 로 남깁니다. 원문 인용이 없는
-규칙(조달청 별표 6 보험, 일반 띠 3개, 기술용역)은 데이터를 넣지 않습니다. 추정·역산하지
-않습니다. 조달청 PRE/POST 별표는 수집 문서의 평탄 비율과 산식 대입 점수를 등록합니다.
+규칙(조달청 별표 6 보험, 일반 띠 3개)은 데이터를 넣지 않습니다. 추정·역산하지 않습니다.
+조달청 PRE/POST 별표는 수집 문서의 평탄 비율과 산식 대입 점수를 등록합니다.
+조달청 기술용역 별표1 은 data/reference/pps_tech_lwlt_pre_20260526.yaml 에 원문 평탄
+문장이 있어 구간 순서 기준의 별도 조회(servc_tech_flat_zone_for)로 등록합니다.
 
 이 모듈은 순수 데이터·조회 함수만 제공하며 산식 계산은 evaluation_scoring 이 담당합니다.
 """
@@ -664,4 +666,109 @@ def pps_flat_zone_entries() -> tuple[tuple[str, tuple[bool | None, bool | None],
         (rule_id, key, zone)
         for rule_id, zones in _PPS_FLAT_ZONES.items()
         for key, zone in zones.items()
+    )
+
+
+# =============================================================================
+# 조달청 기술용역 별표1 평탄 구간
+# =============================================================================
+
+# 기술용역은 추정가격 4구간의 고시금액 경계가 연도별로 달라 PriceBand.upper_bound 를
+# 안정적인 키로 쓸 수 없습니다. resolve_score_params 가 돌려주는 price_band_index
+# (추정가격 오름차순 0~3)를 키로 씁니다. 값의 정본은 아래 YAML 의 별표1 예외사항입니다.
+_SERVC_TECH_FLAT_PRE_SOURCE = (
+    "data/reference/pps_tech_lwlt_pre_20260526.yaml "
+    "revisions[notice_key=2025-6352,2026-654].attachments[별표 1] "
+    "(조달청지침 제6352호·제654호 별표1 예외사항)"
+)
+_SERVC_TECH_FLAT_POST_SOURCE = (
+    "data/reference/pps_tech_lwlt_pre_20260526.yaml boundary_reference.exceptions "
+    "(조달청지침 제5283호 별표1 예외사항)"
+)
+
+
+def _tech_flat_zone(ratio: str, score: str, base_source: str, sentence: str) -> FlatZone:
+    return FlatZone(
+        flat_ratio=Decimal(ratio),
+        flat_score=Decimal(score),
+        source=f"{base_source}: {sentence}",
+    )
+
+
+# rule_id -> {PriceBand index: FlatZone}. index 0 은 고시금액 미만, 1 은 5억원 미만
+# 고시금액 이상, 2 는 10억원 미만 5억원 이상, 3 은 10억원 이상입니다.
+_SERVC_TECH_FLAT_ZONES: dict[str, dict[int, FlatZone]] = {
+    "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526": {
+        0: _tech_flat_zone(
+            "0.8825",
+            "85",
+            _SERVC_TECH_FLAT_PRE_SOURCE,
+            "입찰가격이 예정가격 이하로서 예정가격의 100분의 88.25 이상이면 85점",
+        ),
+        1: _tech_flat_zone(
+            "0.8925",
+            "65",
+            _SERVC_TECH_FLAT_PRE_SOURCE,
+            "입찰가격이 예정가격 이하로서 100분의 89.25 이상이면 65점",
+        ),
+        2: _tech_flat_zone(
+            "0.905",
+            "45",
+            _SERVC_TECH_FLAT_PRE_SOURCE,
+            "입찰가격이 예정가격 이하로서 100분의 90.5 이상이면 45점",
+        ),
+        3: _tech_flat_zone(
+            "0.96",
+            "22",
+            _SERVC_TECH_FLAT_PRE_SOURCE,
+            "추정가격 10억원 이상에서 입찰가격이 예정가격 이하로서 100분의 96 이상이면 22점",
+        ),
+    },
+    "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT": {
+        0: _tech_flat_zone(
+            "0.9025",
+            "85",
+            _SERVC_TECH_FLAT_POST_SOURCE,
+            "입찰가격이 예정가격 이하로서 예정가격의 100분의 90.25 이상이면 85점",
+        ),
+        1: _tech_flat_zone(
+            "0.9125",
+            "65",
+            _SERVC_TECH_FLAT_POST_SOURCE,
+            "입찰가격이 예정가격 이하로서 100분의 91.25 이상이면 65점",
+        ),
+        2: _tech_flat_zone(
+            "0.925",
+            "45",
+            _SERVC_TECH_FLAT_POST_SOURCE,
+            "입찰가격이 예정가격 이하로서 100분의 92.5 이상이면 45점",
+        ),
+        3: _tech_flat_zone(
+            "0.98",
+            "22",
+            _SERVC_TECH_FLAT_POST_SOURCE,
+            "추정가격 10억원 이상에서 입찰가격이 예정가격 이하로서 100분의 98 이상이면 22점",
+        ),
+    },
+}
+
+
+def servc_tech_flat_zone_for(rule_id: str, band_index: int | None) -> FlatZone | None:
+    """기술용역 별표1 평탄 규정을 선언 구간 순서(추정가격 오름차순)로 조회합니다.
+
+    기술용역은 고시금액 경계가 연도별로 달라 PriceBand.upper_bound 를 키로 쓸 수 없습니다.
+    resolve_score_params 가 돌려주는 price_band_index 를 그대로 씁니다. 등록되지 않은
+    규칙·구간이면 None 이며 호출부는 평탄을 적용하지 않습니다.
+    """
+    if band_index is None:
+        return None
+    return _SERVC_TECH_FLAT_ZONES.get(rule_id, {}).get(band_index)
+
+
+def servc_tech_flat_zone_entries() -> tuple[tuple[str, int, FlatZone], ...]:
+    """등록된 기술용역 평탄 구간 전량을 (rule_id, 구간 순서, 평탄 데이터) 로 돌려줍니다."""
+    return tuple(
+        (rule_id, index, zone)
+        for rule_id, zones in _SERVC_TECH_FLAT_ZONES.items()
+        for index, zone in zones.items()
     )

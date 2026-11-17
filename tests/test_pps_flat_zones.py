@@ -31,12 +31,17 @@ from src.app.services.evaluation_flat_zones import (
     pps_axis_side,
     pps_flat_zone_entries,
     pps_flat_zone_for,
+    servc_tech_flat_zone_entries,
+    servc_tech_flat_zone_for,
 )
 from src.app.services.evaluation_rules import (
     POST_20260526_RULES,
     POST_20260727_RULES,
     PRE_20230501_RULES,
     PRE_20250901_RULES,
+    SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT,
+    SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526,
+    EvaluationRule,
 )
 from src.app.services.evaluation_scoring import PriceScoreResult, calculate_price_score
 from src.app.services.price_score_verification import invert_pass_bid_range
@@ -118,8 +123,9 @@ class TestPpsFlatZoneData:
             assert (rule.multiplier_by_notice is not None) == (above_notice is not None), rule_id
 
     def test_excluded_rules_have_no_flat_data(self) -> None:
-        # 별표 6 보험(ATTACH_02), 일반 띠 3개, 기술용역은 평탄 문장이 없거나 귀속 미확인이라
-        # 데이터를 넣지 않습니다.
+        # 별표 6 보험(ATTACH_02)과 일반 띠 3개는 평탄 문장이 없거나 귀속 미확인이라
+        # 데이터를 넣지 않습니다. 기술용역은 별표1 평탄 문장이 확인되어
+        # servc_tech_flat_zone_for 에 등록했습니다(TestTechFlatZoneData 참조).
         excluded = [
             ("SERVC_QUAL_PRE_20230501_ATTACH_02", True, None),
             ("SERVC_QUAL_PRE_20250901_ATTACH_02", False, None),
@@ -127,7 +133,6 @@ class TestPpsFlatZoneData:
             ("SERVC_QUAL_POST_20260526_ATTACH_12", None, None),
             ("SERVC_QUAL_POST_20260526_ATTACH_13", None, None),
             ("SERVC_QUAL_POST_20260526_ATTACH_14", None, None),
-            ("SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT", None, None),
         ]
         for rule_id, above_500m, above_notice in excluded:
             zone = pps_flat_zone_for(rule_id, above_500m=above_500m, above_notice=above_notice)
@@ -166,6 +171,55 @@ class TestPpsFlatZoneData:
             zone = _zone(rule_id, above_500m, above_notice)
             assert zone.flat_ratio == Decimal(ratio), rule_id
             assert zone.flat_score == Decimal(score), rule_id
+
+
+class TestTechFlatZoneData:
+    """기술용역 별표1 평탄 구간의 값·출처·구간 순서 검증."""
+
+    RULES = (
+        SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526,
+        SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT,
+    )
+
+    @pytest.mark.parametrize("rule", RULES, ids=lambda rule: rule.rule_id)
+    def test_four_bands_registered_per_rule(self, rule: EvaluationRule) -> None:
+        zones = [servc_tech_flat_zone_for(rule.rule_id, index) for index in range(4)]
+        assert all(zone is not None for zone in zones)
+        assert servc_tech_flat_zone_for(rule.rule_id, 4) is None
+        assert servc_tech_flat_zone_for(rule.rule_id, None) is None
+        assert servc_tech_flat_zone_for("SERVC_UNKNOWN_RULE", 0) is None
+
+    @pytest.mark.parametrize("rule", RULES, ids=lambda rule: rule.rule_id)
+    def test_values_follow_declared_band_order(self, rule: EvaluationRule) -> None:
+        expected = (
+            (("0.8825", "85"), ("0.8925", "65"), ("0.905", "45"), ("0.96", "22"))
+            if rule.base_rate == Decimal("0.88")
+            else (("0.9025", "85"), ("0.9125", "65"), ("0.925", "45"), ("0.98", "22"))
+        )
+        for index, (ratio, score) in enumerate(expected):
+            zone = servc_tech_flat_zone_for(rule.rule_id, index)
+            assert zone is not None
+            assert zone.flat_ratio == Decimal(ratio)
+            assert zone.flat_score == Decimal(score)
+
+    @pytest.mark.parametrize("rule", RULES, ids=lambda rule: rule.rule_id)
+    def test_flat_score_matches_formula(self, rule: EvaluationRule) -> None:
+        for index in range(4):
+            band = rule.price_bands[index]
+            zone = servc_tech_flat_zone_for(rule.rule_id, index)
+            assert zone is not None
+            expected = band.max_price_score - band.multiplier * (
+                zone.flat_ratio - band.base_rate
+            ) * Decimal("100")
+            assert zone.flat_score == expected
+
+    def test_every_entry_has_source(self) -> None:
+        entries = servc_tech_flat_zone_entries()
+        assert len(entries) == 8
+        for rule_id, _index, zone in entries:
+            assert "data/reference/pps_tech_lwlt_pre_20260526.yaml" in zone.source, rule_id
+            assert "조달청지침" in zone.source, rule_id
+            assert zone.flat_ratio > Decimal("0.88")
 
 
 class TestPpsAxisSide:
