@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,6 +33,7 @@ from src.app.main import app
 from src.app.models.bids import BidAnnouncement
 from src.app.schemas.evaluations import QualificationInput
 from src.app.schemas.predictions import PredictPriceResponse
+from src.app.services.evaluation_flat_zones import servc_tech_flat_zone_for
 from src.app.services.evaluation_recommendation import compute_price_bounds
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_RULE_REGIME_MISMATCH,
@@ -135,6 +137,41 @@ def test_current_rule_bands_match_reference_yaml() -> None:
         Decimal("92"),
     ]
     assert "평점계수·배점한도·통과점수는 그대로다" in boundary["delta_from_pre"]
+
+
+def _exception_pairs(exceptions: list[str]) -> list[tuple[Decimal, Decimal]]:
+    pairs: list[tuple[Decimal, Decimal]] = []
+    for sentence in exceptions:
+        match = re.search(r"100분의\s*([0-9.]+)\s*이상인 경우의 평점은\s*([0-9.]+)\s*점", sentence)
+        assert match is not None, sentence
+        pairs.append((Decimal(match.group(1)) / Decimal("100"), Decimal(match.group(2))))
+    return pairs
+
+
+def test_flat_zones_match_reference_yaml() -> None:
+    """두 규칙 네 구간의 평탄 비율·점수가 YAML 예외사항과 같다."""
+    data = _reference()
+    pre_attachments = _revision("2025-6352")["attachments"][0]
+    for notice_key in ("2025-6352", "2026-654"):
+        pairs = _exception_pairs(_revision(notice_key)["attachments"][0]["evidence"]["exceptions"])
+        assert len(pairs) == 4
+        for source_band, (ratio, score) in zip((1, 2, 3, 4), pairs, strict=True):
+            tier = pre_attachments["bands"][source_band - 1]["score_tiers"][0]
+            zone = servc_tech_flat_zone_for(
+                SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526.rule_id, 4 - source_band
+            )
+            assert zone is not None
+            assert zone.flat_ratio == ratio
+            assert zone.flat_ratio == Decimal(str(tier["flat_ratio"])) / Decimal("100")
+            assert zone.flat_score == score
+
+    pairs = _exception_pairs(data["boundary_reference"]["exceptions"])
+    assert len(pairs) == 4
+    for source_band, (ratio, score) in zip((1, 2, 3, 4), pairs, strict=True):
+        zone = servc_tech_flat_zone_for(SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT.rule_id, 4 - source_band)
+        assert zone is not None
+        assert zone.flat_ratio == ratio
+        assert zone.flat_score == score
 
 
 # --------------------------------------------------------------------------- #
@@ -349,8 +386,8 @@ def auto_stub_prediction(monkeypatch):
     monkeypatch.setattr(evaluations, "predict_price_api", _fake_predict)
 
 
-def _create_tech_bid(db, *, notice_no: str = "EVAL-TECH-001") -> BidAnnouncement:
-    bid = BidAnnouncement(
+def _tech_bid_model(*, notice_no: str = "EVAL-TECH-UNIT-001") -> BidAnnouncement:
+    return BidAnnouncement(
         bid_ntce_nm="기술용역 적격심사 테스트 공고",
         bid_ntce_no=notice_no,
         bid_ntce_ord="000",
@@ -364,6 +401,10 @@ def _create_tech_bid(db, *, notice_no: str = "EVAL-TECH-001") -> BidAnnouncement
         category="Servc",
         raw_data=_tech_raw_data(announced="2026-11-01 10:00:00"),
     )
+
+
+def _create_tech_bid(db, *, notice_no: str = "EVAL-TECH-001") -> BidAnnouncement:
+    bid = _tech_bid_model(notice_no=notice_no)
     db.add(bid)
     db.commit()
     db.refresh(bid)
@@ -376,16 +417,7 @@ def test_score_table_resolves_without_user_input() -> None:
         "Servc", _tech_raw_data(announced="2026-11-01 10:00:00")
     )
     assert rule_result.rule is not None
-    bid = BidAnnouncement(
-        bid_ntce_nm="기술용역 적격심사 테스트 공고",
-        bid_ntce_no="EVAL-TECH-UNIT-001",
-        bid_ntce_ord="000",
-        base_amount=600_000_000,
-        presmpt_prce=600_000_000,
-        bid_ntce_dt=utcnow(),
-        category="Servc",
-        raw_data=_tech_raw_data(announced="2026-11-01 10:00:00"),
-    )
+    bid = _tech_bid_model()
 
     table, missing, overridden, resolution = _score_table(
         QualificationInput(), rule_result.rule, bid
@@ -399,6 +431,43 @@ def test_score_table_resolves_without_user_input() -> None:
     assert table.pass_threshold == Decimal("95")
     assert table.base_rate == Decimal("0.90")
     assert resolution.price_band_label == "추정가격이 10억원 미만 5억원 이상인 용역"
+
+
+def test_flat_zone_is_applied_to_max_bid_amount() -> None:
+    """평탄 구간이 선언 배점표에 실려 최상가를 넓힌다."""
+    rule_result = resolve_evaluation_rule_from_raw_data(
+        "Servc", _tech_raw_data(announced="2026-11-01 10:00:00")
+    )
+    assert rule_result.rule is not None
+    table, missing, _, _ = _score_table(QualificationInput(), rule_result.rule, _tech_bid_model())
+
+    assert table is not None
+    assert missing == []
+    assert table.flat_ratio == Decimal("0.925")
+    assert table.flat_score == Decimal("45")
+
+    common = {
+        "base_amount": Decimal("600000000"),
+        "rate_low": Decimal("0.98"),
+        "rate_high": Decimal("1.02"),
+        "pass_threshold": table.pass_threshold,
+        "non_price_score": Decimal("50"),
+        "base_rate": table.base_rate,
+        "max_price_score": table.max_price_score,
+        "multiplier": table.multiplier,
+        "announcement_lwlt_rate": Decimal("87.495"),
+    }
+    with_flat = compute_price_bounds(
+        **common, flat_ratio=table.flat_ratio, flat_score=table.flat_score
+    )
+    without_flat = compute_price_bounds(**common)
+
+    assert with_flat.status == "ok", with_flat.reasons
+    assert without_flat.status == "ok", without_flat.reasons
+    assert with_flat.min_bid_amount == without_flat.min_bid_amount
+    assert with_flat.max_bid_amount is not None
+    assert without_flat.max_bid_amount is not None
+    assert with_flat.max_bid_amount > without_flat.max_bid_amount
 
 
 def test_tech_price_bounds_are_computed_with_declared_table() -> None:
@@ -458,6 +527,36 @@ def test_tech_analyze_is_not_blocked_by_missing_score_table(client, isolated_db,
         assert scenario["total_score"] is not None
 
 
+def test_tech_analyze_applies_flat_zone_to_price_score(client, isolated_db, as_user) -> None:
+    """평탄 구간 위 투찰은 산식값이 아니라 평탄 점수로 계산된다."""
+    as_user(10)
+    bid = _create_tech_bid(isolated_db, notice_no="EVAL-TECH-FLAT-001")
+
+    response = client.post(
+        ANALYZE_URL,
+        json={
+            "bid_id": bid.id,
+            "selected_model": "requested-evaluation-model",
+            "candidate_bid_amount": 570_000_000,
+            "qualification_input": {"disqualification": False},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "success", body.get("blocked_reason")
+    table = body["score_table"]
+    assert table["flat_ratio"] == "0.925"
+    assert table["flat_score"] == "45"
+
+    base = next(row for row in body["scenario_results"] if row["scenario_name"] == "기준")
+    algebraic = Decimal("50") - Decimal("2") * abs(Decimal("0.90") - Decimal("0.95")) * Decimal(
+        "100"
+    )
+    assert algebraic == Decimal("40")
+    assert base["price_score"] == 45.0
+
+
 def test_tech_recommend_is_not_blocked_by_missing_score_table(client, isolated_db, as_user) -> None:
     """투찰가 추천도 배점표 미확인으로 막히지 않고 선언값을 응답한다."""
     as_user(10)
@@ -473,6 +572,57 @@ def test_tech_recommend_is_not_blocked_by_missing_score_table(client, isolated_d
     assert body["score_table"]["multiplier"] == "2"
     assert body["score_table"]["pass_threshold"] == "95"  # noqa: S105
     assert body["price_bounds"] is not None
+
+
+def _create_general_bid(db, *, notice_no: str = "EVAL-GENERAL-001") -> BidAnnouncement:
+    bid = BidAnnouncement(
+        bid_ntce_nm="일반용역 적격심사 테스트 공고",
+        bid_ntce_no=notice_no,
+        bid_ntce_ord="000",
+        ntce_instt_nm="테스트 공고기관",
+        dminstt_nm="테스트 수요기관",
+        base_amount=600_000_000,
+        presmpt_prce=600_000_000,
+        bid_ntce_dt=utcnow(),
+        bid_clse_dt=utcnow(),
+        openg_dt=utcnow(),
+        category="Servc",
+        raw_data={
+            "prearngPrceDcsnMthdNm": "복수예가",
+            "sucsfbidMthdNm": "시설분야용역 적격심사 추정가격 5억원 이상",
+            "sucsfbidLwltRate": "89.995",
+            "srvceDivNm": "일반용역",
+            "totPrdprcNum": "12",
+            "drwtPrdprcNum": "3",
+        },
+    )
+    db.add(bid)
+    db.commit()
+    db.refresh(bid)
+    return bid
+
+
+def _blocked_code(body: dict) -> str:
+    return str(body.get("blocked_reason") or "").split(":", 1)[0]
+
+
+def test_price_bounds_unresolved_matches_general_service_without_non_price_score(
+    client, isolated_db, as_user
+) -> None:
+    """비가격 점수가 0 이면 기술용역과 일반용역이 같은 차단 코드·화면 재료를 낸다."""
+    as_user(10)
+    tech_bid = _create_tech_bid(isolated_db, notice_no="EVAL-TECH-BOUNDS-001")
+    general_bid = _create_general_bid(isolated_db, notice_no="EVAL-GENERAL-BOUNDS-001")
+
+    tech = client.post(RECOMMEND_URL, json={"bid_id": tech_bid.id, "overrides": {}}).json()
+    general = client.post(RECOMMEND_URL, json={"bid_id": general_bid.id, "overrides": {}}).json()
+
+    assert _blocked_code(tech) == _blocked_code(general) == "PRICE_BOUNDS_UNRESOLVED"
+    assert tech["non_price_score"] == general["non_price_score"] == "0"
+    assert tech["prediction"]["optimal_price"] is not None
+    assert general["prediction"]["optimal_price"] is not None
+    assert tech["price_bounds"] is not None
+    assert general["price_bounds"] is not None
 
 
 # --------------------------------------------------------------------------- #
