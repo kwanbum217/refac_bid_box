@@ -501,7 +501,10 @@ def test_tech_analyze_is_not_blocked_by_missing_score_table(client, isolated_db,
             "bid_id": bid.id,
             "selected_model": "requested-evaluation-model",
             "candidate_bid_amount": 540_000_000,
-            "qualification_input": {"disqualification": False},
+            "qualification_input": {
+                "disqualification": False,
+                "manual_non_price_score": 50.0,
+            },
         },
     )
 
@@ -538,7 +541,10 @@ def test_tech_analyze_applies_flat_zone_to_price_score(client, isolated_db, as_u
             "bid_id": bid.id,
             "selected_model": "requested-evaluation-model",
             "candidate_bid_amount": 570_000_000,
-            "qualification_input": {"disqualification": False},
+            "qualification_input": {
+                "disqualification": False,
+                "manual_non_price_score": 50.0,
+            },
         },
     )
 
@@ -562,7 +568,10 @@ def test_tech_recommend_is_not_blocked_by_missing_score_table(client, isolated_d
     as_user(10)
     bid = _create_tech_bid(isolated_db, notice_no="EVAL-TECH-RECOMMEND-001")
 
-    response = client.post(RECOMMEND_URL, json={"bid_id": bid.id, "overrides": {}})
+    response = client.post(
+        RECOMMEND_URL,
+        json={"bid_id": bid.id, "overrides": {"manual_non_price_score": 50.0}},
+    )
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -606,10 +615,10 @@ def _blocked_code(body: dict) -> str:
     return str(body.get("blocked_reason") or "").split(":", 1)[0]
 
 
-def test_price_bounds_unresolved_matches_general_service_without_non_price_score(
+def test_tech_without_non_price_requires_input_while_general_blocks_on_bounds(
     client, isolated_db, as_user
 ) -> None:
-    """비가격 점수가 0 이면 기술용역과 일반용역이 같은 차단 코드·화면 재료를 낸다."""
+    """비가격 입력이 없으면 기술용역은 입력 요구, 일반용역은 배점 초과로 막는다."""
     as_user(10)
     tech_bid = _create_tech_bid(isolated_db, notice_no="EVAL-TECH-BOUNDS-001")
     general_bid = _create_general_bid(isolated_db, notice_no="EVAL-GENERAL-BOUNDS-001")
@@ -617,11 +626,11 @@ def test_price_bounds_unresolved_matches_general_service_without_non_price_score
     tech = client.post(RECOMMEND_URL, json={"bid_id": tech_bid.id, "overrides": {}}).json()
     general = client.post(RECOMMEND_URL, json={"bid_id": general_bid.id, "overrides": {}}).json()
 
-    assert _blocked_code(tech) == _blocked_code(general) == "PRICE_BOUNDS_UNRESOLVED"
-    assert tech["non_price_score"] == general["non_price_score"] == "0"
+    assert _blocked_code(tech) == "TECH_NON_PRICE_REQUIRED"
+    assert "비가격 점수를 공고마다 입력해야" in tech["blocked_reason"]
+    assert _blocked_code(general) == "PRICE_BOUNDS_UNRESOLVED"
     assert tech["prediction"]["optimal_price"] is not None
     assert general["prediction"]["optimal_price"] is not None
-    assert tech["price_bounds"] is not None
     assert general["price_bounds"] is not None
 
 

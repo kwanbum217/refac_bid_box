@@ -1197,6 +1197,10 @@ PASSENGER_NOTICE_ABOVE_RULES: tuple[EvaluationRule, ...] = (
 # resolve_score_params 가 공고일 연도 값으로 바꿔 씁니다.
 _SERVC_TECH_SCORE_YAML = "data/reference/pps_tech_lwlt_pre_20260526.yaml"
 _SERVC_TECH_NOTICE_BOUNDARY_LABEL = "추정가격이 고시금액 미만인 용역"
+# 기술용역 적격심사는 사업수행능력평가 등 비가격 점수를 공고마다 평가합니다. 일반용역
+# 정량 배점표(REGISTRY)나 기관 원문 미반영(AGENCY_DOCUMENT_NOT_LOADED)과 달리, 이 근거는
+# 공고별 사용자 입력만 비가격 점수로 씁니다.
+QUANT_BASIS_TECH_USER_INPUT = "TECH_USER_INPUT"
 _SERVC_TECH_FLAT_NOTE = "평탄 비율은 평탄 구간 데이터 미등록으로 계산에 넣지 않습니다."
 _SERVC_TECH_PRE_SCORE_SOURCE = (
     f"{_SERVC_TECH_SCORE_YAML} revisions[notice_key=2025-6352,2026-654]"
@@ -1298,6 +1302,7 @@ SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT = EvaluationRule(
     base_rate=Decimal("0.90"),
     price_bands=_servc_tech_price_bands("0.90", _SERVC_TECH_POST_SCORE_SOURCE),
     threshold_bands=_servc_tech_threshold_bands(_SERVC_TECH_POST_SCORE_SOURCE),
+    quant_basis=QUANT_BASIS_TECH_USER_INPUT,
     score_table_source=_SERVC_TECH_POST_SCORE_SOURCE,
 )
 
@@ -4517,6 +4522,15 @@ def resolve_evaluation_rule(
     return result
 
 
+def is_servc_tech_qualification(srvce_div_nm: str | None, sucsfbid_mthd_nm: str | None) -> bool:
+    """기술용역 적격심사 공고인지 판별합니다. 적용 판본 선택은 호출자가 합니다."""
+    return (
+        srvce_div_nm == "기술용역"
+        and bool(sucsfbid_mthd_nm)
+        and "적격심사" in str(sucsfbid_mthd_nm)
+    )
+
+
 def _resolve_by_method_name(
     category: str | None,
     prearng_prce_dcsn_mthd_nm: str | None,
@@ -4641,7 +4655,7 @@ def _resolve_by_method_name(
         )
 
     # 기술용역 적격심사는 협상 판별 이후, 일반용역 별표 매칭 이전에 판별합니다.
-    if srvce_div_nm == "기술용역" and sucsfbid_mthd_nm and "적격심사" in sucsfbid_mthd_nm:
+    if is_servc_tech_qualification(srvce_div_nm, sucsfbid_mthd_nm):
         tech_rule = SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT
         if announced is not None and announced < date(2026, 5, 26):
             tech_rule = SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526

@@ -593,7 +593,7 @@
                                        class="w-40 bg-white border border-red-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">
                             </div>
                             <div id="local-manual-score-row" class="hidden space-y-1">
-                                <label class="detail-label" for="input-manual-non-price-score">비가격 정량점수 (0~100)</label>
+                                <label class="detail-label" id="label-manual-non-price-score" for="input-manual-non-price-score">비가격 정량점수 (0~100)</label>
                                 <input type="number" id="input-manual-non-price-score" step="0.01" min="0" max="100"
                                        class="w-40 bg-white border border-red-200 rounded-sm px-2 py-1 text-right text-sm font-semibold focus:border-primary outline-hidden">
                             </div>
@@ -772,6 +772,7 @@ $(document).ready(function() {
             'LOCAL_RULE_NOT_FOUND': '해당 지자체 기준이 확보되지 않았습니다. B·k·기준비율·통과점수를 입력하면 계산합니다.',
             'LWLT_RATE_UNRESOLVED': '추정가격이 없어 적용할 구간 낙찰하한율을 확정하지 못했습니다.',
             'LOCAL_QUANT_REQUIRED': '정량평가 배점표가 기관 원문 미반영이라 정량점수를 직접 입력해야 합니다.',
+            'TECH_NON_PRICE_REQUIRED': '기술용역 비가격 점수(사업수행능력평가 등)를 입력해야 통과 금액을 계산할 수 있습니다.',
             'MISSING_SCORE_TABLE': '공고문 배점표(미확인 항목)를 입력해야 점수를 계산할 수 있습니다.'
         };
         const rawReason = String(code || '');
@@ -795,6 +796,7 @@ $(document).ready(function() {
             'LOCAL_RULE_NOT_FOUND': '네 값을 모두 입력해야 하며, 기준비율은 0.80~0.95 입니다.',
             'LWLT_RATE_UNRESOLVED': '추정가격을 입력하면 해당 구간 하한율로 계산합니다.',
             'LOCAL_QUANT_REQUIRED': '입력한 정량점수는 서버가 검증하지 않습니다.',
+            'TECH_NON_PRICE_REQUIRED': '공고문의 사업수행능력평가 등 비가격 점수를 확인해 입력하면 최저가·최상가·내 조건 추천가를 계산합니다. 입력한 점수는 서버가 검증하지 않습니다.',
             'MISSING_SCORE_TABLE': '배점표를 입력한 뒤 다시 실행하십시오.',
             'PRICE_BOUNDS_UNRESOLVED': '가격배점한도·평점계수·통과점수는 이미 이 공고 별표로 적용되어 있습니다. 경영상태와 신인도는 회원가입 때 저장한 원자료를 그대로 씁니다. 배점표의 나머지 정량 항목은 공고마다 입력하며, 그 점수가 비어 필요한 가격점수가 배점한도를 넘으면 통과 금액을 계산하지 않습니다.'
         };
@@ -824,6 +826,7 @@ $(document).ready(function() {
         'LOCAL_RULE_NOT_FOUND': true,
         'LWLT_RATE_UNRESOLVED': true,
         'LOCAL_QUANT_REQUIRED': true,
+        'TECH_NON_PRICE_REQUIRED': true,
         'MANUAL_EVALUATION': true
     };
 
@@ -904,12 +907,20 @@ $(document).ready(function() {
             'LOCAL_RULE_NOT_FOUND': 'B·k·기준비율·통과점수를 모두 입력하십시오.',
             'LWLT_RATE_UNRESOLVED': '추정가격을 입력하십시오.',
             'LOCAL_QUANT_REQUIRED': '비가격 정량점수를 직접 입력하십시오.',
+            'TECH_NON_PRICE_REQUIRED': '비가격 점수(사업수행능력 등)를 직접 입력하십시오.',
             'MANUAL_EVALUATION': '자체 심사기준표의 B·k·기준비율·통과점수와 비가격 정량점수를 입력하십시오.'
         };
         $('#local-input-section').toggleClass('hidden', !isDirectInputBlock);
         if (!isDirectInputBlock) return;
-        $('#local-input-title').text(
-            code === 'MANUAL_EVALUATION' ? '수기심사 자체 심사기준 입력' : '지방계약 차단 해제 입력'
+        const titles = {
+            'MANUAL_EVALUATION': '수기심사 자체 심사기준 입력',
+            'TECH_NON_PRICE_REQUIRED': '기술용역 비가격 점수 입력'
+        };
+        $('#local-input-title').text(titles[code] || '지방계약 차단 해제 입력');
+        $('#label-manual-non-price-score').text(
+            code === 'TECH_NON_PRICE_REQUIRED'
+                ? '비가격 점수(사업수행능력 등, 0~100)'
+                : '비가격 정량점수 (0~100)'
         );
         $('#local-input-hint').text(hints[code] || '');
         $('#local-service-type-row').toggleClass('hidden', code !== 'LOCAL_SERVICE_TYPE_UNRESOLVED');
@@ -920,6 +931,7 @@ $(document).ready(function() {
         $('#local-manual-score-row').toggleClass(
             'hidden',
             code !== 'LOCAL_QUANT_REQUIRED'
+                && code !== 'TECH_NON_PRICE_REQUIRED'
                 && code !== 'LOCAL_RULE_NOT_FOUND'
                 && code !== 'MANUAL_EVALUATION'
         );
@@ -1511,6 +1523,7 @@ $(document).ready(function() {
         'LOCAL_SERVICE_TYPE_UNRESOLVED': '용역 세부유형 선택',
         'LOCAL_RULE_NOT_FOUND': '지자체 기준값 입력',
         'LOCAL_QUANT_REQUIRED': '정량점수 입력',
+        'TECH_NON_PRICE_REQUIRED': '비가격 점수 입력',
         'MISSING_SCORE_TABLE': '배점표 입력',
         'QUANT_BAND_UNRESOLVED': '정량 입력 확인',
         'QUANT_GRADE_UNKNOWN': '정량 입력 확인',
