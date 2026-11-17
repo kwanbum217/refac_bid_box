@@ -124,6 +124,7 @@ from src.app.services.evaluation_rules import (
     METHOD_SOURCE_CODE,
     POST_20260727_RULES,
     QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+    QUANT_BASIS_TECH_USER_INPUT,
     QUANT_ITEM_LABOR_PLAN,
     QUANT_ITEM_MANAGEMENT,
     QUANT_ITEM_PERFORMANCE,
@@ -151,9 +152,11 @@ from src.app.services.evaluation_rules import (
     extract_contract_regime,
     find_credit_grade,
     find_reputation_item,
+    is_servc_tech_qualification,
     method_name_500m_side,
     quant_score_table_for_rule,
     resolve_evaluation_rule_from_raw_data,
+    resolve_method_name,
     resolve_score_params,
     select_quant_band,
 )
@@ -209,6 +212,8 @@ BLOCK_CODE_QUANT_GRADE_UNKNOWN = "QUANT_GRADE_UNKNOWN"
 BLOCK_CODE_QUANT_BAND_UNRESOLVED = "QUANT_BAND_UNRESOLVED"
 # LOCAL 시·도 규칙의 정량 배점표가 기관 원문 미반영이라 정량점수 직접 입력이 필요할 때입니다.
 BLOCK_CODE_LOCAL_QUANT_REQUIRED = "LOCAL_QUANT_REQUIRED"
+# 기술용역 적격심사는 비가격 점수를 공고마다 평가하므로 공고별 입력이 필요할 때입니다.
+BLOCK_CODE_TECH_NON_PRICE_REQUIRED = "TECH_NON_PRICE_REQUIRED"
 # 구간별로 인쇄된 낙찰하한율이 서로 다른 규칙인데 추정가격을 몰라 구간을 고르지 못했을 때입니다.
 BLOCK_CODE_LWLT_RATE_UNRESOLVED = "LWLT_RATE_UNRESOLVED"
 
@@ -217,6 +222,13 @@ QUANT_SOURCE_USER_INPUT_UNVERIFIED = "USER_INPUT_UNVERIFIED"
 QUANT_SOURCE_NONE = "NONE"
 QUANT_NOTICE_LOCAL_UNVERIFIED = (
     "정량평가 배점표는 기관 원문 미반영입니다. 입력한 정량점수는 서버가 검증하지 않습니다."
+)
+QUANT_NOTICE_TECH_UNVERIFIED = (
+    "기술용역 비가격 점수는 공고별 사업수행능력평가 등으로 평가됩니다. "
+    "입력한 점수는 서버가 검증하지 않습니다."
+)
+TECH_NON_PRICE_REQUIRED_MESSAGE = (
+    "기술용역은 사업수행능력평가 등 비가격 점수를 공고마다 입력해야 통과 금액을 계산합니다."
 )
 LOCAL_USER_INPUT_SOURCE = "사용자 입력(지자체 기준 미확보)"
 # 관리규정외 수기심사 공고는 발주기관 자체 심사기준표가 정본이라, 사용자가 그 값을 입력하면
@@ -2009,6 +2021,29 @@ def _resolve_evaluation_inputs(
             reputation=Decimal("0"),
             has_labor_item=False,
         )
+    elif rule.quant_basis == QUANT_BASIS_TECH_USER_INPUT:
+        # 기술용역 비가격 점수는 일반용역 정량점수와 달리 공고마다 사업수행능력평가 등으로
+        # 달라집니다. 회원 프로필 값으로 대체하지 않고 이 공고의 입력만 씁니다.
+        quant_source = QUANT_SOURCE_USER_INPUT_UNVERIFIED
+        quant_notice = QUANT_NOTICE_TECH_UNVERIFIED
+        manual_score = qualification.manual_non_price_score
+        if manual_score is None:
+            return _blocked_inputs(
+                "tech_non_price",
+                BLOCK_CODE_TECH_NON_PRICE_REQUIRED,
+                TECH_NON_PRICE_REQUIRED_MESSAGE,
+                rule_result,
+                rule=rule,
+                effective_lwlt=effective_lwlt,
+                pred_price=pred_price,
+                quant_table=quant_table,
+            )
+        quant_scores = QuantInputScores(
+            performance=Decimal(str(manual_score)),
+            labor_plan=Decimal("0"),
+            reputation=Decimal("0"),
+            has_labor_item=False,
+        )
     elif quant_table is None:
         if any(_quant_value(value) != Decimal("0") for value in qualification.quant_items.values()):
             return _blocked_inputs(
@@ -2136,7 +2171,13 @@ def _blocked_inputs_response(
                 **get_negotiation_stats(db, rule_result.negotiation_variant)
             )
         return response
-    if inputs.block_kind in {"lwlt", "pred_price", "local_quant", "quant_table"}:
+    if inputs.block_kind in {
+        "lwlt",
+        "pred_price",
+        "local_quant",
+        "tech_non_price",
+        "quant_table",
+    }:
         return _blocked_response(
             bid,
             rule_result,
@@ -2393,8 +2434,20 @@ class _RecommendInputs:
     warnings: list[str]
 
 
+def _is_tech_qualification_bid(bid: BidAnnouncement) -> bool:
+    """기술용역 적격심사 공고인지 판별합니다. 회원 정량값 대체 여부를 가릅니다."""
+    raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
+    method_name, _, _ = resolve_method_name(
+        raw_data.get("sucsfbidMthdNm"), raw_data.get("sucsfbidMthdCd")
+    )
+    return is_servc_tech_qualification(raw_data.get("srvceDivNm"), method_name)
+
+
 def _build_recommend_inputs(
-    overrides: RecommendationOverrides, facts: AccountQualificationFact | None
+    overrides: RecommendationOverrides,
+    facts: AccountQualificationFact | None,
+    *,
+    allow_member_non_price: bool = True,
 ) -> _RecommendInputs:
     """요청 수정값 > 회원 원자료 > 빈 값 우선순위로 추천 입력을 만듭니다.
 
@@ -2402,6 +2455,8 @@ def _build_recommend_inputs(
     목록(list)이면 선택지가 하나인 항목만 레지스트리로 환산하고 나머지는 '평점 선택
     필요'로 남깁니다. 요청 수정값 reputation_items 는 항목별로 회원 값보다 우선하며,
     수정값이 없는 항목은 회원 저장 평점을 그대로 씁니다.
+    allow_member_non_price 가 False 인 기술용역 공고는 회원 프로필의 일반용역 정량점수를
+    비가격 점수로 대체하지 않습니다. 비가격 점수는 공고마다 평가되기 때문입니다.
     """
     warnings: list[str] = []
     stored_values: dict[str, float] = {}
@@ -2425,7 +2480,12 @@ def _build_recommend_inputs(
         management_grade = facts.credit_grade
 
     manual_score = overrides.manual_non_price_score
-    if manual_score is None and facts is not None and facts.non_price_quant_score is not None:
+    if (
+        manual_score is None
+        and allow_member_non_price
+        and facts is not None
+        and facts.non_price_quant_score is not None
+    ):
         manual_score = float(facts.non_price_quant_score)
 
     return _RecommendInputs(
@@ -2711,7 +2771,11 @@ def recommend_evaluation(
     # 절반으로 줄어듭니다.
     bid = _resolve_recommend_bid(db, payload)
     facts = _member_qualification_facts(db, user.id)
-    built = _build_recommend_inputs(payload.overrides, facts)
+    built = _build_recommend_inputs(
+        payload.overrides,
+        facts,
+        allow_member_non_price=not _is_tech_qualification_bid(bid),
+    )
     qualification = built.qualification
 
     raw_data = bid.raw_data if isinstance(bid.raw_data, dict) else {}
