@@ -185,7 +185,7 @@ def test_chart_is_updated_where_amounts_are_filled(auth_client, isolated_db) -> 
     assert "renderPriceRangeChart(data, boundsReady)" in render_amounts
     assert "function renderPriceRangeChart" in body
     # 그래프 표식은 라이브러리 없이 절대 위치 백분율로 그린다.
-    assert "style=\"left:' + left + '%;\"" in body
+    assert "style=\"left:' + positions[marker.key] + '%;\"" in body
 
 
 NODE = shutil.which("node")
@@ -260,3 +260,13 @@ def test_legacy_support_phrase_is_gone() -> None:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
         assert LEGACY_SUPPORT_PHRASE not in text, f"고정 문구가 남아 있음: {path.as_posix()}"
+
+
+def test_price_range_amounts_live_in_legend_not_on_track():
+    body = TEMPLATE_PATH.read_text(encoding="utf-8")
+    assert 'id="price-range-legend"' in body
+    start = body.index("function renderPriceRangeChart")
+    render = body[start : body.index("function hasMemberQuantData", start)]
+    assert "$('#price-range-legend').html(legend)" in render
+    track_markup = render[render.index("const markers") : render.index("const legend")]
+    assert "currencyFormatter" not in track_markup
