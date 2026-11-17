@@ -1042,6 +1042,21 @@ def test_model_provenance_is_passed_through_from_prediction_api(
     assert called.user_price == "407448800"
 
 
+def test_analyze_passes_null_selected_model_through(client, isolated_db, as_user, stub_prediction):
+    """모델 선택 UI 가 없어진 화면은 selected_model null 을 보내고, 서버는 이를 그대로 위임한다."""
+    stub_prediction(requested_model="category-default", actual_model="category-default")
+    as_user(10)
+    bid = _create_bid(isolated_db)
+    body = _analysis_payload(bid.id, score_table=SCORE_TABLE)
+    body["selected_model"] = None
+
+    response = client.post(ANALYZE_URL, json=body)
+
+    assert response.status_code == 200, response.text
+    assert stub_prediction.calls[-1].selected_model is None
+    assert response.json()["actual_model"] == "category-default"
+
+
 def test_model_provenance_keeps_identity_when_no_fallback(
     client, isolated_db, as_user, stub_prediction
 ):

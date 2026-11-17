@@ -74,35 +74,32 @@
             <span class="text-slate-600">Notice Detail</span>
         </nav>
 
-        <div class="flex flex-col md:flex-row md:items-start justify-between gap-6">
-            <div class="flex-1 min-w-0">
-                <div class="flex items-center space-x-3 mb-2">
-                    <span class="badge badge-blue">
-                        {{ bid.category_label }}
-                    </span>
-                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        REF: {{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}
-                    </span>
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center space-x-3 mb-2">
+                <span class="badge badge-blue">
+                    {{ bid.category_label }}
+                </span>
+                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    REF: {{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}
+                </span>
+            </div>
+            <h1 class="text-2xl font-bold text-slate-900 leading-tight truncate">
+                {{ bid.bid_ntce_nm }}
+            </h1>
+            <div class="flex flex-wrap gap-4 mt-3">
+                <div class="flex items-center text-sm text-slate-600">
+                    <i class="far fa-building mr-2 text-slate-400"></i>
+                    {{ bid.dminstt_nm }}
+                    {% if contract_regime %}
+                    <span class="badge badge-blue ml-2" title="{{ contract_regime.basis_text or '판별 근거 없음' }}">{{ contract_regime.label }} · {{ contract_regime.range_rate_label }}</span>
+                    {% endif %}
                 </div>
-                <h1 class="text-2xl font-bold text-slate-900 leading-tight truncate">
-                    {{ bid.bid_ntce_nm }}
-                </h1>
-                <div class="flex flex-wrap gap-4 mt-3">
-                    <div class="flex items-center text-sm text-slate-600">
-                        <i class="far fa-building mr-2 text-slate-400"></i>
-                        {{ bid.dminstt_nm }}
-                        {% if contract_regime %}
-                        <span class="badge badge-blue ml-2" title="{{ contract_regime.basis_text or '판별 근거 없음' }}">{{ contract_regime.label }} · {{ contract_regime.range_rate_label }}</span>
-                        {% endif %}
-                    </div>
-                    <div class="flex items-center text-sm text-slate-600">
-                        <i class="far fa-calendar-alt mr-2 text-slate-400"></i>
-                        게시일: {{ bid.bid_ntce_dt|date("Y.m.d") }}
-                    </div>
+                <div class="flex items-center text-sm text-slate-600">
+                    <i class="far fa-calendar-alt mr-2 text-slate-400"></i>
+                    게시일: {{ bid.bid_ntce_dt|date("Y.m.d") }}
                 </div>
             </div>
-
-            <div class="flex flex-col items-end shrink-0">
+            <div class="mt-4">
                 <div class="detail-label">기초금액</div>
                 <div class="text-2xl font-bold text-primary">
                     {% if bid.has_base_amount %}
@@ -237,46 +234,6 @@
                             </div>
                         </div>
                         {% else %}
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="space-y-2">
-                                <label class="detail-label">분석 모델</label>
-                                <p id="model-summary" class="text-[13px] font-semibold leading-5 text-slate-800">분석 모델 확인 중...</p>
-                                <p id="model-fit" class="text-xs font-semibold leading-5 text-blue-700"></p>
-                                <details id="model-details" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2">
-                                    <summary class="cursor-pointer select-none text-xs font-semibold text-slate-600">모델 상세</summary>
-                                    <div class="space-y-3 pt-3">
-                                        <div id="model-select-wrap" class="relative hidden">
-                                            <select id="selected-model" class="w-full bg-white border border-slate-200 rounded-md px-3 py-2 text-sm font-semibold outline-hidden focus:border-primary transition-all cursor-pointer appearance-none">
-                                                <option value="v25">V25 Ultimate Ensemble (Loading...)</option>
-                                            </select>
-                                            <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px] pointer-events-none"></i>
-                                        </div>
-                                        <div id="model-info-panel" class="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-xs">
-                                            <p id="model-desc" class="text-sm font-semibold leading-6 text-slate-800">모델 정보를 불러오는 중입니다.</p>
-                                            <div id="model-tags" class="mt-3 flex flex-wrap gap-2"></div>
-                                            <div id="model-metrics" class="mt-3 grid grid-cols-2 gap-2"></div>
-                                        </div>
-                                    </div>
-                                </details>
-                            </div>
-
-                            <div class="space-y-2">
-                                <label class="detail-label">투찰가 추천 계산</label>
-                                <div id="recommend-status" class="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-xs">
-                                    <p class="text-sm font-semibold leading-6 text-slate-800">회원 정량 원자료를 반영해 최저가·AI 예측가·최상가를 자동 계산합니다. 입력을 바꾸면 다시 계산합니다.</p>
-                                </div>
-                                <p id="recommend-loading" class="hidden text-xs font-semibold text-slate-500">
-                                    <i class="fas fa-circle-notch fa-spin mr-1.5"></i>추천가 계산 중...
-                                </p>
-                                {% if not bid.prediction_reference_amount %}
-                                <p id="recommend-unavailable" class="flex items-start gap-1.5 text-xs font-semibold text-slate-500">
-                                    <i data-lucide="info" class="w-3.5 h-3.5 mt-0.5 shrink-0"></i>
-                                    <span>기초금액과 예정가격이 모두 공개되지 않은 공고라 투찰가를 산출할 수 없습니다.</span>
-                                </p>
-                                {% endif %}
-                            </div>
-                        </div>
-
                         <!-- 회원 정량 원자료 없음 안내 -->
                         <div id="recommend-member-missing" class="hidden p-4 bg-amber-50 border border-amber-200 rounded-lg">
                             <div class="flex items-start gap-2 text-amber-700">
@@ -340,6 +297,13 @@
                                 </div>
 
                                 <div class="price-result-wrap relative z-10">
+                                    <!-- 입찰 예상가 범위. 축은 최저가~최상가이고 예측가와 내 조건 추천가를 표식으로 둔다. -->
+                                    <div id="price-range-chart" class="hidden mb-4" aria-label="입찰 예상가 범위">
+                                        <div class="relative h-20 mx-4">
+                                            <div id="price-range-track" class="absolute left-0 right-0 top-6 h-1.5 -translate-y-1/2 rounded-full bg-slate-200"></div>
+                                            <div id="price-range-markers" class="absolute inset-0"></div>
+                                        </div>
+                                    </div>
                                     <div class="price-result-grid">
                                         <button type="button" id="res-min-price-cell" data-price-help="min" class="price-result-cell p-4 bg-white border border-slate-100 rounded-lg text-left cursor-pointer hover:border-primary/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-haspopup="dialog">
                                             <div class="flex items-center gap-2 mb-1 min-w-0">
@@ -431,6 +395,23 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- 투찰가 추천 계산. 계산 결과와 근거 문단 다음에 둔다. -->
+                        <div class="space-y-2">
+                            <label class="detail-label">투찰가 추천 계산</label>
+                            <div id="recommend-status" class="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-xs">
+                                <p class="text-sm font-semibold leading-6 text-slate-800">회원 정량 원자료를 반영해 최저가·AI 예측가·최상가를 자동 계산합니다. 입력을 바꾸면 다시 계산합니다.</p>
+                            </div>
+                            <p id="recommend-loading" class="hidden text-xs font-semibold text-slate-500">
+                                <i class="fas fa-circle-notch fa-spin mr-1.5"></i>추천가 계산 중...
+                            </p>
+                            {% if not bid.prediction_reference_amount %}
+                            <p id="recommend-unavailable" class="flex items-start gap-1.5 text-xs font-semibold text-slate-500">
+                                <i data-lucide="info" class="w-3.5 h-3.5 mt-0.5 shrink-0"></i>
+                                <span>기초금액과 예정가격이 모두 공개되지 않은 공고라 투찰가를 산출할 수 없습니다.</span>
+                            </p>
+                            {% endif %}
+                        </div>
                         {% endif %}
                     </div>
                 </div>
@@ -448,25 +429,7 @@
                 </div>
 
                 <div class="p-6 space-y-6">
-                    <!-- 1. 적용 규칙 표시 -->
                     <div class="space-y-3">
-                        <div class="flex items-center justify-between">
-                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">적용 규칙</h3>
-                        </div>
-                        <div id="evaluation-rule" class="hidden p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
-                            <div class="flex items-center gap-3">
-                                <span class="detail-label">규칙 ID</span>
-                                <code id="rule-id" class="text-sm font-mono text-slate-800 bg-white px-2 py-1 rounded-sm border border-slate-200"></code>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <span class="detail-label">규칙명</span>
-                                <span id="rule-name" class="text-sm font-semibold text-slate-800"></span>
-                            </div>
-                            <div class="flex items-start gap-3">
-                                <span class="detail-label mt-0.5 shrink-0">판별 근거</span>
-                                <span id="rule-basis" class="text-sm text-slate-600 leading-relaxed"></span>
-                            </div>
-                        </div>
                         <!-- 계약 법령 판정과 예정가격 변동 범위. 추천 계산 응답의 contract_regime 로 채운다. -->
                         <p id="contract-regime-range" class="hidden text-sm text-slate-600"></p>
                         <div id="negotiation-distribution" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
@@ -757,9 +720,6 @@
 {% block extra_js %}
 <script nonce="{{ csp_nonce }}">
 $(document).ready(function() {
-    let availableModels = [];
-    const defaultModelId = '{{ default_prediction_model|default("v25", true) }}';
-    const bidCategory = '{{ bid.category|default("", true)|escapejs }}';
     const predictionSupported = {{ 'true' if prediction_supported|default(true) else 'false' }};
     const bidId = Number('{{ bid.id }}');
     const noticeEstimatedPrice = {{ bid.presmpt_prce if bid.presmpt_prce is not none else 'null' }};
@@ -770,57 +730,11 @@ $(document).ready(function() {
         const parsed = Number(raw);
         return Number.isFinite(parsed) ? parsed : null;
     })();
-    const categoryLabels = {
-        Thng: '물품',
-        Cnstwk: '건설',
-        Servc: '용역',
-        Frgcpt: '외자',
-    };
     const currencyFormatter = new Intl.NumberFormat('ko-KR', {
         style: 'currency',
         currency: 'KRW',
         maximumFractionDigits: 0
     });
-
-    // 1. Load Available Models
-    function loadModels() {
-        $.getJSON('{{ url('predictions:list_models') }}', function(data) {
-            if (data.status === 'success') {
-                availableModels = data.models;
-                const $select = $('#selected-model');
-                $select.empty();
-                const preferredModelId = availableModels.some(model => model.id === defaultModelId)
-                    ? defaultModelId
-                    : (availableModels[0] ? availableModels[0].id : 'v25');
-
-                availableModels.forEach(model => {
-                    const selected = (model.id === preferredModelId) ? 'selected' : '';
-                    $select.append(`<option value="${escapeHtml(model.id)}" ${selected}>${escapeHtml(model.name)}</option>`);
-                });
-
-                $select.val(preferredModelId);
-                const categoryModelCount = availableModels.filter(function(model) {
-                    const categories = Array.isArray(model.specialized_categories)
-                        ? model.specialized_categories
-                        : [];
-                    return categories.indexOf(bidCategory) !== -1;
-                }).length;
-                $('#model-select-wrap').toggleClass('hidden', categoryModelCount <= 1);
-                updateModelInfo(preferredModelId);
-            }
-        });
-    }
-
-    function updateModelInfo(modelId) {
-        const model = availableModels.find(m => m.id === modelId);
-        if (model) {
-            $('#model-summary').text(buildModelSummary(model));
-            $('#model-fit').text(buildModelFit(model));
-            $('#model-desc').html(buildModelDescription(model));
-            renderModelTags(model);
-            renderModelMetrics(model.metrics || {});
-        }
-    }
 
     function escapeHtml(value) {
         return String(value || '')
@@ -829,141 +743,6 @@ $(document).ready(function() {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
-    }
-
-    function labelCategory(code) {
-        return categoryLabels[code] || code || '범용';
-    }
-
-    function modelCategoryLabels(model) {
-        const categories = Array.isArray(model.specialized_categories)
-            ? model.specialized_categories
-            : [];
-        return categories.map(labelCategory).filter(Boolean);
-    }
-
-    function formatFeatureList(features) {
-        const labels = {
-            presmpt_prce: '기준금액',
-            log_price: '금액 로그값',
-            month: '공고 월',
-            weekday: '공고 요일',
-            month_sin: '월 주기성',
-            month_cos: '월 주기성',
-            title: '공고명',
-            agency_name: '공고기관',
-            scenario_mode: '시나리오 모드',
-            cntrctCnclsMthdNm: '계약 체결 방식',
-            bidMethdNm: '입찰 방식',
-            ntceInsttNm: '공고기관',
-            lower_rate: '기준 하한율',
-        };
-        return (features || [])
-            .map(feature => labels[feature])
-            .filter(Boolean)
-            .slice(0, 6)
-            .join(', ');
-    }
-
-    // version 문자열 v_YYYYMMDD_HHMMSS_mmm 에서 학습 날짜만 뽑는다. 형식이 다르면 날짜를 뺀다.
-    function modelTrainingDate(model) {
-        const match = String(model.version || '').match(/^v_(\d{4})(\d{2})(\d{2})/);
-        return match ? `${match[1]}-${match[2]}-${match[3]}` : '';
-    }
-
-    function formatTrainingRows(rows) {
-        const value = Number(rows);
-        if (!Number.isFinite(value) || value <= 0) return '';
-        if (value >= 10000) return `${(value / 10000).toFixed(1)}만 건`;
-        return `${value.toLocaleString('ko-KR')}건`;
-    }
-
-    function modelCategoryText(model) {
-        const categories = modelCategoryLabels(model);
-        return categories.length ? categories.join('/') : '범용';
-    }
-
-    function buildModelSummary(model) {
-        const parts = [`${modelCategoryText(model)} 예측 모델`];
-        const trainingDate = modelTrainingDate(model);
-        if (trainingDate) parts.push(`${trainingDate} 학습`);
-        const rowText = formatTrainingRows(model.training_rows);
-        if (rowText) parts.push(`${rowText} 기준`);
-        return parts.join(' · ');
-    }
-
-    function buildModelFit(model) {
-        const categoriesRaw = Array.isArray(model.specialized_categories) ? model.specialized_categories : [];
-        const currentCategoryLabel = labelCategory(bidCategory);
-        return categoriesRaw.includes(bidCategory)
-            ? `현재 공고 분야(${currentCategoryLabel})와 맞는 모델입니다.`
-            : `현재 공고 분야는 ${currentCategoryLabel}이며, 분야 기본 모델과 비교해 선택하십시오.`;
-    }
-
-    function modelVersionLabel(model) {
-        if (!model.version) return '버전 정보 없음';
-        const version = String(model.version);
-        return /^v/i.test(version) ? version : `v${version}`;
-    }
-
-    function buildModelDescription(model) {
-        const categories = modelCategoryLabels(model);
-        const categoryText = categories.length ? categories.join(', ') : '범용';
-        const featureText = formatFeatureList(model.required_features) || '모델 번들 기본 입력값';
-        const rowText = formatTrainingRows(model.training_rows);
-
-        return `
-            <span class="block text-sm font-black text-slate-900">${escapeHtml(model.name)} <span class="text-primary">${escapeHtml(modelVersionLabel(model))}</span></span>
-            <span class="mt-1 block text-sm font-semibold leading-6 text-slate-800">${escapeHtml(model.description || '분석 엔진')}</span>
-            <span class="mt-2 block text-xs font-bold leading-5 text-slate-600">
-                특화 분야: ${escapeHtml(categoryText)} · 핵심 입력: ${escapeHtml(featureText)}${rowText ? ` · 학습: ${escapeHtml(rowText)}` : ''}
-            </span>
-        `;
-    }
-
-    function renderModelTags(model) {
-        const tags = modelCategoryLabels(model).map(label => `${label} 특화`);
-
-        $('#model-tags').html(tags.map(tag => `
-            <span class="rounded-full border border-blue-100 bg-white px-3 py-1 text-[11px] font-black tracking-tight text-blue-700">${escapeHtml(tag)}</span>
-        `).join(''));
-    }
-
-    function numericMetricValue(value) {
-        if (value === null || value === undefined || value === '') return null;
-        const numericValue = Number(value);
-        return Number.isFinite(numericValue) ? numericValue : null;
-    }
-
-    // 값이 실제로 있는 지표만 그린다. 빈 칸을 '-'로 채우지 않는다.
-    function renderModelMetrics(metrics) {
-        const metricItems = [];
-        const r2 = numericMetricValue(metrics.avg_r2);
-        if (r2 !== null) metricItems.push({ label: 'R²', value: r2.toFixed(3) });
-        const mae = numericMetricValue(metrics.avg_mae);
-        if (mae !== null) metricItems.push({ label: 'MAE', value: mae.toFixed(3) });
-        if (metrics.validation_label) metricItems.push({ label: '검증', value: metrics.validation_label });
-        if (metrics.pass_all === true || metrics.pass_all === false) {
-            metricItems.push({ label: '품질', value: metrics.pass_all ? '통과' : '점검' });
-        }
-
-        const $metrics = $('#model-metrics');
-        $metrics.toggleClass('hidden', metricItems.length === 0);
-        $metrics.html(metricItems.map(item => `
-            <div class="rounded-lg border border-white/80 bg-white px-3 py-2 shadow-xs">
-                <div class="text-[10px] font-black uppercase tracking-wider text-slate-400 whitespace-nowrap">${item.label}</div>
-                <div class="mt-1 text-base font-black tracking-tight text-slate-900 whitespace-nowrap">${item.value}</div>
-            </div>
-        `).join(''));
-    }
-
-    $('#selected-model').change(function() {
-        updateModelInfo($(this).val());
-        scheduleRecommend();
-    });
-
-    if (predictionSupported) {
-        loadModels();
     }
 
     // ============================================================
@@ -1321,7 +1100,7 @@ $(document).ready(function() {
         $('#score-table-modal-close').trigger('focus');
     }
 
-    // 적용 규칙 카드와 입력표에 규칙 선언 배점표를 반영한다.
+    // 규칙 선언 배점표를 카드와 입력표에 반영한다.
     // 확정된 값은 자동 적용으로 잠그고, 확정하지 못한 필드는 집중 미확인으로 알린다.
     // 사용자가 선언값과 다르게 입력한 필드는 덮어쓰기로 구분해 표시한다.
     function renderRuleScoreTable(scoreTable) {
@@ -1800,7 +1579,6 @@ $(document).ready(function() {
         $('#qualification-section').toggleClass('hidden', isNegotiation);
         if (!isNegotiation) return false;
         $('#evaluation-blocked').addClass('hidden');
-        $('#evaluation-rule').addClass('hidden');
         $('#negotiation-variant').text(data.negotiation_variant || '-');
         $('#negotiation-tech-rate').text(formatRate(data.negotiation_tech_eval_rate));
         $('#negotiation-price-rate').text(formatRate(data.negotiation_price_eval_rate));
@@ -1863,6 +1641,84 @@ $(document).ready(function() {
     // 화면은 금액과 점수를 다시 계산하지 않고 표시만 하며, B·Q·T 를 고정값으로 쓰지 않는다.
     function amountText(value) {
         return value == null ? '-' : currencyFormatter.format(value);
+    }
+
+    // 입찰 예상가 그래프의 표식 위치를 0~100 으로 계산한다. 축은 최저가~최상가이고,
+    // 두 값이 없으면 축 없이 AI 예측가만 가운데에 둔다. 최저가=최상가일 때 0 나누기를 피한다.
+    function priceRangePositions(min, optimal, max, member) {
+        const clamp = function(value) {
+            return Math.min(100, Math.max(0, value));
+        };
+        const low = Number(min);
+        const high = Number(max);
+        const lowReady = min != null && Number.isFinite(low) && low > 0;
+        const highReady = max != null && Number.isFinite(high) && high > 0;
+        const optimalValue = Number(optimal);
+        const optimalReady = optimal != null && Number.isFinite(optimalValue) && optimalValue > 0;
+        const memberValue = Number(member);
+        const memberReady = member != null && Number.isFinite(memberValue) && memberValue > 0;
+        if (!lowReady || !highReady) {
+            return {
+                hasScale: false,
+                min: null,
+                optimal: optimalReady ? 50 : null,
+                max: null,
+                member: null
+            };
+        }
+        const span = high - low;
+        const position = function(value) {
+            if (!Number.isFinite(value) || value <= 0) return null;
+            if (span === 0) {
+                if (value < low) return 0;
+                if (value > high) return 100;
+                return 50;
+            }
+            return clamp(((value - low) / span) * 100);
+        };
+        // 최저가와 최상가가 같으면 축 길이가 0 이므로 표식을 모두 가운데에 겹쳐 둔다.
+        const sameAmount = span === 0;
+        return {
+            hasScale: true,
+            min: sameAmount ? 50 : 0,
+            optimal: optimalReady ? position(optimalValue) : null,
+            max: sameAmount ? 50 : 100,
+            member: memberReady ? position(memberValue) : null
+        };
+    }
+
+    // 범위 그래프. 표식은 축 위치(백분율)에 두고 금액은 표식 아래에 쓴다. 라이브러리를 쓰지 않는다.
+    function renderPriceRangeChart(data, boundsReady) {
+        const prediction = data.prediction || {};
+        const bounds = data.price_bounds || {};
+        const min = boundsReady ? bounds.min_bid_amount : null;
+        const max = boundsReady ? bounds.max_bid_amount : null;
+        const member = boundsReady ? data.member_recommended_price : null;
+        const positions = priceRangePositions(min, prediction.optimal_price, max, member);
+        const values = { min: min, optimal: prediction.optimal_price, max: max, member: member };
+        const markers = [
+            { key: 'min', label: '최저가', tone: 'bg-emerald-500' },
+            { key: 'optimal', label: 'AI 예측가', tone: 'bg-primary' },
+            { key: 'max', label: '최상가', tone: 'bg-rose-500' },
+            { key: 'member', label: '내 조건 추천가', tone: 'bg-amber-500' }
+        ].map(function(marker) {
+            const left = positions[marker.key];
+            const value = values[marker.key];
+            if (left == null || value == null) return '';
+            const shift = left <= 10 ? '0' : (left >= 90 ? '-100%' : '-50%');
+            return '<div class="absolute top-6 -translate-y-1/2" style="left:' + left + '%;">'
+                + '<span class="block h-3 w-3 -translate-x-1/2 rounded-full border-2 border-white '
+                + marker.tone + ' shadow-xs"></span>'
+                + '<span class="absolute top-4 whitespace-nowrap text-[10px] font-bold text-slate-600"'
+                + ' style="left:0;transform:translateX(' + shift + ');">'
+                + escapeHtml(marker.label) + ' ' + escapeHtml(currencyFormatter.format(value))
+                + '</span></div>';
+        }).join('');
+        $('#price-range-markers').html(markers);
+        $('#price-range-track')
+            .toggleClass('bg-slate-200', positions.hasScale)
+            .toggleClass('bg-slate-100', !positions.hasScale);
+        $('#price-range-chart').toggleClass('hidden', !markers);
     }
 
     function hasMemberQuantData(data) {
@@ -2132,6 +1988,7 @@ $(document).ready(function() {
         $('#res-min-price').text(boundsReady ? amountText(bounds.min_bid_amount) : '-');
         $('#res-max-price').text(boundsReady ? amountText(bounds.max_bid_amount) : '-');
         renderMemberRecommendation(data, boundsReady);
+        renderPriceRangeChart(data, boundsReady);
 
         $('#res-ai-reason').text(aiReasonText(data)).toggleClass('hidden', !data.prediction);
         $('#res-min-reason').text(boundsReady ? boundReasonText(data, 'min') : '').toggleClass('hidden', !boundsReady);
@@ -2198,10 +2055,11 @@ $(document).ready(function() {
     }
 
     // 추천 계산 요청. 회원 정량 원자료는 서버가 채우고, 화면은 사용자가 실제로 수정한 값만 보낸다.
+    // 모델 선택 UI 가 없으므로 서버가 공고 분야 기본 모델을 고르도록 null 을 보낸다.
     function buildRecommendPayload() {
         return {
             bid_id: bidId,
-            selected_model: $('#selected-model').val() || null,
+            selected_model: null,
             overrides: Object.assign(
                 buildQualificationInput(),
                 buildLocalInputs(),
@@ -2241,15 +2099,6 @@ $(document).ready(function() {
                         .removeClass('hidden');
                 } else {
                     $('#contract-regime-range').addClass('hidden');
-                }
-
-                if (data.rule_id && data.negotiation_variant == null) {
-                    $('#evaluation-rule').removeClass('hidden');
-                    $('#rule-id').text(data.rule_id);
-                    $('#rule-name').text(data.rule_name || '-');
-                    $('#rule-basis').text(data.rule_basis || '-');
-                } else if (data.negotiation_variant == null) {
-                    $('#evaluation-rule').addClass('hidden');
                 }
 
                 // 같은 차단 사유를 추천 카드와 분석 카드에 두 번 띄우지 않는다.
