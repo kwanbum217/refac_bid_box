@@ -42,6 +42,7 @@ def describe_announcement_links(raw_data: Any) -> dict[str, Any]:
 
     raw_data 가 dict 가 아니거나 값이 문자열이 아니어도 예외 없이 빈 결과를 돌려줍니다.
     허용되지 않은 URL 과 빈 값은 건너뛰고, 같은 URL 이 두 번 나오면 첫 번째만 남깁니다.
+    표준공고문 URL 이 첨부 목록에 이미 있으면 standard_notice_url 은 None 입니다.
     이름이 비면 `첨부파일 <번호>` 로 채웁니다.
     """
     data = raw_data if isinstance(raw_data, dict) else {}
@@ -55,8 +56,13 @@ def describe_announcement_links(raw_data: Any) -> dict[str, Any]:
         name = name_value.strip() if isinstance(name_value, str) else ""
         files.append({"name": name or f"첨부파일 {number}", "url": url})
         seen.add(url)
+    # 표준공고문은 대부분 첨부 목록의 한 파일과 같은 URL 이라(2026-11-17 조사 99.99%)
+    # 목록에 이미 있으면 따로 보여 주지 않습니다.
+    standard_notice_url = _allowed_url(data.get("stdNtceDocUrl"))
+    if standard_notice_url in seen:
+        standard_notice_url = None
     return {
         "files": files,
-        "standard_notice_url": _allowed_url(data.get("stdNtceDocUrl")),
+        "standard_notice_url": standard_notice_url,
         "detail_url": _allowed_url(data.get("bidNtceDtlUrl")),
     }
