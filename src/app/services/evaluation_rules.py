@@ -1786,15 +1786,26 @@ _MOE_CDW_PPS_BAND_RULE_IDS = frozenset(
 _MOE_CDW_FALLBACK_BLOCK_CODES = frozenset({"RULE_NOT_FOUND", "LOCAL_RULE_NOT_FOUND"})
 
 
-def _is_moe_cdw_fallback_target(result: RuleResolutionResult) -> bool:
+def _is_moe_cdw_fallback_target(
+    result: RuleResolutionResult,
+    *,
+    stated_app_std: str = "",
+    method_name: str | None = None,
+) -> bool:
     """환경부고시 대체 적용 대상인지 판정합니다.
 
     조달청 띠 규칙(ATTACH_12~14)으로 잡혔거나(시행일 불일치 차단 포함), 규칙 미발견으로
-    막힌 결과만 대상입니다. 시·도·기관 규칙으로 확정된 결과와 세부유형 선택 대기는 제외합니다.
+    막힌 결과가 대상입니다. 공고가 적용 기준을 환경부고시로 명시하고 낙찰방법명이 고시
+    띠 표기 6종과 맞으면 세부유형 선택 대기(LOCAL_SERVICE_TYPE_UNRESOLVED)도 대상에
+    더합니다. 시·도·기관 규칙으로 확정된 결과는 제외합니다.
     """
     rule_id = result.rule.rule_id if result.rule is not None else None
     if rule_id in _MOE_CDW_PPS_BAND_RULE_IDS:
         return result.block_reason_code in (None, "RULE_REGIME_MISMATCH")
+    if result.is_blocked and result.block_reason_code == BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED:
+        return (
+            MOE_CDW_STATED_MARKER in stated_app_std and select_moe_cdw_rule(method_name) is not None
+        )
     return result.is_blocked and result.block_reason_code in _MOE_CDW_FALLBACK_BLOCK_CODES
 
 
@@ -4190,6 +4201,10 @@ def resolve_evaluation_rule(
       명시하며, 조달청 매칭 결과가 있는 공고도 같은 방식으로 조달청 별표로 계산합니다.
       두 판본 모두 해당 유형 별표가 없고 준용 조항이 조달청을 지목하지 않으므로 근거는
       공고 명시이며, 조달청 기준으로 풀린 결과에만 같은 경고를 붙입니다.
+    - 위 세 지역 밖의 공고도 시·도 규칙에 해당 유형 별표가 없어 LOCAL_RULE_NOT_FOUND 로
+      끝나고 공고의 낙찰방법 적용 기준이 조달청 일반용역 적격심사 세부기준을 명시하며
+      조달청 매칭 결과가 있으면 같은 방식으로 조달청 별표로 계산하고 같은 경고를 붙입니다.
+      지역 기준을 명시한 공고(예규 제1075호 등)와 건설폐기물 띠 표기 공고는 제외합니다.
     - 수요기관 코드가 demand_institutions.PPS_CITED_LOCAL_INSTITUTION_CODES 에 들면
       contract_regime == "LOCAL" 이고 시·도 매핑이 있어도 시·도 규칙 후보를 만들지
       않고 조달청 매칭 결과를 씁니다. 공고문이 조달청 일반용역 적격심사 세부기준을
@@ -4578,6 +4593,32 @@ def resolve_evaluation_rule(
                 )
                 if result.rule is not None:
                     result = replace(result, warnings=[*result.warnings, JNGJ_STATED_PPS_WARNING])
+            elif (
+                local_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
+                and result.rule is not None
+                and not result.is_blocked
+                and _PPS_STATED_MARKER in app_std
+                and select_moe_cdw_rule(method_name) is None
+                and (announced is None or _rule_applies_to_announcement(result.rule, announced))
+            ):
+                # 시·도 예규에 해당 유형 별표가 없어 LOCAL_RULE_NOT_FOUND 로 끝난 공고가
+                # 적용 기준을 조달청 일반용역 적격심사 세부기준으로 명시하면, 지역을 가리지
+                # 않고 공고 명시를 근거로 조달청 매칭 결과를 씁니다. 통합특별시·대구·충남은
+                # 위 분기가 먼저 처리하므로 결과가 그대로이고, 조달청 매칭 결과가 없거나
+                # 공고일이 그 규칙 시행일보다 앞서는 공고, 건설폐기물 띠 표기 공고는 종전
+                # 차단을 유지합니다.
+                result, scope_stage = _narrow_rule_scope(
+                    result,
+                    method_name=pps_method_name,
+                    allocated_rules=allocated_rules,
+                    institution_code=institution_code,
+                    institution_name=institution_name,
+                    region_code=region_code,
+                    region_name=region_name,
+                    contract_regime=contract_regime,
+                )
+                if result.rule is not None:
+                    result = replace(result, warnings=[*result.warnings, JNGJ_STATED_PPS_WARNING])
             else:
                 result = replace(
                     result,
@@ -4717,20 +4758,25 @@ def resolve_evaluation_rule(
     if (
         announced is not None
         and announced >= date.fromisoformat(MOE_CDW_EFFECTIVE_DATE)
-        and _is_moe_cdw_fallback_target(result)
+        and _is_moe_cdw_fallback_target(result, stated_app_std=app_std, method_name=method_name)
     ):
         # 환경부고시 「건설폐기물처리용역 적격업체 평가기준」 [별표] 구간명을 옮긴 띠 표기 공고는
         # 조달청 별표에 대응 값이 없어 ATTACH_12~14(값 미상)로 잡히거나 규칙 미발견으로 막힙니다.
-        # 그런 공고만 고시 해당 호로 풉니다. 시·도·기관 규칙으로 확정된 공고와 세부유형 선택을
-        # 기다리는 공고(LOCAL_SERVICE_TYPE_UNRESOLVED)는 대상이 아닙니다.
+        # 그런 공고와, 공고가 적용 기준을 이 고시로 명시한 세부유형 선택 대기 공고만 고시 해당
+        # 호로 풉니다. 시·도·기관 규칙으로 확정된 공고는 대상이 아닙니다.
         moe_rule = select_moe_cdw_rule(method_name)
         if moe_rule is not None:
+            moe_warning = (
+                MOE_CDW_STATED_WARNING
+                if result.block_reason_code == BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED
+                else MOE_CDW_WARNING
+            )
             result = replace(
                 _apply_rule_lwlt(result, moe_rule, sucsfbid_lwlt_rate, estimated_price),
                 is_blocked=False,
                 block_reason_code=None,
                 block_reason_message=None,
-                warnings=[*result.warnings, MOE_CDW_WARNING],
+                warnings=[*result.warnings, moe_warning],
             )
             scope_stage = RULE_SCOPE_ALL
     if institution_warnings:
