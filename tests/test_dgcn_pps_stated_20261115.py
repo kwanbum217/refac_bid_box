@@ -7,8 +7,9 @@
   조달청 별표로 계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다.
 - 같은 세부유형의 시·도 별표가 있어도 공고가 조달청 기준을 명시하면 조달청 별표로
   계산하고 JNGJ_STATED_PPS_WARNING 을 붙인다(사용자 결정, 2026-11-15).
-- 명시 기준이 없거나 다른 값이면 종전처럼 차단하고, 공고 명시가 없는 다른 지역 공고는
-  시·도 자체 별표를 유지한다.
+- 명시 기준이 없거나 다른 값이면 종전처럼 차단한다. 공고 명시가 없는 다른 지역 공고는
+  시·도 자체 별표를 유지하고, 시·도 규칙도 없으면 종전 차단을 유지한다. 조달청 명시는
+  2026-11-18부터 지역을 가리지 않는다.
 - 대구 예규 제238호(2026-05-11 시행)·충남 공고 제2026-1235호(2026-07-13 시행) 이후
   공고도 같은 근거로 계산합니다(사용자 결정, 2026-11-15).
 
@@ -218,7 +219,8 @@ def test_chungnam_new_version_announcement_uses_pps_rule() -> None:
     assert JNGJ_STATED_PPS_WARNING in result.warnings
 
 
-def test_other_region_stays_blocked() -> None:
+def test_other_region_without_local_rule_uses_pps_rule() -> None:
+    """시·도 규칙이 없어도 공고 명시 조달청 기준이면 다른 지역도 조달청 별표를 씁니다."""
     result = _resolve(
         method=INSURANCE_UNDER_METHOD,
         announced="2026-02-27 10:00:00",
@@ -226,6 +228,24 @@ def test_other_region_stays_blocked() -> None:
         institution_code="4200000",
         region_code="42",
         region_name="강원특별자치도",
+    )
+    assert result.is_blocked is False
+    assert result.block_reason_code is None
+    assert result.rule is not None
+    assert result.rule.rule_id == PPS_INSURANCE_RULE_ID
+    assert JNGJ_STATED_PPS_WARNING in result.warnings
+
+
+def test_other_region_without_stated_standard_stays_blocked() -> None:
+    """공고 명시가 없고 시·도 규칙도 없으면 종전 LOCAL_RULE_NOT_FOUND 차단을 유지합니다."""
+    result = _resolve(
+        method=INSURANCE_UNDER_METHOD,
+        announced="2026-02-27 10:00:00",
+        institution_name="강원특별자치도청",
+        institution_code="4200000",
+        region_code="42",
+        region_name="강원특별자치도",
+        app_std=None,
     )
     assert result.is_blocked is True
     assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND

@@ -174,21 +174,21 @@
 | 위치 | 용도 | 예규 규칙 포함 |
 | --- | --- | --- |
 | `evaluation_rules.py:1282` | `_servc_tech_price_bands_for_announcement` 고시금액 경계 치환 | 포함(집합) |
-| `evaluation_rules.py:4307` | 기관 규칙 후보 생성 제외 | 포함(집합) |
-| `evaluation_rules.py:4396` | PPS 인용 지방공기업 분기 제외 | 포함(집합) |
-| `evaluation_rules.py:4420` | 시·도 규칙 후보 생성 제외 | 포함(집합) |
-| `evaluation_rules.py:4638` | 규칙 범위 축소 제외 | 포함(집합) |
-| `evaluation_rules.py:4247, 4277` | 기술용역 규칙 여부(행안부·기관 분기 진입) | 조달청 규칙만(의도) |
+| `evaluation_rules.py:4322` | 기관 규칙 후보 생성 제외 | 포함(집합) |
+| `evaluation_rules.py:4411` | PPS 인용 지방공기업 분기 제외 | 포함(집합) |
+| `evaluation_rules.py:4435` | 시·도 규칙 후보 생성 제외 | 포함(집합) |
+| `evaluation_rules.py:4653` | 규칙 범위 축소 제외 | 포함(집합) |
+| `evaluation_rules.py:4261, 4292` | 기술용역 규칙 여부(행안부·기관 분기 진입) | 조달청 규칙만(의도) |
 
-`evaluation_rules.py:4247, 4277` 은 "조달청 현행 규칙일 때"를 뜻하는 진입 조건이라
+`evaluation_rules.py:4261, 4292` 은 "조달청 현행 규칙일 때"를 뜻하는 진입 조건이라
 예규 규칙을 넣으면 안 됩니다. 나머지는 `SERVC_TECH_QUAL_RULE_IDS` 집합을 쓰므로 예규
 규칙이 자동으로 포함됩니다.
 
 비가격 수기 입력(`TECH_NON_PRICE_REQUIRED`)은 `rule_id` 가 아니라
 `rule.quant_basis == QUANT_BASIS_TECH_USER_INPUT` 으로 판정합니다
-(`evaluations.py:2024`). 예규 규칙 3종 모두 이 값을 가지므로 같은 차단·입력 경로를
+(`evaluations.py:2026`). 예규 규칙 3종 모두 이 값을 가지므로 같은 차단·입력 경로를
 씁니다. 평탄 조회는 `servc_tech_flat_zone_for(rule.rule_id, index)` 로 조달청·예규
-사전을 모두 봅니다(`evaluations.py:327`, `predictions.py:232`).
+사전을 모두 봅니다(`evaluations.py:329`, `predictions.py:232`).
 
 ---
 
