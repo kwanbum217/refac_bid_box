@@ -697,6 +697,13 @@ class EvaluationRecommendRequest(BaseModel):
     bid_ntce_no: str | None = Field(default=None, description="입찰공고번호")
     bid_ntce_ord: str | None = Field(default=None, description="입찰공고차수")
     selected_model: str | None = Field(default=None, description="선택된 추천 모델 ID")
+    with_prediction: bool = Field(
+        default=True,
+        description=(
+            "AI 예측가를 함께 계산할지. false 면 정량평가 입력표를 그리는 데 필요한 "
+            "규칙·배점표와 차단 안내만 돌려줍니다."
+        ),
+    )
     overrides: RecommendationOverrides = Field(
         default_factory=RecommendationOverrides, description="회원 원자료를 덮어쓰는 수정값"
     )
@@ -830,6 +837,15 @@ class EvaluationRecommendResponse(BaseModel):
         None,
         description="내 조건 추천가 근거. ai 는 예측가 그대로, raised_to_min 은 최저가로 올림, "
         "lowered_to_max 는 최상가로 내림",
+    )
+    member_recommended_low: int | None = Field(
+        None, description="내 조건 추천가 범위 하한 (원). 서빙 모델 실측 오차를 반영한 값"
+    )
+    member_recommended_high: int | None = Field(
+        None, description="내 조건 추천가 범위 상한 (원). 서빙 모델 실측 오차를 반영한 값"
+    )
+    member_recommended_error_pp: float | None = Field(
+        None, description="범위에 쓴 서빙 모델 실측 오차 RMSE (%p)"
     )
     participant_stats: ParticipantCountStats = Field(
         default_factory=ParticipantCountStats, description="발주처 과거 참여업체 수 요약"

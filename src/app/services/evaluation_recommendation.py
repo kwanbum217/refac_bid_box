@@ -66,6 +66,45 @@ def member_recommended_price(
     return MemberRecommendation(price=ai_price, basis="ai")
 
 
+@dataclass(frozen=True)
+class MemberRecommendationBand:
+    """내 조건 추천가의 실측 오차 범위. 추천가를 중심으로 하한·상한을 가집니다."""
+
+    low: int
+    high: int
+    error_pp: Decimal
+
+
+def member_recommended_band(
+    *,
+    member_price: int | None,
+    reference_amount: Decimal | int | None,
+    error_pp: Decimal | float | None,
+    min_bid_amount: int | None = None,
+    max_bid_amount: int | None = None,
+) -> MemberRecommendationBand | None:
+    """내 조건 추천가를 서빙 모델 실측 오차(RMSE, %p)만큼 넓힌 범위를 냅니다.
+
+    폭 = AI 예측가를 만든 기준 금액 x 오차 / 100 이며 원 단위로 반올림합니다.
+    범위는 최저가~최상가 안으로 자릅니다. 추천가·기준 금액·오차 중 하나라도 없거나
+    기준 금액이 0 이하이거나 오차가 음수이면 None 을 돌려줍니다.
+    """
+    if member_price is None or reference_amount is None or error_pp is None:
+        return None
+    amount = Decimal(str(reference_amount))
+    error = Decimal(str(error_pp))
+    if amount <= 0 or error < 0:
+        return None
+    width = int((amount * error / Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    low = member_price - width
+    high = member_price + width
+    if min_bid_amount is not None and low < min_bid_amount:
+        low = min_bid_amount
+    if max_bid_amount is not None and high > max_bid_amount:
+        high = max_bid_amount
+    return MemberRecommendationBand(low=low, high=high, error_pp=error)
+
+
 def disqualification_status(value: bool | None) -> Literal["not_checked", "clear", "disqualified"]:
     """결격 입력을 응답 상태 문구로 바꿉니다. 생략(None)은 '미확인'입니다."""
     if value is None:

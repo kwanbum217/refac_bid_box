@@ -90,6 +90,10 @@ def test_response_keeps_ai_price_inside_member_range(client, isolated_db, as_use
 
     assert payload["member_recommended_price"] == inside
     assert payload["member_recommendation_basis"] == "ai"
+    # 실측 오차 범위 필드는 항상 응답에 실린다. 오차를 읽지 못하면 값만 None 이다.
+    assert "member_recommended_low" in payload
+    assert "member_recommended_high" in payload
+    assert "member_recommended_error_pp" in payload
 
 
 def test_lower_quant_score_moves_member_price_not_ai_price(

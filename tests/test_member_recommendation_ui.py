@@ -32,6 +32,18 @@ CASES = {
         },
         True,
     ),
+    "band": (
+        {
+            "member_recommended_price": 1000,
+            "member_recommendation_basis": "ai",
+            "member_recommended_low": 800,
+            "member_recommended_high": 1200,
+            "member_recommended_error_pp": 2.7,
+            "non_price_score": "30",
+            "prediction": {"optimal_price": 1000},
+        },
+        True,
+    ),
     "absent": ({"member_recommended_price": None, "member_recommendation_basis": None}, True),
     "bounds_not_ready": (
         {
@@ -75,9 +87,12 @@ for (const [key, [data, ready]] of Object.entries({json.dumps(CASES, ensure_asci
   const box = state['#res-member-recommendation'];
   out[key] = {{
     hidden: box.classes.has('hidden'),
-    amber: box.classes.has('bg-amber-50'),
     price: (state['#res-member-price'] || {{}}).text || '',
     reason: (state['#res-member-reason'] || {{}}).text || '',
+    error: (state['#res-member-error'] || {{}}).text || '',
+    bandNote: (state['#res-member-band-note'] || {{}}).text || '',
+    bandNoteHidden: (state['#res-member-band-note'] || {{}}).classes
+      ? (state['#res-member-band-note'] || {{}}).classes.has('hidden') : null,
   }};
 }}
 process.stdout.write(JSON.stringify(out));
@@ -92,8 +107,8 @@ process.stdout.write(JSON.stringify(out));
 def test_raised_price_is_highlighted_with_reason(rendered):
     out = rendered["raised"]
     assert out["hidden"] is False
-    assert out["amber"] is True
     assert out["price"] == "1000원"
+    assert out["bandNoteHidden"] is True
     assert out["reason"] == (
         "AI 예측가 900원은 정량점수 25점으로는 어떤 예정가격에서도 적격 통과점수에 못 미쳐 "
         "최저가로 올렸습니다."
@@ -103,11 +118,32 @@ def test_raised_price_is_highlighted_with_reason(rendered):
 def test_unchanged_price_explains_it_is_inside_range(rendered):
     out = rendered["kept"]
     assert out["hidden"] is False
-    assert out["amber"] is False
+    assert out["bandNoteHidden"] is True
     assert (
         out["reason"]
         == "정량점수 30점 기준 통과 구간(최저가~최상가) 안이라 AI 예측가를 그대로 추천합니다."
     )
+
+
+def test_price_is_shown_as_model_error_band(rendered):
+    out = rendered["band"]
+    assert out["hidden"] is False
+    assert out["price"] == "800원 ~ 1200원"
+    assert out["error"] == "2.70"
+    assert out["bandNote"] == "모델 실측 오차 ±2.70%p 기준 범위, 중심 1000원"
+    assert out["bandNoteHidden"] is False
+
+
+def test_member_card_markup_is_visually_highlighted():
+    template = TEMPLATE_PATH.read_text(encoding="utf-8")
+    start = template.index('id="res-member-recommendation"')
+    markup = template[start : template.index("</div>", template.index('id="res-member-reason"'))]
+    assert "badge-amber" in markup
+    assert "border-2 border-amber-300" in markup
+    assert "bg-amber-50" in markup
+    assert "text-2xl sm:text-3xl" in markup
+    assert "dark:border-amber-600" in markup
+    assert "dark:bg-slate-900" in markup
 
 
 @pytest.mark.parametrize("case", ["absent", "bounds_not_ready"])
