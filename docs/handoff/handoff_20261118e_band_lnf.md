@@ -13,7 +13,7 @@
 | --- | --- | --- |
 | 1 | 행안부 학술 띠 구판본(2025-07-01 이전) 조사 완료 확인 | 워커 `orca-mois-old`(Antigravity Gemini, Task `task_6e87c21a6c3a`) 진행 중. 보고서 `docs/analysis/mois_academic_band_old_versions_20261118.md`. 리뷰어는 cmd 소진으로 Cursor 또는 Antigravity Claude |
 | 2 | 구판본 등록 구현 | 사용자 결정(2026-11-18) '구판본 등록 후 계산'. 대상: 시행일 불일치 70건, 띠 구제 정합화 뒤 남은 2025-07-01 이전 13건, GENERAL 별표 오계산 5건 중 4건 |
-| 3 | GENERAL 별표 오계산 5건 해소 | `docs/analysis/academic_general_table_audit_20261118.md`. 서울 1·인천 1·대전 3 학술 공고가 시·도 GENERAL 별표(통과 95)로 계산되나 공고문은 행안부 [별표 4](통과 85)를 지목. 원인 `evaluation_rules.py` GENERAL 폴백. 1건은 현행 행안부 띠로 바로 해소 가능, 4건은 구판본 필요. 구현은 사용자 확인 후 |
+| 3 | GENERAL 별표 오계산 5건 해소 | `docs/analysis/academic_general_table_audit_20261118.md`. 서울 1·인천 1·대전 3 학술 공고가 시·도 GENERAL 별표로 계산되어 통과점수 95 가 잡히나, 공고문은 행안부 별표 4 를 지목하고 통과점수는 85. 원인 `evaluation_rules.py` GENERAL 폴백. 1건은 현행 행안부 띠로 바로 해소 가능, 4건은 구판본 필요. 구현은 사용자 확인 후 |
 | 4 | 부산 `R25BK01244020` 단순노무 기록 | 사용자 승인(2026-11-18). 공고 단건 선택을 저장하는 경로가 코드에 없다. 평가 요청의 `qualification_input.local_service_type` 만 있다. 기록 방식(단건 예외 표 또는 공고 기준 자동 판별) 설계 필요 |
 | 5 | cmd 크레딧 | 2026-11-18 소진. 대체는 Antigravity Gemini·Claude, Cursor CLI(사용자 지시, 메모리) |
 | 6 | `R26BK01727058` 자동 회수 확인, 재학습 판정(11-23), 노출 지연 2차 측정(11-25) | 이전 문서 그대로 |
