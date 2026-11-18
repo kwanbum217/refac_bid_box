@@ -2903,12 +2903,16 @@ def _select_local_rule(
         basis = "USER_SELECTION"
     else:
         service_type, basis, _ = resolve_local_service_type(raw_data, method_name)
-        if (
+        mois_academic_band = (
             service_type == "ACADEMIC"
             and basis == "PROCUREMENT_CLASS"
             and not _is_band_only_method(method_name)
             and select_mois_academic_band_rule(method_name, raw_data) is not None
-        ):
+        )
+        academic_scope_excluded = (
+            mois_academic_band and effective_sido_code in LOCAL_ACADEMIC_SCOPE_EXCLUDED_SIDO_CODES
+        )
+        if mois_academic_band and not academic_scope_excluded:
             # 행안부 예규 학술연구 띠 규칙이 이미 적용되는 낙찰방법명 표기는 종전 판정을
             # 유지합니다. 조달분류 학술연구 표지만으로 세부유형을 앞당겨 확정하면 이
             # 공고들의 적용 규칙이 행안부 띠에서 시·도 일반 별표로 바뀝니다.
@@ -2917,6 +2921,17 @@ def _select_local_rule(
             has_own_rule = any(rule.service_type == service_type for rule in region_rules)
             has_general_rule = any(rule.service_type == "GENERAL" for rule in region_rules)
             if not has_own_rule and not has_general_rule:
+                if academic_scope_excluded:
+                    # 시·도 예규가 일반용역 정의에서 학술용역을 제외한 지역입니다. ACADEMIC 을
+                    # GENERAL/UNRESOLVED 로 되돌리면 단순노무 단독 후보만 남아 D18 차단으로
+                    # 끝나므로, LOCAL_RULE_NOT_FOUND 로 넘겨 아래 행안부 예규 제2장의2
+                    # [별표 4] 학술연구용역 띠 구제가 계산하게 합니다.
+                    return (
+                        None,
+                        BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
+                        LOCAL_ACADEMIC_SCOPE_EXCLUDED_REASON,
+                        warnings,
+                    )
                 # 새 표지로 계산할 별표가 없는 지역은 종전 UNRESOLVED 판정을 유지해
                 # 차단 코드(LOCAL_SERVICE_TYPE_UNRESOLVED 등)를 바꾸지 않습니다.
                 service_type, basis = "GENERAL", "UNRESOLVED"
@@ -3304,6 +3319,23 @@ LOCAL_SIMPLE_LABOR_ONLY_REASON = (
     "낙찰방법명과 조달분류에서 용역 세부유형을 확정하지 못했고 일반 별표 후보도 없어, "
     "단순노무 별표로 자동 확정하지 않습니다. 용역 세부유형"
     "(local_service_type, 예: 일반 별표 또는 단순노무 별표)을 선택해 주십시오."
+)
+
+# 시·도 예규가 "일반용역" 정의에서 학술용역을 명시적으로 제외한 지역입니다. 이 지역의
+# 일반용역 별표는 학술연구 공고의 적용 대상이 아니므로, 조달분류가 학술연구를 확정하고
+# 지역에 학술연구·일반 별표가 없으면 ACADEMIC 을 GENERAL/UNRESOLVED 로 되돌리지 않고
+# LOCAL_RULE_NOT_FOUND 로 끝내 행안부 예규 제2장의2 [별표 4] 학술연구용역 띠 구제가
+# 계산하게 합니다.
+# 근거: 대구광역시 일반용역 적격심사 세부기준 제2조 제1호(예규 제238호, 시행 2026-05-11)
+# data/sources/qualification/files/daegu/d876df81b09d_elis_daegu_008.txt:156 및 같은
+# 조문의 예규 제223호(시행 2022-09-30) 판
+# data/sources/qualification/files/daegu/856673076d70_elis_daegu_main.txt:158:
+# "일반용역"이란 ... "기술용역과 학술용역 이외의 용역"을 말한다.
+LOCAL_ACADEMIC_SCOPE_EXCLUDED_SIDO_CODES = frozenset({"27"})
+
+LOCAL_ACADEMIC_SCOPE_EXCLUDED_REASON = (
+    "시·도 예규가 일반용역 정의에서 학술용역을 제외해 시·도 일반용역 별표 적용 대상이 "
+    "아닙니다. 행안부 예규 제2장의2 [별표 4] 학술연구용역 평가기준으로 계산합니다."
 )
 
 # 시·도 자체 규칙이 학술연구 띠 표기를 규칙으로 풀지 못한 차단 코드입니다. 시·도 규칙으로

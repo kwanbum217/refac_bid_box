@@ -18,6 +18,9 @@
      준용한다(D24).
  (f) '2억미만 1억이상' 띠는 조달분류가 학술연구 계열이면 attachment_regime 없이도 행안부
      [별표 4] 학술연구용역 해당 열로 확정한다(D25).
+ (g) 대구처럼 시·도 예규가 일반용역 정의에서 학술용역을 제외한 지역의 학술연구 공고는
+     ACADEMIC 을 GENERAL/UNRESOLVED 로 되돌리지 않고 행안부 [별표 4] 학술연구용역 띠로
+     계산한다(`task_daegu_academic_scope_20261118`). band 표기의 D18 차단은 그대로다.
 
 DB·.env 를 쓰지 않습니다.
 """
@@ -256,7 +259,7 @@ def test_local_path_is_not_crossed_checked() -> None:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.parametrize("method", [METHOD_UNDER_1E, METHOD_BAND_1E_2E])
+@pytest.mark.parametrize("method", [METHOD_BAND_1E_2E])
 def test_daegu_simple_labor_only_candidate_blocks(method: str) -> None:
     """대구는 GENERAL 별표가 없어 SIMPLE_LABOR 단독 후보가 남는다. 자동 확정하지 않는다."""
     result = _resolve(
@@ -274,6 +277,29 @@ def test_daegu_simple_labor_only_candidate_blocks(method: str) -> None:
     joined = " ".join(result.warnings)
     assert "SERVC_LOCAL_DAEGU_" in joined
     assert "local_service_type" in (result.block_reason_message or "")
+
+
+def test_daegu_academic_under_1e_uses_mois_academic_band() -> None:
+    """대구 학술 1억미만 공고는 D18 대신 행안부 [별표 4] 1억미만 열로 계산한다.
+
+    대구 예규 제2조 제1호가 일반용역을 "기술용역과 학술용역 이외의 용역"으로 정의해
+    학술연구 공고가 대구 예규 적용 대상이 아니기 때문입니다.
+    정본: `.orca/capsules/task_daegu_academic_scope_20261118/capsule.yaml`
+    """
+    result = _resolve(
+        METHOD_UNDER_1E,
+        raw_data=CLASS_ACADEMIC,
+        contract_regime="LOCAL",
+        region_code=DAEGU[0],
+        region_name=DAEGU[1],
+        bid_ntce_dt="2026-09-11",
+    )
+    assert result.is_blocked is False
+    assert result.block_reason_code is None
+    assert result.rule is not None
+    assert result.rule.rule_id == "SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E"
+    assert result.scope_stage == RULE_SCOPE_ALL
+    assert MOIS_ACADEMIC_BAND_WARNING in result.warnings
 
 
 def test_daegu_simple_labor_marker_still_selects_simple_labor() -> None:
