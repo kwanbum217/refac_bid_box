@@ -112,6 +112,7 @@ from src.app.services.evaluation_recommendation import (
     disqualification_status,
     extract_participant_count,
     has_disqualification,
+    member_recommended_band,
     member_recommended_price,
     summarize_participant_counts,
     theoretical_rate_range,
@@ -172,6 +173,7 @@ from src.app.services.evaluation_scoring import (
     invert_lowest_bid_rate,
     resolve_price_compensation,
 )
+from src.app.services.home_summary import load_serving_accuracy
 from src.app.services.negotiation_stats import get_negotiation_stats
 from src.app.services.sajeong_rate_stats import (
     SCOPE_CATEGORY,
@@ -2787,7 +2789,13 @@ def recommend_evaluation(
         estimated_price_source == "announcement" and qualification.estimated_price is not None
     )
 
-    prediction = _recommend_prediction(bid, payload.selected_model, request, db, user)
+    # 입력표를 그리는 사전 요청은 AI 예측가를 조회하지 않습니다. 예측은 사용자가
+    # [점수 반영해 다시 계산]을 누른 분석 요청에서만 수행합니다.
+    prediction = (
+        _recommend_prediction(bid, payload.selected_model, request, db, user)
+        if payload.with_prediction
+        else None
+    )
     participant_stats = _participant_count_stats(db, bid)
     measured_rate = _measured_rate_range(db, bid)
     rate_source = RATE_SOURCE_MEASURED if measured_rate is not None else RATE_SOURCE_THEORETICAL
@@ -2859,10 +2867,24 @@ def recommend_evaluation(
     bounds_blocked = price_bounds.status != "ok"
     member_recommendation = (
         None
-        if bounds_blocked
+        if bounds_blocked or prediction is None
         else member_recommended_price(
             prediction.optimal_price, price_bounds.min_bid_amount, price_bounds.max_bid_amount
         )
+    )
+    # 범위 폭은 AI 예측가를 만든 기준 금액(predictions.py 와 같은 공고 기준액)에
+    # 서빙 모델 실측 오차를 곱해 정합니다. 오차를 읽지 못하면 범위를 비웁니다.
+    accuracy = load_serving_accuracy() if member_recommendation is not None else None
+    member_band = member_recommended_band(
+        member_price=(member_recommendation.price if member_recommendation is not None else None),
+        reference_amount=_announcement_pred_price(bid),
+        error_pp=(
+            accuracy.get("rmse_display")
+            if accuracy is not None and accuracy.get("available")
+            else None
+        ),
+        min_bid_amount=price_bounds.min_bid_amount,
+        max_bid_amount=price_bounds.max_bid_amount,
     )
 
     return EvaluationRecommendResponse(
@@ -2914,6 +2936,11 @@ def recommend_evaluation(
         ),
         member_recommendation_basis=(
             member_recommendation.basis if member_recommendation is not None else None
+        ),
+        member_recommended_low=(member_band.low if member_band is not None else None),
+        member_recommended_high=(member_band.high if member_band is not None else None),
+        member_recommended_error_pp=(
+            float(member_band.error_pp) if member_band is not None else None
         ),
         participant_stats=participant_stats,
         warnings=[

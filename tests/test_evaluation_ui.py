@@ -183,13 +183,15 @@ class TestEvaluationUITemplate:
         assert 'id="res-interval"' not in template_content
         assert 'id="res-similarity"' not in template_content
 
-    def test_evaluation_card_is_below_ai_card(self, template_content):
-        """공고 기준 분석 카드는 기존 AI 분석기 아래에 배치된다."""
-        prediction_end = template_content.index('id="prediction-result"')
+    def test_evaluation_card_precedes_analyzer_result(self, template_content):
+        """정량평가 입력표가 있는 공고 기준 분석 카드가 AI 분석기 결과보다 먼저 온다."""
         evaluation_start = template_content.index('id="evaluation-card"')
+        recalculate = template_content.index('id="btn-recalculate"')
+        intro = template_content.index('id="recommend-intro"')
+        prediction_start = template_content.index('id="prediction-result"')
         sidebar_start = template_content.index("Right Column: Sidebar")
 
-        assert prediction_end < evaluation_start < sidebar_start
+        assert evaluation_start < recalculate < intro < prediction_start < sidebar_start
 
     def test_prediction_script_has_no_duplicate_or_invalid_helpers(self, template_content):
         """기존 AI 스크립트의 중복 선언과 평가 스크립트 문법 오류가 없다."""
@@ -202,9 +204,12 @@ class TestEvaluationUITemplate:
     # JavaScript 함수 존재 여부 (정적 분석)
     # ---------------------------------------------------------------------
     def test_evaluation_js_functions(self, template_content):
-        """추천 자동 계산 관련 JS 함수/핸들러가 정의되어 있다."""
+        """입력표 사전 요청과 버튼 분석 관련 JS 함수/핸들러가 정의되어 있다."""
         assert "requestRecommend" in template_content
-        assert "scheduleRecommend" in template_content
+        assert "loadEvaluationForm" in template_content
+        assert "renderEvaluationForm" in template_content
+        assert "markRecommendStale" in template_content
+        assert "scheduleRecommend" not in template_content
         assert "recommendUrl" in template_content
         assert "renderRecommendAmounts" in template_content
         assert "getBlockedReasonText" in template_content
@@ -423,13 +428,16 @@ class TestEvaluationUIScoreTableDeclaration:
         return path.read_text(encoding="utf-8")
 
     def test_declared_score_table_block_exists(self, template_content):
-        """규칙 선언 배점표 블록과 B·k·T 표시 요소가 있다."""
+        """규칙 선언 배점표 블록은 B·T 와 쉬운 통과 문장으로 보여 준다."""
         assert 'id="score-table-rule"' in template_content
         assert 'id="score-table-b"' in template_content
-        assert 'id="score-table-k"' in template_content
         assert 'id="score-table-t"' in template_content
+        assert 'id="score-table-required"' in template_content
         assert 'id="score-table-source"' in template_content
         assert "규칙 선언 배점표" in template_content
+        assert "점 이상이면 적격 통과입니다" in template_content
+        # 평점계수(k)는 사용자 화면의 배점표 카드에서 뺀다.
+        assert 'id="score-table-k"' not in template_content
 
     def test_unconfirmed_warning_exists(self, template_content):
         """미확정(None) 규칙을 알리는 집중 미확인 경고 경로가 있다."""

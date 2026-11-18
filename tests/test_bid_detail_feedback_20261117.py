@@ -141,16 +141,17 @@ def test_analyzer_card_drops_model_block(auth_client, isolated_db) -> None:
 
 
 def test_recommend_calculation_is_last_in_analyzer_card(auth_client, isolated_db) -> None:
-    """투찰가 추천 계산 블록은 예측 결과와 근거 문단 다음, 카드 맨 끝에 온다."""
+    """분석기 카드는 정량평가 입력표 아래에 있고, 추천 계산 블록은 그 카드 맨 끝에 온다."""
     bid = _create_bid(isolated_db)
     body = auth_client.get(f"/bids/{bid.id}/").text
 
+    assert body.index('id="evaluation-card"') < body.index('id="recommend-intro"')
     recommend_index = body.index('id="recommend-status"')
     assert body.index('id="prediction-result"') < recommend_index
     assert body.index("res-common-reason") < recommend_index
     assert body.index('id="recommend-blocked"') < recommend_index
-    # 카드 본문이 끝나고 다음 카드가 시작되기 전에 있어야 한다.
-    assert recommend_index < body.index('id="evaluation-card"')
+    # 분석기 카드가 왼쪽 칼럼의 마지막 카드다.
+    assert recommend_index < body.index("Right Column: Sidebar")
     assert "grid grid-cols-1 md:grid-cols-2 gap-6" not in body
 
 
@@ -180,7 +181,7 @@ def test_chart_is_updated_where_amounts_are_filled(auth_client, isolated_db) -> 
 
     assert "function priceRangePositions" in body
     render_amounts = body.split("function renderRecommendAmounts", 1)[1].split(
-        "let recommendTimer", 1
+        "let recommendInFlight", 1
     )[0]
     assert "renderPriceRangeChart(data, boundsReady)" in render_amounts
     assert "function renderPriceRangeChart" in body

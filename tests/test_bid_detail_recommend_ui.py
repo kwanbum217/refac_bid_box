@@ -3,7 +3,7 @@
 정본: .orca/capsules/task_k6_detail_recommend_ui/capsule.yaml,
 docs/design/web_feedback_redesign_20261006.md 5.1~5.4.
  - 분석 실행 영역, 내 투찰 금액 입력, 결격사유 체크박스, 진입 시 1원 /analyze 호출이 제거된다.
- - 진입 시와 입력 변경 시 /api/v1/evaluations/recommend 를 자동 호출한다(400ms 디바운스).
+ - 진입 시에는 입력표만 준비하고, [점수 반영해 다시 계산]을 눌렀을 때만 투찰가 분석을 실행한다.
  - 최저가·AI 예측가·최상가와 근거 문장, 회원 원자료 없음/차단 안내를 보여 준다.
 
 렌더 HTML 은 로그인한 회원 컨텍스트로 확인하고, 추천 계산 끝단은 mock 없이 TestClient 로
@@ -64,6 +64,11 @@ def stub_prediction(monkeypatch):
         )
 
     monkeypatch.setattr(evaluations, "predict_price_api", _fake_predict)
+    monkeypatch.setattr(
+        evaluations,
+        "load_serving_accuracy",
+        lambda: {"available": False, "rmse_display": None, "promoted_date": None},
+    )
 
 
 @pytest.fixture
@@ -158,16 +163,18 @@ def test_detail_removes_manual_execution_controls(auth_client, isolated_db):
     assert "candidate_bid_amount" not in body
 
 
-def test_detail_calls_recommend_automatically(auth_client, isolated_db):
-    """진입 시와 입력 변경 시 /recommend 를 400ms 디바운스로 자동 호출한다."""
+def test_detail_loads_form_without_auto_analysis(auth_client, isolated_db):
+    """진입 시에는 입력표만 준비하고 투찰가 분석은 자동 실행하지 않는다."""
     bid = _create_render_bid(isolated_db)
     body = auth_client.get(f"/bids/{bid.id}/").text
 
     assert "/evaluations/recommend" in body
-    assert "requestRecommend();" in body
-    assert "scheduleRecommend" in body
-    assert "setTimeout(requestRecommend, 400)" in body
-    assert "$('#evaluation-card').on('input change', 'input, select', scheduleRecommend);" in body
+    assert "loadEvaluationForm();" in body
+    assert "buildRecommendPayload(false)" in body
+    assert "scheduleRecommend" not in body
+    assert "setTimeout(requestRecommend, 400)" not in body
+    assert "$('#evaluation-card').on('input change', 'input, select', markRecommendStale);" in body
+    assert 'id="recommend-intro"' in body
 
 
 def test_detail_shows_three_amounts_and_labels(auth_client, isolated_db):
@@ -207,9 +214,9 @@ def test_detail_shows_price_range_chart(auth_client, isolated_db):
     assert "bounds.min_bid_amount" in body
     assert "data.member_recommended_price" in body
 
-    amounts_fn = body.split("function renderRecommendAmounts", 1)[1].split("let recommendTimer", 1)[
-        0
-    ]
+    amounts_fn = body.split("function renderRecommendAmounts", 1)[1].split(
+        "let recommendInFlight", 1
+    )[0]
     assert "renderPriceRangeChart(data, boundsReady)" in amounts_fn
 
 
@@ -284,18 +291,19 @@ def test_detail_has_explicit_recalculate_button(auth_client, isolated_db):
     assert "내 투찰 금액" not in body
 
 
-def test_detail_recalculate_button_bypasses_debounce(auth_client, isolated_db):
-    """버튼 클릭은 대기 중인 디바운스를 지우고 추천 API 를 즉시 호출한다."""
+def test_detail_recalculate_button_runs_analysis(auth_client, isolated_db):
+    """버튼 클릭만 AI 예측가를 포함한 분석 요청을 보낸다."""
     bid = _create_render_bid(isolated_db)
     body = auth_client.get(f"/bids/{bid.id}/").text
 
     assert "$('#btn-recalculate').on('click'" in body
     handler = body.split("$('#btn-recalculate').on('click'", 1)[1].split("});", 1)[0]
-    assert "clearTimeout(recommendTimer)" in handler
     assert "requestRecommend()" in handler
-    # 자동 계산(디바운스)은 그대로 남아 있다.
-    assert "setTimeout(requestRecommend, 400)" in body
-    assert "scheduleRecommend" in body
+    assert "buildRecommendPayload(true)" in body
+    # 입력 변경은 자동 재계산이 아니라 오래된 결과 안내만 띄운다.
+    assert "markRecommendStale" in body
+    assert "setTimeout(requestRecommend, 400)" not in body
+    assert "scheduleRecommend" not in body
 
 
 def test_detail_blocked_gap_guidance(auth_client, isolated_db):
