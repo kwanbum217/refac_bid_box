@@ -64,6 +64,10 @@ CHECKPOINT_EXCLUDED_CATEGORIES = ("Frgcpt",)
 # scripts/backfill_from_g2b.py 로 수동 채우기가 필요합니다.
 MAX_CATCHUP_DAYS = 7
 
+# 낙찰 결과는 등록일시보다 늦게 API 에 노출되는 경우가 있어(2026-11-18 실측:
+# 용역 낙찰현황 10,977건 중 12건 누락) 결과 경로만 매일 최근 14일을 다시 받습니다.
+RESULT_RESCAN_DAYS = 14
+
 # 개찰결과(유찰 상태) 수집 스텝 활성화 플래그. 기본값은 꺼짐입니다.
 # 켜면 공고·낙찰 스텝 뒤에 개찰결과를 bid_openg_results 에 upsert 로 적재합니다.
 OPENG_RESULT_COLLECTION_ENABLED = os.getenv(
@@ -448,7 +452,9 @@ async def collect_bids(
     """조달청 입찰공고/낙찰 데이터를 수집해 적재합니다.
 
     날짜 미지정 시 DB 체크포인트에서 공백을 계산해 최대 max_catchup_days 일을
-    자동 회수합니다. INSERT IGNORE 기반이므로 동일 범위 재실행은 멱등입니다.
+    자동 회수합니다. 낙찰 결과 경로는 등록일시보다 늦게 노출되는 결과를
+    놓치지 않도록 최근 RESULT_RESCAN_DAYS 일을 항상 다시 받습니다. INSERT
+    IGNORE 기반이므로 동일 범위 재실행은 멱등입니다.
     """
     if not get_service_key():
         return {
@@ -494,6 +500,19 @@ async def collect_bids(
         "failed_ranges": [],
         "categories": {},
     }
+
+    # 낙찰 결과는 등록일시보다 늦게 API 에 노출될 수 있어 결과 경로만 최근
+    # RESULT_RESCAN_DAYS 일을 다시 받습니다. 자동 창에서만 적용하고 수동
+    # 백필(명시적 날짜)은 요청 구간을 그대로 지킵니다.
+    result_start = resolved_start
+    if fetch_type in ("both", "result"):
+        if start_date is None:
+            rescan_floor = datetime.strptime(resolved_end, "%Y%m%d").date() - timedelta(
+                days=RESULT_RESCAN_DAYS - 1
+            )
+            result_start = min(resolved_start, rescan_floor.strftime("%Y%m%d"))
+            logger.info("낙찰 결과 재수집 구간: %s ~ %s", result_start, resolved_end)
+        metrics["result_start_date"] = result_start
 
     if clamp_events:
         event = clamp_events[0]
@@ -545,7 +564,7 @@ async def collect_bids(
             metrics["attempted"] += 1
             try:
                 saved = await stream_bid_data(
-                    resolved_start,
+                    result_start,
                     resolved_end,
                     lambda rows: _bulk_insert(db, BidResult, rows),
                     category=cat_code,

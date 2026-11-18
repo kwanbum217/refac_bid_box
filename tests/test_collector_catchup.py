@@ -565,7 +565,8 @@ async def test_partial_failure_visible_in_metrics(isolated_db, monkeypatch):
 async def test_partial_failure_retry_uses_per_category_min(isolated_db, monkeypatch):
     """부분 실패 뒤 재시도 시 느린 카테고리 체크포인트에서 창을 다시 계산합니다.
 
-    Thng 결과 8/12, Servc 결과 8/7 → MIN=8/7 → 다음 창 8/8~8/12.
+    Thng 결과 8/12, Servc 결과 8/7 → MIN=8/7 → 체크포인트 창 8/8~8/12.
+    결과 경로는 최근 14일 재수집으로 7/30 부터 시작합니다.
     """
     import src.app.services.collector_service as svc
 
@@ -576,10 +577,10 @@ async def test_partial_failure_retry_uses_per_category_min(isolated_db, monkeypa
     isolated_db.commit()
 
     _patch_svc(monkeypatch, svc, fake_today)
-    captured: list[str] = []
+    captured: list[tuple[str, str]] = []
 
     async def capture_res(start, end, flush_fn, *, category):
-        captured.append(start)
+        captured.append((start, end))
         return 0
 
     monkeypatch.setattr(svc, "stream_bid_announcements", AsyncMock(return_value=0))
@@ -595,9 +596,10 @@ async def test_partial_failure_retry_uses_per_category_min(isolated_db, monkeypa
     assert result["start_date"] == "20260808", (
         f"Servc 공백이 건너뛰어졌습니다: start={result['start_date']}"
     )
+    assert result["result_start_date"] == "20260730"
     assert result["end_date"] == "20260812"
     assert result["catchup"] is True
-    assert all(s == "20260808" for s in captured), captured
+    assert all(window == ("20260730", "20260812") for window in captured), captured
 
 
 @pytest.mark.asyncio
