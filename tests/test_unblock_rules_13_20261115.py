@@ -142,7 +142,7 @@ def test_ulsan_lease_falls_back_to_general() -> None:
     assert "별표 유형 LEASE 이(가) 없어 일반 별표를 적용했습니다." in result.warnings
 
 
-def test_daejeon_academic_falls_back_to_general() -> None:
+def test_daejeon_academic_band_uses_mois_academic_rule() -> None:
     result = _resolve(
         _raw(
             method=METHOD_BAND_2E,
@@ -155,8 +155,7 @@ def test_daejeon_academic_falls_back_to_general() -> None:
     )
     assert result.is_blocked is False
     assert result.rule is not None
-    assert result.rule.rule_id == "SERVC_LOCAL_DAEJEON_20260101_ATTACH_01"
-    assert result.scope_stage == RULE_SCOPE_REGION
+    assert result.rule.rule_id == "SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E"
 
 
 def test_academic_class_keeps_existing_mois_route() -> None:
