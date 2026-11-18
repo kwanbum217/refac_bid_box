@@ -4748,11 +4748,25 @@ def resolve_evaluation_rule(
         # [별표 4] 학술연구용역 해당 열로 풉니다. 시·도 규칙으로 계산되던 공고는 위 분기에서
         # 이미 규칙이 확정돼 차단되지 않으므로 여기 오지 않습니다. '추정가격 2억미만
         # 1억이상' 띠는 조달분류가 학술연구 계열일 때만 확정하며(D25), 세부유형 선택
-        # 대기(LOCAL_*)는 사용자가 고를 수 있으므로 건드리지 않습니다.
+        # 대기(LOCAL_*)와 단순노무 단독 차단은 사용자가 고를 수 있으므로 건드리지 않습니다.
+        # 조달청 기본 경로가 규칙을 세우지 못한 RULE_NOT_FOUND 와 시·도 별표가 해당 유형을
+        # 두지 않은 LOCAL_RULE_NOT_FOUND 를 함께 받습니다. 전자는 띠 표기 학술 공고가
+        # 시·도 규칙 없이 조달청 경로로 내려온 경우이고, 후자는 위 시·도 선택이
+        # LOCAL_RULE_NOT_FOUND 로 끝난 경우입니다. 두 코드를 가르면 같은 띠 표기 학술
+        # 공고가 어느 경로로 내려왔는지에 따라 갈리므로 여기서는 코드를 가르지 않습니다.
+        # 다만 LOCAL_RULE_NOT_FOUND 는 시·도 별표 자체가 없는 공고라, 행안부 띠 규칙이
+        # 공고일을 덮지 못하면(구판본 미등록) 새 차단 사유를 만들지 않고 종전 차단 코드를
+        # 그대로 둡니다(묶음 16). RULE_NOT_FOUND 경로의 종전 동작은 바꾸지 않습니다.
         academic_band_rule = None
         if _is_band_only_method(method_name):
             if result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND:
                 academic_band_rule = select_mois_academic_band_rule(method_name, raw_data)
+            elif result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND:
+                local_band_rule = select_mois_academic_band_rule(method_name, raw_data)
+                if local_band_rule is not None and (
+                    announced is None or _rule_applies_to_announcement(local_band_rule, announced)
+                ):
+                    academic_band_rule = local_band_rule
         else:
             academic_band_rule = select_mois_academic_band_rule(method_name, raw_data)
         if academic_band_rule is not None:
