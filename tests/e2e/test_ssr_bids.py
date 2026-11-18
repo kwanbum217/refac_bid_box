@@ -293,7 +293,7 @@ async def test_ssr_bid_detail_three_amounts_autofilled(
     e2e_db_session: Session,
     e2e_test_user: dict,
 ) -> None:
-    """상세 진입 시 회원 정량 원자료가 반영된 최저가·AI 예측가·최상가가 자동 계산됨을 검증합니다."""
+    """[점수 반영해 다시 계산]을 누르면 회원 정량 원자료가 반영된 최저가·AI 예측가·최상가가 채워짐을 검증합니다."""
     bid = _seed_recommend_bid(e2e_db_session)
     facts = (
         e2e_db_session.query(AccountQualificationFact)
@@ -308,8 +308,10 @@ async def test_ssr_bid_detail_three_amounts_autofilled(
 
     await authenticated_page.goto(f"{live_server_url}/bids/{bid.id}/")
 
-    # 진입만으로 추천 계산이 끝나 세 금액 카드가 채워진다. 별도 실행 버튼은 없다.
+    # 진입만으로는 계산하지 않고, 재계산 버튼을 눌러야 세 금액 카드가 채워진다.
     await expect(authenticated_page.locator("#btn-predict")).to_have_count(0)
+    await expect(authenticated_page.locator("#prediction-result")).to_be_hidden()
+    await authenticated_page.locator("#btn-recalculate").click()
     await expect(authenticated_page.locator("#prediction-result")).to_be_visible(timeout=10000)
 
     for element_id in ("#res-min-price", "#res-optimal-price", "#res-max-price"):
@@ -352,6 +354,7 @@ async def test_ssr_bid_detail_no_amount_shows_blocked_guidance(
     )
 
     await authenticated_page.goto(f"{live_server_url}/bids/{no_amt_bid.id}/")
+    await authenticated_page.locator("#btn-recalculate").click()
 
     blocked = authenticated_page.locator("#recommend-blocked")
     await expect(blocked).to_be_visible(timeout=10000)
