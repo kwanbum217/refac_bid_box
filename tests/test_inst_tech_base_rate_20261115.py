@@ -13,9 +13,11 @@ from src.app.services.evaluation_rules import (
     INST_TECH_BASE_RATE_WARNING,
     MOIS_BIDDER_DECISION_STANDARD_MARKER,
     MOIS_TECH_BASE_RATE_WARNING,
+    MOIS_TECH_LOCAL_ANNEX_01,
     SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT,
     SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526,
     resolve_evaluation_rule_from_raw_data,
+    resolve_score_params,
 )
 
 KDHC_APP_STD = "한국지역난방공사 기술용역 적격심사 세부기준"
@@ -81,11 +83,24 @@ def test_pps_stated_tech_announcement_keeps_rule_base_rate():
     assert INST_TECH_BASE_RATE_WARNING not in result.warnings
 
 
-def test_mois_stated_branch_result_is_unchanged():
+def test_mois_stated_selects_mois_annex_rule_on_both_paths():
+    """행안부 지목 공고는 예규 별표 규칙을 쓰고 두 계산 경로가 0.88 을 읽습니다.
+
+    2026-11-18 정정: 종전에는 이 분기가 조달청 규칙(rule_id
+    SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT)을 그대로 두고 result.base_rate 만 0.88 로 바꿨습니다.
+    그 결과 평가 경로(resolve_score_params 의 base_rate)와 예측 경로(rule.base_rate)는
+    조달청 값 0.90 을 읽어 경고 문구만 88 이 되는 결함이 있었습니다. 이제 규칙 자체를
+    예규 별표(기준비율 88, 예규 구간)로 갈아 끼우므로 두 경로 모두 0.88 입니다.
+    """
     result = _resolve(MOIS_BIDDER_DECISION_STANDARD_MARKER, announced="2026-06-01")
 
     assert result.rule is not None
-    assert result.rule.rule_id == SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT.rule_id
+    assert result.rule.rule_id == MOIS_TECH_LOCAL_ANNEX_01.rule_id
+    # 예측 경로(predictions.py)는 rule.base_rate 를 읽습니다.
+    assert result.rule.base_rate == Decimal("0.88")
+    # 평가 경로(evaluations.py)는 resolve_score_params 의 base_rate 를 읽습니다.
+    resolution = resolve_score_params(result.rule, Decimal("600000000"), "2026-06-01", METHOD_NAME)
+    assert resolution.base_rate == Decimal("0.88")
     assert result.base_rate == Decimal("0.88")
     assert MOIS_TECH_BASE_RATE_WARNING in result.warnings
     assert INST_TECH_BASE_RATE_WARNING not in result.warnings

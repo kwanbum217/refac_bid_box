@@ -697,6 +697,22 @@ def _tech_flat_zone(ratio: str, score: str, base_source: str, sentence: str) -> 
 
 # rule_id -> {PriceBand index: FlatZone}. index 0 은 고시금액 미만, 1 은 5억원 미만
 # 고시금액 이상, 2 는 10억원 미만 5억원 이상, 3 은 10억원 이상입니다.
+# 행안부 예규 제2장의2 별표 1~3 은 조달청 별표1 과 구간 경계가 달라 규칙을 따로 두며,
+# 구간 순서는 각 규칙 price_bands 의 추정가격 오름차순 index 입니다.
+_MOIS_TECH_FLAT_SOURCE_PATH = "data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt"
+_MOIS_TECH_FLAT_ANNEX_01_SOURCE = (
+    f"{_MOIS_TECH_FLAT_SOURCE_PATH}:7281-7282 "
+    "(행정안전부 예규 제373호 제2장의2 별표 1 P.Q 대상 기술용역)"
+)
+_MOIS_TECH_FLAT_ANNEX_02_SOURCE = (
+    f"{_MOIS_TECH_FLAT_SOURCE_PATH}:7674-7675 "
+    "(행정안전부 예규 제373호 제2장의2 별표 2 P.Q 비대상 기술용역)"
+)
+_MOIS_TECH_FLAT_ANNEX_03_SOURCE = (
+    f"{_MOIS_TECH_FLAT_SOURCE_PATH}:8681-8682 "
+    "(행정안전부 예규 제373호 제2장의2 별표 3 재난복구 기술용역)"
+)
+
 _SERVC_TECH_FLAT_ZONES: dict[str, dict[int, FlatZone]] = {
     "SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526": {
         0: _tech_flat_zone(
@@ -752,17 +768,92 @@ _SERVC_TECH_FLAT_ZONES: dict[str, dict[int, FlatZone]] = {
     },
 }
 
+# 행안부 예규 제2장의2 기술·학술연구 용역 적격심사 세부기준 별표 1~3 의 평탄 구간입니다.
+# 조달청 별표1 평탄과 근거 문서가 다르고 구간 수도 달라 별도 사전으로 둡니다. 구간 index
+# 는 각 예규 규칙 price_bands 의 추정가격 오름차순 순서입니다.
+_MOIS_TECH_FLAT_ZONES: dict[str, dict[int, FlatZone]] = {
+    # 별표 1 (P.Q 대상 기술용역). index 0 은 5억원 미만, 1 은 10억원 미만 5억원 이상,
+    # 2 는 10억원 이상입니다.
+    "SERVC_TECH_QUAL_MOIS_LOCAL_ATTACH_01": {
+        0: _tech_flat_zone(
+            "0.8925",
+            "55",
+            _MOIS_TECH_FLAT_ANNEX_01_SOURCE,
+            "7634,7647 입찰가격이 예정가격 이하로서 100분의 89.25 이상인 경우의 평점은 55점",
+        ),
+        1: _tech_flat_zone(
+            "0.905",
+            "45",
+            _MOIS_TECH_FLAT_ANNEX_01_SOURCE,
+            "7556,7569 입찰가격이 예정가격 이하로서 100분의 90.5 이상인 경우의 평점은 45점",
+        ),
+        2: _tech_flat_zone(
+            "0.96",
+            "22",
+            _MOIS_TECH_FLAT_ANNEX_01_SOURCE,
+            "7481,7494 추정가격 10억원 이상에서 100분의 96 이상인 경우의 평점은 22점",
+        ),
+    },
+    # 별표 2 (P.Q 비대상 기술용역). index 0 은 1억원 미만, 1 은 2억원 미만 1억원 이상,
+    # 2 는 5억원 미만 2억원 이상, 3 은 10억원 미만 5억원 이상, 4 는 10억원 이상입니다.
+    "SERVC_TECH_QUAL_MOIS_LOCAL_ATTACH_02": {
+        0: _tech_flat_zone(
+            "0.8825",
+            "85",
+            _MOIS_TECH_FLAT_ANNEX_02_SOURCE,
+            "8660,8673 입찰가격이 예정가격 이하로서 100분의 88.25 이상인 경우의 평점은 85점",
+        ),
+        1: _tech_flat_zone(
+            "0.8825",
+            "75",
+            _MOIS_TECH_FLAT_ANNEX_02_SOURCE,
+            "8500,8513 입찰가격이 예정가격 이하로서 100분의 88.25 이상인 경우의 평점은 75점",
+        ),
+        2: _tech_flat_zone(
+            "0.8925",
+            "45",
+            _MOIS_TECH_FLAT_ANNEX_02_SOURCE,
+            "8308,8321 입찰가격이 예정가격 이하로서 100분의 89.25 이상인 경우의 평점은 45점",
+        ),
+        3: _tech_flat_zone(
+            "0.905",
+            "45",
+            _MOIS_TECH_FLAT_ANNEX_02_SOURCE,
+            "8100,8113 입찰가격이 예정가격 이하로서 100분의 90.5 이상인 경우의 평점은 45점",
+        ),
+        4: _tech_flat_zone(
+            "0.96",
+            "22",
+            _MOIS_TECH_FLAT_ANNEX_02_SOURCE,
+            "7895,7908 추정가격 10억원 이상에서 100분의 96 이상인 경우의 평점은 22점",
+        ),
+    },
+    # 별표 3 (재난복구 기술용역). 1억원 미만·이상 모두 B=90·k=20 이라 한 구간입니다.
+    "SERVC_TECH_QUAL_MOIS_LOCAL_ATTACH_03": {
+        0: _tech_flat_zone(
+            "0.8825",
+            "85",
+            _MOIS_TECH_FLAT_ANNEX_03_SOURCE,
+            "8826,8839,9021,9034 입찰가격이 예정가격 이하로서 100분의 88.25 이상인 경우의 "
+            "평점은 85점",
+        ),
+    },
+}
+
 
 def servc_tech_flat_zone_for(rule_id: str, band_index: int | None) -> FlatZone | None:
-    """기술용역 별표1 평탄 규정을 선언 구간 순서(추정가격 오름차순)로 조회합니다.
+    """기술용역 별표 평탄 규정을 선언 구간 순서(추정가격 오름차순)로 조회합니다.
 
     기술용역은 고시금액 경계가 연도별로 달라 PriceBand.upper_bound 를 키로 쓸 수 없습니다.
-    resolve_score_params 가 돌려주는 price_band_index 를 그대로 씁니다. 등록되지 않은
-    규칙·구간이면 None 이며 호출부는 평탄을 적용하지 않습니다.
+    resolve_score_params 가 돌려주는 price_band_index 를 그대로 씁니다. 조달청 별표1 과
+    행안부 예규 별표 1~3 을 함께 보며, 등록되지 않은 규칙·구간이면 None 입니다.
     """
     if band_index is None:
         return None
-    return _SERVC_TECH_FLAT_ZONES.get(rule_id, {}).get(band_index)
+    zones = _SERVC_TECH_FLAT_ZONES.get(rule_id)
+    if zones is None:
+        zones = _MOIS_TECH_FLAT_ZONES.get(rule_id, {})
+    return zones.get(band_index)
 
 
 def servc_tech_flat_zone_entries() -> tuple[tuple[str, int, FlatZone], ...]:
