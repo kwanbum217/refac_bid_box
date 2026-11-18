@@ -26,7 +26,6 @@ import pytest
 from src.app.services.evaluation_rules import (
     BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
     BLOCK_CODE_LOCAL_SERVICE_TYPE_UNRESOLVED,
-    BLOCK_CODE_RULE_REGIME_MISMATCH,
     LOCAL_ACADEMIC_SCOPE_EXCLUDED_REASON,
     LOCAL_SIMPLE_LABOR_ONLY_REASON,
     MOIS_ACADEMIC_BAND_WARNING,
@@ -38,6 +37,7 @@ from src.app.services.evaluation_rules import (
 
 UNDER_1E_RULE_ID = "SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E"
 OVER_2E_RULE_ID = "SERVC_LOCAL_MOIS_ACADEMIC_20250701_OVER_2E"
+OLD_OVER_2E_RULE_ID = "SERVC_LOCAL_MOIS_ACADEMIC_20240701_OVER_2E"
 DAEGU_20260511_SIMPLE_LABOR_RULE_ID = "SERVC_LOCAL_DAEGU_20260511_ATTACH_01"
 DAEGU_20260511_WASTE_RULE_ID = "SERVC_LOCAL_DAEGU_20260511_ATTACH_04"
 
@@ -201,8 +201,8 @@ def test_daegu_academic_over_2e_uses_over_2e_column() -> None:
     assert result.rule.max_price_score == Decimal("30")
 
 
-def test_daegu_academic_before_mois_effective_date_stays_blocked() -> None:
-    """행안부 [별표 4] 시행일(2025-07-01) 전 공고는 D18 대신 시행일 대조로 막는다.
+def test_daegu_academic_283_rule_resolves_before_20250701() -> None:
+    """제283호 시행 이후 공고는 제283호 [별표 4] 규칙으로 계산한다.
 
     대표 사례 R25BK00801493(대구광역시, 2025-04-22, 추정가격 2억이상)이 이 형태입니다.
     """
@@ -216,11 +216,10 @@ def test_daegu_academic_before_mois_effective_date_stays_blocked() -> None:
         bid_no="R25BK00801493",
     )
 
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_RULE_REGIME_MISMATCH
-    assert result.block_reason_message is not None
+    assert result.is_blocked is False
+    assert result.block_reason_code is None
     assert result.rule is not None
-    assert result.rule.rule_id == OVER_2E_RULE_ID
+    assert result.rule.rule_id == OLD_OVER_2E_RULE_ID
 
 
 # --------------------------------------------------------------------------- #

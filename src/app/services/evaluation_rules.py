@@ -2330,6 +2330,17 @@ _SRC_MOIS_ACADEMIC_BAND = (
     "1억미만 65, 평점 = 배점한도 - 2x|88 - 입찰가격/예정가격x100|, 제5절 낙찰자 결정 1. "
     "학술연구용역 적격통과점수 85점); docs/analysis/local_academic_band_apply_20261017.md"
 )
+# 행안부 예규 제283호(시행 2024-07-01, 폐지 2025-07-01) [별표 4] 출처입니다.
+# 배점한도·계수·기준비율·통과점수는 현행(제325호·제373호)과 완전히 같습니다.
+# 근거: docs/analysis/mois_academic_old_versions_apply_20261118.md,
+#       .orca/mois_academic_band_old_versions_20261118.md 1.2절·2절 원문 인용
+_SRC_MOIS_ACADEMIC_BAND_283 = (
+    "행정안전부 예규 「지방자치단체 입찰시 낙찰자 결정기준」 [시행 2024. 7. 1.]"
+    "[행정안전부 예규 제283호] 제2장의2 기술·학술연구 용역 적격심사 세부기준 [별표 4] "
+    "학술연구용역 평가기준 (2. 입찰가격 배점한도: 추정가격 2억이상 30·2억미만 1억이상 60·"
+    "1억미만 65, 평점 = 배점한도 - 2x|88 - 입찰가격/예정가격x100|, 제5절 낙찰자 결정 1. "
+    "학술연구용역 적격통과점수 85점); .orca/mois_academic_band_old_versions_20261118.md"
+)
 # 행안부 예규 제2장의2 [별표 2] 4. P.Q 비대상 기술용역의 2억미만 1억이상 열입니다.
 # 제325호(시행 2025-07-01)·제344호(시행 2025-12-01)·제373호(시행 2026-07-01) 세 판이
 # 같은 값을 인쇄합니다. 87.745%는 예규 산식 제목에 인쇄된 값이라 공고 인용이 아닙니다.
@@ -2344,7 +2355,73 @@ _SRC_MOIS_TECH_BAND = (
 # 같은 띠라도 기준 문서가 갈리는 표기입니다. 이 표기가 있으면 학술연구 열로 확정하지 않습니다.
 _MOIS_ACADEMIC_BAND_EXCLUDED_MARKERS = ("2억미만", "1억이상")
 
-MOIS_ACADEMIC_BAND_RULES: tuple[EvaluationRule, ...] = (
+_MOIS_ACADEMIC_BAND_RULES_WITH_283: tuple[EvaluationRule, ...] = (
+    # 행안부 예규 제283호(시행 2024-07-01, 폐지 2025-07-01) 구판 규칙 2종.
+    # 값(배점한도·계수·기준비율·통과점수)은 현행(20250701)과 완전히 같고
+    # superseded_date="2025-07-01" 로 시행 구간이 겹치지 않습니다.
+    # D25 격리 조건(1억이상·2억미만 동시 존재 → 첨부 판별 전용)은
+    # 현행과 같이 patterns 에서 해당 표기를 제외합니다.
+    # 근거: .orca/mois_academic_band_old_versions_20261118.md 1.2절·4.1절
+    EvaluationRule(
+        rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20240701_UNDER_1E",
+        service_type="ACADEMIC",
+        table_name="행안부 예규 제2장의2 [별표 4] 학술연구용역 (추정가격 1억미만, 구판)",
+        description="추정가격 1억미만 학술연구용역 평가기준 (행안부 예규 제283호 [별표 4])",
+        effective_date="2024-07-01",
+        superseded_date="2025-07-01",
+        source=(
+            "행정안전부 예규 제283호(시행 2024-07-01) "
+            "제2장의2 [별표 4] 학술연구용역 평가기준 1억미만 열"
+        ),
+        patterns=("추정가격 1억미만", "추정가격 1억 미만"),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        max_price_score=Decimal("65"),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("85"),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=_SRC_MOIS_ACADEMIC_BAND_283,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20240701_OVER_2E",
+        service_type="ACADEMIC",
+        table_name="행안부 예규 제2장의2 [별표 4] 학술연구용역 (추정가격 2억이상, 구판)",
+        description="추정가격 2억이상 학술연구용역 평가기준 (행안부 예규 제283호 [별표 4])",
+        effective_date="2024-07-01",
+        superseded_date="2025-07-01",
+        source=(
+            "행정안전부 예규 제283호(시행 2024-07-01) "
+            "제2장의2 [별표 4] 학술연구용역 평가기준 2억이상 열"
+        ),
+        patterns=("추정가격 2억이상", "추정가격 2억 이상"),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        max_price_score=Decimal("30"),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("85"),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=_SRC_MOIS_ACADEMIC_BAND_283,
+    ),
+    EvaluationRule(
+        rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20240701_1E_2E",
+        service_type="ACADEMIC",
+        table_name="행안부 예규 제2장의2 [별표 4] 학술연구용역 (추정가격 2억미만 1억이상, 구판)",
+        description="추정가격 2억미만 1억이상 학술연구용역 평가기준 (행안부 예규 제283호 [별표 4])",
+        effective_date="2024-07-01",
+        superseded_date="2025-07-01",
+        source=(
+            "행정안전부 예규 제283호(시행 2024-07-01) "
+            "제2장의2 [별표 4] 학술연구용역 평가기준 2억미만 1억이상 열"
+        ),
+        patterns=("추정가격 2억미만 1억이상", "추정가격 2억 미만 1억 이상"),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        max_price_score=Decimal("60"),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("85"),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=_SRC_MOIS_ACADEMIC_BAND_283,
+    ),
     EvaluationRule(
         rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20250701_UNDER_1E",
         service_type="ACADEMIC",
@@ -2387,10 +2464,41 @@ MOIS_ACADEMIC_BAND_RULES: tuple[EvaluationRule, ...] = (
     ),
 )
 
+MOIS_ACADEMIC_BAND_RULES_283: tuple[EvaluationRule, ...] = tuple(
+    rule for rule in _MOIS_ACADEMIC_BAND_RULES_WITH_283 if rule.effective_date == "2024-07-01"
+)
+MOIS_ACADEMIC_BAND_RULES: tuple[EvaluationRule, ...] = tuple(
+    rule for rule in _MOIS_ACADEMIC_BAND_RULES_WITH_283 if rule.effective_date != "2024-07-01"
+)
+
 # 첨부 판별로 학술연구가 확인된 공고에만 쓴다. 낙찰방법명 매칭에 쓰지 않는다.
 # '추정가격 2억미만 1억이상' 표기는 공고마다 기준 문서가 갈려 낙찰방법명만으로는 확정하지
 # 않으므로, 첨부 문서로 학술연구용역이 확인된 공고의 조회에만 이 규칙을 씁니다.
-MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES: tuple[EvaluationRule, ...] = (
+# 구판(제283호, 시행 2024-07-01)과 현행(제325호, 시행 2025-07-01)을 모두 담으며,
+# _narrow_to_current_regime 이 공고일로 판본을 고릅니다.
+# D25 격리 조건(1억이상·2억미만 동시 존재 → 첨부 판별 전용)은 현행과 같습니다.
+# 근거: .orca/mois_academic_band_old_versions_20261118.md 1.2절·4.1절
+_MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES_WITH_283: tuple[EvaluationRule, ...] = (
+    EvaluationRule(
+        rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20240701_1E_2E",
+        service_type="ACADEMIC",
+        table_name="행안부 예규 제2장의2 [별표 4] 학술연구용역 (추정가격 2억미만 1억이상, 구판)",
+        description="추정가격 2억미만 1억이상 학술연구용역 평가기준 (행안부 예규 제283호 [별표 4])",
+        effective_date="2024-07-01",
+        superseded_date="2025-07-01",
+        source=(
+            "행정안전부 예규 제283호(시행 2024-07-01) "
+            "제2장의2 [별표 4] 학술연구용역 평가기준 2억미만 1억이상 열"
+        ),
+        patterns=("추정가격 2억미만 1억이상", "추정가격 2억 미만 1억 이상"),
+        lwlt_rate=Decimal("80.495"),
+        base_rate=Decimal("0.88"),
+        max_price_score=Decimal("60"),
+        multiplier=Decimal("2"),
+        pass_threshold=Decimal("85"),
+        quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
+        score_table_source=_SRC_MOIS_ACADEMIC_BAND_283,
+    ),
     EvaluationRule(
         rule_id="SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E",
         service_type="ACADEMIC",
@@ -2410,6 +2518,11 @@ MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES: tuple[EvaluationRule, ...] = (
         quant_basis=QUANT_BASIS_AGENCY_DOCUMENT_NOT_LOADED,
         score_table_source=_SRC_MOIS_ACADEMIC_BAND,
     ),
+)
+MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES: tuple[EvaluationRule, ...] = tuple(
+    rule
+    for rule in _MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES_WITH_283
+    if rule.effective_date != "2024-07-01"
 )
 
 MOIS_ACADEMIC_BAND_WARNING = (
@@ -2464,7 +2577,9 @@ MOIS_TECH_ATTACHMENT_WARNING = (
 
 
 def select_mois_academic_band_rule(
-    method_name: str | None, raw_data: dict[str, Any] | None = None
+    method_name: str | None,
+    raw_data: dict[str, Any] | None = None,
+    announced: date | None = None,
 ) -> EvaluationRule | None:
     """낙찰방법명이 학술연구 띠 표기일 때 행안부 [별표 4] 해당 열 규칙을 돌려줍니다.
 
@@ -2480,21 +2595,38 @@ def select_mois_academic_band_rule(
             return None
         if not _is_academic_band_classification(raw_data):
             return None
-        return MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES[0]
-    for rule in MOIS_ACADEMIC_BAND_RULES:
+        is_283 = announced is not None and date(2024, 7, 1) <= announced < date(2025, 7, 1)
+        attachment_rules = (
+            MOIS_ACADEMIC_BAND_RULES_283 if is_283 else MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES
+        )
+        attachment_rules = tuple(
+            rule for rule in attachment_rules if rule.rule_id.endswith("_1E_2E")
+        )
+        narrowed = _narrow_to_current_regime(attachment_rules, announced)
+        return narrowed[0] if narrowed else None
+    rule_pool = (
+        MOIS_ACADEMIC_BAND_RULES_283
+        if announced is not None and date(2024, 7, 1) <= announced < date(2025, 7, 1)
+        else MOIS_ACADEMIC_BAND_RULES
+    )
+    for rule in _narrow_to_current_regime(rule_pool, announced):
         if match_rule_by_mthd_nm(name, rules=(rule,)) is not None:
             return rule
     return None
 
 
-def get_mois_academic_attachment_rule(band: str) -> EvaluationRule | None:
+def get_mois_academic_attachment_rule(
+    band: str, announced: date | None = None
+) -> EvaluationRule | None:
     """첨부 판별로 학술연구가 확인된 공고의 띠 열 규칙을 돌려줍니다.
 
     band 가 '1E_2E' 일 때만 행안부 [별표 4] 2억미만 1억이상 열 규칙을 돌려줍니다.
+    공고일(announced)로 구판(2024-07-01)과 현행(2025-07-01)을 가립니다.
     """
-    if band == "1E_2E":
-        return MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES[0]
-    return None
+    if band != "1E_2E":
+        return None
+    narrowed = _narrow_to_current_regime(MOIS_ACADEMIC_BAND_ATTACHMENT_ONLY_RULES, announced)
+    return narrowed[0] if narrowed else None
 
 
 def get_mois_tech_attachment_rule(band: str) -> EvaluationRule | None:
@@ -2907,7 +3039,7 @@ def _select_local_rule(
             service_type == "ACADEMIC"
             and basis == "PROCUREMENT_CLASS"
             and not _is_band_only_method(method_name)
-            and select_mois_academic_band_rule(method_name, raw_data) is not None
+            and select_mois_academic_band_rule(method_name, raw_data, announced) is not None
         )
         academic_scope_excluded = (
             mois_academic_band and effective_sido_code in LOCAL_ACADEMIC_SCOPE_EXCLUDED_SIDO_CODES
@@ -3014,6 +3146,22 @@ def _select_local_rule(
     if not candidates and service_type != "GENERAL":
         fallback = [rule for rule in region_rules if rule.service_type == "GENERAL"]
         if fallback:
+            academic_band_fallback = (
+                service_type == "ACADEMIC"
+                and basis == "PROCUREMENT_CLASS"
+                and _is_academic_band_classification(raw_data)
+                and select_mois_academic_band_rule(method_name, raw_data, announced) is not None
+            )
+            if (
+                academic_band_fallback
+                and effective_sido_code in LOCAL_ACADEMIC_GENERAL_FALLBACK_BLOCK_CODES
+            ):
+                return (
+                    None,
+                    BLOCK_CODE_LOCAL_RULE_NOT_FOUND,
+                    LOCAL_ACADEMIC_SCOPE_EXCLUDED_REASON,
+                    warnings,
+                )
             warnings.append(f"별표 유형 {service_type} 이(가) 없어 일반 별표를 적용했습니다.")
             candidates = fallback
     if not candidates:
@@ -3332,6 +3480,11 @@ LOCAL_SIMPLE_LABOR_ONLY_REASON = (
 # data/sources/qualification/files/daegu/856673076d70_elis_daegu_main.txt:158:
 # "일반용역"이란 ... "기술용역과 학술용역 이외의 용역"을 말한다.
 LOCAL_ACADEMIC_SCOPE_EXCLUDED_SIDO_CODES = frozenset({"27"})
+
+# 일반용역 정의가 학술용역을 제외하고 GENERAL 별표로 폴백되는 오계산이 확인된 지역입니다.
+# 서울·인천·대전 예규 원문: docs/analysis/academic_scope_survey_a_20261118.md:48-53,
+# :90-110, :125-137. 폴백 실측: docs/analysis/academic_general_table_audit_20261118.md:61-67.
+LOCAL_ACADEMIC_GENERAL_FALLBACK_BLOCK_CODES = frozenset({"11", "28", "30"})
 
 LOCAL_ACADEMIC_SCOPE_EXCLUDED_REASON = (
     "시·도 예규가 일반용역 정의에서 학술용역을 제외해 시·도 일반용역 별표 적용 대상이 "
@@ -4414,10 +4567,10 @@ def resolve_evaluation_rule(
             candidate_band_rule = get_mois_tech_attachment_rule("1E_2E")
             candidate_warning = MOIS_TECH_ATTACHMENT_WARNING
         else:
-            candidate_band_rule = get_mois_academic_attachment_rule("1E_2E")
+            candidate_band_rule = get_mois_academic_attachment_rule("1E_2E", announced)
             candidate_warning = MOIS_ACADEMIC_ATTACHMENT_WARNING
         if candidate_band_rule is not None and (
-            announced is None or announced >= date.fromisoformat(candidate_band_rule.effective_date)
+            announced is None or _rule_applies_to_announcement(candidate_band_rule, announced)
         ):
             attachment_band = (candidate_band_rule, candidate_warning)
     if institution_selected is not None:
@@ -4760,15 +4913,17 @@ def resolve_evaluation_rule(
         academic_band_rule = None
         if _is_band_only_method(method_name):
             if result.block_reason_code == BLOCK_CODE_RULE_NOT_FOUND:
-                academic_band_rule = select_mois_academic_band_rule(method_name, raw_data)
+                academic_band_rule = select_mois_academic_band_rule(
+                    method_name, raw_data, announced
+                )
             elif result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND:
-                local_band_rule = select_mois_academic_band_rule(method_name, raw_data)
+                local_band_rule = select_mois_academic_band_rule(method_name, raw_data, announced)
                 if local_band_rule is not None and (
                     announced is None or _rule_applies_to_announcement(local_band_rule, announced)
                 ):
                     academic_band_rule = local_band_rule
         else:
-            academic_band_rule = select_mois_academic_band_rule(method_name, raw_data)
+            academic_band_rule = select_mois_academic_band_rule(method_name, raw_data, announced)
         if academic_band_rule is not None:
             result = replace(
                 _apply_rule_lwlt(result, academic_band_rule, sucsfbid_lwlt_rate, estimated_price),
