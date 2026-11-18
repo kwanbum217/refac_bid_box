@@ -1324,11 +1324,274 @@ SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526 = replace(
     score_table_source=_SERVC_TECH_PRE_SCORE_SOURCE,
 )
 
-# 현행·구판 두 기술용역 규칙 ID 를 함께 담는 비교용 집합입니다.
+# 행안부 예규 「지방자치단체 입찰시 낙찰자 결정기준」 제2장의2 기술·학술연구 용역
+# 적격심사 세부기준 [별표 1]~[별표 3] 의 가격 배점표입니다. 공고의
+# sucsfbidMthdAppStd 가 이 예규를 지목한 기술용역 공고는 조달청 별표1(기준비율 90,
+# 고시금액 경계 4구간)이 아니라 예규 별표(기준비율 88, 고시금액 경계 없음)로 계산합니다.
+# 예규 별표는 조달청 별표의 복사본이 아니어서 구간 경계·배점한도·평점계수가 다릅니다.
+# 원문: data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt
+# (행정안전부 예규 제373호, 시행 2026-07-01). 제325호(시행 2025-07-01)·제393호
+# (시행 2026-11-02)도 같은 값을 인쇄해 한 벌로 둡니다.
+_MOIS_TECH_SOURCE_PATH = "data/sources/qualification/files/mois/fbe9a0b783c6_mois373_body.txt"
+_MOIS_TECH_PASS_THRESHOLD = (
+    f"{_MOIS_TECH_SOURCE_PATH}:7273 (제5절 낙찰자 결정 1: 기술용역은 추정가격 10억원 "
+    "이상 92점, 10억원 미만 95점 이상)"
+)
+
+
+def _mois_tech_source(annex: str, rows: str) -> str:
+    """예규 별표 하나의 출처 문자열을 만듭니다."""
+    return (
+        "행정안전부 예규 「지방자치단체 입찰시 낙찰자 결정기준」 [시행 2026. 7. 1.]"
+        f"[행정안전부 예규 제373호] 제2장의2 {annex} {rows}; {_MOIS_TECH_PASS_THRESHOLD}"
+    )
+
+
+_MOIS_TECH_ANNEX_01_SOURCE = _mois_tech_source(
+    "[별표 1] 기술 관련법령에 따라 사업수행능력평가(P.Q)를 하는 기술용역 평가기준",
+    f"({_MOIS_TECH_SOURCE_PATH}:7281-7282) 입찰가격 "
+    "10억원 이상 7481-7494(평점 = 30 - |88 - 입찰가격/예정가격x100|, 96% 이상 22점), "
+    "10억원 미만 5억원 이상 7505,7556,7569(평점 = 50 - 2x|…|, 90.5% 이상 45점), "
+    "5억원 미만 7591,7634,7647(평점 = 60 - 4x|…|, 89.25% 이상 55점)",
+)
+_MOIS_TECH_ANNEX_02_SOURCE = _mois_tech_source(
+    "[별표 2] 사업수행능력 평가(P.Q)를 하지 않는 기술용역 평가기준",
+    f"({_MOIS_TECH_SOURCE_PATH}:7674-7675) 입찰가격 "
+    "10억원 이상 7677,7895-7908(평점 = 30 - |…|, 96% 이상 22점), "
+    "10억원 미만 5억원 이상 7915,8100-8113(평점 = 50 - 2x|…|, 90.5% 이상 45점), "
+    "5억원 미만 2억원 이상 8123,8308-8321(평점 = 50 - 4x|…|, 89.25% 이상 45점), "
+    "2억원 미만 1억원 이상 8327,8500-8513(평점 = 80 - 20x|…|, 88.25% 이상 75점), "
+    "1억원 미만 8521,8660-8673(평점 = 90 - 20x|…|, 88.25% 이상 85점)",
+)
+_MOIS_TECH_ANNEX_03_SOURCE = _mois_tech_source(
+    "[별표 3] 사업수행능력평가(P.Q) 대상이 아닌 재난복구 기술용역 평가기준",
+    f"({_MOIS_TECH_SOURCE_PATH}:8681-8682) 입찰가격 "
+    "1억원 이상 8684,8826-8839(평점 = 90 - 20x|…|, 88.25% 이상 85점), "
+    "1억원 미만 8861,9021-9034(평점 = 90 - 20x|…|, 88.25% 이상 85점)",
+)
+
+
+def _mois_tech_price_bands(
+    rows: tuple[tuple[str | None, str, str, str, str], ...],
+    source: str,
+) -> tuple[PriceBand, ...]:
+    """예규 기술용역 별표의 추정가격 구간 B·k 를 선언합니다.
+
+    rows 는 (추정가격 상한, B, k, 구간 이름, 원문 줄) 이고 추정가격 오름차순입니다.
+    예규 별표는 고시금액 경계를 쓰지 않으므로 상한은 금액으로만 적고, 상한이 없는
+    마지막 구간은 None 입니다.
+    """
+    return tuple(
+        PriceBand(
+            upper_bound=Decimal(upper_bound) if upper_bound is not None else None,
+            max_price_score=Decimal(max_price_score),
+            multiplier=Decimal(multiplier),
+            base_rate=Decimal("0.88"),
+            label=label,
+            source=f"{source} {row_source}",
+        )
+        for upper_bound, max_price_score, multiplier, label, row_source in rows
+    )
+
+
+MOIS_TECH_LOCAL_ANNEX_01 = EvaluationRule(
+    rule_id="SERVC_TECH_QUAL_MOIS_LOCAL_ATTACH_01",
+    service_type="TECH",
+    table_name="행안부 예규 제2장의2 [별표 1] P.Q 대상 기술용역",
+    description="P.Q 대상 기술용역 평가기준 (행안부 예규 제2장의2 [별표 1])",
+    effective_date="2025-07-01",
+    source=(
+        "행정안전부 예규 제325호(시행 2025-07-01)·제373호(시행 2026-07-01) "
+        "제2장의2 [별표 1] P.Q 대상 기술용역 평가기준"
+    ),
+    patterns=(),
+    lwlt_rate=None,
+    base_rate=Decimal("0.88"),
+    price_bands=_mois_tech_price_bands(
+        (
+            ("500000000", "60", "4", "추정가격이 5억원 미만인 용역", "7591,7634,7647"),
+            (
+                "1000000000",
+                "50",
+                "2",
+                "추정가격이 10억원 미만 5억원 이상인 용역",
+                "7505,7556,7569",
+            ),
+            (None, "30", "1", "추정가격이 10억원 이상인 용역", "7284,7481-7494"),
+        ),
+        _MOIS_TECH_ANNEX_01_SOURCE,
+    ),
+    threshold_bands=(
+        ThresholdBand(
+            upper_bound=Decimal("1000000000"),
+            pass_threshold=Decimal("95"),
+            label="추정가격이 10억원 미만인 용역",
+            source=_MOIS_TECH_PASS_THRESHOLD,
+        ),
+        ThresholdBand(
+            upper_bound=None,
+            pass_threshold=Decimal("92"),
+            label="추정가격이 10억원 이상인 용역",
+            source=_MOIS_TECH_PASS_THRESHOLD,
+        ),
+    ),
+    quant_basis=QUANT_BASIS_TECH_USER_INPUT,
+    score_table_source=_MOIS_TECH_ANNEX_01_SOURCE,
+)
+
+MOIS_TECH_LOCAL_ANNEX_02 = EvaluationRule(
+    rule_id="SERVC_TECH_QUAL_MOIS_LOCAL_ATTACH_02",
+    service_type="TECH",
+    table_name="행안부 예규 제2장의2 [별표 2] P.Q 비대상 기술용역",
+    description="P.Q 비대상 기술용역 평가기준 (행안부 예규 제2장의2 [별표 2])",
+    effective_date="2025-07-01",
+    source=(
+        "행정안전부 예규 제325호(시행 2025-07-01)·제373호(시행 2026-07-01) "
+        "제2장의2 [별표 2] P.Q 비대상 기술용역 평가기준"
+    ),
+    patterns=(),
+    lwlt_rate=None,
+    base_rate=Decimal("0.88"),
+    price_bands=_mois_tech_price_bands(
+        (
+            ("100000000", "90", "20", "추정가격이 1억원 미만인 용역", "8521,8660-8673"),
+            (
+                "200000000",
+                "80",
+                "20",
+                "추정가격이 2억원 미만 1억원 이상인 용역",
+                "8327,8500-8513",
+            ),
+            (
+                "500000000",
+                "50",
+                "4",
+                "추정가격이 5억원 미만 2억원 이상인 용역",
+                "8123,8308-8321",
+            ),
+            (
+                "1000000000",
+                "50",
+                "2",
+                "추정가격이 10억원 미만 5억원 이상인 용역",
+                "7915,8100-8113",
+            ),
+            (None, "30", "1", "추정가격이 10억원 이상인 용역", "7677,7895-7908"),
+        ),
+        _MOIS_TECH_ANNEX_02_SOURCE,
+    ),
+    threshold_bands=(
+        ThresholdBand(
+            upper_bound=Decimal("1000000000"),
+            pass_threshold=Decimal("95"),
+            label="추정가격이 10억원 미만인 용역",
+            source=_MOIS_TECH_PASS_THRESHOLD,
+        ),
+        ThresholdBand(
+            upper_bound=None,
+            pass_threshold=Decimal("92"),
+            label="추정가격이 10억원 이상인 용역",
+            source=_MOIS_TECH_PASS_THRESHOLD,
+        ),
+    ),
+    quant_basis=QUANT_BASIS_TECH_USER_INPUT,
+    score_table_source=_MOIS_TECH_ANNEX_02_SOURCE,
+)
+
+MOIS_TECH_LOCAL_ANNEX_03 = EvaluationRule(
+    rule_id="SERVC_TECH_QUAL_MOIS_LOCAL_ATTACH_03",
+    service_type="TECH",
+    table_name="행안부 예규 제2장의2 [별표 3] 재난복구 기술용역",
+    description="재난복구 기술용역 평가기준 (행안부 예규 제2장의2 [별표 3])",
+    effective_date="2025-07-01",
+    source=(
+        "행정안전부 예규 제325호(시행 2025-07-01)·제373호(시행 2026-07-01) "
+        "제2장의2 [별표 3] 재난복구 기술용역 평가기준"
+    ),
+    patterns=(),
+    lwlt_rate=None,
+    base_rate=Decimal("0.88"),
+    price_bands=_mois_tech_price_bands(
+        (
+            (
+                None,
+                "90",
+                "20",
+                "추정가격이 1억원 미만·1억원 이상인 용역",
+                "8684,8826-8839,9021-9034",
+            ),
+        ),
+        _MOIS_TECH_ANNEX_03_SOURCE,
+    ),
+    threshold_bands=(
+        ThresholdBand(
+            upper_bound=Decimal("1000000000"),
+            pass_threshold=Decimal("95"),
+            label="추정가격이 10억원 미만인 용역",
+            source=_MOIS_TECH_PASS_THRESHOLD,
+        ),
+        ThresholdBand(
+            upper_bound=None,
+            pass_threshold=Decimal("92"),
+            label="추정가격이 10억원 이상인 용역",
+            source=_MOIS_TECH_PASS_THRESHOLD,
+        ),
+    ),
+    quant_basis=QUANT_BASIS_TECH_USER_INPUT,
+    score_table_source=_MOIS_TECH_ANNEX_03_SOURCE,
+)
+
+MOIS_TECH_LOCAL_ANNEX_RULES = (
+    MOIS_TECH_LOCAL_ANNEX_01,
+    MOIS_TECH_LOCAL_ANNEX_02,
+    MOIS_TECH_LOCAL_ANNEX_03,
+)
+
+# 낙찰방법명에 적힌 P.Q 수행 여부로 고르는 예규 별표입니다. 예규는 별표1(사업수행능력
+# 평가(P.Q)를 하는 기술용역), 별표2(P.Q 를 하지 않는 기술용역), 별표3(재난복구)으로
+# 유형을 먼저 가르고 그 안에서 추정가격 구간을 나눕니다. 조달청 별표1처럼 한 별표의
+# 추정가격 4구간으로 유형을 가르지 않습니다.
+# 별표 제목 원문: 별표1 7281-7282, 별표2 7674-7675, 별표3 8681-8682.
+_MOIS_TECH_ANNEX_NON_PQ_MARKER = "P.Q비대상"
+_MOIS_TECH_ANNEX_NON_PQ_SPACED_MARKER = "P.Q 비대상"
+_MOIS_TECH_ANNEX_DISASTER_MARKER = "재난복구"
+
+
+def select_mois_tech_annex_rule(
+    method_name: str | None, raw_data: dict[str, Any] | None = None
+) -> EvaluationRule | None:
+    """낙찰방법명의 유형 표기로 예규 별표1~3 중 하나를 고릅니다.
+
+    'P.Q 비대상' 표기는 별표2, '재난복구' 표기는 별표3, 그 밖에 'P.Q' 표기가 있으면
+    별표1 입니다. 유형 표기가 없는 낙찰방법명(건설사업관리·설계 등)은 나라장터의
+    사업수행능력평가 여부(pqEvalYn)로 가릅니다. 별표1 제목이 '기술 관련법령에 따라
+    사업수행능력평가(P.Q)를 하는 기술용역 평가기준'(:7281-7282)이고 별표2 제목이
+    '사업수행능력 평가(P.Q)를 하지 않는 기술용역 평가기준'(:7674-7675)이라, pqEvalYn=Y
+    는 별표1, N 은 별표2 로 확정합니다. 두 표기 모두 없으면 None 을 돌려주며, 호출부는
+    조달청 현행 규칙을 그대로 둡니다.
+    """
+    name = method_name or ""
+    if _MOIS_TECH_ANNEX_DISASTER_MARKER in name:
+        return MOIS_TECH_LOCAL_ANNEX_03
+    if _MOIS_TECH_ANNEX_NON_PQ_MARKER in name or _MOIS_TECH_ANNEX_NON_PQ_SPACED_MARKER in name:
+        return MOIS_TECH_LOCAL_ANNEX_02
+    if "P.Q" in name:
+        return MOIS_TECH_LOCAL_ANNEX_01
+    pq_eval = str((raw_data or {}).get("pqEvalYn") or "").strip().upper()
+    if pq_eval == "Y":
+        return MOIS_TECH_LOCAL_ANNEX_01
+    if pq_eval == "N":
+        return MOIS_TECH_LOCAL_ANNEX_02
+    return None
+
+
+# 현행·구판 두 기술용역 규칙 ID 를 함께 담는 비교용 집합입니다. 예규 전용 규칙도 같은
+# 기술용역 규칙이라 시·도·기관 규칙 후보를 만들지 않도록 함께 담습니다.
 SERVC_TECH_QUAL_RULE_IDS = frozenset(
     {
         SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT.rule_id,
         SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT_PRE_20260526.rule_id,
+        *(rule.rule_id for rule in MOIS_TECH_LOCAL_ANNEX_RULES),
     }
 )
 
@@ -1340,6 +1603,11 @@ MOIS_BIDDER_DECISION_STANDARD_MARKER = "지방자치단체입찰시낙찰자결�
 MOIS_TECH_BASE_RATE_WARNING = (
     "공고가 지방자치단체 입찰시 낙찰자 결정기준을 명시해 행안부 예규의 "
     "기준비율 88/100을 적용했습니다."
+)
+MOIS_TECH_ANNEX_UNRESOLVED_WARNING = (
+    "낙찰방법명과 공고의 사업수행능력평가 여부(pqEvalYn) 어디에도 P.Q 수행 표기가 없어 "
+    "행안부 예규 별표 1~3 중 어느 별표인지 확정하지 못했습니다. 기준비율만 예규 값 "
+    "88/100 을 적용하고 배점한도·평점계수·구간 경계는 조달청 별표1 값을 그대로 씁니다."
 )
 
 # 수요기관 자체 기술용역 적격심사 세부기준을 명시한 공고는 해당 판본의 기준비율을 씁니다.
@@ -3994,12 +4262,31 @@ def resolve_evaluation_rule(
         and MOIS_BIDDER_DECISION_STANDARD_MARKER in app_std
     ):
         # 기술용역 분기는 공고 명시 기준과 무관하게 조달청 현행 판본을 고릅니다. 공고가
-        # 행안부 예규를 명시한 경우에만 기준비율을 예규 값으로 바꾸고 규칙 선택은 그대로 둡니다.
-        result = replace(
-            result,
-            base_rate=Decimal("0.88"),
-            warnings=[*result.warnings, MOIS_TECH_BASE_RATE_WARNING],
-        )
+        # 행안부 예규를 명시하면 규칙 자체를 예규 별표로 갈아 끼웁니다. 기준비율만 바꾸면
+        # 평가 경로(resolve_score_params 가 rule.price_bands 에서 고르는 base_rate)와
+        # 예측 경로(rule.base_rate)가 조달청 값 0.90 과 고시금액 4구간을 그대로 읽어
+        # 경고 문구만 88 이 되므로, B·k·기준비율·통과점수를 예규 값으로 함께 바꿔야 합니다.
+        # 낙찰방법명에 P.Q 수행 여부 표기가 없으면 나라장터 pqEvalYn 으로 가릅니다. 그것도
+        # 없어 별표를 확정하지 못하면 조달청 규칙을 그대로 두고 종전처럼 기준비율만 예규
+        # 값으로 채웁니다.
+        mois_tech_rule = select_mois_tech_annex_rule(method_name, raw_data)
+        if mois_tech_rule is not None:
+            result = replace(
+                result,
+                rule=mois_tech_rule,
+                base_rate=Decimal("0.88"),
+                warnings=[*result.warnings, MOIS_TECH_BASE_RATE_WARNING],
+            )
+        else:
+            result = replace(
+                result,
+                base_rate=Decimal("0.88"),
+                warnings=[
+                    *result.warnings,
+                    MOIS_TECH_BASE_RATE_WARNING,
+                    MOIS_TECH_ANNEX_UNRESOLVED_WARNING,
+                ],
+            )
     elif (
         result.rule is not None
         and result.rule.rule_id == SERVC_TECH_QUAL_ANNOUNCEMENT_LWLT.rule_id
