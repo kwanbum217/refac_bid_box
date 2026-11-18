@@ -615,7 +615,7 @@
 
                         <!-- 투찰가 추천 계산. 계산 결과와 근거 문단 다음에 둔다. -->
                         <div class="space-y-2">
-                            <label class="detail-label">투찰가 추천 계산</label>
+                            <label id="recommend-guide-label" class="detail-label">투찰가 추천 계산</label>
                             <div id="recommend-status" class="rounded-xl border border-blue-100 bg-blue-50/70 p-4 shadow-xs">
                                 <p class="text-sm font-semibold leading-6 text-slate-800">정량평가 점수를 입력한 뒤 [점수 반영해 다시 계산]을 누르면 최저가·AI 예측가·최상가와 내 조건 추천가를 계산합니다.</p>
                             </div>
@@ -2081,6 +2081,9 @@ $(document).ready(function() {
         $('#recommend-blocked').addClass('hidden');
         $('#recommend-member-missing').toggleClass('hidden', !memberMissing);
         $('#prediction-result').removeClass('hidden');
+        // 결과가 정상으로 그려졌으므로 하단 안내 라벨과 문단은 더 두지 않는다.
+        $('#recommend-guide-label').addClass('hidden');
+        $('#recommend-status').addClass('hidden');
         $('#res-min-price-cell').toggleClass('hidden', !boundsReady);
         $('#res-max-price-cell').toggleClass('hidden', !boundsReady);
 
