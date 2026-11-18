@@ -34,6 +34,7 @@ from src.app.services.evaluation_rules import (
 )
 
 RULE_ID_1E_2E = "SERVC_LOCAL_MOIS_ACADEMIC_20250701_1E_2E"
+OLD_RULE_ID_1E_2E = "SERVC_LOCAL_MOIS_ACADEMIC_20240701_1E_2E"
 METHOD_MIXED = "적격심사제-추정가격 2억미만 1억이상"
 METHOD_MIXED_REGIONAL = f"{METHOD_MIXED} - 지역업체참여"
 METHOD_UNDER_1E = "적격심사제-추정가격 1억미만"
@@ -214,7 +215,7 @@ def test_select_helper_still_requires_academic_classification() -> None:
         (SEJONG, "세종특별자치시", "5690000", "2025-02-21 18:04:28"),
     ],
 )
-def test_before_mois_effective_date_keeps_local_rule_not_found(
+def test_283_effective_date_resolves_previous_local_rule_not_found(
     sido: tuple[str, str],
     institution_name: str,
     institution_code: str,
@@ -227,10 +228,10 @@ def test_before_mois_effective_date_keeps_local_rule_not_found(
         institution_code=institution_code,
     )
 
-    assert result.is_blocked is True
-    assert result.block_reason_code == BLOCK_CODE_LOCAL_RULE_NOT_FOUND
-    assert result.block_reason_code != BLOCK_CODE_RULE_REGIME_MISMATCH
-    assert result.rule is None
+    assert result.is_blocked is False
+    assert result.block_reason_code is None
+    assert result.rule is not None
+    assert result.rule.rule_id == OLD_RULE_ID_1E_2E
 
 
 def test_effective_date_boundary_is_inclusive() -> None:
