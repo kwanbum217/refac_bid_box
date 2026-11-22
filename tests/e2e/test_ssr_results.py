@@ -16,7 +16,14 @@ from playwright.async_api import Page, expect
 from sqlalchemy.orm import Session
 
 from src.app.core.timeutil import utcnow
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidResult
+
+# 낙찰 결과 목록은 4대 업종(파견, 경비업, 위생관리용역업, 유료직업소개업) 제한 공고의
+# 결과만 노출합니다. 시험 데이터도 대응하는 업종 제한 행을 함께 넣어야 합니다.
+SANITATION_CODE = "1162"
+DISPATCH_CODE = "1172"
+OUTSIDE_INDUSTRY_CODE = "9999"
 
 
 @pytest.fixture
@@ -83,6 +90,25 @@ def seeded_results(e2e_db_session: Session) -> list[BidResult]:
             )
         )
 
+    # 5. 4대 업종 밖(축산물판매업) 용역 낙찰 결과 - 업종 필터에서 빠져야 한다
+    outside = BidResult(
+        bid_ntce_no="20260901-RES-OUT-01",
+        bid_ntce_ord="00",
+        bid_ntce_nm="업종 밖 낙찰 결과 검증용 용역",
+        dminstt_nm="조달청",
+        category="Servc",
+        sucsf_bid_amt=80_000_000,
+        sucsf_bid_rate=90.10,
+        bidwinnr_nm="업종밖테스트업체",
+        rl_openg_dt=now - timedelta(minutes=10),
+        collected_at=now,
+    )
+    items.append(outside)
+
+    ntce_keys = {(item.bid_ntce_no, item.bid_ntce_ord) for item in items}
+    e2e_db_session.query(BidAnnouncementLicenseLimit).filter(
+        BidAnnouncementLicenseLimit.bid_ntce_no.in_([key[0] for key in ntce_keys])
+    ).delete(synchronize_session=False)
     for item in items:
         existing = (
             e2e_db_session.query(BidResult)
@@ -95,6 +121,45 @@ def seeded_results(e2e_db_session: Session) -> list[BidResult]:
 
     e2e_db_session.add_all(items)
     e2e_db_session.commit()
+
+    # 목록에 노출되어야 하는 용역 결과에는 4대 업종 제한 행을 붙인다.
+    limits: list[BidAnnouncementLicenseLimit] = []
+    for item in items:
+        if item.category != "Servc" or item.bid_ntce_no == outside.bid_ntce_no:
+            continue
+        code = SANITATION_CODE
+        if item.bid_ntce_no != r1.bid_ntce_no:
+            index = int(item.bid_ntce_no.rsplit("-", 1)[-1])
+            code = SANITATION_CODE if index % 2 else DISPATCH_CODE
+        limits.append(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=item.bid_ntce_no,
+                bid_ntce_ord=item.bid_ntce_ord,
+                lmt_grp_no="1",
+                lmt_sno="1",
+                lcns_lmt_nm=f"시험업종/{code}",
+                permsn_indstryty_list=f"시험업종({code})/{code}",
+                rgst_dt=now,
+                bsns_div_nm="용역",
+                collected_at=now,
+            )
+        )
+    limits.append(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no=outside.bid_ntce_no,
+            bid_ntce_ord=outside.bid_ntce_ord,
+            lmt_grp_no="1",
+            lmt_sno="1",
+            lcns_lmt_nm=f"축산물판매업/{OUTSIDE_INDUSTRY_CODE}",
+            permsn_indstryty_list=f"축산물판매업/{OUTSIDE_INDUSTRY_CODE}",
+            rgst_dt=now,
+            bsns_div_nm="용역",
+            collected_at=now,
+        )
+    )
+    e2e_db_session.add_all(limits)
+    e2e_db_session.commit()
+
     for item in items:
         e2e_db_session.refresh(item)
     return items
@@ -129,6 +194,10 @@ async def test_ssr_results_list_search_and_filter(
         "부산 신항만 남측 방파제 보강 공사"
     )
 
+    # 4대 업종 밖(축산물판매업) 결과는 목록에서 빠진다
+    await expect(authenticated_page.locator("body")).not_to_contain_text(
+        "업종 밖 낙찰 결과 검증용 용역"
+    )
     # 3. cat 파라미터는 무시되고 용역 결과만 노출된다
     await authenticated_page.goto(f"{live_server_url}/bids/results/?cat=Cnstwk")
     await authenticated_page.wait_for_load_state("networkidle")
@@ -153,6 +222,11 @@ async def test_ssr_results_list_pagination(
     """20건을 초과하는 낙찰 목록에서 2페이지 이동이 정상 동작함을 검증합니다."""
     await authenticated_page.goto(f"{live_server_url}/bids/results/")
     await authenticated_page.wait_for_load_state("networkidle")
+
+    # 업종 밖 결과는 개찰일시가 가장 최근이어도 목록에 없어야 한다
+    await expect(authenticated_page.locator("body")).not_to_contain_text(
+        "업종 밖 낙찰 결과 검증용 용역"
+    )
 
     # 다음 페이지 링크 클릭
     next_btn = authenticated_page.locator('a.pagination-btn:has-text("다음")').first

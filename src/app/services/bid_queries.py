@@ -253,10 +253,17 @@ def normalize_license_codes(lic: str | None) -> list[str]:
     return codes
 
 
-def license_match_clause(license_codes: Iterable[str]) -> Any:
+def license_match_clause(
+    license_codes: Iterable[str],
+    *,
+    bid_ntce_no_column: Any = BidAnnouncement.bid_ntce_no,
+    bid_ntce_ord_column: Any = BidAnnouncement.bid_ntce_ord,
+) -> Any:
     """업종 코드 중 하나라도 참가자격에 들어 있는 공고만 통과시키는 EXISTS 절입니다.
 
     공고 탐색 DB 경로와 회원 관심 조건 셈이 같은 정의를 쓰도록 한 곳에 둡니다.
+    낙찰 결과 목록처럼 다른 테이블을 기준으로 삼을 때는 잇는 키 열만 바꿔 넘깁니다.
+    기본값을 그대로 쓰면 공고 기준 SQL 이 이전과 같습니다.
     """
     like_clauses: list[Any] = []
     for code in license_codes:
@@ -266,8 +273,8 @@ def license_match_clause(license_codes: Iterable[str]) -> Any:
     return (
         select(1)
         .where(
-            BidAnnouncementLicenseLimit.bid_ntce_no == BidAnnouncement.bid_ntce_no,
-            BidAnnouncementLicenseLimit.bid_ntce_ord == BidAnnouncement.bid_ntce_ord,
+            BidAnnouncementLicenseLimit.bid_ntce_no == bid_ntce_no_column,
+            BidAnnouncementLicenseLimit.bid_ntce_ord == bid_ntce_ord_column,
             or_(*like_clauses),
         )
         .exists()
@@ -810,11 +817,18 @@ def list_results(
     region: str | None = None,
     sort: str | None = None,
     page: int = 1,
+    lic: str | None = None,
 ) -> OffsetPage:
+    """낙찰 결과 목록을 4개 업종(파견·경비·위생관리·유료직업소개) 제한 공고로 좁혀 돌려줍니다.
+
+    업종 선택 UI 는 아직 없으므로 `lic` 를 넘기지 않으면 4개 업종 전체가 기본 조건입니다.
+    공고 탐색과 달리 업종 제한 행이 없는 결과는 두 경로 모두에서 빠집니다.
+    """
     region_code = normalize_region_code(region)
     sort_key = normalize_result_sort(sort)
     page_number = max(page, 1)
     query = (q or "").strip()
+    license_codes = industry_filter_codes(lic)
 
     if page_number > MAX_LIST_PAGE:
         return _page_beyond_limit(page_number)
@@ -828,6 +842,7 @@ def list_results(
                 dataset="result",
                 category=cat or None,
                 region=region_code or None,
+                license_codes=license_codes,
                 sort=_result_search_sort(sort_key),
                 page_number=page_number,
             )
@@ -854,6 +869,14 @@ def list_results(
 
     if region_code:
         stmt = stmt.where(_result_region_match_clause(BID_REGION_BY_CODE[region_code]["aliases"]))
+
+    stmt = stmt.where(
+        license_match_clause(
+            license_codes,
+            bid_ntce_no_column=BidResult.bid_ntce_no,
+            bid_ntce_ord_column=BidResult.bid_ntce_ord,
+        )
+    )
 
     if sort_key == "amount":
         stmt = stmt.order_by(BidResult.sucsf_bid_amt.desc(), BidResult.id.desc())
