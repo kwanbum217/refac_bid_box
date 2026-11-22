@@ -8,7 +8,7 @@ src/rag/engine.py
 
 from __future__ import annotations
 
-import asyncio
+import functools
 import json
 import logging
 import os
@@ -51,6 +51,11 @@ from src.rag.leak_guard import (
     init_leak_guard,
 )
 from src.rag.llm import build_backend
+from src.rag.llm_executor import (
+    TokenGeneratorGuard,
+    close_token_generator,
+    run_in_llm_executor,
+)
 from src.rag.query_planning import (
     CATEGORY_KEYWORDS,
     KB_KEYWORDS,
@@ -1473,7 +1478,9 @@ class HybridRAGEngine:
         tool_context: dict | None = None,
     ) -> AnswerBundle:
         """이벤트 루프를 막지 않도록 동기 경로를 스레드로 오프로드합니다."""
-        return await asyncio.to_thread(self.get_answer_sync, user_query, db, history, tool_context)
+        return await run_in_llm_executor(
+            self.get_answer_sync, user_query, db, history, tool_context
+        )
 
     async def stream_tokens(
         self,
@@ -1613,12 +1620,14 @@ class HybridRAGEngine:
                 }
             yield done_event
             return
-        prepared = await asyncio.to_thread(
-            self._prepare_context,
-            effective_query,
-            db=db,
-            history=history,
-            tool_context=tool_context,
+        prepared = await run_in_llm_executor(
+            functools.partial(
+                self._prepare_context,
+                effective_query,
+                db=db,
+                history=history,
+                tool_context=tool_context,
+            )
         )
         (
             plan,
@@ -1729,27 +1738,24 @@ class HybridRAGEngine:
             return
 
         notice_yielded = False
+        token_guard: TokenGeneratorGuard | None = None
         try:
             raw_answer = ""
             t_llm_stream_start = _safe_perf_counter()
-            token_gen = backend.stream_generate(SYSTEM_PROMPT, messages)
+            token_guard = TokenGeneratorGuard(backend.stream_generate(SYSTEM_PROMPT, messages))
             leak_blocked = False
             if injection_stripped:
                 yield {"type": "token", "text": f"{INJECTION_NOTICE} "}
                 notice_yielded = True
             while True:
-                token = await asyncio.to_thread(next, token_gen, None)
+                token = await run_in_llm_executor(token_guard.next_token)
                 if token is None:
                     break
                 raw_answer += token
                 if contains_system_prompt_leak(raw_answer):
                     leak_blocked = True
                     # 조각이 20자 이상이라 탐지 전 노출은 한 조각의 일부로 제한됩니다.
-                    if hasattr(token_gen, "close"):
-                        try:
-                            token_gen.close()
-                        except Exception as exc:
-                            logger.debug("토큰 생성기 종료 중 예외 (무시됨): %s", exc)
+                    # 생성기 종료는 아래 finally 가 맡습니다.
                     break
                 yield {"type": "token", "text": token}
 
@@ -1822,6 +1828,11 @@ class HybridRAGEngine:
             if getattr(settings, "RAG_EXPOSE_SEGMENT_METRICS", False):
                 done_event["segment_metrics"] = _calc_stream_metrics(0.0, 0.0)
             yield done_event
+        finally:
+            if token_guard is not None:
+                # 정상 종료·유출 차단·예외·취소·연결 끊김 모두 여기를 지납니다.
+                # 닫지 않으면 Ollama 는 클라이언트가 사라진 뒤에도 계속 생성합니다.
+                await close_token_generator(token_guard)
 
 
 rag_engine = HybridRAGEngine()
