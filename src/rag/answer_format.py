@@ -15,6 +15,8 @@ from src.rag.query_planning import (
     _category_label,
     _normalize_text,
     _single_metric,
+    industry_applied_filters,
+    merge_unapplied_industry_conditions,
     unapplied_result_condition_notice,
 )
 from src.rag.schemas import (
@@ -55,6 +57,8 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         "metric": "집계 지표",
         "group_limit": "집계 행 상한",
         "award_method": "낙찰방법",
+        "industry_label": "업종",
+        "title_keywords": "공고명 키워드",
     }
     lines = []
     for key, value in filters.items():
@@ -63,9 +67,12 @@ def _format_filters_for_prompt(filters: dict | None) -> str:
         if key == "category":
             lines.append(f"- 분야: {_category_label(str(value))}")
             continue
-        if key in ("institution_names", "region_names", "region_scope_names") and isinstance(
-            value, list
-        ):
+        if key in (
+            "institution_names",
+            "region_names",
+            "region_scope_names",
+            "title_keywords",
+        ) and isinstance(value, list):
             lines.append(f"- {labels[key]}: {', '.join(str(v) for v in value)}")
             continue
         lines.append(f"- {labels.get(key, key)}: {value}")
@@ -138,10 +145,15 @@ def _build_result_list_answer(
     summary = structured_data.get("summary") or {}
     results = summary.get("recent_results") or []
     category_label = (structured_data.get("filters") or {}).get("category_label") or "조건"
-    # 낙찰 결과 테이블에 없는 축(추정가격·기초금액·마감일)의 조건은 조회에서
-    # 빠집니다. 표만 보여주면 조건이 적용된 줄 오해하므로 한 줄로 밝힙니다.
+    # 낙찰 결과 테이블에 없는 축(추정가격·기초금액·마감일)의 조건과, 집계에
+    # 연결하지 못한 업종 조건은 조회에서 빠집니다. 표만 보여주면 조건이 적용된 줄
+    # 오해하므로 한 줄로 밝힙니다. 업종 적용 여부는 정형 결과의 industry_scope
+    # 정본을 읽어, 조건이 붙은 목록에 미적용 안내가 붙지 않게 합니다.
+    notice_filters = industry_applied_filters(structured_data, plan.filters)
     unapplied_notice = unapplied_result_condition_notice(
-        structured_data.get("unapplied_conditions") or []
+        merge_unapplied_industry_conditions(
+            structured_data.get("unapplied_conditions"), notice_filters
+        )
     )
     award_method_notice = RESULT_AWARD_METHOD_NOTICE if _award_method(plan.filters) else ""
     if not results:
@@ -287,10 +299,20 @@ def _build_announcement_list_answer(
         if _award_method(plan.filters) and _award_method_window_includes_early_period(plan.filters)
         else ""
     )
+    # 업종 조건은 공고 조회에도 붙습니다. 적용 여부는 정형 결과의 industry_scope
+    # 정본으로 판정해, 조건이 붙은 목록에 미적용 안내가 나가지 않게 합니다.
+    industry_notice = unapplied_result_condition_notice(
+        merge_unapplied_industry_conditions(
+            structured_data.get("unapplied_conditions"),
+            industry_applied_filters(structured_data, plan.filters),
+        )
+    )
     if not samples:
         answer = f"요청하신 기간에 조건에 맞는 {category_label} 공고는 0건입니다."
         if condition_line:
             answer += f"\n{condition_line}"
+        if industry_notice:
+            answer += f"\n{industry_notice}"
         if award_method_note:
             answer += f"\n{award_method_note}"
         return answer
@@ -306,6 +328,8 @@ def _build_announcement_list_answer(
     ]
     if condition_line:
         lines.extend([condition_line, ""])
+    if industry_notice:
+        lines.extend([industry_notice, ""])
     if award_method_note:
         lines.extend([award_method_note, ""])
     lines.extend(
@@ -913,6 +937,14 @@ def _build_comparison_answer(
     period_note = _format_period_length_note(meta)
     if period_note:
         lines.extend(["", period_note])
+    unapplied_notice = unapplied_result_condition_notice(
+        merge_unapplied_industry_conditions(
+            structured_data.get("unapplied_conditions"),
+            industry_applied_filters(structured_data, plan.filters),
+        )
+    )
+    if unapplied_notice:
+        lines.extend(["", unapplied_notice])
     return "\n".join(lines)
 
 
@@ -1141,6 +1173,9 @@ def _build_single_metric_answer(
     for key, filter_value in plan_filters.items():
         if filter_value not in (None, ""):
             filters[key] = filter_value
+    # plan.filters 사본에 표시가 없어도 정형 결과의 industry_scope 정본을 읽어
+    # 조건이 붙은 답에 미적용 안내가 붙지 않게 합니다.
+    filters = industry_applied_filters(structured_data, filters)
 
     subject = [_format_single_metric_period(filters)]
     region_names = filters.get("region_names")
@@ -1156,6 +1191,13 @@ def _build_single_metric_answer(
     elif institution_name:
         subject.append(institution_name)
 
+    # 업종어는 지역과 분야 사이에 둡니다("최근 5년 인천 청소 용역"). 업종 조건이
+    # 아직 집계에 연결되지 않아도 문장에서 사라지지 않게 하고, 미적용은 아래
+    # 안내 문장이 밝힙니다.
+    industry_label = _normalize_text(str(filters.get("industry_label") or ""))
+    if industry_label:
+        subject.append(industry_label)
+
     category = _normalize_text(str(plan_filters.get("category") or filters.get("category") or ""))
     if category:
         category_label = _category_label(category)
@@ -1167,7 +1209,9 @@ def _build_single_metric_answer(
         if not answer:
             return ""
         unapplied_notice = unapplied_result_condition_notice(
-            structured_data.get("unapplied_conditions") or []
+            merge_unapplied_industry_conditions(
+                structured_data.get("unapplied_conditions"), filters
+            )
         )
         if unapplied_notice:
             answer += f"\n{unapplied_notice}"
@@ -1179,7 +1223,7 @@ def _build_single_metric_answer(
 
     answer = f"{' '.join(subject)} {SINGLE_METRIC_LABELS[metric]} {rendered}입니다."
     unapplied_notice = unapplied_result_condition_notice(
-        structured_data.get("unapplied_conditions") or []
+        merge_unapplied_industry_conditions(structured_data.get("unapplied_conditions"), filters)
     )
     if unapplied_notice:
         answer += f"\n{unapplied_notice}"

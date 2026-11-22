@@ -46,6 +46,7 @@ from src.app.services.ranking_snapshots import (
     get_skipped_marker,
     get_top_rankings,
 )
+from src.rag.industry_terms import title_keyword_condition
 from src.rag.query_planning import (
     DEFAULT_AMOUNT_FIELD,
     DEFAULT_GROUP_LIMIT,
@@ -557,6 +558,45 @@ def _bid_ntce_ord_forms(bid_ntce_ord: str) -> tuple[str, ...]:
     return (normalized,) if compact == normalized else (normalized, compact)
 
 
+def _industry_scope_payload(filters: dict[str, Any] | None) -> dict[str, Any] | None:
+    """업종어 조회의 적용 여부를 담은 정본 표시를 만듭니다.
+
+    업종 조건은 filters["title_keywords"] 가 있을 때만 SQL 에 붙습니다. 이
+    함수가 그 판정을 한 번만 내리고, 정형 조회 결과의 industry_scope 로
+    실어 보냅니다. 응답 단계는 plan.filters 사본이 아니라 이 표시를 읽어
+    미적용 안내 여부를 정합니다. 업종어가 없으면 None 을 돌려주어 결과와
+    응답 필터 어디에도 키가 생기지 않게 합니다.
+    """
+    current = filters or {}
+    label = _normalize_text(str(current.get("industry_label") or ""))
+    keywords = [str(keyword) for keyword in current.get("title_keywords") or [] if str(keyword)]
+    if not label or not keywords:
+        return None
+    return {
+        "label": label,
+        "title_keywords": keywords,
+        "applied": title_keyword_condition(BidAnnouncement.bid_ntce_nm, current) is not None,
+    }
+
+
+def _apply_industry_applied(filters: dict[str, Any] | None) -> dict[str, Any]:
+    """업종어 공고명 조건이 실제로 붙은 조회임을 응답 필터에 표시합니다.
+
+    조건은 filters["title_keywords"] 가 있을 때만 SQL 에 붙습니다. 붙였는데
+    표시가 없으면 응답 단계가 업종 수치를 용역 전체 수치로 오해하지 않도록
+    미적용 안내를 냅니다. 업종어가 없는 질의는 키를 만들지 않아 응답 필터와
+    캐시 키가 그대로 유지됩니다. 두 테이블 모두 공고명 열이 있으므로 조건
+    생성 함수에 그 열을 넘겨 붙을지 여부를 그대로 판정합니다.
+    """
+    response_filters = dict(filters or {})
+    if response_filters.get("industry_applied"):
+        return response_filters
+    scope = _industry_scope_payload(response_filters)
+    if scope is not None and scope["applied"]:
+        response_filters["industry_applied"] = True
+    return response_filters
+
+
 def _result_conditions(
     plan: RetrievalPlan,
     *,
@@ -600,6 +640,11 @@ def _result_conditions(
         conditions.append(region_scope_condition)
     if category:
         conditions.append(BidResult.category == category)
+    # 업종어(청소·경비 등)는 분야어와 다른 축이라 공고명 키워드로 좁힙니다.
+    # 업종어가 없으면 함수가 None 을 돌려주어 이 문장이 종전과 같게 유지됩니다.
+    title_condition = title_keyword_condition(BidResult.bid_ntce_nm, filters)
+    if title_condition is not None:
+        conditions.append(title_condition)
     # 업체 조건은 낙찰 결과 테이블에만 있습니다. 업체를 지목한 질의에서 이 조건을
     # 빼면 전체 최신 목록이 그 업체 실적처럼 답해집니다. 손상값 제외 기준은
     # 순위 집계와 같게 유지합니다.
@@ -712,6 +757,12 @@ def _announcement_conditions(
         conditions.append(region_scope_condition)
     if category:
         conditions.append(BidAnnouncement.category == category)
+    # 낙찰 집계와 같은 업종어 공고명 조건을 공고 집계에도 겁니다. 두 테이블에
+    # 같은 조건이 붙어야 "인천 청소 용역" 의 공고 건수와 낙찰 수치가 같은 모집단을
+    # 가리킵니다. 업종어가 없으면 조건이 붙지 않아 SQL 이 종전과 같습니다.
+    title_condition = title_keyword_condition(BidAnnouncement.bid_ntce_nm, filters)
+    if title_condition is not None:
+        conditions.append(title_condition)
     if notice_kind:
         conditions.append(BidAnnouncement.ntce_kind_nm == notice_kind)
     if award_method:
@@ -775,6 +826,10 @@ def _snapshot_scope(plan: RetrievalPlan) -> str | None:
     # 낙찰방법 조건은 사전 집계 스냅샷에 없습니다. 스냅샷을 쓰면 조건이 사라진
     # 전체 순위가 그 조건의 답처럼 나옵니다.
     if _normalize_text(str(filters.get("award_method") or "")):
+        return None
+    # 사전 집계 스냅샷에는 업종어 공고명 조건이 없습니다. 업종어 질의에 스냅샷을
+    # 쓰면 조건이 사라진 전체 순위가 그 업종의 답처럼 나옵니다.
+    if filters.get("title_keywords"):
         return None
     if filters.get("close_from") or filters.get("close_to"):
         return None
@@ -921,6 +976,12 @@ def _hint_result_region_resolved_cover(
     """
     if not _resolved_region_names(institution_names):
         return stmt
+    # 업종어 공고명 조건이 붙으면 공고명을 담은 기관명 선두 인덱스가 더 빠릅니다.
+    # 아래 힌트의 인덱스에는 공고명이 없어 범위 행마다 본문을 읽습니다. 인천
+    # 1,072종 5년 창 실측에서 업체 순위가 141ms 에서 2,132ms, 전체 기간은
+    # 277ms 에서 2,897ms 로 느려졌습니다(2026-11-22).
+    if title_keyword_condition(BidAnnouncement.bid_ntce_nm, plan.filters) is not None:
+        return stmt
     date_from, date_to = _resolve_window(plan.filters or {})
     hint = (
         RESULT_REGION_WINDOW_HINT
@@ -995,9 +1056,23 @@ def _resolved_region_names(institution_names: list[str] | None) -> bool:
     return institution_names is not None and len(institution_names) > INSTITUTION_NAME_RESOLVE_LIMIT
 
 
-def _hint_announcement_resolved_scope(stmt, institution_names: list[str] | None):
-    """지역 목록 건수·기관별 집계에만 기관명 인덱스를 강제합니다. 결과 집합은 바뀌지 않습니다."""
+def _hint_announcement_resolved_scope(
+    stmt, institution_names: list[str] | None, *, plan: RetrievalPlan | None = None
+):
+    """지역 목록 건수·기관별 집계에만 기관명 인덱스를 강제합니다. 결과 집합은 바뀌지 않습니다.
+
+    업종어 공고명 조건이 붙은 조회에는 힌트를 붙이지 않습니다. 강제 대상
+    인덱스에는 공고명이 없어 범위 행마다 본문을 읽고, 공고명을 담은
+    (기관명, 분류, 공고명) 인덱스보다 느립니다. 인천 1,155종 실측에서 공고
+    건수가 440ms 에서 949ms(5년 창), 283ms 에서 3,013ms(전체 기간)로
+    느려졌습니다(2026-11-22). plan 을 넘기지 않는 호출은 종전과 같습니다.
+    """
     if not _resolved_region_names(institution_names):
+        return stmt
+    if (
+        plan is not None
+        and title_keyword_condition(BidAnnouncement.bid_ntce_nm, plan.filters) is not None
+    ):
         return stmt
     return stmt.with_hint(BidAnnouncement, ANNOUNCEMENT_INSTITUTION_DT_HINT, dialect_name="mysql")
 
@@ -2114,6 +2189,7 @@ def _comparison_result(
         response_filters.pop("institution_name", None)
     if response_filters.get("category"):
         response_filters["category_label"] = _category_label(str(response_filters["category"]))
+    response_filters = _apply_industry_applied(response_filters)
 
     sample_total = sum(int(item.get("sample_count") or 0) for item in entries)
     weighted_rate = sum(
@@ -2231,6 +2307,11 @@ def _period_category_comparison_breakdown(
                 conditions.append(BidAnnouncement.bid_ntce_dt < shared_to + timedelta(days=1))
         if announcement_scope_condition is not None:
             conditions.append(announcement_scope_condition)
+        # 비교 질의("인천 청소 대 서울 청소")에서도 대상별 집계가 같은 업종
+        # 공고명 조건을 써야 두 대상의 수치가 같은 모집단을 가리킵니다.
+        title_condition = title_keyword_condition(BidAnnouncement.bid_ntce_nm, filters)
+        if title_condition is not None:
+            conditions.append(title_condition)
         return conditions
 
     def _result_conditions_for(spec: dict[str, Any]) -> list:
@@ -2250,6 +2331,11 @@ def _period_category_comparison_breakdown(
                 conditions.append(BidResult.rl_openg_dt < shared_to + timedelta(days=1))
         if result_scope_condition is not None:
             conditions.append(result_scope_condition)
+        # 공고 집계와 같은 업종어 조건을 겁니다. 한쪽에만 걸면 비교표의 공고
+        # 건수와 낙찰 수치가 서로 다른 모집단이 됩니다.
+        title_condition = title_keyword_condition(BidResult.bid_ntce_nm, filters)
+        if title_condition is not None:
+            conditions.append(title_condition)
         return conditions
 
     announcement_conditions = [_announcement_conditions_for(spec) for spec in specs]
@@ -3283,6 +3369,10 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             common_conditions.append(BidResult.rl_openg_dt < date_to + timedelta(days=1))
         if category:
             common_conditions.append(BidResult.category == category)
+        # 기관 둘 이상을 한 번에 비교하는 질의도 업종어 공고명 조건을 공유합니다.
+        title_condition = title_keyword_condition(BidResult.bid_ntce_nm, filters)
+        if title_condition is not None:
+            common_conditions.append(title_condition)
 
         resolved_targets = [(name, matched) for name, matched in targets if matched]
         fallback_targets = [(name, matched) for name, matched in targets if matched is None]
@@ -3394,6 +3484,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         response_filters = dict(filters)
         if response_filters.get("category"):
             response_filters["category_label"] = _category_label(str(response_filters["category"]))
+        response_filters = _apply_industry_applied(response_filters)
 
         summary_payload: dict[str, Any] = {
             "total_bids": total_bids,
@@ -3533,8 +3624,10 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     # 않고 남겨, 사용자가 조건이 적용된 줄 오해하지 않게 합니다. 목록뿐 아니라
     # 낙찰 건수·평균 낙찰률 같은 통계도 같은 테이블을 집계하므로 함께 밝힙니다.
     result_amount_scope = is_result_amount_scope(plan.semantic_query)
+    # 업종 조건을 실제로 붙인 조회에서는 미적용 안내를 만들지 않습니다. 표시를
+    # 빼고 모으면 조건이 붙은 답에 "적용하지 못했다"는 문장이 함께 나갑니다.
     unapplied_conditions = (
-        collect_unapplied_result_conditions(plan.filters)
+        collect_unapplied_result_conditions(_apply_industry_applied(plan.filters))
         if result_limit or result_amount_scope
         else []
     )
@@ -3613,6 +3706,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     announcement_names_arg,
                 ),
                 announcement_names_arg,
+                plan=condition_plan,
             ),
         )
 
@@ -3673,6 +3767,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                     announcement_names_arg,
                 ),
                 announcement_names_arg,
+                plan=condition_plan,
             ),
             corrupted_probe=select(BidAnnouncement.id).where(
                 BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
@@ -3838,6 +3933,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     response_filters = dict(plan.filters or {})
     if response_filters.get("category"):
         response_filters["category_label"] = _category_label(str(response_filters["category"]))
+    response_filters = _apply_industry_applied(response_filters)
     # 공고 목록 머리 문장은 category_label 을 그대로 씁니다. 공고 종류 조건이
     # 걸린 질의는 종류를 라벨 앞에 붙여 "최근 재공고 용역 공고 5건입니다." 처럼
     # 어떤 종류를 조회했는지 밝힙니다.
@@ -3894,10 +3990,16 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
     """정형 검색을 실행하고 진단용 구간 계측을 contextvar에 남깁니다."""
     record = _open_latency_record()
     try:
-        return _retrieve_structured_data_impl(db, plan)
+        result = _retrieve_structured_data_impl(db, plan)
     except Exception as exc:
         if record is not None:
             logger.warning("정형 검색 계측 중 호출 경로 예외를 관찰했습니다: %s", exc)
         raise
     finally:
         _close_latency_record(record)
+    # 업종 조건 적용 여부의 정본은 여기 한 곳에서만 싣습니다. 평균·건수·목록·
+    # 비교·다중기관 응답이 모두 같은 표시를 읽어 미적용 안내를 판정합니다.
+    industry_scope = _industry_scope_payload(plan.filters)
+    if industry_scope is not None:
+        result["industry_scope"] = industry_scope
+    return result
