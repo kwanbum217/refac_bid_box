@@ -143,6 +143,7 @@
                 <div class="h-[350px]">
                     <canvas id="agencyAnnounceChart"></canvas>
                 </div>
+                <p id="agencyPlaceholderNote" class="hidden mt-3 text-[11px] font-medium text-slate-400">여러 수요기관은 조달청 단가계약 공고입니다</p>
             </div>
         </div>
 
@@ -200,6 +201,12 @@
     const COMPARE_PENDING_RETRY_WINDOW_MS = 10 * 60 * 1000;
     const COMPARE_PENDING_MESSAGE = '통계를 집계하고 있습니다. 잠시 뒤 자동으로 다시 불러옵니다.';
     const COMPARE_PENDING_FINAL_MESSAGE = '통계 집계가 예상보다 오래 걸립니다. 잠시 후 새로고침해 주세요.';
+
+    // 조달청 단가계약 공고는 실제 기관 대신 '각 수요기관' 같은 자리표시 이름으로 들어옵니다.
+    // 순위와 값은 그대로 두고 차트에 보이는 이름만 바꿉니다.
+    const COMPARE_PLACEHOLDER_AGENCY_NAMES = new Set(['각 수요기관', '수요기관']);
+    const COMPARE_PLACEHOLDER_AGENCY_LABEL = '여러 수요기관';
+    const COMPARE_PLACEHOLDER_AGENCY_TOOLTIP = '여러 수요기관(조달청 단가계약): 여러 기관이 함께 쓰는 조달청 단가계약 공고';
     let comparePendingRetryDelay = COMPARE_PENDING_RETRY_MS;
     let comparePendingRetryStartedAt = 0;
     let comparePendingHiddenAt = 0;
@@ -325,6 +332,18 @@
         return amt.toLocaleString() + '원';
     }
 
+    function isPlaceholderAgency(name) {
+        return COMPARE_PLACEHOLDER_AGENCY_NAMES.has(String(name ?? '').trim());
+    }
+
+    function agencyChartLabel(name) {
+        if (isPlaceholderAgency(name)) {
+            return COMPARE_PLACEHOLDER_AGENCY_LABEL;
+        }
+        const text = String(name ?? '');
+        return text.length > 8 ? text.slice(0, 8) + '..' : text;
+    }
+
     function renderCompareCharts(data) {
         Chart.defaults.font.family = "'Inter', 'Noto Sans KR', sans-serif";
         Chart.defaults.font.weight = "700";
@@ -390,11 +409,14 @@
         });
 
         // 2. Agency Top 10 Chart
+        const hasPlaceholderAgency = agencyTop10.some(d => isPlaceholderAgency(d.name));
+        document.getElementById('agencyPlaceholderNote').classList.toggle('hidden', !hasPlaceholderAgency);
+
         const aCtx = document.getElementById('agencyAnnounceChart').getContext('2d');
         new Chart(aCtx, {
             type: 'bar',
             data: {
-                labels: agencyTop10.map(d => d.name.length > 8 ? d.name.slice(0, 8) + '..' : d.name),
+                labels: agencyTop10.map(d => agencyChartLabel(d.name)),
                 datasets: [{
                     label: '기초금액 총액',
                     data: agencyTop10.map(d => d.total_base_amount ?? d.total_prce ?? 0),
@@ -411,7 +433,12 @@
                     legend: { display: false },
                     tooltip: {
                         backgroundColor: '#0f172a',
-                        callbacks: { label: ctx => ' ' + formatWon(ctx.raw) }
+                        callbacks: {
+                            title: ctx => isPlaceholderAgency(agencyTop10[ctx[0].dataIndex]?.name)
+                                ? COMPARE_PLACEHOLDER_AGENCY_TOOLTIP
+                                : ctx[0].label,
+                            label: ctx => ' ' + formatWon(ctx.raw)
+                        }
                     }
                 },
                 scales: {
