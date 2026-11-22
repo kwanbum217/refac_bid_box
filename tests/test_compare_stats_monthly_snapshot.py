@@ -6,7 +6,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import (
     DATASET_ANNOUNCEMENT,
@@ -77,16 +77,15 @@ def _add_result(db, **overrides):
 
 def _isolated_cache(monkeypatch):
     store = {}
-    captured = {}
+    sets = []
     monkeypatch.setattr(dashboard.cache, "get", store.get)
 
     def _set(key, value, ttl):
         store[key] = value
-        captured["key"] = key
-        captured["ttl"] = ttl
+        sets.append((key, value, ttl))
 
     monkeypatch.setattr(dashboard.cache, "set", _set)
-    return store, captured
+    return store, sets
 
 
 def test_재집계가_네_스냅샷을_만들고_월별_payload_형태가_사양과_같다(isolated_db):
@@ -177,29 +176,39 @@ def test_스냅샷이_있으면_실시간_월별_집계가_실행되지_않는�
     assert data["result_by_month"] == res_month_row.payload
 
 
-def test_스냅샷이_없으면_폴백하고_결과가_실시간_계산과_같다(isolated_db, monkeypatch):
-    """스냅샷이 없으면 실시간으로 폴백하고 TTL 판정은 종전과 같다."""
+def test_스냅샷이_없으면_pending_이고_재집계_월별_값이_실시간_계산과_같다(isolated_db, monkeypatch):
+    """스냅숏이 없으면 pending 으로 즉시 답하고, 재집계 뒤 월별 값은 실시간과 같다."""
     _add_announcement(isolated_db)
     _add_result(isolated_db)
-    store, captured = _isolated_cache(monkeypatch)
+    store, sets = _isolated_cache(monkeypatch)
 
-    data_fallback = dashboard.get_compare_stats_data(isolated_db)
+    data_pending = dashboard.get_compare_stats_data(isolated_db)
 
-    assert captured["ttl"] == dashboard.COMPARE_STATS_CACHE_TTL
-    assert not captured["key"].endswith(":stale")
+    assert data_pending["pending"] is True
+    assert data_pending["stale"] is False
+    assert sets == []
 
     snapshots.rebuild_compare_stats_snapshots(isolated_db)
     store.clear()
     data_snapshot = dashboard.get_compare_stats_data(isolated_db)
 
-    assert data_snapshot["announce_by_month"] == data_fallback["announce_by_month"]
-    assert data_snapshot["result_by_month"] == data_fallback["result_by_month"]
-    assert len(data_fallback["announce_by_month"]) > 0
-    assert len(data_fallback["result_by_month"]) > 0
+    assert data_snapshot["pending"] is False
+    assert len(data_snapshot["announce_by_month"]) > 0
+    assert len(data_snapshot["result_by_month"]) > 0
+
+    one_year_ago = kst_now(utcnow()) - timedelta(days=365)
+    assert (
+        dashboard._query_announce_by_month_realtime(isolated_db, one_year_ago)
+        == data_snapshot["announce_by_month"]
+    )
+    assert (
+        dashboard._query_result_by_month_realtime(isolated_db, one_year_ago)
+        == data_snapshot["result_by_month"]
+    )
 
 
-def test_요약이_신선하고_스냅샷이_없으면_표준_24시간_TTL이_유지된다(isolated_db, monkeypatch):
-    """폴백은 실시간 계산이므로 신선하며 stale TTL 로 바뀌지 않는다."""
+def test_요약이_신선하고_스냅샷이_있으면_표준_24시간_TTL이_유지된다(isolated_db, monkeypatch):
+    """신선한 스냅숏 응답은 24시간, 보조 캐시는 7일 TTL 로 저장된다."""
     from src.app.services.dashboard import SUMMARY_ALGORITHM_VERSIONS
 
     ann = _add_announcement(isolated_db)
@@ -227,16 +236,21 @@ def test_요약이_신선하고_스냅샷이_없으면_표준_24시간_TTL이_�
         )
     )
     isolated_db.commit()
-    _store, captured = _isolated_cache(monkeypatch)
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
+    _store, sets = _isolated_cache(monkeypatch)
 
     dashboard.get_compare_stats_data(isolated_db)
 
-    assert captured["ttl"] == dashboard.COMPARE_STATS_CACHE_TTL
-    assert not captured["key"].endswith(":stale")
+    normal_key, _normal_value, normal_ttl = sets[0]
+    last_key, _last_value, last_ttl = sets[1]
+    assert normal_ttl == dashboard.COMPARE_STATS_CACHE_TTL
+    assert not normal_key.endswith(":stale")
+    assert last_key == f"{normal_key}:last"
+    assert last_ttl == dashboard.COMPARE_STATS_LAST_GOOD_CACHE_TTL
 
 
-def test_2일을_넘은_스냅샷은_폴백하고_TTL_판정은_종전과_같다(isolated_db, monkeypatch):
-    """3일 된 스냅샷은 낡은 것으로 보고 실시간으로 폴백한다."""
+def test_2일을_넘은_스냅샷은_실시간_대신_pending_을_돌려준다(isolated_db, monkeypatch):
+    """3일 된 월별 스냅샷은 낡은 것으로 보고 요청 안에서 실시간 집계를 하지 않는다."""
     _add_announcement(isolated_db)
     _add_result(isolated_db)
     snapshots.rebuild_compare_stats_snapshots(isolated_db)
@@ -250,36 +264,39 @@ def test_2일을_넘은_스냅샷은_폴백하고_TTL_판정은_종전과_같다
         row = isolated_db.get(BidCompareStatsSnapshot, key)
         row.rebuilt_at = old
     isolated_db.commit()
-    _store, captured = _isolated_cache(monkeypatch)
+    store, sets = _isolated_cache(monkeypatch)
 
     announce_month_calls: list[bool] = []
     result_month_calls: list[bool] = []
-    orig_announce = dashboard._query_announce_by_month_realtime
-    orig_result = dashboard._query_result_by_month_realtime
 
-    def _spy_announce(db, one_year_ago):
+    def _spy_announce(_db, _one_year_ago):
         announce_month_calls.append(True)
-        return orig_announce(db, one_year_ago)
+        return []
 
-    def _spy_result(db, one_year_ago):
+    def _spy_result(_db, _one_year_ago):
         result_month_calls.append(True)
-        return orig_result(db, one_year_ago)
+        return []
 
     monkeypatch.setattr(dashboard, "_query_announce_by_month_realtime", _spy_announce)
     monkeypatch.setattr(dashboard, "_query_result_by_month_realtime", _spy_result)
 
     data = dashboard.get_compare_stats_data(isolated_db)
 
-    assert announce_month_calls
-    assert result_month_calls
-    assert captured["ttl"] == dashboard.COMPARE_STATS_CACHE_TTL
-    assert not captured["key"].endswith(":stale")
-    assert len(data["announce_by_month"]) > 0
-    assert len(data["result_by_month"]) > 0
+    assert data["pending"] is True
+    assert announce_month_calls == []
+    assert result_month_calls == []
+    assert sets == []
+
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
+    store.clear()
+    data_snapshot = dashboard.get_compare_stats_data(isolated_db)
+    assert data_snapshot["pending"] is False
+    assert len(data_snapshot["announce_by_month"]) > 0
+    assert len(data_snapshot["result_by_month"]) > 0
 
 
-def test_항목_키가_빠진_스냅샷은_예외_대신_폴백한다(isolated_db):
-    """월별 payload 항목에 month 또는 count 키가 빠져도 예외 없이 실시간 폴백한다."""
+def test_항목_키가_빠진_스냅샷은_예외_대신_pending_을_돌려준다(isolated_db):
+    """월별 payload 항목에 month 또는 count 키가 빠져도 예외 없이 pending 으로 답한다."""
     _add_announcement(isolated_db)
     _add_result(isolated_db)
     snapshots.rebuild_compare_stats_snapshots(isolated_db)
@@ -292,12 +309,15 @@ def test_항목_키가_빠진_스냅샷은_예외_대신_폴백한다(isolated_d
 
     data = dashboard.get_compare_stats_data(isolated_db)
 
-    assert len(data["announce_by_month"]) > 0
-    assert len(data["result_by_month"]) > 0
-    for item in data["announce_by_month"]:
+    assert data["pending"] is True
+    assert data["announce_by_month"] == []
+    assert data["result_by_month"] == []
+
+    one_year_ago = kst_now(utcnow()) - timedelta(days=365)
+    for item in dashboard._query_announce_by_month_realtime(isolated_db, one_year_ago):
         assert "month" in item
         assert "count" in item
-    for item in data["result_by_month"]:
+    for item in dashboard._query_result_by_month_realtime(isolated_db, one_year_ago):
         assert "month" in item
         assert "count" in item
 

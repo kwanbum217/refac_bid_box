@@ -55,6 +55,8 @@ from src.tasks.scheduled_tasks import (
     BAND_REGIME_DAILY_HOUR,
     BAND_REGIME_DAILY_JOB_TIMEOUT_SECONDS,
     BAND_REGIME_DAILY_MINUTE,
+    COMPARE_STATS_WARM_JOB_TIMEOUT_SECONDS,
+    COMPARE_STATS_WARM_MINUTES,
     DRIFT_MONITOR_CATCHUP_JOB_NAME,
     DRIFT_MONITOR_JOB_TIMEOUT_SECONDS,
     HOME_SUMMARY_WARM_JOB_TIMEOUT_SECONDS,
@@ -69,6 +71,7 @@ from src.tasks.scheduled_tasks import (
     WEEKLY_RETRAIN_JOB_TIMEOUT_SECONDS,
     backup_schedule_task,
     band_regime_daily_task,
+    compare_stats_snapshot_warm_task,
     development_data_refresh_task,
     drift_monitor_task,
     intraday_collect_task,
@@ -517,6 +520,7 @@ class WorkerSettings:
         collect_demand_institutions_task,
         result_coverage_monitor_task,
         warm_home_summary_task,
+        compare_stats_snapshot_warm_task,
         intraday_collect_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
@@ -588,6 +592,14 @@ class WorkerSettings:
             minute=HOME_SUMMARY_WARM_MINUTES,
             run_at_startup=True,
             timeout=HOME_SUMMARY_WARM_JOB_TIMEOUT_SECONDS,
+        ),
+        # 비교 통계 스냅숏 보충. 요청 경로는 스냅숏이 없거나 낡으면 pending 으로
+        # 즉시 답하므로, 5분마다 빠진 스냅숏만 채워 pending 구간을 줄입니다.
+        cron(
+            cast(Any, compare_stats_snapshot_warm_task),
+            minute=COMPARE_STATS_WARM_MINUTES,
+            run_at_startup=False,
+            timeout=COMPARE_STATS_WARM_JOB_TIMEOUT_SECONDS,
         ),
         # 낮 시간 증분 수집. 야간 수집(02:00)까지 기다리지 않고 그날 공고를 웹에
         # 노출하기 위해 평일 07~20시 매시 10분, 주말 12:10 에 오늘(KST) 공고만

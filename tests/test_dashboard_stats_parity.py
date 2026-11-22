@@ -37,6 +37,7 @@ from src.app.models.bids import (
     BidResult,
     extract_business_budget,
 )
+from src.app.services import compare_stats_snapshots as snapshots
 from src.app.services.dashboard import _compare_stats_cache_key, _dashboard_stats_cache_key
 
 STATS_URL = "/api/v1/bids/stats"
@@ -309,6 +310,7 @@ def test_compare_stats_api_returns_monthly_series(auth_client, isolated_db):
     """공고·낙찰 양쪽 월별 시계열과 기관 순위가 나온다."""
     _add_announcement(isolated_db)
     _add_result(isolated_db)
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     payload = auth_client.get(COMPARE_URL).json()
 
@@ -319,6 +321,8 @@ def test_compare_stats_api_returns_monthly_series(auth_client, isolated_db):
     assert payload["result_by_month"]
     assert re.match(r"^\d{4}-\d{2}$", payload["announce_by_month"][0]["month"])
     assert payload["agency_announce_top10"][0]["total_base_amount"] == 1100000
+    assert payload["pending"] is False
+    assert payload["stale"] is False
 
 
 def test_compare_stats_base_total_ignores_estimated_price_only_rows(auth_client, isolated_db):
@@ -334,6 +338,7 @@ def test_compare_stats_base_total_ignores_estimated_price_only_rows(auth_client,
         base_amount=None,
         presmpt_prce=2200000,
     )
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     payload = auth_client.get(COMPARE_URL).json()
 
@@ -356,6 +361,7 @@ def test_compare_stats_excludes_outlier_amounts_from_totals(auth_client, isolate
         base_amount=137150000137150000,
         raw_data={"asignBdgtAmt": "137150000137150000"},
     )
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     payload = auth_client.get(COMPARE_URL).json()
 
@@ -377,6 +383,7 @@ def test_compare_stats_keeps_largest_realistic_amount(auth_client, isolated_db):
         base_amount=10717478400000,
         raw_data={"bdgtAmt": "10717478400000"},
     )
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     payload = auth_client.get(COMPARE_URL).json()
 
@@ -397,6 +404,7 @@ def test_compare_stats_reads_comma_separated_amount(auth_client, isolated_db):
         base_amount=extract_business_budget(raw_data),
         raw_data=raw_data,
     )
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     payload = auth_client.get(COMPARE_URL).json()
 

@@ -57,6 +57,9 @@ DASHBOARD_STATS_STALE_CACHE_TTL = 60
 # 요청이 같은 집계를 또 시작해 락이 있으나 없으나 같아집니다. 실측의 세 배로 둡니다.
 SUMMARY_INIT_LOCK_TIMEOUT = 1800
 COMPARE_STATS_STALE_CACHE_TTL = 60
+# 직전 정상 비교 통계 응답을 담아 두는 보조 캐시 수명입니다. 스냅숏이 없거나
+# 낡은 동안 요청 경로가 실시간 집계로 빠지지 않도록 최근 값을 계속 보여 줍니다.
+COMPARE_STATS_LAST_GOOD_CACHE_TTL = 60 * 60 * 24 * 7
 DASHBOARD_RESULT_SCOPE_START = datetime(2015, 1, 1, tzinfo=UTC).replace(tzinfo=None)
 DASHBOARD_RESULT_SCOPE_LABEL = "2015년 ~ 현재"
 UNIT_PRICE_RESULT_KEYWORDS = (
@@ -187,6 +190,28 @@ def _compare_stats_cache_key(
         f"{_marker_value(result_summary.source_latest_collected_at)}:"
         f"{_marker_value(result_summary.rebuilt_at)}"
     )
+
+
+def _compare_stats_last_good_cache_key(cache_key: str) -> str:
+    """직전 정상 비교 통계 응답을 담는 보조 캐시 키입니다."""
+    return f"{cache_key}:last"
+
+
+def _empty_compare_stats_payload() -> dict[str, Any]:
+    """집계 중(pending) 응답에 쓰는 0 값 payload 입니다."""
+    return {
+        "announce_count": 0,
+        "announce_total_base_amount": 0,
+        "announce_total_prce": 0,
+        "result_count": 0,
+        "result_total_amt": 0,
+        "matched_count": 0,
+        "announce_count_1y": 0,
+        "matched_count_1y": 0,
+        "announce_by_month": [],
+        "result_by_month": [],
+        "agency_announce_top10": [],
+    }
 
 
 def _model_for_dataset(dataset: str):
@@ -677,7 +702,7 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         totals_usable = compare_snapshots.is_snapshot_fresh(
             totals_rebuilt_at
         ) and compare_snapshots.is_industry_totals_payload_usable(totals_payload)
-        snapshot_fallback = not (
+        snapshot_ready = (
             agency_usable
             and matched_usable
             and announce_month_usable
@@ -688,6 +713,7 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         cache_key = _compare_stats_cache_key(announcement_summary, result_summary)
         if is_stale:
             cache_key = f"{cache_key}:stale"
+        last_good_cache_key = _compare_stats_last_good_cache_key(cache_key)
 
         with latency_segments.compare_stats_segment("cache_lookup"):
             data = cache.get(cache_key)
@@ -695,63 +721,55 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
             cache_hit = True
             return data
 
-        now = kst_now(utcnow())
-        one_year_ago = now - timedelta(days=365)
+        # 스냅숏이 하나라도 없거나 낡았으면 요청 안에서 대형 실시간 집계(실측
+        # 39.8초)를 하지 않습니다. 직전 정상 응답이 있으면 stale 로 표시해
+        # 돌려주고, 없으면 pending 으로 즉시 답합니다. 화면은 잠시 뒤 다시
+        # 요청하고 5분 주기 worker 가 빠진 스냅숏을 채웁니다. pending 응답은
+        # 어떤 캐시에도 저장하지 않아 다음 요청이 곧바로 재시도합니다.
+        if not snapshot_ready:
+            last_good = cache.get(last_good_cache_key)
+            if isinstance(last_good, dict):
+                logger.info(
+                    "비교 통계 스냅숏 미준비로 직전 정상 응답을 반환합니다 (pending=false, stale=true)"
+                )
+                return {**last_good, "pending": False, "stale": True}
+            logger.info("비교 통계 스냅숏 미준비로 집계 중 응답을 반환합니다 (pending=true)")
+            return {**_empty_compare_stats_payload(), "pending": True, "stale": False}
 
-        # 매칭 데이터 (최근 1년). 스냅샷이 신선하면 실시간 집계를 건너뜁니다.
-        # 매칭률의 분자·분모는 같은 1년 공고 창을 쓰는 _query_match_rate_1y_realtime
-        # 하나로 계산합니다. 스냅샷과 폴백의 정의가 갈라지지 않게 같은 함수를 씁니다.
         with latency_segments.compare_stats_segment("matched_count"):
-            if matched_usable:
-                matched_count = int(matched_payload["value"])
-                match_rate_counts = {
-                    "announce_count_1y": int(matched_payload["announce_count_1y"]),
-                    "matched_count_1y": int(matched_payload["matched_count_1y"]),
-                }
-            else:
-                matched_count = _query_matched_count_realtime(db, one_year_ago)
-                match_rate_counts = _query_match_rate_1y_realtime(db, one_year_ago)
+            matched_count = int(matched_payload["value"])
+            match_rate_counts = {
+                "announce_count_1y": int(matched_payload["announce_count_1y"]),
+                "matched_count_1y": int(matched_payload["matched_count_1y"]),
+            }
 
         with latency_segments.compare_stats_segment("announce_by_month"):
-            if announce_month_usable:
-                announce_by_month = [
-                    {"month": str(item["month"]), "count": int(item["count"])}
-                    for item in announce_month_payload
-                ]
-            else:
-                announce_by_month = _query_announce_by_month_realtime(db, one_year_ago)
+            announce_by_month = [
+                {"month": str(item["month"]), "count": int(item["count"])}
+                for item in announce_month_payload
+            ]
 
         with latency_segments.compare_stats_segment("result_by_month"):
-            if result_month_usable:
-                result_by_month = [
-                    {"month": str(item["month"]), "count": int(item["count"])}
-                    for item in result_month_payload
-                ]
-            else:
-                result_by_month = _query_result_by_month_realtime(db, one_year_ago)
+            result_by_month = [
+                {"month": str(item["month"]), "count": int(item["count"])}
+                for item in result_month_payload
+            ]
 
         with latency_segments.compare_stats_segment("agency_announce_top10"):
-            if agency_usable:
-                agency_announce_top10 = [
-                    {
-                        "name": item["name"],
-                        "total_base_amount": int(item["total_base_amount"] or 0),
-                        "total_prce": int(item["total_prce"] or 0),
-                        "count": item["count"],
-                    }
-                    for item in agency_payload
-                ]
-            else:
-                agency_announce_top10 = _query_agency_announce_top10_realtime(db, one_year_ago)
+            agency_announce_top10 = [
+                {
+                    "name": item["name"],
+                    "total_base_amount": int(item["total_base_amount"] or 0),
+                    "total_prce": int(item["total_prce"] or 0),
+                    "count": item["count"],
+                }
+                for item in agency_payload
+            ]
 
         with latency_segments.compare_stats_segment("result_assembly"):
-            if totals_usable:
-                industry_totals = {
-                    key: int(totals_payload[key])
-                    for key in compare_snapshots.INDUSTRY_TOTALS_ITEM_KEYS
-                }
-            else:
-                industry_totals = _query_industry_totals_realtime(db)
+            industry_totals = {
+                key: int(totals_payload[key]) for key in compare_snapshots.INDUSTRY_TOTALS_ITEM_KEYS
+            }
 
             data = {
                 "announce_count": industry_totals["announce_count"],
@@ -765,24 +783,18 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
                 "announce_by_month": announce_by_month,
                 "result_by_month": result_by_month,
                 "agency_announce_top10": agency_announce_top10,
+                "pending": False,
+                "stale": False,
             }
 
-        is_stale = summaries_stale
         try:
-            logger.info(
-                "비교 통계 스냅샷 사용 여부 matched_count=%s agency_announce_top10=%s announce_by_month=%s result_by_month=%s industry_totals=%s 폴백=%s",
-                "스냅샷" if matched_usable else "실시간",
-                "스냅샷" if agency_usable else "실시간",
-                "스냅샷" if announce_month_usable else "실시간",
-                "스냅샷" if result_month_usable else "실시간",
-                "스냅샷" if totals_usable else "실시간",
-                "예" if snapshot_fallback else "아니요",
-            )
+            logger.info("비교 통계 스냅숏 5종으로 응답을 구성했습니다")
         except Exception as exc:
-            logger.warning("비교 통계 스냅샷 사용 여부 기록 중 예외 발생 (무시됨): %s", exc)
+            logger.warning("비교 통계 스냅숏 사용 여부 기록 중 예외 발생 (무시됨): %s", exc)
         ttl = COMPARE_STATS_STALE_CACHE_TTL if is_stale else COMPARE_STATS_CACHE_TTL
         with latency_segments.compare_stats_segment("cache_store"):
             cache.set(cache_key, data, ttl)
+            cache.set(last_good_cache_key, data, COMPARE_STATS_LAST_GOOD_CACHE_TTL)
         return data
     finally:
         try:

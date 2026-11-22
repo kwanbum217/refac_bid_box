@@ -123,7 +123,7 @@ def test_창_안_공고_중_결과가_있는_공고만_분자에_들어간다(is
 
 
 def test_스냅샷과_실시간_폴백이_같은_매칭률_값을_낸다(isolated_db, monkeypatch):
-    """스냅샷 재집계 값과 실시간 폴백 값이 갈라지지 않는다."""
+    """스냅샷 재집계 값과 실시간 함수 값이 갈라지지 않는다."""
     now = utcnow()
     _add_announcement(isolated_db, "MATCHED-1", now - timedelta(days=30))
     _add_result(isolated_db, "MATCHED-1", now - timedelta(days=25))
@@ -133,31 +133,31 @@ def test_스냅샷과_실시간_폴백이_같은_매칭률_값을_낸다(isolate
     _add_announcement(isolated_db, "OUTSIDE", now - timedelta(days=400))
     _add_result(isolated_db, "OUTSIDE", now - timedelta(days=20))
     isolated_db.commit()
-    store = _isolated_cache(monkeypatch)
-
-    fallback = dashboard.get_compare_stats_data(isolated_db)
+    _isolated_cache(monkeypatch)
 
     snapshots.rebuild_compare_stats_snapshots(isolated_db)
-    store.clear()
     from_snapshot = dashboard.get_compare_stats_data(isolated_db)
+    realtime = dashboard._query_match_rate_1y_realtime(isolated_db, _window_start(now))
 
-    assert fallback["announce_count_1y"] == 3
-    assert fallback["matched_count_1y"] == 2
-    assert from_snapshot["announce_count_1y"] == fallback["announce_count_1y"]
-    assert from_snapshot["matched_count_1y"] == fallback["matched_count_1y"]
+    assert realtime == {"announce_count_1y": 3, "matched_count_1y": 2}
+    assert from_snapshot["announce_count_1y"] == 3
+    assert from_snapshot["matched_count_1y"] == 2
+    assert from_snapshot["announce_count_1y"] == realtime["announce_count_1y"]
+    assert from_snapshot["matched_count_1y"] == realtime["matched_count_1y"]
 
     payload = isolated_db.get(BidCompareStatsSnapshot, snapshots.SNAPSHOT_KEY_MATCHED_COUNT).payload
-    assert payload["announce_count_1y"] == fallback["announce_count_1y"]
-    assert payload["matched_count_1y"] == fallback["matched_count_1y"]
+    assert payload["announce_count_1y"] == from_snapshot["announce_count_1y"]
+    assert payload["matched_count_1y"] == from_snapshot["matched_count_1y"]
     assert snapshots.is_matched_payload_usable(payload) is True
 
 
 def test_응답에_기존_필드와_새_필드가_모두_있다(client, isolated_db):
-    """외부 소비자용 기존 필드를 유지하면서 매칭률용 새 두 필드를 함께 준다."""
+    """외부 소비자용 기존 필드를 유지하면서 상태 표시 필드도 함께 준다."""
     now = utcnow()
     _add_announcement(isolated_db, "API-MATCHED", now - timedelta(days=10))
     _add_result(isolated_db, "API-MATCHED", now - timedelta(days=5))
     isolated_db.commit()
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     response = client.get("/api/v1/bids/compare-stats")
 
@@ -167,6 +167,8 @@ def test_응답에_기존_필드와_새_필드가_모두_있다(client, isolated
     assert payload["announce_count"] == 1
     assert payload["announce_count_1y"] == 1
     assert payload["matched_count_1y"] == 1
+    assert payload["pending"] is False
+    assert payload["stale"] is False
 
 
 def test_비교_화면에_근거_없는_정확도_문구가_없다():

@@ -5,7 +5,7 @@
 
 from datetime import timedelta
 
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import (
     BidAnnouncement,
@@ -73,16 +73,15 @@ def _add_result(db, **overrides):
 
 def _isolated_cache(monkeypatch):
     store = {}
-    captured = {}
+    sets = []
     monkeypatch.setattr(dashboard.cache, "get", store.get)
 
     def _set(key, value, ttl):
         store[key] = value
-        captured["key"] = key
-        captured["ttl"] = ttl
+        sets.append((key, value, ttl))
 
     monkeypatch.setattr(dashboard.cache, "set", _set)
-    return store, captured
+    return store, sets
 
 
 def test_재집계가_두_스냅샷을_만들고_형태가_사양과_같다(isolated_db):
@@ -158,29 +157,37 @@ def test_스냅샷이_있으면_실시간_집계가_실행되지_않는다(isola
     assert data["agency_announce_top10"] == agency_row.payload
 
 
-def test_스냅샷이_없으면_폴백하고_결과가_실시간_계산과_같다(isolated_db, monkeypatch):
-    """스냅샷이 없으면 실시간으로 폴백하고 TTL 판정은 종전과 같다."""
+def test_스냅샷이_없으면_pending_이고_재집계_값이_실시간_계산과_같다(isolated_db, monkeypatch):
+    """스냅숏이 없으면 pending 으로 즉시 답하고, 재집계 뒤 값은 실시간 계산과 같다."""
     _add_announcement(isolated_db)
     _add_result(isolated_db)
-    store, captured = _isolated_cache(monkeypatch)
+    store, sets = _isolated_cache(monkeypatch)
 
-    data_fallback = dashboard.get_compare_stats_data(isolated_db)
+    data_pending = dashboard.get_compare_stats_data(isolated_db)
 
-    assert captured["ttl"] == dashboard.COMPARE_STATS_CACHE_TTL
-    assert not captured["key"].endswith(":stale")
+    assert data_pending["pending"] is True
+    assert data_pending["stale"] is False
+    assert sets == []
 
     snapshots.rebuild_compare_stats_snapshots(isolated_db)
     store.clear()
     data_snapshot = dashboard.get_compare_stats_data(isolated_db)
 
-    assert data_snapshot["matched_count"] == data_fallback["matched_count"]
-    assert data_snapshot["agency_announce_top10"] == data_fallback["agency_announce_top10"]
-    assert data_fallback["matched_count"] == 1
-    assert data_fallback["agency_announce_top10"][0]["total_base_amount"] == 1000000
+    assert data_snapshot["pending"] is False
+    assert data_snapshot["stale"] is False
+    assert data_snapshot["matched_count"] == 1
+    assert data_snapshot["agency_announce_top10"][0]["total_base_amount"] == 1000000
+
+    one_year_ago = kst_now(utcnow()) - timedelta(days=365)
+    assert dashboard._query_matched_count_realtime(isolated_db, one_year_ago) == 1
+    assert (
+        dashboard._query_agency_announce_top10_realtime(isolated_db, one_year_ago)
+        == data_snapshot["agency_announce_top10"]
+    )
 
 
-def test_요약이_신선하고_스냅샷이_없으면_표준_24시간_TTL이_유지된다(isolated_db, monkeypatch):
-    """폴백은 실시간 계산이므로 신선하며 stale TTL 로 바뀌지 않는다."""
+def test_요약이_신선하고_스냅샷이_있으면_표준_24시간_TTL이_유지된다(isolated_db, monkeypatch):
+    """신선한 스냅숏 응답은 24시간, 보조 캐시는 7일 TTL 로 저장된다."""
     from decimal import Decimal
 
     from src.app.models.bids import (
@@ -215,16 +222,21 @@ def test_요약이_신선하고_스냅샷이_없으면_표준_24시간_TTL이_�
         )
     )
     isolated_db.commit()
-    _store, captured = _isolated_cache(monkeypatch)
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
+    _store, sets = _isolated_cache(monkeypatch)
 
     dashboard.get_compare_stats_data(isolated_db)
 
-    assert captured["ttl"] == dashboard.COMPARE_STATS_CACHE_TTL
-    assert not captured["key"].endswith(":stale")
+    normal_key, _normal_value, normal_ttl = sets[0]
+    last_key, _last_value, last_ttl = sets[1]
+    assert normal_ttl == dashboard.COMPARE_STATS_CACHE_TTL
+    assert not normal_key.endswith(":stale")
+    assert last_key == f"{normal_key}:last"
+    assert last_ttl == dashboard.COMPARE_STATS_LAST_GOOD_CACHE_TTL
 
 
-def test_2일을_넘은_스냅샷은_폴백하고_TTL_판정은_종전과_같다(isolated_db, monkeypatch):
-    """3일 된 스냅샷은 낡은 것으로 보고 실시간으로 폴백한다."""
+def test_2일을_넘은_스냅샷은_실시간_대신_pending_을_돌려준다(isolated_db, monkeypatch):
+    """3일 된 스냅샷은 낡은 것으로 보고 요청 안에서 실시간 집계를 하지 않는다."""
     _add_announcement(isolated_db)
     _add_result(isolated_db)
     snapshots.rebuild_compare_stats_snapshots(isolated_db)
@@ -236,31 +248,34 @@ def test_2일을_넘은_스냅샷은_폴백하고_TTL_판정은_종전과_같다
         row = isolated_db.get(BidCompareStatsSnapshot, key)
         row.rebuilt_at = old
     isolated_db.commit()
-    _store, captured = _isolated_cache(monkeypatch)
+    store, sets = _isolated_cache(monkeypatch)
 
     matched_calls: list[bool] = []
     agency_calls: list[bool] = []
-    orig_matched = dashboard._query_matched_count_realtime
-    orig_agency = dashboard._query_agency_announce_top10_realtime
 
-    def _spy_matched(db, one_year_ago):
+    def _spy_matched(_db, _one_year_ago):
         matched_calls.append(True)
-        return orig_matched(db, one_year_ago)
+        return 1
 
-    def _spy_agency(db, one_year_ago):
+    def _spy_agency(_db, _one_year_ago):
         agency_calls.append(True)
-        return orig_agency(db, one_year_ago)
+        return []
 
     monkeypatch.setattr(dashboard, "_query_matched_count_realtime", _spy_matched)
     monkeypatch.setattr(dashboard, "_query_agency_announce_top10_realtime", _spy_agency)
 
     data = dashboard.get_compare_stats_data(isolated_db)
 
-    assert matched_calls
-    assert agency_calls
-    assert captured["ttl"] == dashboard.COMPARE_STATS_CACHE_TTL
-    assert not captured["key"].endswith(":stale")
-    assert data["matched_count"] == 1
+    assert data["pending"] is True
+    assert matched_calls == []
+    assert agency_calls == []
+    assert sets == []
+
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
+    store.clear()
+    data_snapshot = dashboard.get_compare_stats_data(isolated_db)
+    assert data_snapshot["pending"] is False
+    assert data_snapshot["matched_count"] == 1
 
 
 def test_손상된_기관명이_제외되지_않고_그대로_남는다(isolated_db):
@@ -282,11 +297,12 @@ def test_손상된_기관명이_제외되지_않고_그대로_남는다(isolated
     assert "��깨진기관" in names
 
 
-def test_항목_키가_빠진_스냅샷은_예외_대신_폴백한다(isolated_db):
+def test_항목_키가_빠진_스냅샷은_예외_대신_pending_을_돌려준다(isolated_db):
     """리스트라는 것만 보고 항목을 인덱싱하면 KeyError 로 전체가 실패한다.
 
     리뷰어가 잔여 위험으로 지적한 경로다. 작성기는 이 형태를 쓰지 않지만
-    손으로 넣은 행이나 옛 형태가 남을 수 있다.
+    손으로 넣은 행이나 옛 형태가 남을 수 있다. 요청 경로는 이제 예외 대신
+    pending 으로 답하고, 실시간 함수는 직접 호출하면 정상 값을 낸다.
     """
     _add_announcement(isolated_db)
     _add_result(isolated_db)
@@ -297,8 +313,13 @@ def test_항목_키가_빠진_스냅샷은_예외_대신_폴백한다(isolated_d
 
     data = dashboard.get_compare_stats_data(isolated_db)
 
-    assert data["agency_announce_top10"][0]["name"] is not None
-    assert "total_base_amount" in data["agency_announce_top10"][0]
+    assert data["pending"] is True
+    assert data["agency_announce_top10"] == []
+
+    one_year_ago = kst_now(utcnow()) - timedelta(days=365)
+    realtime = dashboard._query_agency_announce_top10_realtime(isolated_db, one_year_ago)
+    assert realtime[0]["name"] is not None
+    assert "total_base_amount" in realtime[0]
 
 
 def test_정확히_2일_경계는_스냅샷을_쓴다(isolated_db):

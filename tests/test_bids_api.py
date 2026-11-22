@@ -110,6 +110,7 @@ def test_dashboard_stats_api_returns_basic_structure(client, isolated_db):
 
 def test_compare_stats_api_returns_basic_structure(client, isolated_db):
     from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
+    from src.app.services import compare_stats_snapshots as snapshots
 
     bid = _make_announcement(
         bid_ntce_no="ANN-CMP",
@@ -128,6 +129,7 @@ def test_compare_stats_api_returns_basic_structure(client, isolated_db):
         )
     )
     isolated_db.commit()
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     response = client.get("/api/v1/bids/compare-stats")
 
@@ -136,6 +138,8 @@ def test_compare_stats_api_returns_basic_structure(client, isolated_db):
     assert "announce_count" in payload
     assert "result_count" in payload
     assert payload["announce_count"] >= 1
+    assert payload["pending"] is False
+    assert payload["stale"] is False
 
 
 def test_bid_detail_returns_404_for_unknown_id(client, isolated_db):

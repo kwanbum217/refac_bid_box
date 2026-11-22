@@ -82,7 +82,12 @@ def _seed_out_of_window_industry_rows(db) -> None:
 
 def _stub_miss_path(monkeypatch, isolated_db):
     """캐시 미적중 경로의 외부 의존성을 고정합니다."""
+    from src.app.services import compare_stats_snapshots as snapshots
+
     _seed_out_of_window_industry_rows(isolated_db)
+    # 요청 경로는 스냅숏이 없으면 pending 으로 답하므로, 계측 대상인 정상
+    # 구성 경로를 타도록 스냅숏을 먼저 심습니다.
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
     summaries = {
         "announcement": SimpleNamespace(total_count=3, total_amount=3000, is_stale=False),
         "result": SimpleNamespace(total_count=3, total_amount=2700, is_stale=False),
