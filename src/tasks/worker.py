@@ -65,6 +65,9 @@ from src.tasks.scheduled_tasks import (
     PREARNG_DAILY_HOUR,
     PREARNG_DAILY_JOB_TIMEOUT_SECONDS,
     PREARNG_DAILY_MINUTE,
+    RAG_STATS_WARM_HOUR,
+    RAG_STATS_WARM_JOB_TIMEOUT_SECONDS,
+    RAG_STATS_WARM_MINUTE,
     RESULT_COVERAGE_CATCHUP_JOB_NAME,
     RESULT_COVERAGE_JOB_TIMEOUT_SECONDS,
     WEEKLY_RETRAIN_CATCHUP_JOB_NAME,
@@ -82,6 +85,7 @@ from src.tasks.scheduled_tasks import (
     run_schedule_catchup_task,
     run_weekly_retrain_catchup_task,
     warm_home_summary_task,
+    warm_rag_region_stats_task,
     weekly_retrain_task,
 )
 from src.tasks.summary_tasks import (
@@ -521,6 +525,7 @@ class WorkerSettings:
         result_coverage_monitor_task,
         warm_home_summary_task,
         compare_stats_snapshot_warm_task,
+        warm_rag_region_stats_task,
         intraday_collect_task,
     ]
     # 원본 Harness 야간 트리거와 Airflow 주간 재학습 DAG 를 같은 시각으로 이식했습니다.
@@ -600,6 +605,15 @@ class WorkerSettings:
             minute=COMPARE_STATS_WARM_MINUTES,
             run_at_startup=False,
             timeout=COMPARE_STATS_WARM_JOB_TIMEOUT_SECONDS,
+        ),
+        # 시·도 용역 통계 RAG 캐시 예열. 캐시가 비면 첫 질문이 1분을 넘기므로
+        # 수집 뒤 훅과 함께 이른 아침 한 번 더 채웁니다.
+        cron(
+            cast(Any, warm_rag_region_stats_task),
+            hour=RAG_STATS_WARM_HOUR,
+            minute=RAG_STATS_WARM_MINUTE,
+            run_at_startup=False,
+            timeout=RAG_STATS_WARM_JOB_TIMEOUT_SECONDS,
         ),
         # 낮 시간 증분 수집. 야간 수집(02:00)까지 기다리지 않고 그날 공고를 웹에
         # 노출하기 위해 평일 07~20시 매시 10분, 주말 12:10 에 오늘(KST) 공고만
