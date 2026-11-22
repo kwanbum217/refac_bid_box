@@ -11,6 +11,8 @@ tests/test_accuracy_measure_20261122.py
 4. `save_serving_metrics` 는 distribution 을 넘길 때만 키를 더하고,
    넘기지 않으면 종전과 같은 파일을 쓴다.
 5. `load_serving_metrics` 는 distribution 이 있어도 종전 반환값이 같다.
+6. 구간 산출은 점 예측이 실제로 쓴 특징(`features_used`)을 그대로 받고,
+   그것이 없으면 그 표본을 구간 평가에서 뺀다.
 
 운영 모델·DB·네트워크에 기대지 않습니다.
 """
@@ -22,10 +24,118 @@ import json
 import numpy as np
 import pytest
 
+from scripts import measure_serving_model
 from scripts.measure_serving_model import _score, compute_distribution
 from src.ml import promotion
 
 MODEL_NAME = "accuracy_measure_tester"
+
+
+class _FakeFrame:
+    """parquet 대신 한 행짜리 프레임을 흉내 냅니다."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def to_dict(self, orient):
+        assert orient == "records"
+        return self._rows
+
+
+class _FakeSession:
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+def _install_fake_measure_path(monkeypatch, predict_result, interval):
+    """운영 모델·DB 없이 measure() 를 태우는 대역을 심습니다."""
+    calls = {"interval": [], "sessions": []}
+
+    class FakePredictor:
+        def predict(self, request, model_id=None, session=None):
+            return predict_result
+
+    def fake_session_local():
+        session = _FakeSession()
+        calls["sessions"].append(session)
+        return session
+
+    def fake_predict_interval(model_id, features_dict):
+        calls["interval"].append((model_id, features_dict))
+        return interval
+
+    monkeypatch.setattr(
+        measure_serving_model,
+        "_load_holdout",
+        lambda *args, **kwargs: _FakeFrame(
+            [
+                {
+                    "winning_rate": 90.5,
+                    "bid_ntce_nm": "시험 공고",
+                    "dminstt_nm": "시험 기관",
+                    "presmpt_prce": 500_000_000.0,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr("src.ml.predictor.SingletonPredictor", FakePredictor)
+    monkeypatch.setattr("src.ml.prediction_api.predict_interval", fake_predict_interval)
+    monkeypatch.setattr("src.app.core.db.SessionLocal", fake_session_local)
+    return calls
+
+
+def test_interval_gets_same_features_as_point_prediction(monkeypatch):
+    features = {
+        "inst_hist_rate": 91.25,
+        "inst_sample_cnt": 7,
+        "presumed_price": 500_000_000.0,
+        "category": "Servc",
+    }
+    calls = _install_fake_measure_path(
+        monkeypatch,
+        {
+            "predicted_rate": 90.0,
+            "model_version": "fake-v1",
+            "features_used": features,
+        },
+        (89.0, 92.0, 0.9),
+    )
+
+    metrics, distribution, scored, failed = measure_serving_model.measure(
+        "fake-model", "Servc", "2026-01-01", 1, 42
+    )
+
+    assert calls["interval"] == [("fake-v1", features)]
+    assert calls["interval"][0][1] is features
+    assert calls["sessions"][0].closed is True
+    assert scored == 1
+    assert failed == 0
+    assert metrics["rmse"] == pytest.approx(0.5)
+    assert distribution["interval"] == {
+        "coverage": pytest.approx(1.0),
+        "evaluated": 1,
+        "target": pytest.approx(0.9),
+    }
+
+
+def test_interval_is_skipped_when_features_used_is_missing(monkeypatch):
+    calls = _install_fake_measure_path(
+        monkeypatch,
+        {"predicted_rate": 90.0, "model_version": "fake-v1"},
+        (89.0, 92.0, 0.9),
+    )
+
+    _, distribution, scored, failed = measure_serving_model.measure(
+        "fake-model", "Servc", "2026-01-01", 1, 42
+    )
+
+    assert calls["interval"] == []
+    assert scored == 1
+    assert failed == 0
+    assert distribution["interval"] is None
 
 
 def test_bands_and_error_reduction_match_hand_calculation():

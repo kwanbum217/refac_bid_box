@@ -211,13 +211,20 @@ def measure(
             predictions.append(float(rate))
             actual.append(float(row["winning_rate"]))
 
-            # 구간은 점 추정을 낸 모델에서 뽑습니다. 실패하거나 지원하지 않는
-            # 모델이면 None 으로 두고 분포 계산에서 평가 대상만 줄입니다.
+            # 구간은 점 추정이 실제로 쓴 특징으로 뽑습니다. 원본 request 를 넘기면
+            # session 없는 기본 특징이 만들어져 기관 이력이 상수로 떨어지고,
+            # 구간 적중률이 운영 경로 실측이 아니게 됩니다. features_used 가 없으면
+            # 이 표본은 구간 평가에서 빼고 evaluated 로만 드러냅니다.
+            features_used = result.get("features_used")
             bounds = None
-            try:
-                bounds = predict_interval(result.get("model_version") or model_id, request)
-            except Exception:
-                bounds = None
+            if features_used:
+                try:
+                    bounds = predict_interval(
+                        result.get("model_version") or model_id,
+                        features_used,
+                    )
+                except Exception:
+                    bounds = None
             if bounds is not None:
                 low, high, coverage = bounds
                 lows.append(low)
