@@ -7,7 +7,7 @@ src/app/services/home_summary.py
 | --- | --- |
 | 정확도 | 서빙 버전과 일치하는 사이드카 실측값과 `distribution`, 없으면 `source_metrics` |
 | 정확도 그래프 | 사이드카 `distribution` 의 오차 범위별 적중 비율과 예측 대 실제 산점도 |
-| 입찰 중 | `category='Servc'` AND `bid_clse_dt >= now` AND `bid_ntce_dt >= now-90일` AND 4대 업종 |
+| 입찰 중 | `category='Servc'` AND `bid_clse_dt >= now` AND `bid_ntce_dt >= now-90일` AND 4대 업종 AND 최신 차수 취소공고 제외 |
 | 마감 구간 | 위 입찰 중 공고를 KST 날짜 기준 오늘/1~3일/4~7일/8일 이후로 나눈 수 |
 | 내 조건 | 관심 업종·지역에 맞는 입찰 중 용역 공고 수와 마감 임박 순 목록 |
 
@@ -47,6 +47,7 @@ from src.app.services.bid_preferences import (
     count_open_servc_matching,
     get_bid_preferences,
     list_open_servc_matching,
+    not_cancelled_clause,
 )
 from src.app.services.bid_queries import (
     BID_INDUSTRY_CODES,
@@ -74,9 +75,9 @@ OPEN_DEADLINE_BUCKETS: tuple[tuple[str, str], ...] = (
     ("d8_plus", "8일 이후"),
 )
 
-# 4대 업종 한정으로 셈 정의가 바뀌어 v2 로 올립니다. v1 캐시에는 전체 용역
-# 집계값이 남아 있을 수 있으므로 키를 분리해야 옛 값이 화면에 섞이지 않습니다.
-SERVIC_COUNTS_CACHE_KEY = "home:summary:servc_counts:v2"
+# 4대 업종 한정으로 셈 정의가 바뀌어 v2 로 올렸고, 최신 차수 취소공고 제외를
+# 더해 v3 입니다. 옛 키에는 취소 행이 포함된 부풀린 값이 남아 있습니다.
+SERVIC_COUNTS_CACHE_KEY = "home:summary:servc_counts:v3"
 # 예열 주기(10분)의 12배입니다. 예열이 한두 번 실패해도 화면이 비지 않습니다.
 SERVIC_COUNTS_CACHE_TTL = 2 * 60 * 60
 
@@ -433,13 +434,16 @@ def _open_servc_filters(now_dt: datetime) -> tuple[Any, ...]:
     건수와 마감 구간이 같은 조건을 쓰도록 한 곳에 둡니다. 업종은
     `BID_INDUSTRY_CODES`(파견·경비업·위생관리용역업·유료직업소개업)에 한정하며,
     공고 탐색 목록과 같은 `license_match_clause` EXISTS 절로 판정합니다.
-    두 값이 서로 다른 조건으로 계산되면 구간 합과 전체 건수가 어긋납니다.
+    최신 차수가 취소공고인 번호는 `bid_preferences.not_cancelled_clause` 로
+    빼서 '내 조건 입찰 중' 과 같은 정의를 씁니다. 두 값이 서로 다른 조건으로
+    계산되면 구간 합과 전체 건수가 어긋납니다.
     """
     return (
         BidAnnouncement.category == SERVC_CATEGORY,
         BidAnnouncement.bid_clse_dt >= now_dt,
         BidAnnouncement.bid_ntce_dt >= now_dt - timedelta(days=OPEN_BID_LOOKBACK_DAYS),
         license_match_clause(BID_INDUSTRY_CODES),
+        not_cancelled_clause(),
     )
 
 

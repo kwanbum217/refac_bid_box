@@ -12,6 +12,7 @@ list_announcements)와 같습니다. 업종·지역 코드 정의와 정규화�
 | 분야 | `Servc` |
 | 마감 | `bid_clse_dt >= now` (마감 전) |
 | 차수 | 최신 차수만 (`similar_announcement_latest_filter`) |
+| 공고종류 | 최신 차수가 `취소공고` 인 번호 제외 (NULL·재공고·변경공고 유지) |
 | 업종 | 관심 코드 중 하나라도 참가자격에 포함 |
 | 지역 | 참가가능지역이 관심 지역과 일치 |
 | 스캔 범위 | `bid_ntce_dt >= now - 90일` (ix_bid_ann_cat_dt) |
@@ -28,7 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.app.core.cache import cache
@@ -48,9 +49,27 @@ OPEN_BID_CATEGORY = "Servc"
 # 마감 전 공고만 세지만, 오래된 공고까지 훑지 않도록 공고일 하한을 둡니다.
 OPEN_BID_LOOKBACK_DAYS = 90
 OPEN_BID_COUNT_CACHE_TTL = 60 * 10
-OPEN_BID_COUNT_CACHE_PREFIX = "bid_prefs:open_servc_count:v1"
-OPEN_BID_LIST_CACHE_PREFIX = "bid_prefs:open_servc_list:v1"
+# 취소공고 제외 조건이 붙은 뒤 v2 입니다. v1 키에는 취소 행이 포함된 값이 남아
+# 있으므로 접두사를 올려 옛 값을 읽지 않게 합니다.
+OPEN_BID_COUNT_CACHE_PREFIX = "bid_prefs:open_servc_count:v2"
+OPEN_BID_LIST_CACHE_PREFIX = "bid_prefs:open_servc_list:v2"
 OPEN_BID_LIST_DEFAULT_LIMIT = 5
+
+# 나라장터가 취소를 새 차수로 남기는 공고종류명입니다. 행은 지우지 않습니다(G1).
+CANCELLED_NTCE_KIND = "취소공고"
+
+
+def not_cancelled_clause() -> Any:
+    """최신 차수가 취소공고인 행을 입찰 중 집계에서 뺍니다.
+
+    홈 입찰 중 건수와 '내 조건 입찰 중' 건수·목록이 이 함수를 함께 씁니다.
+    `notin_` 은 SQL 3값 논리로 NULL 행까지 탈락시키므로 NULL 을 명시적으로
+    통과시킵니다. 재공고·변경공고는 유효한 공고이므로 제외하지 않습니다.
+    """
+    return or_(
+        BidAnnouncement.ntce_kind_nm.is_(None),
+        BidAnnouncement.ntce_kind_nm != CANCELLED_NTCE_KIND,
+    )
 
 
 @dataclass(frozen=True)
@@ -137,6 +156,7 @@ def _open_matching_conditions(prefs: BidPreferenceView, now_dt: datetime) -> lis
         BidAnnouncement.category == OPEN_BID_CATEGORY,
         BidAnnouncement.bid_clse_dt >= now_dt,
         BidAnnouncement.bid_ntce_dt >= now_dt - timedelta(days=OPEN_BID_LOOKBACK_DAYS),
+        not_cancelled_clause(),
     ]
     if prefs.region_code:
         conditions.append(_participation_region_match_clause(prefs.region_code))

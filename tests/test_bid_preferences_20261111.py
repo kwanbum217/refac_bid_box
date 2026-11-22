@@ -33,6 +33,7 @@ from src.app.services.bid_preferences import (
     BidPreferenceView,
     count_open_servc_matching,
     get_bid_preferences,
+    list_open_servc_matching,
     save_bid_preferences,
 )
 from tests.test_csrf import csrf_form
@@ -134,12 +135,14 @@ def _announcement(
     notice_days: int = -2,
     close_days: int = 3,
     nm: str | None = None,
+    ntce_kind_nm: str | None = None,
 ) -> BidAnnouncement:
     row = BidAnnouncement(
         bid_ntce_no=no,
         bid_ntce_ord=ord,
         bid_ntce_nm=nm or f"공고 {no}",
         category=category,
+        ntce_kind_nm=ntce_kind_nm,
         bid_ntce_dt=NOW + timedelta(days=notice_days),
         bid_clse_dt=NOW + timedelta(days=close_days),
         collected_at=NOW,
@@ -221,6 +224,24 @@ def test_count_with_empty_preferences_is_zero(isolated_db):
 
     assert count_open_servc_matching(isolated_db, BidPreferenceView([], ""), now=NOW) == 0
     assert count_open_servc_matching(isolated_db, None, now=NOW) == 0
+
+
+def test_count_and_list_exclude_latest_cancelled_number(isolated_db):
+    """구번호 최신 차수가 취소공고면 그 번호는 입찰 중이 아니고, 재공고 신번호만 남습니다."""
+    old = _announcement(isolated_db, no="PREF-CXL", ord="000", ntce_kind_nm="등록공고")
+    cancelled = _announcement(isolated_db, no="PREF-CXL", ord="001", ntce_kind_nm="취소공고")
+    reissued = _announcement(isolated_db, no="PREF-CXL-NEW", ntce_kind_nm="등록공고")
+    isolated_db.flush()
+    for row in (old, cancelled, reissued):
+        _license(isolated_db, row.bid_ntce_no, row.bid_ntce_ord)
+        _participation_region(isolated_db, row.bid_ntce_no, row.bid_ntce_ord)
+    isolated_db.commit()
+
+    prefs = BidPreferenceView(license_codes=["1162"], region_code="seoul")
+
+    assert count_open_servc_matching(isolated_db, prefs, now=NOW) == 1
+    listed = list_open_servc_matching(isolated_db, prefs, now=NOW)
+    assert [row["id"] for row in listed] == [reissued.id]
 
 
 # --------------------------------------------------------------------------- #
