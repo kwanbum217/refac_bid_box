@@ -557,6 +557,7 @@ def test_empty_query_result_search_preserves_index_order(monkeypatch, isolated_d
     )
 
     assert [item.id for item in page.object_list] == [second.id, first.id]
+    # 낙찰 결과 목록도 4개 업종 제한이 기본 조건이므로 검색에 업종 코드 전체를 넘깁니다.
     assert search.call_args.kwargs == {
         "query": "",
         "dataset": "result",
@@ -565,6 +566,7 @@ def test_empty_query_result_search_preserves_index_order(monkeypatch, isolated_d
         "sort": ["sucsf_bid_amt:desc", "source_id:desc"],
         "offset": 0,
         "limit": 20,
+        "license_codes": list(bid_queries.BID_INDUSTRY_CODES),
     }
 
 

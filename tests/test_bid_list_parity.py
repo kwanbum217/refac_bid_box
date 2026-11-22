@@ -301,6 +301,16 @@ def test_bid_result_list_sort_options(isolated_db):
     isolated_db.commit()
     for row in rows:
         isolated_db.refresh(row)
+        # 낙찰 결과 목록은 4대 업종 제한 공고만 노출하므로 픽스처에도 업종 제한 행이 필요합니다.
+        isolated_db.add(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=row.bid_ntce_no,
+                bid_ntce_ord=row.bid_ntce_ord,
+                lcns_lmt_nm="/1172/",
+                collected_at=now,
+            )
+        )
+    isolated_db.commit()
     old_big, new_small = rows
 
     by_opening = bid_queries.list_results(isolated_db, sort="opening")

@@ -31,6 +31,7 @@ from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_pass
 from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import bid_queries
 
@@ -91,6 +92,16 @@ def _add_result(db, **overrides) -> BidResult:
     db.add(row)
     db.commit()
     db.refresh(row)
+    # 낙찰 결과 목록은 4대 업종 제한 공고만 노출하므로 픽스처에도 업종 제한 행이 필요합니다.
+    db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no=row.bid_ntce_no,
+            bid_ntce_ord=row.bid_ntce_ord,
+            lcns_lmt_nm="/1172/",
+            collected_at=now,
+        )
+    )
+    db.commit()
     return row
 
 

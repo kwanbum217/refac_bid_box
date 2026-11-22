@@ -15,6 +15,7 @@ from sqlalchemy import event
 
 from src.app.api.v1.bids import _serialize_result, _serialize_results
 from src.app.core.timeutil import utcnow
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import (
     BidAnnouncement,
     BidResult,
@@ -385,6 +386,16 @@ def test_results_list_endpoint_integration(client, isolated_db):
             sucsf_bid_amt=85_000_000,
             sucsf_bid_rate=Decimal("85.0000"),
         )
+        # 낙찰 결과 목록은 4대 업종 제한 공고만 노출하므로 픽스처에도 업종 제한 행이 필요합니다.
+        isolated_db.add(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=f"LIST-ANN-{i}",
+                bid_ntce_ord="00",
+                lcns_lmt_nm="/1172/",
+                collected_at=utcnow(),
+            )
+        )
+    isolated_db.commit()
 
     resp = client.get("/api/v1/bids/results")
     assert resp.status_code == 200
