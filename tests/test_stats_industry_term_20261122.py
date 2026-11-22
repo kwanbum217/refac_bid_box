@@ -124,13 +124,14 @@ def test_title_keyword_condition_escapes_like_wildcards():
     """질문에서 온 낱말이 LIKE 와일드카드로 동작해 범위를 넓히지 못합니다."""
     engine, table = _title_table()
 
-    condition = title_keyword_condition(
-        table.c.bid_ntce_nm, {"industry_label": "청소", "title_keywords": ["%"]}
-    )
-    with engine.connect() as connection:
-        names = list(connection.execute(select(table.c.bid_ntce_nm).where(condition)).scalars())
+    for wildcard in ("%", "_"):
+        condition = title_keyword_condition(
+            table.c.bid_ntce_nm, {"industry_label": "청소", "title_keywords": [wildcard]}
+        )
+        with engine.connect() as connection:
+            names = list(connection.execute(select(table.c.bid_ntce_nm).where(condition)).scalars())
 
-    assert names == []
+        assert names == []
 
 
 def _industry_structured_data() -> dict:
@@ -179,6 +180,27 @@ def test_single_metric_answer_without_industry_term_is_unchanged():
     answer = _build_single_metric_answer(plan, _industry_structured_data())
 
     assert answer == "최근 5년 인천 용역 평균 낙찰률은 89.50%입니다."
+
+
+def test_single_metric_answer_drops_notice_when_industry_applied():
+    """집계가 조건을 붙였다고 표시하면 2단계 응답에 미적용 안내가 남지 않습니다."""
+    plan = build_retrieval_plan("인천 청소 용역 낙찰률 알려줘")
+    applied_plan = plan.model_copy(
+        update={"filters": {**(plan.filters or {}), "industry_applied": True}}
+    )
+    structured_data = _industry_structured_data()
+    structured_data["filters"].update(
+        {
+            "industry_label": "청소",
+            "title_keywords": ["청소", "미화", "환경미화"],
+            "industry_applied": True,
+        }
+    )
+
+    answer = _build_single_metric_answer(applied_plan, structured_data)
+
+    assert answer == "최근 5년 인천 청소 용역 평균 낙찰률은 89.50%입니다."
+    assert "적용하지 못해" not in answer
 
 
 def test_statistical_snapshot_marks_unapplied_industry():
