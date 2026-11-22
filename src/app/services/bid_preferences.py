@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.app.core.cache import cache
@@ -42,6 +42,7 @@ from src.app.services.bid_queries import (
     license_match_clause,
     normalize_license_codes,
     normalize_region_code,
+    not_cancelled_clause,
     similar_announcement_latest_filter,
 )
 
@@ -54,22 +55,6 @@ OPEN_BID_COUNT_CACHE_TTL = 60 * 10
 OPEN_BID_COUNT_CACHE_PREFIX = "bid_prefs:open_servc_count:v2"
 OPEN_BID_LIST_CACHE_PREFIX = "bid_prefs:open_servc_list:v2"
 OPEN_BID_LIST_DEFAULT_LIMIT = 5
-
-# 나라장터가 취소를 새 차수로 남기는 공고종류명입니다. 행은 지우지 않습니다(G1).
-CANCELLED_NTCE_KIND = "취소공고"
-
-
-def not_cancelled_clause() -> Any:
-    """최신 차수가 취소공고인 행을 입찰 중 집계에서 뺍니다.
-
-    홈 입찰 중 건수와 '내 조건 입찰 중' 건수·목록이 이 함수를 함께 씁니다.
-    `notin_` 은 SQL 3값 논리로 NULL 행까지 탈락시키므로 NULL 을 명시적으로
-    통과시킵니다. 재공고·변경공고는 유효한 공고이므로 제외하지 않습니다.
-    """
-    return or_(
-        BidAnnouncement.ntce_kind_nm.is_(None),
-        BidAnnouncement.ntce_kind_nm != CANCELLED_NTCE_KIND,
-    )
 
 
 @dataclass(frozen=True)
