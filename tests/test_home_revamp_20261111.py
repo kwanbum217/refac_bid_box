@@ -137,9 +137,10 @@ def test_home_renders_top_metrics_and_bottom_panels(auth_client, monkeypatch, tm
     for shortcut in ("bid-list", "result-list", "compare", "chatbot"):
         assert f'data-home-shortcut="{shortcut}"' not in body, shortcut
     assert "3.46" in body
-    assert ">%p</span>" in body
+    # 2026-11-22: RMSE 는 타일이 아니라 타일 아래 작은 글씨 줄에 남는다.
+    assert "data-home-accuracy-meta" in body
     assert "2026-01-02" in body
-    assert 'data-home-accuracy-tile="rmse"' in body
+    assert "RMSE 3.46%p" in body
     assert "data-home-swipe-slide" not in body
     assert "data-home-swipe-track" not in body
 

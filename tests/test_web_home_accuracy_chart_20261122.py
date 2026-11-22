@@ -101,6 +101,21 @@ def _write_sidecar(metrics_root: Path, version: str, metrics: dict[str, Any], **
     (metrics_root / f"{MODEL_NAME}.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _distribution() -> dict[str, Any]:
+    """2026-11-22 계약 형식의 실측 분포입니다. 값은 모두 픽스처입니다."""
+    return {
+        "bands": [
+            {"within_pp": 0.5, "share": 0.4123},
+            {"within_pp": 1.0, "share": 0.6234},
+            {"within_pp": 2.0, "share": 0.8571},
+            {"within_pp": 3.0, "share": 0.9412},
+        ],
+        "interval": {"coverage": 0.912, "evaluated": 2980, "target": 0.9},
+        "scatter": {"points": [[41.2, 42.1], [55.5, 54.8], [60.1, 63.2]], "seed": 17},
+        "error_reduction": 0.7127,
+    }
+
+
 @pytest.fixture
 def seeded_user(isolated_db):
     user = CustomUser(
@@ -159,6 +174,7 @@ def test_home_has_no_recent_year_card_and_renders_accuracy_chart(
         {"rmse": 2.5635886886913912, "mae": 1.1696424888193127, "r2": 0.7127375883085246},
         samples=3000,
         holdout_since="2026-01-01",
+        distribution=_distribution(),
     )
     monkeypatch.setattr(home_summary, "SERVING_ROOT", serving)
     monkeypatch.setattr(home_summary, "METRICS_ROOT", metrics)
@@ -169,9 +185,15 @@ def test_home_has_no_recent_year_card_and_renders_accuracy_chart(
     assert "최근 365일 공고" not in body
     assert 'data-home-metric="accuracy"' in body
     assert "data-home-accuracy-chart-card" in body
-    assert 'id="home-accuracy-chart"' in body
+    assert 'id="home-accuracy-band-chart"' in body
+    assert 'id="home-accuracy-scatter-chart"' in body
     assert 'id="home-accuracy-chart-data"' in body
-    assert "승격 세대별 오차 추이" in body
+    assert "오차 범위별 적중 비율" in body
+    assert "예측 대 실제 낙찰률" in body
+    assert "승격 세대별 오차 추이" not in body
+    # 넓은 화면 2열, 모바일 1열이며 캔버스가 부모 너비를 채웁니다.
+    assert "lg:grid-cols-2" in body
+    assert "h-64 w-full sm:h-80" in body
     # 정확도 카드는 2열 지표 그리드가 아니라 단독 섹션입니다.
     assert "grid gap-4 md:grid-cols-2" not in body
     # 값은 사이드카 실측에서 읽습니다.
@@ -324,6 +346,7 @@ def test_accuracy_tiles_and_chart_match_metric_files(tmp_path):
         sidecar_metrics,
         samples=3000,
         holdout_since="2026-01-01",
+        distribution=_distribution(),
     )
 
     accuracy = home_summary.load_serving_accuracy(serving, metrics_dir=metrics)
@@ -333,27 +356,22 @@ def test_accuracy_tiles_and_chart_match_metric_files(tmp_path):
     assert accuracy["version"] == "v_new"
     assert accuracy["rmse_display"] == f"{sidecar_metrics['rmse']:.2f}"
     tiles = {tile["key"]: tile for tile in accuracy["tiles"]}
-    assert tiles["rmse"]["value"] == f"{sidecar_metrics['rmse']:.2f}"
-    assert tiles["mae"]["value"] == f"{sidecar_metrics['mae']:.2f}"
-    assert tiles["r2"]["value"] == f"{sidecar_metrics['r2'] * 100:.1f}"
-    assert tiles["coverage"]["value"] == "90"
-    assert "140,350" in tiles["coverage"]["note"]
-    assert tiles["validation"]["value"] == "3,000"
-    assert "2026-01-01" in tiles["validation"]["note"]
+    assert tiles["mae"]["value"] == f"±{sidecar_metrics['mae']:.2f}"
+    assert tiles["within_1pp"]["value"] == "10건 중 6건"
+    assert tiles["interval_coverage"]["value"] == "91.2"
+    assert tiles["error_reduction"]["value"] == "71.3"
+    assert "2026-01-01" in accuracy["meta_line"]
+    assert "3,000" in accuracy["meta_line"]
 
     chart = accuracy["chart"]
     assert chart["visible"] is True
-    assert chart["labels"] == ["2026-11-14", "2026-11-16"]
-    assert chart["versions"] == ["v_old", "v_new"]
-    series = {item["key"]: item for item in chart["series"]}
-    assert series["rmse"]["data"] == [
-        round(old_meta["source_metrics"]["rmse"], 4),
-        round(new_meta["source_metrics"]["rmse"], 4),
-    ]
-    assert series["mape"]["data"] == [
-        round(old_meta["source_metrics"]["mape"], 4),
-        round(new_meta["source_metrics"]["mape"], 4),
-    ]
+    assert [band["label"] for band in chart["bands"]] == ["±0.5%p", "±1%p", "±2%p", "±3%p"]
+    assert [band["percent"] for band in chart["bands"]] == [41.2, 62.3, 85.7, 94.1]
+    scatter = chart["scatter"]
+    assert scatter["points"] == [[41.2, 42.1], [55.5, 54.8], [60.1, 63.2]]
+    assert scatter["band_pp"] == 2.0
+    assert scatter["axis_min"] == 39.4
+    assert scatter["axis_max"] == 65.0
 
 
 def test_accuracy_falls_back_to_promoted_metrics_when_sidecar_version_differs(tmp_path):
@@ -376,10 +394,14 @@ def test_accuracy_falls_back_to_promoted_metrics_when_sidecar_version_differs(tm
 
     assert accuracy["source"] == "promoted"
     assert accuracy["rmse_display"] == "2.70"
-    assert tiles["rmse"]["value"] == "2.70"
-    # 세대가 하나뿐이라 추이 그래프는 숨긴다.
+    # 승격 지표에는 mae·distribution 이 없으므로 오차 감소 타일만 남는다.
+    assert set(tiles) == {"error_reduction"}
+    assert tiles["error_reduction"]["value"] == "68.3"
+    assert tiles["error_reduction"]["note"].startswith("모든 공고를 평균 낙찰률로")
+    # 실측 분포가 없으면 그래프 두 개는 숨기고 종전 지표로 물러난다.
     assert accuracy["chart"]["visible"] is False
-    assert accuracy["chart"]["series"] == []
+    assert accuracy["chart"]["bands"] == []
+    assert accuracy["chart"]["scatter"] is None
 
 
 def test_accuracy_chart_hidden_when_generation_metadata_missing(tmp_path):
