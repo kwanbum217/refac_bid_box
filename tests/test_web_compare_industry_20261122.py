@@ -12,7 +12,7 @@ from datetime import timedelta
 
 import pytest
 
-from src.app.core.timeutil import utcnow
+from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import (
     BidAnnouncement,
@@ -34,6 +34,8 @@ RESPONSE_KEYS = {
     "announce_by_month",
     "result_by_month",
     "agency_announce_top10",
+    "pending",
+    "stale",
 }
 
 INDUSTRY_CODES = ("1172", "1164", "1162", "5603")
@@ -179,27 +181,39 @@ def test_네_업종_코드는_모두_업종_안으로_센다(isolated_db, code):
 
 
 def test_실시간_폴백이_스냅숏과_같은_값을_낸다(isolated_db, monkeypatch):
-    """스냅숏 재집계 값과 실시간 폴백 값이 모든 응답 키에서 일치한다."""
+    """스냅숏 재집계 값과 실시간 함수 값이 모든 응답 키에서 일치한다."""
     _seed_scoped_and_out_of_scope(isolated_db)
     _isolated_cache(monkeypatch)
 
-    fallback = dashboard.get_compare_stats_data(isolated_db)
-    assert set(fallback.keys()) == RESPONSE_KEYS
-
     snapshots.rebuild_compare_stats_snapshots(isolated_db)
-    monkeypatch.setattr(dashboard.cache, "get", lambda _key: None)
     snapshot = dashboard.get_compare_stats_data(isolated_db)
+    assert set(snapshot.keys()) == RESPONSE_KEYS
+    assert snapshot["pending"] is False
+    assert snapshot["stale"] is False
 
-    assert {key: snapshot[key] for key in RESPONSE_KEYS} == fallback
-    assert fallback["announce_count"] == 1
-    assert fallback["announce_total_base_amount"] == 1_000_000
-    assert fallback["announce_total_prce"] == 1_000_000
-    assert fallback["result_count"] == 1
-    assert fallback["result_total_amt"] == 900_000
-    assert fallback["matched_count"] == 1
-    assert fallback["announce_count_1y"] == 1
-    assert fallback["matched_count_1y"] == 1
-    assert [item["name"] for item in fallback["agency_announce_top10"]] == ["업종 안 기관"]
+    one_year_ago = kst_now(utcnow()) - timedelta(days=snapshots.COMPARE_STATS_WINDOW_DAYS)
+    totals = dashboard._query_industry_totals_realtime(isolated_db)
+    matched = dashboard._query_matched_count_realtime(isolated_db, one_year_ago)
+    counts = dashboard._query_match_rate_1y_realtime(isolated_db, one_year_ago)
+
+    assert snapshot["announce_count"] == totals["announce_count"] == 1
+    assert snapshot["announce_total_base_amount"] == 1_000_000
+    assert snapshot["announce_total_prce"] == 1_000_000
+    assert snapshot["result_count"] == totals["result_count"] == 1
+    assert snapshot["result_total_amt"] == totals["result_total_amt"] == 900_000
+    assert snapshot["matched_count"] == matched == 1
+    assert snapshot["announce_count_1y"] == counts["announce_count_1y"] == 1
+    assert snapshot["matched_count_1y"] == counts["matched_count_1y"] == 1
+    assert snapshot["announce_by_month"] == dashboard._query_announce_by_month_realtime(
+        isolated_db, one_year_ago
+    )
+    assert snapshot["result_by_month"] == dashboard._query_result_by_month_realtime(
+        isolated_db, one_year_ago
+    )
+    assert snapshot["agency_announce_top10"] == dashboard._query_agency_announce_top10_realtime(
+        isolated_db, one_year_ago
+    )
+    assert [item["name"] for item in snapshot["agency_announce_top10"]] == ["업종 안 기관"]
 
 
 def test_업종_제한이_없는_공고만_있으면_모든_값이_0이다(isolated_db, monkeypatch):
@@ -224,8 +238,9 @@ def test_업종_제한이_없는_공고만_있으면_모든_값이_0이다(isola
 
 
 def test_응답_키와_스키마가_바뀌지_않는다(isolated_db, monkeypatch):
-    """정의가 바뀌어도 응답 키 집합은 그대로다."""
+    """기존 응답 키를 유지하면서 pending·stale 표시 필드가 더해진다."""
     _seed_scoped_and_out_of_scope(isolated_db)
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
     _isolated_cache(monkeypatch)
 
     data = dashboard.get_compare_stats_data(isolated_db)

@@ -43,6 +43,14 @@
             </div>
         </div>
 
+        <!-- Pending / Stale Notice -->
+        <div id="comparePendingNotice" class="hidden h-card p-5 bg-slate-50 border border-slate-200 rounded-xl">
+            <p class="text-sm font-bold text-slate-600">통계를 집계하고 있습니다. 잠시 뒤 자동으로 다시 불러옵니다.</p>
+        </div>
+        <div id="compareStaleNotice" class="hidden p-2 bg-slate-50 border border-slate-200 rounded-lg">
+            <span class="text-xs font-bold text-slate-400">최근 집계 기준</span>
+        </div>
+
         <!-- Stats Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             <div class="h-card p-6 bg-white border border-slate-200 rounded-xl shadow-xs group">
@@ -185,6 +193,15 @@
 <script nonce="{{ csp_nonce }}">
     document.addEventListener('DOMContentLoaded', loadCompareData);
 
+    const COMPARE_PENDING_RETRY_MS = 10000;
+    const COMPARE_PENDING_MAX_RETRIES = 6;
+    let comparePendingRetryCount = 0;
+
+    function setCompareNotice(pending, stale) {
+        document.getElementById('comparePendingNotice').classList.toggle('hidden', !pending);
+        document.getElementById('compareStaleNotice').classList.toggle('hidden', !stale);
+    }
+
     async function fetchJsonOrThrow(url) {
         const res = await fetch(url);
         const rawText = await res.text();
@@ -206,6 +223,18 @@
     async function loadCompareData() {
         try {
             const data = await fetchJsonOrThrow('{{ url('bids:api_compare_stats') }}');
+
+            // 스냅숏이 준비되지 않았으면 수치 대신 안내를 보이고 잠시 뒤 다시 요청합니다.
+            if (data.pending) {
+                setCompareNotice(true, false);
+                if (comparePendingRetryCount < COMPARE_PENDING_MAX_RETRIES) {
+                    comparePendingRetryCount += 1;
+                    setTimeout(loadCompareData, COMPARE_PENDING_RETRY_MS);
+                }
+                return;
+            }
+
+            setCompareNotice(false, Boolean(data.stale));
 
             // Stats
             document.getElementById('announceCount').textContent = (data.announce_count || 0).toLocaleString() + '건';

@@ -162,7 +162,8 @@ def test_dashboard_one_year_window_starts_from_kst(isolated_db, monkeypatch):
         )
     isolated_db.commit()
 
-    data = dashboard.get_compare_stats_data(isolated_db)
+    one_year_ago = dashboard.kst_now(fixed_utc) - timedelta(days=365)
+    matched_count = dashboard._query_matched_count_realtime(isolated_db, one_year_ago)
 
     assert outside_kst_window.bid_ntce_no == "KST-WINDOW-OUT"
-    assert data["matched_count"] == 1
+    assert matched_count == 1

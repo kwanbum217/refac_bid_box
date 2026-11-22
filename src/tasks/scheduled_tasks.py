@@ -3001,3 +3001,72 @@ async def warm_home_summary_task(ctx: dict[str, Any]) -> dict[str, Any]:
             release_schedule_claim(key=HOME_SUMMARY_WARM_CLAIM_KEY, token=claim.token)
     logger.info("메인 화면 요약 예열 완료: %s", counts)
     return {"status": "success", **counts}
+
+
+# --------------------------------------------------------------------------- #
+# 비교 통계 스냅숏 보충
+# --------------------------------------------------------------------------- #
+#
+# 비교 분석 요청 경로는 스냅숏이 하나라도 없거나 낡으면 실시간 집계 대신
+# pending 으로 즉시 답합니다. 이 크론이 5분마다 빠진 스냅숏만 채워 pending
+# 구간을 짧게 유지합니다. 신선하면 PK 조회 5건만 하고 끝납니다. 재집계가
+# 5분을 넘을 수 있어 앞 실행이 남아 있으면 선점으로 건너뜁니다.
+COMPARE_STATS_WARM_SCHEDULE_NAME = "compare_stats_snapshot_warm"
+COMPARE_STATS_WARM_MINUTES = {0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}
+COMPARE_STATS_WARM_JOB_TIMEOUT_SECONDS = 3600
+COMPARE_STATS_WARM_CLAIM_KEY = "bidbox:schedule:compare_stats_warm_claim"
+
+
+def _warm_compare_stats_snapshots_thread() -> dict[str, Any]:
+    """스냅숏이 없거나 낡았을 때만 재집계합니다.
+
+    Session 은 생성 스레드 밖으로 나가면 안 되므로 여기서 만들고 닫습니다.
+    """
+    from src.app.services import compare_stats_snapshots
+
+    session = SessionLocal()
+    try:
+        missing = compare_stats_snapshots.missing_or_stale_snapshot_keys(session)
+        if not missing:
+            return {"status": "skipped", "reason": "snapshots_fresh", "missing": []}
+        outcome = compare_stats_snapshots.rebuild_compare_stats_snapshots(session)
+        return {**outcome, "missing_before": missing}
+    finally:
+        session.close()
+
+
+@traced_worker_task
+@_record_schedule(COMPARE_STATS_WARM_SCHEDULE_NAME)
+async def compare_stats_snapshot_warm_task(ctx: dict[str, Any]) -> dict[str, Any]:
+    """비교 통계 스냅숏이 없거나 낡았을 때만 다시 집계합니다.
+
+    신선하면 재집계 없이 skipped 로 끝나 5분 주기가 부하를 만들지 않습니다.
+    잡 타임아웃(3600초)이 주기(5분)보다 길어 앞 실행이 남아 있을 수 있으므로
+    메인 화면 예열과 같은 선점으로 겹친 실행을 건너뜁니다.
+    """
+    claim = acquire_schedule_claim(
+        "compare_stats_snapshot_warm",
+        key=COMPARE_STATS_WARM_CLAIM_KEY,
+        ttl_seconds=COMPARE_STATS_WARM_JOB_TIMEOUT_SECONDS,
+    )
+    if claim.status == ScheduleClaimStatus.ALREADY_CLAIMED:
+        logger.info("비교 통계 스냅숏 보충이 이미 실행 중이어서 건너뜁니다.")
+        return {"status": "skipped", "reason": "already_running"}
+    if not claim.acquired:
+        logger.warning(
+            "Redis 접근 불가로 비교 통계 스냅숏 보충 선점 없이 진행합니다 (key=%s, status=%s)",
+            COMPARE_STATS_WARM_CLAIM_KEY,
+            claim.status.value,
+        )
+
+    try:
+        outcome = await asyncio.to_thread(_warm_compare_stats_snapshots_thread)
+    except Exception as exc:
+        logger.exception("비교 통계 스냅숏 보충 실패")
+        return {"status": "failed", **safe_error(exc)}
+    finally:
+        # 성공, 실패, 예외, 취소 어느 경로로 끝나도 자기 토큰일 때만 해제합니다.
+        if claim.acquired and claim.token:
+            release_schedule_claim(key=COMPARE_STATS_WARM_CLAIM_KEY, token=claim.token)
+    logger.info("비교 통계 스냅숏 보충 완료: %s", outcome)
+    return outcome

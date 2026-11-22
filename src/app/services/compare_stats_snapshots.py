@@ -215,6 +215,29 @@ def get_snapshot_with_age(
     return row.payload, rebuilt_at, age_days
 
 
+_SNAPSHOT_PAYLOAD_VALIDATORS = (
+    (SNAPSHOT_KEY_AGENCY_TOP10, is_agency_payload_usable),
+    (SNAPSHOT_KEY_MATCHED_COUNT, is_matched_payload_usable),
+    (SNAPSHOT_KEY_ANNOUNCE_BY_MONTH, is_monthly_payload_usable),
+    (SNAPSHOT_KEY_RESULT_BY_MONTH, is_monthly_payload_usable),
+    (SNAPSHOT_KEY_INDUSTRY_TOTALS, is_industry_totals_payload_usable),
+)
+
+
+def missing_or_stale_snapshot_keys(db: Session) -> list[str]:
+    """없거나 낡았거나 형태가 깨진 스냅숏 키 목록을 돌려줍니다.
+
+    요청 경로가 pending 으로 답하는 조건과 같은 판정을 씁니다. 5분 주기
+    worker 는 이 목록이 비어 있으면 PK 조회 5건만 하고 재집계를 건너뜁니다.
+    """
+    missing: list[str] = []
+    for snapshot_key, validator in _SNAPSHOT_PAYLOAD_VALIDATORS:
+        payload, rebuilt_at, _age = get_snapshot_with_age(db, snapshot_key)
+        if not is_snapshot_fresh(rebuilt_at) or not validator(payload):
+            missing.append(snapshot_key)
+    return missing
+
+
 def _compute_agency_top10_payload(db: Session, one_year_ago: datetime) -> list[dict[str, Any]]:
     """기관별 상위 10 payload 를 실시간 집계와 같은 식으로 계산합니다.
 
@@ -403,5 +426,6 @@ __all__ = [
     "is_matched_payload_usable",
     "is_monthly_payload_usable",
     "is_snapshot_fresh",
+    "missing_or_stale_snapshot_keys",
     "rebuild_compare_stats_snapshots",
 ]

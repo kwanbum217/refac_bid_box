@@ -187,3 +187,5 @@ class CompareStatsResponse(BaseModel):
     announce_by_month: list[CompareStatsMonthlyPoint] = Field(default_factory=list)
     result_by_month: list[CompareStatsMonthlyPoint] = Field(default_factory=list)
     agency_announce_top10: list[CompareStatsAgencyItem] = Field(default_factory=list)
+    pending: bool = Field(False, description="스냅숏이 준비되지 않아 집계 중인지 여부 (값은 0)")
+    stale: bool = Field(False, description="직전 정상 집계를 대신 보여 주는지 여부")

@@ -28,8 +28,10 @@ from src.app.models.bids import (
     BidDatasetSummary,
     BidResult,
 )
+from src.app.services import compare_stats_snapshots as snapshots
 from src.app.services.dashboard import (
     COMPARE_STATS_CACHE_TTL,
+    COMPARE_STATS_LAST_GOOD_CACHE_TTL,
     COMPARE_STATS_STALE_CACHE_TTL,
     DASHBOARD_STATS_CACHE_TTL,
     DASHBOARD_STATS_STALE_CACHE_TTL,
@@ -283,6 +285,7 @@ def test_stale_response_cached_with_short_ttl(isolated_db):
     )
     isolated_db.add(fresh_ann_summary)
     isolated_db.commit()
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     with (
         patch("src.app.services.dashboard.cache.get", return_value=None),
@@ -301,10 +304,12 @@ def test_stale_response_cached_with_short_ttl(isolated_db):
 
         # 2) get_compare_stats_data: result_summary 가 stale 이므로 60초 TTL 적용
         get_compare_stats_data(isolated_db)
-        assert mock_cache_set.call_count == 1
-        _, set_args, _ = mock_cache_set.mock_calls[0]
-        assert set_args[2] == COMPARE_STATS_STALE_CACHE_TTL
-        assert set_args[2] != COMPARE_STATS_CACHE_TTL
+        compare_ttls = [call.args[2] for call in mock_cache_set.call_args_list]
+        assert compare_ttls[0] == COMPARE_STATS_STALE_CACHE_TTL
+        assert compare_ttls[0] != COMPARE_STATS_CACHE_TTL
+        assert mock_cache_set.call_args_list[0].args[0].endswith(":stale")
+        assert mock_cache_set.call_args_list[1].args[0].endswith(":stale:last")
+        assert compare_ttls[1] == COMPARE_STATS_LAST_GOOD_CACHE_TTL
 
 
 def test_fresh_response_cached_with_standard_24h_ttl(isolated_db):
@@ -333,6 +338,7 @@ def test_fresh_response_cached_with_standard_24h_ttl(isolated_db):
     isolated_db.add(fresh_result_summary)
     isolated_db.add(fresh_ann_summary)
     isolated_db.commit()
+    snapshots.rebuild_compare_stats_snapshots(isolated_db)
 
     with (
         patch("src.app.services.dashboard.cache.get", return_value=None),
@@ -347,9 +353,10 @@ def test_fresh_response_cached_with_standard_24h_ttl(isolated_db):
         mock_cache_set.reset_mock()
 
         get_compare_stats_data(isolated_db)
-        assert mock_cache_set.call_count == 1
-        _, set_args, _ = mock_cache_set.mock_calls[0]
-        assert set_args[2] == COMPARE_STATS_CACHE_TTL
+        compare_ttls = [call.args[2] for call in mock_cache_set.call_args_list]
+        assert compare_ttls[0] == COMPARE_STATS_CACHE_TTL
+        assert compare_ttls[1] == COMPARE_STATS_LAST_GOOD_CACHE_TTL
+        assert not mock_cache_set.call_args_list[0].args[0].endswith(":stale")
 
 
 def test_missing_summary_redis_unavailable_uses_process_lock(isolated_db):
