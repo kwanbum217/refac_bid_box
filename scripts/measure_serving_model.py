@@ -83,15 +83,107 @@ def _score(predictions: np.ndarray, actual: np.ndarray) -> dict:
     }
 
 
+# 화면 타일이 쓰는 오차 범위입니다. 단위는 낙찰률 %p 입니다.
+BAND_THRESHOLDS = (0.5, 1.0, 2.0, 3.0)
+# 산점도는 브라우저가 그리므로 점 수를 고정합니다.
+SCATTER_LIMIT = 300
+
+
+def _numeric_array(values) -> np.ndarray:
+    """None 을 nan 으로 바꿔 부동소수 배열로 만듭니다."""
+    return np.asarray([np.nan if value is None else float(value) for value in values], dtype=float)
+
+
+def compute_distribution(
+    predictions,
+    actual,
+    lows=None,
+    highs=None,
+    *,
+    target: float | None = None,
+    seed: int = 42,
+) -> dict:
+    """예측·실제 배열에서 화면용 분포를 계산합니다.
+
+    DB·모델·파일에 기대지 않는 순수 함수입니다. `bands` 는 예측과 실제의
+    차이가 기준 %p 이내인 표본 비율이고, `interval` 은 구간 예측이 실제
+    낙찰률을 포함한 실측 비율입니다. 목표치(target)로 채우지 않습니다.
+    구간을 낼 수 없는 표본은 평가에서 빼고 `evaluated` 로 셉니다.
+    전부 낼 수 없으면 `interval` 은 None 입니다.
+
+    `scatter` 는 seed 로 고정한 무작위 표본이며 좌표는 소수 둘째 자리입니다.
+    `error_reduction` 은 1 - SSE/SST 로 r2 와 같은 값입니다.
+    """
+    predicted = _numeric_array(predictions)
+    observed = _numeric_array(actual)
+    if predicted.shape != observed.shape:
+        raise ValueError("예측과 실제 배열 길이가 다릅니다.")
+    original_size = observed.size
+
+    finite = np.isfinite(predicted) & np.isfinite(observed)
+    predicted = predicted[finite]
+    observed = observed[finite]
+    if predicted.size == 0:
+        raise ValueError("분포를 계산할 표본이 없습니다.")
+
+    error = np.abs(predicted - observed)
+    bands = [
+        {"within_pp": threshold, "share": float((error <= threshold).mean())}
+        for threshold in BAND_THRESHOLDS
+    ]
+
+    interval: dict | None = None
+    if lows is not None and highs is not None:
+        low_values = _numeric_array(lows)
+        high_values = _numeric_array(highs)
+        if low_values.size != original_size or high_values.size != original_size:
+            raise ValueError("구간 배열 길이가 예측 배열과 다릅니다.")
+        low_values = low_values[finite]
+        high_values = high_values[finite]
+        usable = np.isfinite(low_values) & np.isfinite(high_values) & (high_values >= low_values)
+        evaluated = int(usable.sum())
+        if evaluated:
+            covered = (observed[usable] >= low_values[usable]) & (
+                observed[usable] <= high_values[usable]
+            )
+            interval = {
+                "coverage": float(covered.mean()),
+                "evaluated": evaluated,
+                "target": None if target is None else float(target),
+            }
+
+    rng = np.random.default_rng(seed)
+    if predicted.size > SCATTER_LIMIT:
+        indices = np.sort(rng.choice(predicted.size, size=SCATTER_LIMIT, replace=False))
+    else:
+        indices = np.arange(predicted.size)
+    points = [
+        [round(float(predicted[index]), 2), round(float(observed[index]), 2)] for index in indices
+    ]
+
+    # SST 가 0 이면 설명할 변동이 없습니다. JSON 에 NaN 을 남기지 않도록 0 으로 둡니다.
+    denominator = float(((observed - observed.mean()) ** 2).sum())
+    residual = float(((predicted - observed) ** 2).sum())
+    error_reduction = 1.0 - residual / denominator if denominator else 0.0
+
+    return {
+        "bands": bands,
+        "interval": interval,
+        "scatter": {"points": points, "seed": int(seed)},
+        "error_reduction": error_reduction,
+    }
+
+
 def measure(
     model_id: str,
     category: str,
     since: str,
     sample: int,
     seed: int,
-) -> tuple[dict, int, int]:
-    """운영 경로로 예측해 지표를 냅니다. 실패한 건수도 함께 돌려줍니다."""
+) -> tuple[dict, dict, int, int]:
+    """운영 경로로 예측해 지표와 분포를 냅니다. 실패한 건수도 함께 돌려줍니다."""
     from src.app.core.db import SessionLocal
+    from src.ml.prediction_api import predict_interval
     from src.ml.predictor import SingletonPredictor
 
     frame = _load_holdout(category, since, sample, seed)
@@ -99,6 +191,9 @@ def measure(
     db = SessionLocal()
     predictions: list[float] = []
     actual: list[float] = []
+    lows: list[float | None] = []
+    highs: list[float | None] = []
+    target: float | None = None
     failed = 0
     try:
         for row in frame.to_dict("records"):
@@ -115,12 +210,33 @@ def measure(
                 continue
             predictions.append(float(rate))
             actual.append(float(row["winning_rate"]))
+
+            # 구간은 점 추정을 낸 모델에서 뽑습니다. 실패하거나 지원하지 않는
+            # 모델이면 None 으로 두고 분포 계산에서 평가 대상만 줄입니다.
+            bounds = None
+            try:
+                bounds = predict_interval(result.get("model_version") or model_id, request)
+            except Exception:
+                bounds = None
+            if bounds is not None:
+                low, high, coverage = bounds
+                lows.append(low)
+                highs.append(high)
+                if target is None and coverage is not None:
+                    target = float(coverage)
+            else:
+                lows.append(None)
+                highs.append(None)
     finally:
         db.close()
 
     if not predictions:
         raise RuntimeError("예측이 한 건도 성공하지 않았습니다.")
-    return _score(np.array(predictions), np.array(actual)), len(predictions), failed
+    scored = np.array(predictions)
+    observed = np.array(actual)
+    metrics = _score(scored, observed)
+    distribution = compute_distribution(predictions, actual, lows, highs, target=target, seed=seed)
+    return metrics, distribution, len(predictions), failed
 
 
 def main() -> int:
@@ -142,7 +258,7 @@ def main() -> int:
     if existing:
         print(f"  기존 지표 {existing}")
 
-    metrics, scored, failed = measure(
+    metrics, distribution, scored, failed = measure(
         args.model,
         args.category,
         args.since,
@@ -155,6 +271,20 @@ def main() -> int:
             **metrics
         )
     )
+    band_text = " / ".join(
+        f"{band['within_pp']:g}%p 이내 {band['share'] * 100:.1f}%" for band in distribution["bands"]
+    )
+    print(f"  오차 범위 적중: {band_text}")
+    interval = distribution["interval"]
+    if interval is None:
+        print("  예측 구간: 산출 불가 (구간을 내는 모델이 아님)")
+    else:
+        target = interval["target"]
+        target_text = f"목표 {target * 100:.1f}%" if target is not None else "목표 미상"
+        print(
+            f"  예측 구간 적중률 {interval['coverage'] * 100:.1f}% ({target_text}, "
+            f"평가 {interval['evaluated']:,}건)"
+        )
     if metrics["r2"] < 0:
         print("  경고: R2 가 음수입니다. 평균값 예측보다 못합니다.")
 
@@ -166,6 +296,7 @@ def main() -> int:
         args.model,
         version,
         metrics,
+        distribution=distribution,
         detail={
             "category": args.category,
             "holdout_since": args.since,
