@@ -1199,6 +1199,54 @@ MODEL_POOL: dict[str, dict[str, Any]] = {
             "scripts/orca_opencode_launch.py --model opencode/glm-5.3-flash-free."
         ),
     },
+    # ------------------------------------------------------------------
+    # OpenCode Go 유료 모델 (2026-11-22 사용자 지정)
+    # ------------------------------------------------------------------
+    # 같은 opencode 실행기를 쓰지만 Zen 무료 풀과 과금 경로가 다릅니다. provider 는
+    # 실행기 기준으로 opencode 로 두고, 독립 리뷰 판정은 family 로 가릅니다.
+    # 두 항목 모두 자동 배정하지 않고 --model 명시 지정 전용입니다.
+    "opencode-go-deepseek-v41": {
+        "id": "opencode-go/deepseek-v4.1-flash",
+        "provider": "opencode",
+        "family": "deepseek",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "variant": "capability_unknown",
+        "suitable_for": [
+            "builder",
+            "investigator",
+        ],
+        "notes": (
+            "OpenCode Go 경유 DeepSeek V4.1 Flash. 2026-11-22 사용자 지정. "
+            "같은 날 빌더로 여러 Task 를 완료했다. 명시 지정 전용이며 자동 배정하지 "
+            "않는다. provider 는 실행기 기준 opencode 이고 family 는 deepseek 이라 "
+            "리뷰어 glm 계열과 독립 판정을 통과한다. 기동은 "
+            "scripts/orca_opencode_launch.py --model opencode-go/deepseek-v4.1-flash."
+        ),
+    },
+    "opencode-go-glm-flash": {
+        "id": "opencode-go/glm-5.3-flash",
+        "provider": "opencode",
+        "family": "glm",
+        "tier": "primary",
+        "auto_selectable": False,
+        "max_tokens": 1_000_000,
+        "variant": "capability_unknown",
+        "suitable_for": [
+            "reviewer",
+            "investigator",
+            "builder",
+        ],
+        "notes": (
+            "OpenCode Go 경유 GLM-5.3 Flash. 2026-11-22 사용자 지정. 같은 날 리뷰어로 "
+            "실제 결함 4건(업종어 목록 안내, 측정 구간 특징, 예열 시험 DB 등)을 "
+            "검출했다. 명시 지정 전용이며 자동 배정하지 않는다. provider 는 실행기 "
+            "기준 opencode 이고 family 는 glm 이라 빌더 deepseek 계열과 독립 판정을 "
+            "통과한다. 기동은 "
+            "scripts/orca_opencode_launch.py --model opencode-go/glm-5.3-flash."
+        ),
+    },
     "or-free-north-mini": {
         "id": "or-free/north-mini",
         "provider": "kimi-openrouter",

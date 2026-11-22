@@ -372,6 +372,9 @@ class TestModelPoolAndSelection:
             "opencode-deepseek-v41",
             "opencode-space-bunny",
             "opencode-glm-flash",
+            # 2026-11-22 등록. OpenCode Go 유료 모델 두 개, 명시 지정 전용입니다.
+            "opencode-go-deepseek-v41",
+            "opencode-go-glm-flash",
         }
 
 
