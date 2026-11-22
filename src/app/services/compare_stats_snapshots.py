@@ -18,8 +18,10 @@ payload 는 각각 공고/개찰결과 월별 추세 배열이며 각 항목은 
 가집니다. snapshot_key='industry_totals' 의 payload 는 전체 기간 응답 필드인
 announce_count, announce_total_base_amount, result_count, result_total_amt 를
 가집니다. 모든 수치는 4대 업종(파견, 경비업, 위생관리용역업, 유료직업소개업)
-업종 제한이 걸린 공고와 그 공고의 낙찰 결과만 셉니다. window_days 는 앞의 넷이
-365 이고 전체 기간 집계인 industry_totals 는 0 입니다.
+업종 제한이 걸린 공고와 그 공고의 낙찰 결과만 셉니다. 공고 집계는 같은
+공고번호·업무구분의 최신 차수 한 행만 세고, 최신 차수가 취소공고인 공고는
+뺍니다(`announcement_scope`). window_days 는 앞의 넷이 365 이고 전체 기간
+집계인 industry_totals 는 0 입니다.
 
 금액 집계는 dashboard._announcement_amount_expr 를 그대로 재사용합니다.
 다시 구현하면 이상치 상한 규칙이 갈라져 같은 화면에 다른 금액이 나옵니다.
@@ -49,10 +51,11 @@ from src.app.models.bids import (
 
 logger = logging.getLogger(__name__)
 
-# 집계 정의 버전입니다. 2026-11-22 에 4대 업종(파견, 경비업, 위생관리용역업,
-# 유료직업소개업) 업종 제한이 걸린 공고와 그 공고의 낙찰 결과만 세도록 바꿨습니다.
-# 스냅샷 키에 버전을 넣어 옛 업종 무관 payload 가 새 정의에 재사용되지 않게 합니다.
-COMPARE_STATS_DEFINITION_VERSION = 2
+# 집계 정의 버전입니다. v2 에서 4대 업종(파견, 경비업, 위생관리용역업,
+# 유료직업소개업) 업종 제한이 걸린 공고와 그 공고의 낙찰 결과만 세도록 바꿨고,
+# v3 에서 공고 집계를 최신 차수 한 행으로 줄이고 최신 차수가 취소공고인 공고를
+# 제외했습니다. 스냅샷 키에 버전을 넣어 옛 정의 payload 가 재사용되지 않게 합니다.
+COMPARE_STATS_DEFINITION_VERSION = 3
 
 SNAPSHOT_KEY_AGENCY_TOP10 = f"agency_announce_top10:v{COMPARE_STATS_DEFINITION_VERSION}"
 SNAPSHOT_KEY_MATCHED_COUNT = f"matched_count:v{COMPARE_STATS_DEFINITION_VERSION}"
@@ -70,6 +73,26 @@ def industry_announcement_scope():
     from src.app.services.bid_queries import BID_INDUSTRY_CODES, license_match_clause
 
     return license_match_clause(BID_INDUSTRY_CODES)
+
+
+def announcement_scope(stmt):
+    """비교 통계 공고 범위를 문장에 적용합니다.
+
+    같은 공고번호·업무구분의 최신 차수 한 행만 남기고, 최신 차수가 취소공고인
+    공고를 뺍니다. 최신 차수 판정과 취소공고 판정은 공고 목록·홈 집계가 쓰는
+    bid_queries.similar_announcement_latest_filter, not_cancelled_clause 를
+    그대로 씁니다. 스냅숏 재집계와 실시간 폴백이 이 함수 하나를 공유하므로 두
+    경로의 범위 정의가 갈라지지 않습니다.
+
+    BidAnnouncement 를 FROM 으로 하는 문장에만 적용합니다. 취소공고 제외는
+    최신 차수 필터 뒤에 붙여, 취소된 이전 차수를 대신 노출하지 않습니다.
+    """
+    from src.app.services.bid_queries import (
+        not_cancelled_clause,
+        similar_announcement_latest_filter,
+    )
+
+    return similar_announcement_latest_filter(stmt).where(not_cancelled_clause())
 
 
 def industry_result_scope():
@@ -248,7 +271,7 @@ def _compute_agency_top10_payload(db: Session, one_year_ago: datetime) -> list[d
     from src.app.services.dashboard import _announcement_amount_expr
 
     amount_expr = _announcement_amount_expr(db)
-    rows = db.execute(
+    stmt = announcement_scope(
         select(
             BidAnnouncement.dminstt_nm,
             func.sum(amount_expr).label("total_base_amount"),
@@ -262,7 +285,8 @@ def _compute_agency_top10_payload(db: Session, one_year_ago: datetime) -> list[d
         .group_by(BidAnnouncement.dminstt_nm)
         .order_by(func.sum(amount_expr).desc())
         .limit(10)
-    ).all()
+    )
+    rows = db.execute(stmt).all()
     return [
         {
             "name": row.dminstt_nm,
@@ -283,7 +307,7 @@ def _compute_matched_count_payload(db: Session, one_year_ago: datetime) -> dict[
     """
     from src.app.services.dashboard import _query_match_rate_1y_realtime
 
-    matched_count = db.scalar(
+    matched_stmt = announcement_scope(
         select(func.count(BidAnnouncement.id)).where(
             industry_announcement_scope(),
             select(BidResult.id)
@@ -294,6 +318,7 @@ def _compute_matched_count_payload(db: Session, one_year_ago: datetime) -> dict[
             .exists(),
         )
     )
+    matched_count = db.scalar(matched_stmt)
     return {"value": int(matched_count or 0), **_query_match_rate_1y_realtime(db, one_year_ago)}
 
 
@@ -303,9 +328,11 @@ def _compute_announce_by_month_payload(db: Session, one_year_ago: datetime) -> l
 
     return _build_monthly_counts(
         db,
-        select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
-            BidAnnouncement.bid_ntce_dt >= one_year_ago,
-            industry_announcement_scope(),
+        announcement_scope(
+            select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
+                BidAnnouncement.bid_ntce_dt >= one_year_ago,
+                industry_announcement_scope(),
+            )
         ),
         BidAnnouncement.bid_ntce_dt,
     )
@@ -331,15 +358,18 @@ def _compute_industry_totals_payload(db: Session) -> dict[str, int]:
     기존 파생 요약 테이블(bid_dataset_summaries)은 업종 무관 전체값이라 그대로
     쓰면 화면 숫자가 업종 밖 공고를 포함합니다. 요약 테이블 정의는 건드리지
     않고, 이 전용 집계를 스냅샷에 담아 요청 경로의 대형 질의를 막습니다.
+    공고 건수·금액은 최신 차수 한 행만 세고 최신 차수가 취소공고인 공고를
+    뺍니다. 낙찰 결과는 결과 행이 공고 차수와 1:1 이라 그대로 셉니다.
     """
     from src.app.services.dashboard import _announcement_amount_expr
 
-    announce_row = db.execute(
+    announce_stmt = announcement_scope(
         select(
             func.count(BidAnnouncement.id).label("announce_count"),
             func.sum(_announcement_amount_expr(db)).label("announce_total"),
         ).where(industry_announcement_scope())
-    ).one()
+    )
+    announce_row = db.execute(announce_stmt).one()
     result_row = db.execute(
         select(
             func.count(BidResult.id).label("result_count"),
@@ -417,6 +447,7 @@ __all__ = [
     "SNAPSHOT_KEY_INDUSTRY_TOTALS",
     "SNAPSHOT_KEY_MATCHED_COUNT",
     "SNAPSHOT_KEY_RESULT_BY_MONTH",
+    "announcement_scope",
     "get_compare_stats_snapshot",
     "get_snapshot_with_age",
     "industry_announcement_scope",

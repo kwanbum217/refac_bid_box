@@ -181,8 +181,12 @@ def _compare_stats_cache_key(
 ) -> str:
     # v3: 4대 업종(파견, 경비업, 위생관리용역업, 유료직업소개업) 업종 제한 기준으로
     # 모든 값을 다시 계산하므로, 업종 무관 값이 남은 v2 캐시를 버립니다.
+    # defv3: 2026-11-22 공고 집계를 최신 차수 한 행으로 줄이고 최신 차수가
+    # 취소공고인 공고를 제외했습니다. 정의 버전을 키에 넣어 차수 중복이 남은
+    # 옛 응답 캐시를 버립니다. 선두 v3 는 4대 업종 전환 표식으로 유지합니다.
     return (
         "dashboard_compare_stats:v3:"
+        f"defv{compare_snapshots.COMPARE_STATS_DEFINITION_VERSION}:"
         f"v{announcement_summary.aggregation_version}:"
         f"{_marker_value(announcement_summary.source_latest_collected_at)}:"
         f"{_marker_value(announcement_summary.rebuilt_at)}:"
@@ -513,9 +517,11 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
 def _query_matched_count_realtime(db: Session, one_year_ago: datetime) -> int:
     """매칭 공고 수 실시간 집계. 스냅샷이 없거나 낡을 때의 폴백 경로입니다.
 
-    4대 업종 업종 제한이 걸린 공고만 셉니다.
+    4대 업종 업종 제한이 걸린 공고 중 최신 차수 한 행만 세고, 최신 차수가
+    취소공고인 공고는 뺍니다. 범위 정의는 스냅숏 재집계와 같은
+    compare_snapshots.announcement_scope 하나를 씁니다.
     """
-    matched_count = db.scalar(
+    matched_stmt = compare_snapshots.announcement_scope(
         select(func.count(BidAnnouncement.id)).where(
             compare_snapshots.industry_announcement_scope(),
             select(BidResult.id)
@@ -526,6 +532,7 @@ def _query_matched_count_realtime(db: Session, one_year_ago: datetime) -> int:
             .exists(),
         )
     )
+    matched_count = db.scalar(matched_stmt)
     return int(matched_count or 0)
 
 
@@ -535,16 +542,17 @@ def _query_match_rate_1y_realtime(db: Session, one_year_ago: datetime) -> dict[s
     분모는 bid_ntce_dt 가 창 안인 공고 수, 분자는 그중 같은 bid_ntce_no 의
     개찰 결과가 하나라도 있는 공고 수입니다. 두 값이 같은 창을 쓰므로 나눈
     매칭률은 100% 를 넘지 않습니다. 스냅샷 재집계도 이 함수를 그대로 부릅니다.
-    4대 업종 업종 제한이 걸린 공고만 셉니다.
+    4대 업종 업종 제한이 걸린 공고 중 최신 차수 한 행만 세고, 최신 차수가
+    취소공고인 공고는 뺍니다. 분자와 분모가 같은 범위 함수를 씁니다.
     """
     scope = compare_snapshots.industry_announcement_scope()
-    announce_count = db.scalar(
+    announce_stmt = compare_snapshots.announcement_scope(
         select(func.count(BidAnnouncement.id)).where(
             BidAnnouncement.bid_ntce_dt >= one_year_ago,
             scope,
         )
     )
-    matched_count = db.scalar(
+    matched_stmt = compare_snapshots.announcement_scope(
         select(func.count(BidAnnouncement.id)).where(
             BidAnnouncement.bid_ntce_dt >= one_year_ago,
             scope,
@@ -553,6 +561,8 @@ def _query_match_rate_1y_realtime(db: Session, one_year_ago: datetime) -> dict[s
             .exists(),
         )
     )
+    announce_count = db.scalar(announce_stmt)
+    matched_count = db.scalar(matched_stmt)
     return {
         "announce_count_1y": int(announce_count or 0),
         "matched_count_1y": int(matched_count or 0),
@@ -566,10 +576,11 @@ def _query_agency_announce_top10_realtime(
 
     손상된 기관명을 제외하지 않습니다. 대시보드 by_agency 의 가독성 필터와
     ranking_snapshots 의 손상 제외를 이 경로에 넣으면 화면 순위가 바뀝니다.
-    4대 업종 업종 제한이 걸린 공고만 셉니다.
+    4대 업종 업종 제한이 걸린 공고 중 최신 차수 한 행만 세고, 최신 차수가
+    취소공고인 공고는 뺍니다.
     """
     amount_expr = _announcement_amount_expr(db)
-    rows = db.execute(
+    stmt = compare_snapshots.announcement_scope(
         select(
             BidAnnouncement.dminstt_nm,
             func.sum(amount_expr).label("total_base_amount"),
@@ -583,7 +594,8 @@ def _query_agency_announce_top10_realtime(
         .group_by(BidAnnouncement.dminstt_nm)
         .order_by(func.sum(amount_expr).desc())
         .limit(10)
-    ).all()
+    )
+    rows = db.execute(stmt).all()
     return [
         {
             "name": row.dminstt_nm,
@@ -596,12 +608,17 @@ def _query_agency_announce_top10_realtime(
 
 
 def _query_announce_by_month_realtime(db: Session, one_year_ago: datetime) -> list[dict[str, Any]]:
-    """공고 월별 건수 실시간 집계. 스냅샷이 없거나 낡을 때의 폴백 경로입니다."""
+    """공고 월별 건수 실시간 집계. 스냅샷이 없거나 낡을 때의 폴백 경로입니다.
+
+    최신 차수 한 행만 세고, 최신 차수가 취소공고인 공고는 뺍니다.
+    """
     return _build_monthly_counts(
         db,
-        select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
-            BidAnnouncement.bid_ntce_dt >= one_year_ago,
-            compare_snapshots.industry_announcement_scope(),
+        compare_snapshots.announcement_scope(
+            select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
+                BidAnnouncement.bid_ntce_dt >= one_year_ago,
+                compare_snapshots.industry_announcement_scope(),
+            )
         ),
         BidAnnouncement.bid_ntce_dt,
     )
@@ -620,13 +637,18 @@ def _query_result_by_month_realtime(db: Session, one_year_ago: datetime) -> list
 
 
 def _query_industry_totals_realtime(db: Session) -> dict[str, int]:
-    """전체 기간 응답 필드를 4대 업종 기준으로 실시간 집계하는 폴백입니다."""
-    announce_row = db.execute(
+    """전체 기간 응답 필드를 4대 업종 기준으로 실시간 집계하는 폴백입니다.
+
+    공고 건수·금액은 최신 차수 한 행만 세고 최신 차수가 취소공고인 공고를
+    뺍니다. 낙찰 결과는 결과 행 자체가 공고 차수와 1:1 이라 그대로 셉니다.
+    """
+    announce_stmt = compare_snapshots.announcement_scope(
         select(
             func.count(BidAnnouncement.id).label("announce_count"),
             func.sum(_announcement_amount_expr(db)).label("announce_total"),
         ).where(compare_snapshots.industry_announcement_scope())
-    ).one()
+    )
+    announce_row = db.execute(announce_stmt).one()
     result_row = db.execute(
         select(
             func.count(BidResult.id).label("result_count"),
