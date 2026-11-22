@@ -21,12 +21,18 @@ from sqlalchemy.dialects import mysql
 from src.app.core.cache import cache
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.rag import structured_data as sd
-from src.rag.answer_format import _build_single_metric_answer
+from src.rag.answer_format import (
+    _build_announcement_list_answer,
+    _build_comparison_answer,
+    _build_result_list_answer,
+    _build_single_metric_answer,
+)
 from src.rag.industry_terms import title_keyword_condition
 from src.rag.query_planning import (
     build_retrieval_plan,
     collect_unapplied_industry_conditions,
     collect_unapplied_result_conditions,
+    industry_applied_filters,
     unapplied_result_condition_notice,
 )
 from src.rag.schemas import RetrievalPlan
@@ -525,3 +531,157 @@ def test_industry_scope_skips_region_index_hints():
         sd._hint_result_region_resolved_cover(result_stmt, industry_plan, region_names)
         is result_stmt
     )
+
+
+def test_industry_applied_filters_read_result_scope_not_plan_filters():
+    """적용 표시는 plan.filters 사본이 아니라 정형 결과의 industry_scope 정본입니다."""
+    plan = build_retrieval_plan("인천 청소 용역 낙찰률 알려줘")
+    applied_structured = {
+        "filters": {**(plan.filters or {}), "industry_applied": True},
+        "industry_scope": {
+            "label": "청소",
+            "title_keywords": ["청소", "미화", "환경미화"],
+            "applied": True,
+        },
+    }
+
+    notice_filters = industry_applied_filters(applied_structured, plan.filters)
+
+    assert notice_filters.get("industry_applied") is True
+    assert collect_unapplied_result_conditions(notice_filters) == []
+    # 미적용 결과에는 같은 정본이 없으므로 plan.filters 그대로 남습니다.
+    assert industry_applied_filters({}, plan.filters) == plan.filters
+
+
+def test_result_list_answer_drops_notice_when_industry_applied(isolated_db):
+    """업종 조건이 붙은 낙찰 목록 답에는 미적용 안내가 붙지 않습니다."""
+    _seed_industry_rows(isolated_db)
+    plan = build_retrieval_plan("인천 청소 용역 낙찰 결과 10건 보여줘")
+
+    structured = sd.retrieve_structured_data(isolated_db, plan)
+    answer = _build_result_list_answer(plan, structured)
+
+    assert structured["industry_scope"]["applied"] is True
+    assert "적용하지 못해" not in answer
+    assert "청소차" not in answer
+    assert "경비 용역" not in answer
+    assert "4건입니다" in answer
+
+
+def test_result_list_answer_keeps_notice_when_industry_not_applied():
+    """정형 결과에 적용 표시가 없으면 낙찰 목록 답에 미적용 안내가 남습니다."""
+    plan = RetrievalPlan(
+        use_sql=True,
+        semantic_query="인천 청소 용역 낙찰 결과 보여줘",
+        filters={
+            "category": "Servc",
+            "institution_name": "인천",
+            "industry_label": "청소",
+            "title_keywords": ["청소", "미화", "환경미화"],
+            "result_limit": 5,
+        },
+    )
+    structured = _industry_structured_data()
+    structured["summary"]["recent_results"] = [
+        {
+            "bid_ntce_no": "IND-RES-001",
+            "bid_ntce_nm": "2025년 청사 청소 용역",
+            "dminstt_nm": "인천광역시",
+            "bidwinnr_nm": "청소업체A",
+            "sucsf_bid_amt": 80_000_000,
+            "sucsf_bid_rate": 88.0,
+            "rl_openg_dt": "2025-05-10 09:00:00",
+        }
+    ]
+
+    answer = _build_result_list_answer(plan, structured)
+
+    assert "업종 조건(청소)은 적용하지 못해 인천 용역 전체로 조회했습니다." in answer
+
+
+def test_announcement_list_answer_drops_notice_when_industry_applied(isolated_db):
+    """업종 조건이 붙은 공고 목록 답에도 미적용 안내가 붙지 않습니다."""
+    _seed_industry_rows(isolated_db)
+    plan = build_retrieval_plan("인천 청소 용역 공고 보여줘")
+
+    structured = sd.retrieve_structured_data(isolated_db, plan)
+    answer = _build_announcement_list_answer(plan, structured)
+
+    assert structured["industry_scope"]["applied"] is True
+    assert "적용하지 못해" not in answer
+    assert "청소차" not in answer
+    assert {item["bid_ntce_nm"] for item in structured["summary"]["sample_announcements"]} == {
+        "2025년 청사 청소 용역",
+        "2025년 환경미화 용역",
+        "2026년 청사 청소 용역",
+        "2026년 미화 용역",
+    }
+
+
+def test_announcement_list_answer_keeps_notice_when_industry_not_applied():
+    """정형 결과에 적용 표시가 없으면 공고 목록 답에 미적용 안내가 남습니다."""
+    plan = RetrievalPlan(
+        use_sql=True,
+        semantic_query="인천 청소 용역 공고 보여줘",
+        filters={
+            "category": "Servc",
+            "institution_name": "인천",
+            "industry_label": "청소",
+            "title_keywords": ["청소", "미화", "환경미화"],
+            "announcement_limit": 5,
+        },
+    )
+    structured = {
+        "filters": {"category": "Servc", "category_label": "용역"},
+        "summary": {
+            "sample_announcements": [
+                {
+                    "bid_ntce_no": "IND-ANN-001",
+                    "bid_ntce_nm": "2025년 청사 청소 용역",
+                    "dminstt_nm": "인천광역시",
+                    "presmpt_prce": 80_000_000,
+                    "bid_ntce_dt": "2025-05-01 09:00:00",
+                    "bid_clse_dt": "2025-05-05 18:00:00",
+                }
+            ]
+        },
+    }
+
+    answer = _build_announcement_list_answer(plan, structured)
+
+    assert "업종 조건(청소)은 적용하지 못해 인천 용역 전체로 조회했습니다." in answer
+
+
+def test_comparison_answer_uses_industry_scope_for_notice():
+    """비교 답도 같은 정본으로 안내 여부를 정합니다."""
+    filters = {
+        "category": "Servc",
+        "industry_label": "청소",
+        "title_keywords": ["청소", "미화", "환경미화"],
+    }
+    plan = RetrievalPlan(use_sql=True, filters=filters)
+    summary = {
+        "comparison": [{"label": "인천", "announcement_count": 4}],
+        "comparison_meta": {
+            "dimension": "region",
+            "metric": "announcement_count",
+            "targets": ["인천"],
+        },
+    }
+    applied = {
+        "filters": {**filters, "industry_applied": True},
+        "summary": summary,
+        "industry_scope": {
+            "label": "청소",
+            "title_keywords": ["청소", "미화", "환경미화"],
+            "applied": True,
+        },
+    }
+
+    applied_answer = _build_comparison_answer(plan, applied)
+    unapplied_answer = _build_comparison_answer(
+        plan, {"filters": dict(filters), "summary": summary}
+    )
+
+    assert "적용하지 못해" not in applied_answer
+    assert "업종 조건(청소)은 적용하지 못해 용역 전체로 조회했습니다." in unapplied_answer

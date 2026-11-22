@@ -2372,6 +2372,28 @@ def merge_unapplied_industry_conditions(
     return merged
 
 
+def industry_applied_filters(
+    structured_data: dict[str, Any] | None,
+    filters: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """정형 조회 결과의 업종 적용 표시를 응답 판정용 필터에 옮깁니다.
+
+    업종 조건을 실제로 붙였는지는 structured_data.py 가 결과에 싣는
+    industry_scope 가 정본입니다. 응답 단계가 plan.filters 만 보면 조건이 붙은
+    목록 답에도 미적용 안내를 붙입니다. 업종어가 없으면 industry_scope 자체가
+    없어 필터에 키를 만들지 않으며, 이미 표시가 있으면 그대로 둡니다.
+    """
+    merged = dict(filters or {})
+    if merged.get("industry_applied"):
+        return merged
+    if not isinstance(structured_data, dict):
+        return merged
+    scope = structured_data.get("industry_scope")
+    if isinstance(scope, dict) and scope.get("applied"):
+        merged["industry_applied"] = True
+    return merged
+
+
 def collect_unapplied_result_conditions(
     filters: dict[str, Any] | None,
 ) -> list[dict[str, str]]:

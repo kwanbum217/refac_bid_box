@@ -558,6 +558,27 @@ def _bid_ntce_ord_forms(bid_ntce_ord: str) -> tuple[str, ...]:
     return (normalized,) if compact == normalized else (normalized, compact)
 
 
+def _industry_scope_payload(filters: dict[str, Any] | None) -> dict[str, Any] | None:
+    """업종어 조회의 적용 여부를 담은 정본 표시를 만듭니다.
+
+    업종 조건은 filters["title_keywords"] 가 있을 때만 SQL 에 붙습니다. 이
+    함수가 그 판정을 한 번만 내리고, 정형 조회 결과의 industry_scope 로
+    실어 보냅니다. 응답 단계는 plan.filters 사본이 아니라 이 표시를 읽어
+    미적용 안내 여부를 정합니다. 업종어가 없으면 None 을 돌려주어 결과와
+    응답 필터 어디에도 키가 생기지 않게 합니다.
+    """
+    current = filters or {}
+    label = _normalize_text(str(current.get("industry_label") or ""))
+    keywords = [str(keyword) for keyword in current.get("title_keywords") or [] if str(keyword)]
+    if not label or not keywords:
+        return None
+    return {
+        "label": label,
+        "title_keywords": keywords,
+        "applied": title_keyword_condition(BidAnnouncement.bid_ntce_nm, current) is not None,
+    }
+
+
 def _apply_industry_applied(filters: dict[str, Any] | None) -> dict[str, Any]:
     """업종어 공고명 조건이 실제로 붙은 조회임을 응답 필터에 표시합니다.
 
@@ -570,7 +591,8 @@ def _apply_industry_applied(filters: dict[str, Any] | None) -> dict[str, Any]:
     response_filters = dict(filters or {})
     if response_filters.get("industry_applied"):
         return response_filters
-    if title_keyword_condition(BidAnnouncement.bid_ntce_nm, response_filters) is not None:
+    scope = _industry_scope_payload(response_filters)
+    if scope is not None and scope["applied"]:
         response_filters["industry_applied"] = True
     return response_filters
 
@@ -3968,10 +3990,16 @@ def retrieve_structured_data(db: Session, plan: RetrievalPlan) -> dict[str, Any]
     """정형 검색을 실행하고 진단용 구간 계측을 contextvar에 남깁니다."""
     record = _open_latency_record()
     try:
-        return _retrieve_structured_data_impl(db, plan)
+        result = _retrieve_structured_data_impl(db, plan)
     except Exception as exc:
         if record is not None:
             logger.warning("정형 검색 계측 중 호출 경로 예외를 관찰했습니다: %s", exc)
         raise
     finally:
         _close_latency_record(record)
+    # 업종 조건 적용 여부의 정본은 여기 한 곳에서만 싣습니다. 평균·건수·목록·
+    # 비교·다중기관 응답이 모두 같은 표시를 읽어 미적용 안내를 판정합니다.
+    industry_scope = _industry_scope_payload(plan.filters)
+    if industry_scope is not None:
+        result["industry_scope"] = industry_scope
+    return result
