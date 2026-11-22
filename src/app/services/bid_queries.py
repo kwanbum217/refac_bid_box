@@ -54,9 +54,8 @@ DEFAULT_PREDICTION_MODEL = "v25"
 DEFAULT_BID_LIST_SORT = "notice"
 DEFAULT_RESULT_LIST_SORT = "opening"
 DEFAULT_REGION_SORT_RANK = 999
-# 취소공고 차수는 공고 탐색 목록 기본 노출에서 뺍니다. 홈 집계의
-# bid_preferences.not_cancelled_clause() 와 같은 정의(NULL 은 유지, 이 값만 제외)이며
-# 두 브랜치가 병합된 뒤 한 곳으로 합칩니다.
+# 나라장터가 취소를 새 차수로 남기는 공고종류명입니다. 행은 지우지 않습니다(G1).
+# 공고 탐색 목록과 홈 집계(bid_preferences)가 not_cancelled_clause() 로 함께 씁니다.
 CANCELLED_NTCE_KIND = "취소공고"
 BID_LIST_SORT_CHOICES = ("notice", "deadline", "amount", "region")
 RESULT_LIST_SORT_CHOICES = ("opening", "amount", "rate")
@@ -452,9 +451,10 @@ def latest_announcement_filter(stmt, *, collected_since: datetime | None = None)
 def not_cancelled_clause() -> Any:
     """최신 차수가 취소공고인 행을 거르는 조건이다.
 
-    값이 없는 행(NULL)은 유지하고 '취소공고'만 제외합니다. 홈 집계의
-    `bid_preferences.not_cancelled_clause()` 와 같은 정의이며, 병합 뒤 한 곳으로
-    합칩니다. 최신 차수 필터 뒤에 적용해야 이전 차수를 대신 노출하지 않습니다.
+    값이 없는 행(NULL)은 유지하고 '취소공고'만 제외합니다. `notin_` 은 SQL 3값 논리로
+    NULL 행까지 탈락시키므로 쓰지 않습니다. 재공고·변경공고는 유효하므로 남깁니다.
+    공고 탐색 목록, 홈 입찰 중 건수·마감 구간, '내 조건 입찰 중' 건수·목록이 이
+    정의 하나를 씁니다. 최신 차수 필터 뒤에 적용해야 이전 차수를 대신 노출하지 않습니다.
     """
     return or_(
         BidAnnouncement.ntce_kind_nm.is_(None),
