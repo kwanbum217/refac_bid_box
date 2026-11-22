@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import get_current_user
@@ -52,6 +51,7 @@ from src.app.services.automation_orchestrator import (
     resolve_confirmation_token,
 )
 from src.app.services.chat_concurrency import (
+    ChatStreamingResponse,
     chat_limiter,
     max_concurrent_requests,
     user_key,
@@ -566,11 +566,16 @@ async def chat_stream_api(
         finally:
             release_slot()
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    try:
+        return ChatStreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            release=release_slot,
+        )
+    except BaseException:
+        release_slot()
+        raise
 
 
 @router.post("/session/new", summary="새 대화 세션 생성")

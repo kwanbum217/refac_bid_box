@@ -19,7 +19,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from starlette.requests import Request
+from starlette.requests import ClientDisconnect, Request
 
 from src.app.api.v1 import chatbot as chatbot_mod
 from src.app.api.v1.accounts import get_current_user
@@ -350,3 +350,120 @@ def test_chat_limit_setting_is_read_per_request(
     response = client.post(CHAT_URL, json={"message": QUESTION})
 
     assert response.status_code == expected_status
+
+
+# --------------------------------------------------------------------------- #
+# (f) Starlette 이 본문 생성자를 시작하지 않고 끝나는 두 경로에서도 반납
+# --------------------------------------------------------------------------- #
+
+CLIENT_KEY = "ip:203.0.113.9"
+
+
+def _asgi_scope(spec_version: str) -> dict[str, Any]:
+    return {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": spec_version},
+        "http_version": "1.1",
+        "method": "POST",
+        "path": STREAM_URL,
+        "raw_path": STREAM_URL.encode(),
+        "query_string": b"",
+        "headers": [],
+    }
+
+
+def _new_body(record: list[int]):
+    async def body():
+        record.append(1)
+        yield "event: token\ndata: {}\n\n"
+
+    return body()
+
+
+def _acquire(limiter: chat_limit.ChatConcurrencyLimiter):
+    return limiter.acquire(CLIENT_KEY, chat_limit.max_concurrent_requests())
+
+
+def _assert_released(limiter: chat_limit.ChatConcurrencyLimiter) -> None:
+    assert limiter._active_total == 0
+    assert limiter._active_users == set()
+
+
+def test_response_releases_slot_when_start_send_fails(limiter):
+    """(가) spec_version >= 2.4: 응답 시작 send 의 OSError -> ClientDisconnect."""
+    started: list[int] = []
+    release = _acquire(limiter)
+    response = chat_limit.ChatStreamingResponse(_new_body(started), release=release)
+
+    async def send(message: dict[str, Any]) -> None:
+        raise OSError("client disconnected")
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    with pytest.raises(ClientDisconnect):
+        asyncio.run(response(_asgi_scope("2.4"), receive, send))
+
+    assert started == []
+    _assert_released(limiter)
+
+
+def test_response_releases_slot_when_disconnect_wins(limiter):
+    """(나) spec_version < 2.4: listen_for_disconnect 가 먼저 끝나 본문이 취소됨."""
+    started: list[int] = []
+    sent: list[dict[str, Any]] = []
+    release = _acquire(limiter)
+    response = chat_limit.ChatStreamingResponse(_new_body(started), release=release)
+    start_sent = asyncio.Event()
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+        start_sent.set()
+        # 응답 시작 전송이 끝나지 않은 채 연결 끊김이 먼저 도착하는 상황입니다.
+        await asyncio.Event().wait()
+
+    async def receive() -> dict[str, Any]:
+        await start_sent.wait()
+        return {"type": "http.disconnect"}
+
+    asyncio.run(response(_asgi_scope("2.3"), receive, send))
+
+    assert [message["type"] for message in sent] == ["http.response.start"]
+    assert started == []
+    _assert_released(limiter)
+
+
+def test_response_release_is_idempotent_after_normal_call(limiter):
+    """정상 종료에서 wrapper 와 생성기 finally 가 겹쳐도 한 번만 반납합니다."""
+    started: list[int] = []
+    release = _acquire(limiter)
+    response = chat_limit.ChatStreamingResponse(_new_body(started), release=release)
+
+    async def send(message: dict[str, Any]) -> None:
+        return None
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    asyncio.run(response(_asgi_scope("2.4"), receive, send))
+    release()
+
+    assert started == [1]
+    _assert_released(limiter)
+
+
+def test_stream_endpoint_releases_slot_when_response_build_fails(limiter, monkeypatch):
+    """슬롯을 잡은 뒤 응답 객체를 만들기 전 예외가 나도 반납합니다."""
+
+    def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("response build failure")
+
+    monkeypatch.setattr(chatbot_mod, "ChatStreamingResponse", boom)
+
+    async def call() -> None:
+        with pytest.raises(RuntimeError):
+            await chatbot_mod.chat_stream_api(ChatRequest(message=QUESTION), _http_request(), None)
+
+    asyncio.run(call())
+
+    _assert_released(limiter)

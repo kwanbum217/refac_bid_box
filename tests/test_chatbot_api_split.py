@@ -38,11 +38,14 @@ def test_chatbot_line_counts():
     # 2026-11-22 동시 실행 상한·SSE 세션 반납 추가로 577 -> 607 줄이 됐습니다. 상한·사용자 키·
     # 설정 읽기 로직은 chat_concurrency.py 로 분리했고, chatbot.py 에는 슬롯 획득·반납 호출과
     # 근거 준비 뒤 세션 반납만 남겼습니다. 남은 증가분은 두 엔드포인트의 try/finally 배선입니다.
+    # 연결 끊김으로 본문 생성기가 시작되지 않는 경로까지 슬롯을 반납하도록 응답 wrapper 를
+    # chat_concurrency.py 에 두어 607 -> 612 줄이 됐습니다(상한 유지).
     # 상한은 재증가를 막는 장치이므로 실측값에 여유 5줄만 두고 다시 고정합니다.
     assert chatbot_lines <= 612, f"chatbot.py exceeds 612 lines: {chatbot_lines}"
     assert format_lines <= 300, f"chatbot_format.py exceeds 300 lines: {format_lines}"
     assert conf_lines <= 300, f"chatbot_confirmation.py exceeds 300 lines: {conf_lines}"
-    assert concurrency_lines <= 95, f"chat_concurrency.py exceeds 95 lines: {concurrency_lines}"
+    # 2026-11-22 응답 수명 전체 반납 wrapper(ChatStreamingResponse)로 90 -> 114 줄이 됐습니다.
+    assert concurrency_lines <= 120, f"chat_concurrency.py exceeds 120 lines: {concurrency_lines}"
 
 
 def test_no_circular_imports_in_new_modules():

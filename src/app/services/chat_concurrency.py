@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import HTTPException, Request
+from starlette.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
 from src.app.core.config import settings
 from src.app.core.security import resolve_client_ip
@@ -70,6 +73,27 @@ class ChatConcurrencyLimiter:
 
 
 chat_limiter = ChatConcurrencyLimiter()
+
+
+class ChatStreamingResponse(StreamingResponse):
+    """동시성 슬롯 반납을 응답 수명 전체에 묶은 StreamingResponse 입니다.
+
+    Starlette 1.3.1 은 ASGI spec_version 2.4 이상에서 응답 시작 send 가 OSError 를
+    내면 본문 반복 전에 ClientDisconnect 를 올리고, 2.4 미만에서는
+    listen_for_disconnect 가 먼저 끝나면 stream_response 를 취소합니다. 두 경우 모두
+    본문 생성기가 한 번도 시작되지 않아 생성기 finally 가 돌지 않으므로 여기서
+    반납합니다. 반납 함수는 멱등이라 생성기 finally 와 겹쳐도 한 번만 반영됩니다.
+    """
+
+    def __init__(self, *args: Any, release: Callable[[], None], **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._release = release
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self._release()
 
 
 def max_concurrent_requests() -> int:
