@@ -14,6 +14,7 @@ import asyncio
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -335,14 +336,37 @@ def test_warm_task_registered_in_worker_cron() -> None:
     assert scheduled_tasks.warm_rag_region_stats_task in WorkerSettings.functions
 
 
+def test_warm_job_name_matches_registered_function() -> None:
+    """수집 뒤 훅이 큐에 넣는 이름이 워커 함수 이름과 같아야 실행됩니다."""
+    assert (
+        scheduled_tasks.warm_rag_region_stats_task.__name__
+        == scheduled_tasks.RAG_STATS_WARM_JOB_NAME
+    )
+
+
 # --------------------------------------------------------------------------- #
 # (e) 수집 뒤 훅
 # --------------------------------------------------------------------------- #
+#
+# 수집 태스크는 예열을 직접 실행하지 않고 arq 큐에 넣습니다. 시험 환경(ctx 에
+# redis 없음)에서 직접 실행하면 운영 MySQL 에 5년 창 집계 34개를 보내고 Redis
+# 선점 키를 쓰게 되어, 수집 일정 시험마다 수십 분이 걸립니다.
+
+
+class _FakeArqRedis:
+    """arq enqueue 만 기록하는 가짜 Redis 풀."""
+
+    def __init__(self) -> None:
+        self.enqueued: list[tuple[str, dict]] = []
+
+    async def enqueue_job(self, name: str, **kwargs):
+        self.enqueued.append((name, kwargs))
+        return SimpleNamespace(job_id=f"warm-job-{len(self.enqueued)}")
 
 
 @pytest.mark.asyncio
-async def test_nightly_schedule_warms_after_collection(isolated_db, monkeypatch) -> None:
-    """야간 수집이 성공하면 그 직후 예열을 실행합니다."""
+async def test_nightly_schedule_enqueues_warm_after_collection(isolated_db, monkeypatch) -> None:
+    """야간 수집이 성공하면 그 직후 예열 작업을 큐에 넣습니다."""
     monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True, raising=False)
     monkeypatch.setattr("src.tasks.worker.record_schedule_result", lambda *a, **k: None)
     monkeypatch.setattr(scheduled_tasks, "SessionLocal", lambda: isolated_db)
@@ -365,20 +389,24 @@ async def test_nightly_schedule_warms_after_collection(isolated_db, monkeypatch)
     monkeypatch.setattr(
         scheduled_tasks, "_notify_search_index_parity", AsyncMock(return_value=None)
     )
-    warm = MagicMock(return_value={"status": "success", "succeeded": 34})
-    monkeypatch.setattr(scheduled_tasks, "_warm_rag_stats_thread", warm)
-    isolated_db.close = lambda: None
 
-    result = await scheduled_tasks.nightly_schedule_task({})
+    def _fail() -> dict[str, int]:
+        raise AssertionError("수집 태스크가 예열을 직접 실행했습니다")
+
+    monkeypatch.setattr(scheduled_tasks, "_warm_rag_stats_thread", _fail)
+    isolated_db.close = lambda: None
+    redis = _FakeArqRedis()
+
+    result = await scheduled_tasks.nightly_schedule_task({"redis": redis})
 
     assert result["status"] == "success"
-    assert result["rag_stats_warm"]["succeeded"] == 34
-    warm.assert_called_once()
+    assert result["rag_stats_warm"]["status"] == "enqueued"
+    assert [name for name, _ in redis.enqueued] == [scheduled_tasks.RAG_STATS_WARM_JOB_NAME]
 
 
 @pytest.mark.asyncio
-async def test_intraday_collect_warms_after_new_rows(isolated_db, monkeypatch) -> None:
-    """증분 수집이 실제로 적재했을 때만 캐시를 다시 채웁니다."""
+async def test_intraday_collect_enqueues_warm_after_new_rows(isolated_db, monkeypatch) -> None:
+    """증분 수집이 실제로 적재했을 때만 예열 작업을 큐에 넣습니다."""
     monkeypatch.setattr(settings, "INTRADAY_COLLECT_ENABLED", True)
     monkeypatch.setattr("src.tasks.worker.record_schedule_result", lambda *a, **k: None)
     monkeypatch.setattr(scheduled_tasks, "utcnow", lambda: datetime(2026, 11, 22, 3, 0, 0))
@@ -397,14 +425,16 @@ async def test_intraday_collect_warms_after_new_rows(isolated_db, monkeypatch) -
         }
 
     monkeypatch.setattr(scheduled_tasks, "_intraday_collect_thread", _collect_thread)
-    warm = AsyncMock(return_value={"status": "success", "succeeded": 34})
-    monkeypatch.setattr(scheduled_tasks, "_run_rag_stats_warm", warm)
+    direct = AsyncMock(side_effect=AssertionError("수집 태스크가 예열을 직접 실행했습니다"))
+    monkeypatch.setattr(scheduled_tasks, "_run_rag_stats_warm", direct)
+    redis = _FakeArqRedis()
 
-    outcome = await scheduled_tasks.intraday_collect_task({})
+    outcome = await scheduled_tasks.intraday_collect_task({"redis": redis})
 
     assert outcome["status"] == "success"
-    assert outcome["rag_stats_warm"]["succeeded"] == 34
-    warm.assert_awaited_once()
+    assert outcome["rag_stats_warm"]["status"] == "enqueued"
+    assert [name for name, _ in redis.enqueued] == [scheduled_tasks.RAG_STATS_WARM_JOB_NAME]
+    direct.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -428,11 +458,76 @@ async def test_intraday_collect_skips_warm_without_new_rows(isolated_db, monkeyp
             "sync_seconds": 0.0,
         },
     )
-    warm = AsyncMock()
-    monkeypatch.setattr(scheduled_tasks, "_run_rag_stats_warm", warm)
+    direct = AsyncMock()
+    monkeypatch.setattr(scheduled_tasks, "_run_rag_stats_warm", direct)
+    redis = _FakeArqRedis()
 
-    outcome = await scheduled_tasks.intraday_collect_task({})
+    outcome = await scheduled_tasks.intraday_collect_task({"redis": redis})
 
     assert outcome["status"] == "success"
     assert "rag_stats_warm" not in outcome
-    warm.assert_not_awaited()
+    assert redis.enqueued == []
+    direct.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_collect_hooks_do_not_open_db_session_in_tests(monkeypatch) -> None:
+    """시험 환경(ctx 에 redis 없음)에서 수집 뒤 훅이 실제 DB 세션을 열지 않습니다.
+
+    이 시험이 없으면 수집 일정 시험이 운영 MySQL 에 5년 창 집계 34개를 보내고
+    Redis 선점 키를 쓰는 결함이 다시 들어와도 알 수 없습니다.
+    """
+    monkeypatch.setattr(settings, "AUTOMATION_NIGHTLY_SCHEDULE_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "INTRADAY_COLLECT_ENABLED", True)
+    monkeypatch.setattr("src.tasks.worker.record_schedule_result", lambda *a, **k: None)
+    monkeypatch.setattr("src.tasks.worker.get_heavy_task_lock", lambda: asyncio.Lock())
+    monkeypatch.setattr(scheduled_tasks, "utcnow", lambda: datetime(2026, 11, 22, 3, 0, 0))
+    monkeypatch.setattr(scheduled_tasks, "acquire_schedule_claim", lambda owner, **k: _claim())
+    monkeypatch.setattr(scheduled_tasks, "release_schedule_claim", lambda *a, **k: None)
+    monkeypatch.setattr(scheduled_tasks, "_create_scheduled_execution", lambda *a, **k: "test_exec")
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "run_automation_pipeline",
+        AsyncMock(return_value={"status": "success"}),
+    )
+    for name in (
+        "_rebuild_ranking_snapshots",
+        "_rebuild_compare_stats_snapshots",
+        "_rebuild_institution_stats",
+        "_check_mysql_stats_freshness",
+        "_check_restore_drill_freshness",
+        "_check_search_index_parity",
+    ):
+        monkeypatch.setattr(scheduled_tasks, name, lambda: {"status": "success"})
+    monkeypatch.setattr(
+        scheduled_tasks, "_notify_search_index_parity", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        scheduled_tasks,
+        "_intraday_collect_thread",
+        lambda today, collected_since: {
+            "collect": {"status": "success", "total_records": 5},
+            "indexed": {"announcements": 5, "results": 0},
+            "api_requests": 0,
+            "api_rate_limited": 0,
+            "collect_seconds": 0.0,
+            "sync_seconds": 0.0,
+        },
+    )
+
+    def _no_session():
+        raise AssertionError("수집 뒤 훅이 실제 DB 세션을 열었습니다")
+
+    def _no_thread() -> dict[str, int]:
+        raise AssertionError("수집 뒤 훅이 예열을 직접 실행했습니다")
+
+    monkeypatch.setattr(scheduled_tasks, "SessionLocal", _no_session)
+    monkeypatch.setattr(scheduled_tasks, "_warm_rag_stats_thread", _no_thread)
+
+    nightly = await scheduled_tasks.nightly_schedule_task({})
+    intraday = await scheduled_tasks.intraday_collect_task({})
+
+    assert nightly["status"] == "success"
+    assert nightly["rag_stats_warm"] == {"status": "skipped", "reason": "no_arq_redis"}
+    assert intraday["status"] == "success"
+    assert intraday["rag_stats_warm"] == {"status": "skipped", "reason": "no_arq_redis"}

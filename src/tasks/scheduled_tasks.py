@@ -330,8 +330,9 @@ async def nightly_schedule_task(ctx: dict[str, Any]) -> dict[str, Any]:
         return outcome
 
     # 수집이 RAG 집계 캐시를 비운 직후, 자주 묻는 시·도 용역 통계를 다시 채웁니다.
-    # 예열 실패는 야간 수집의 성공 여부를 바꾸지 않고 결과에만 드러냅니다.
-    outcome["rag_stats_warm"] = await _run_rag_stats_warm()
+    # 예열은 수집 태스크 안에서 직접 돌리지 않고 arq 큐에 넣습니다. 직접 돌리면
+    # 수집 시험이 운영 DB 세션을 열고 5년 창 집계를 실행하게 됩니다.
+    outcome["rag_stats_warm"] = await _enqueue_rag_stats_warm(ctx)
 
     # 수집으로 원본 데이터가 바뀌었으니 상위 N 스냅샷을 다시 만듭니다.
     # 원본 스텝 구성(run_mode_matrix)을 건드리지 않으려고 파이프라인 밖에 둡니다.
@@ -1660,15 +1661,11 @@ async def intraday_collect_task(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # 적재가 있었을 때만 collect_bids 가 RAG 집계 캐시를 비웁니다. 비운 직후에
     # 자주 묻는 시·도 통계를 다시 채워, 낮 시간대 첫 질문이 콜드 미스로 1분을
-    # 기다리지 않게 합니다. 예열은 질의를 하나씩만 던지고, 무거운 작업 잠금
-    # 밖에서 돌려 수동 KB 재구축 같은 작업을 막지 않습니다.
+    # 기다리지 않게 합니다. 예열은 수집 태스크 안에서 직접 돌리지 않고 arq 큐에
+    # 넣어, 수집 시험이 운영 DB 세션과 Redis 선점 키를 건드리지 않게 합니다.
     warm_outcome: dict[str, Any] | None = None
     if int(result["collect"].get("total_records") or 0) > 0:
-        try:
-            warm_outcome = await _run_rag_stats_warm()
-        except Exception as exc:
-            logger.warning("증분 수집 뒤 RAG 통계 예열 실패: %s", summarize_error(exc))
-            warm_outcome = {"status": "failed", **safe_error(exc)}
+        warm_outcome = await _enqueue_rag_stats_warm(ctx)
 
     metrics = result["collect"]
     indexed = result.get("indexed") or {}
@@ -3109,6 +3106,33 @@ RAG_STATS_WARM_MINUTE = 0
 # 동안 같은 예열이 겹쳐 돌지 않게 합니다.
 RAG_STATS_WARM_JOB_TIMEOUT_SECONDS = 5400
 RAG_STATS_WARM_CLAIM_KEY = "bidbox:schedule:rag_stats_warm_claim"
+# 수집 뒤 훅이 큐에 넣는 작업 이름. worker.WorkerSettings.functions 의 함수 이름과
+# 같아야 arq 가 실행합니다.
+RAG_STATS_WARM_JOB_NAME = "warm_rag_region_stats_task"
+
+
+async def _enqueue_rag_stats_warm(ctx: dict[str, Any]) -> dict[str, Any]:
+    """수집 뒤 예열을 arq 작업 큐에 넣고 적재 결과를 돌려줍니다.
+
+    수집 태스크 안에서 예열을 직접 실행하면 수집 시험이 실제 DB 세션을 열고
+    5년 창 집계 34개를 운영 MySQL 에 보냅니다. 또 Redis 선점 키를 써서 시험이
+    운영 Redis 를 건드립니다. 큐에 넣기만 하면 수집 경로는 DB·Redis 상태와
+    무관하게 끝나고, 실제 예열은 워커의 warm_rag_region_stats_task 가 순차로
+    수행합니다. 적재 실패는 수집 결과를 바꾸지 않고 결과에만 드러냅니다.
+    """
+    redis = ctx.get("redis") if isinstance(ctx, dict) else None
+    enqueue_job = getattr(redis, "enqueue_job", None)
+    if redis is None or enqueue_job is None:
+        logger.info("Arq redis 연결이 없어 시·도 용역 통계 예열을 큐에 넣지 않습니다.")
+        return {"status": "skipped", "reason": "no_arq_redis"}
+    try:
+        job = await enqueue_job(RAG_STATS_WARM_JOB_NAME)
+    except Exception as exc:
+        logger.warning("시·도 용역 통계 예열 적재 실패: %s", summarize_error(exc))
+        return {"status": "failed", "reason": "enqueue_failed", **safe_error(exc)}
+    job_id = getattr(job, "job_id", None)
+    logger.info("시·도 용역 통계 예열을 큐에 넣었습니다 (job_id=%s)", job_id)
+    return {"status": "enqueued", "job_id": job_id}
 
 
 def _warm_rag_stats_thread() -> dict[str, Any]:
@@ -3128,9 +3152,10 @@ def _warm_rag_stats_thread() -> dict[str, Any]:
 async def _run_rag_stats_warm() -> dict[str, Any]:
     """선점을 잡고 예열을 실행하며, 실패는 예외 대신 결과로 돌려줍니다.
 
-    수집 뒤 훅(nightly, intraday)과 크론이 같은 진입점을 씁니다. 예열이 실패해도
-    수집 결과를 바꾸지 않아야 하고, 앞선 예열이 아직 돌고 있으면 겹쳐 돌지
-    않도록 warm_home_summary_task 와 같은 Redis 선점을 씁니다.
+    크론(warm_rag_region_stats_task)과 수집 뒤 훅이 큐에 넣은 작업이 이 진입점을
+    씁니다. 수집 태스크는 이 함수를 직접 부르지 않고 enqueue 만 합니다. 예열이
+    실패해도 수집 결과를 바꾸지 않아야 하고, 앞선 예열이 아직 돌고 있으면 겹쳐
+    돌지 않도록 warm_home_summary_task 와 같은 Redis 선점을 씁니다.
     """
     claim = await asyncio.to_thread(
         acquire_schedule_claim,
