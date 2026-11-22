@@ -304,7 +304,8 @@ def test_cached_open_counts_keep_four_industry_definition(isolated_db, monkeypat
     assert sum(bucket["count"] for bucket in warmed["open_deadline_buckets"]) == 1
     assert fake_cache.set_calls[-1][0] == home_summary.SERVIC_COUNTS_CACHE_KEY
     # 셈 정의가 4대 업종으로 바뀌었으므로 옛 v1 키를 쓰지 않는다.
-    assert home_summary.SERVIC_COUNTS_CACHE_KEY.endswith(":v2")
+    # 최신 차수 취소공고 제외로 v3 이므로 옛 v2 키도 쓰지 않는다.
+    assert home_summary.SERVIC_COUNTS_CACHE_KEY.endswith(":v3")
 
 
 # --------------------------------------------------------------------------- #
