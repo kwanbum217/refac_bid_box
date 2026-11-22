@@ -30,6 +30,7 @@ from src.app.core.security import SESSION_COOKIE_NAME, create_session, make_pass
 from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import (
     BidAnnouncement,
     BidDatasetSummary,
@@ -102,6 +103,7 @@ def _add_result(db, **overrides) -> BidResult:
 
 
 def _add_announcement(db, **overrides) -> BidAnnouncement:
+    industry_code = overrides.pop("industry_code", "1172")
     now = utcnow()
     payload = {
         "bid_ntce_no": "ANN-001",
@@ -117,6 +119,17 @@ def _add_announcement(db, **overrides) -> BidAnnouncement:
     payload.update(overrides)
     row = BidAnnouncement(**payload)
     db.add(row)
+    if industry_code is not None:
+        db.add(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=row.bid_ntce_no,
+                bid_ntce_ord=row.bid_ntce_ord,
+                lmt_grp_no="1",
+                lmt_sno="1",
+                permsn_indstryty_list=f"업종/{industry_code}",
+                collected_at=now,
+            )
+        )
     db.commit()
     db.refresh(row)
     return row

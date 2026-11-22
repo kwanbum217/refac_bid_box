@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 
 from src.app.core import timeutil
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import bid_queries, collector_service, dashboard
 
@@ -148,6 +149,18 @@ def test_dashboard_one_year_window_starts_from_kst(isolated_db, monkeypatch):
         bid_ntce_no="KST-WINDOW-IN",
         bid_ntce_dt=datetime(2025, 11, 7, 23, 0, 0),
     )
+    for bid_ntce_no in ("KST-WINDOW-OUT", "KST-WINDOW-IN"):
+        isolated_db.add(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=bid_ntce_no,
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                permsn_indstryty_list="업종/1172",
+                collected_at=datetime(2025, 11, 7, 0, 0, 0),
+            )
+        )
+    isolated_db.commit()
 
     data = dashboard.get_compare_stats_data(isolated_db)
 

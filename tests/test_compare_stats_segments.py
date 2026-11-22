@@ -29,8 +29,60 @@ EXPECTED_SEGMENTS = [
 _FIXED_NOW = datetime(2026, 9, 10)
 
 
+def _seed_out_of_window_industry_rows(db) -> None:
+    """구간 계측만 보는 시험이라 1년 창 밖의 업종 한정 공고·결과 3건씩만 둔다.
+
+    전체 기간 응답 필드는 이 행들에서 3 이 나오고, 1년 창 수치는 0 이 된다.
+    """
+    from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
+    from src.app.models.bids import BidAnnouncement, BidResult
+
+    opened_at = datetime(2020, 1, 2)
+    for index in range(3):
+        bid_ntce_no = f"SEG-{index}"
+        db.add(
+            BidAnnouncement(
+                bid_ntce_no=bid_ntce_no,
+                bid_ntce_ord="000",
+                bid_ntce_nm=f"구간 검증 공고 {index}",
+                dminstt_nm="구간 검증 기관",
+                category="Servc",
+                base_amount=1000,
+                presmpt_prce=1000,
+                bid_ntce_dt=datetime(2020, 1, 1),
+                collected_at=datetime(2020, 1, 1),
+            )
+        )
+        db.add(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=bid_ntce_no,
+                bid_ntce_ord="000",
+                lmt_grp_no="1",
+                lmt_sno="1",
+                permsn_indstryty_list="업종/1172",
+                collected_at=datetime(2020, 1, 1),
+            )
+        )
+        db.add(
+            BidResult(
+                bid_ntce_no=bid_ntce_no,
+                bid_ntce_ord="000",
+                bid_ntce_nm=f"구간 검증 결과 {index}",
+                bidwinnr_nm="구간 검증 업체",
+                dminstt_nm="구간 검증 기관",
+                category="Servc",
+                sucsf_bid_amt=900,
+                sucsf_bid_rate=90,
+                rl_openg_dt=opened_at,
+                collected_at=opened_at,
+            )
+        )
+    db.commit()
+
+
 def _stub_miss_path(monkeypatch, isolated_db):
     """캐시 미적중 경로의 외부 의존성을 고정합니다."""
+    _seed_out_of_window_industry_rows(isolated_db)
     summaries = {
         "announcement": SimpleNamespace(total_count=3, total_amount=3000, is_stale=False),
         "result": SimpleNamespace(total_count=3, total_amount=2700, is_stale=False),

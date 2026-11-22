@@ -176,9 +176,10 @@ def _compare_stats_cache_key(
     announcement_summary: BidDatasetSummary,
     result_summary: BidDatasetSummary,
 ) -> str:
-    # v2: 응답에 announce_count_1y, matched_count_1y 가 추가되기 전 캐시를 버립니다.
+    # v3: 4대 업종(파견, 경비업, 위생관리용역업, 유료직업소개업) 업종 제한 기준으로
+    # 모든 값을 다시 계산하므로, 업종 무관 값이 남은 v2 캐시를 버립니다.
     return (
-        "dashboard_compare_stats:v2:"
+        "dashboard_compare_stats:v3:"
         f"v{announcement_summary.aggregation_version}:"
         f"{_marker_value(announcement_summary.source_latest_collected_at)}:"
         f"{_marker_value(announcement_summary.rebuilt_at)}:"
@@ -485,15 +486,19 @@ def get_dashboard_stats(db: Session) -> dict[str, Any]:
 
 
 def _query_matched_count_realtime(db: Session, one_year_ago: datetime) -> int:
-    """매칭 공고 수 실시간 집계. 스냅샷이 없거나 낡을 때의 폴백 경로입니다."""
+    """매칭 공고 수 실시간 집계. 스냅샷이 없거나 낡을 때의 폴백 경로입니다.
+
+    4대 업종 업종 제한이 걸린 공고만 셉니다.
+    """
     matched_count = db.scalar(
         select(func.count(BidAnnouncement.id)).where(
+            compare_snapshots.industry_announcement_scope(),
             select(BidResult.id)
             .where(
                 BidResult.bid_ntce_no == BidAnnouncement.bid_ntce_no,
                 BidResult.rl_openg_dt >= one_year_ago,
             )
-            .exists()
+            .exists(),
         )
     )
     return int(matched_count or 0)
@@ -505,13 +510,19 @@ def _query_match_rate_1y_realtime(db: Session, one_year_ago: datetime) -> dict[s
     분모는 bid_ntce_dt 가 창 안인 공고 수, 분자는 그중 같은 bid_ntce_no 의
     개찰 결과가 하나라도 있는 공고 수입니다. 두 값이 같은 창을 쓰므로 나눈
     매칭률은 100% 를 넘지 않습니다. 스냅샷 재집계도 이 함수를 그대로 부릅니다.
+    4대 업종 업종 제한이 걸린 공고만 셉니다.
     """
+    scope = compare_snapshots.industry_announcement_scope()
     announce_count = db.scalar(
-        select(func.count(BidAnnouncement.id)).where(BidAnnouncement.bid_ntce_dt >= one_year_ago)
+        select(func.count(BidAnnouncement.id)).where(
+            BidAnnouncement.bid_ntce_dt >= one_year_ago,
+            scope,
+        )
     )
     matched_count = db.scalar(
         select(func.count(BidAnnouncement.id)).where(
             BidAnnouncement.bid_ntce_dt >= one_year_ago,
+            scope,
             select(BidResult.id)
             .where(BidResult.bid_ntce_no == BidAnnouncement.bid_ntce_no)
             .exists(),
@@ -530,6 +541,7 @@ def _query_agency_announce_top10_realtime(
 
     손상된 기관명을 제외하지 않습니다. 대시보드 by_agency 의 가독성 필터와
     ranking_snapshots 의 손상 제외를 이 경로에 넣으면 화면 순위가 바뀝니다.
+    4대 업종 업종 제한이 걸린 공고만 셉니다.
     """
     amount_expr = _announcement_amount_expr(db)
     rows = db.execute(
@@ -541,6 +553,7 @@ def _query_agency_announce_top10_realtime(
         .where(
             BidAnnouncement.bid_ntce_dt >= one_year_ago,
             BidAnnouncement.dminstt_nm.is_not(None),
+            compare_snapshots.industry_announcement_scope(),
         )
         .group_by(BidAnnouncement.dminstt_nm)
         .order_by(func.sum(amount_expr).desc())
@@ -562,7 +575,8 @@ def _query_announce_by_month_realtime(db: Session, one_year_ago: datetime) -> li
     return _build_monthly_counts(
         db,
         select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
-            BidAnnouncement.bid_ntce_dt >= one_year_ago
+            BidAnnouncement.bid_ntce_dt >= one_year_ago,
+            compare_snapshots.industry_announcement_scope(),
         ),
         BidAnnouncement.bid_ntce_dt,
     )
@@ -572,9 +586,34 @@ def _query_result_by_month_realtime(db: Session, one_year_ago: datetime) -> list
     """개찰결과 월별 건수 실시간 집계. 스냅샷이 없거나 낡을 때의 폴백 경로입니다."""
     return _build_monthly_counts(
         db,
-        select(BidResult.id, BidResult.rl_openg_dt).where(BidResult.rl_openg_dt >= one_year_ago),
+        select(BidResult.id, BidResult.rl_openg_dt).where(
+            BidResult.rl_openg_dt >= one_year_ago,
+            compare_snapshots.industry_result_scope(),
+        ),
         BidResult.rl_openg_dt,
     )
+
+
+def _query_industry_totals_realtime(db: Session) -> dict[str, int]:
+    """전체 기간 응답 필드를 4대 업종 기준으로 실시간 집계하는 폴백입니다."""
+    announce_row = db.execute(
+        select(
+            func.count(BidAnnouncement.id).label("announce_count"),
+            func.sum(_announcement_amount_expr(db)).label("announce_total"),
+        ).where(compare_snapshots.industry_announcement_scope())
+    ).one()
+    result_row = db.execute(
+        select(
+            func.count(BidResult.id).label("result_count"),
+            func.sum(BidResult.sucsf_bid_amt).label("result_total"),
+        ).where(compare_snapshots.industry_result_scope())
+    ).one()
+    return {
+        "announce_count": int(announce_row.announce_count or 0),
+        "announce_total_base_amount": int(announce_row.announce_total or 0),
+        "result_count": int(result_row.result_count or 0),
+        "result_total_amt": int(result_row.result_total or 0),
+    }
 
 
 def get_compare_stats_data(db: Session) -> dict[str, Any]:
@@ -620,6 +659,9 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
                 db, compare_snapshots.SNAPSHOT_KEY_RESULT_BY_MONTH
             )
         )
+        totals_payload, totals_rebuilt_at, _totals_age = compare_snapshots.get_snapshot_with_age(
+            db, compare_snapshots.SNAPSHOT_KEY_INDUSTRY_TOTALS
+        )
         agency_usable = compare_snapshots.is_snapshot_fresh(
             agency_rebuilt_at
         ) and compare_snapshots.is_agency_payload_usable(agency_payload)
@@ -632,8 +674,15 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         result_month_usable = compare_snapshots.is_snapshot_fresh(
             result_month_rebuilt_at
         ) and compare_snapshots.is_monthly_payload_usable(result_month_payload)
+        totals_usable = compare_snapshots.is_snapshot_fresh(
+            totals_rebuilt_at
+        ) and compare_snapshots.is_industry_totals_payload_usable(totals_payload)
         snapshot_fallback = not (
-            agency_usable and matched_usable and announce_month_usable and result_month_usable
+            agency_usable
+            and matched_usable
+            and announce_month_usable
+            and result_month_usable
+            and totals_usable
         )
         is_stale = summaries_stale
         cache_key = _compare_stats_cache_key(announcement_summary, result_summary)
@@ -696,14 +745,20 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
                 agency_announce_top10 = _query_agency_announce_top10_realtime(db, one_year_ago)
 
         with latency_segments.compare_stats_segment("result_assembly"):
-            announcement_total_amount = int(announcement_summary.total_amount or 0)
+            if totals_usable:
+                industry_totals = {
+                    key: int(totals_payload[key])
+                    for key in compare_snapshots.INDUSTRY_TOTALS_ITEM_KEYS
+                }
+            else:
+                industry_totals = _query_industry_totals_realtime(db)
 
             data = {
-                "announce_count": announcement_summary.total_count or 0,
-                "announce_total_base_amount": announcement_total_amount,
-                "announce_total_prce": announcement_total_amount,
-                "result_count": result_summary.total_count or 0,
-                "result_total_amt": int(result_summary.total_amount or 0),
+                "announce_count": industry_totals["announce_count"],
+                "announce_total_base_amount": industry_totals["announce_total_base_amount"],
+                "announce_total_prce": industry_totals["announce_total_base_amount"],
+                "result_count": industry_totals["result_count"],
+                "result_total_amt": industry_totals["result_total_amt"],
                 "matched_count": int(matched_count or 0),
                 "announce_count_1y": match_rate_counts["announce_count_1y"],
                 "matched_count_1y": match_rate_counts["matched_count_1y"],
@@ -715,11 +770,12 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
         is_stale = summaries_stale
         try:
             logger.info(
-                "비교 통계 스냅샷 사용 여부 matched_count=%s agency_announce_top10=%s announce_by_month=%s result_by_month=%s 폴백=%s",
+                "비교 통계 스냅샷 사용 여부 matched_count=%s agency_announce_top10=%s announce_by_month=%s result_by_month=%s industry_totals=%s 폴백=%s",
                 "스냅샷" if matched_usable else "실시간",
                 "스냅샷" if agency_usable else "실시간",
                 "스냅샷" if announce_month_usable else "실시간",
                 "스냅샷" if result_month_usable else "실시간",
+                "스냅샷" if totals_usable else "실시간",
                 "예" if snapshot_fallback else "아니요",
             )
         except Exception as exc:

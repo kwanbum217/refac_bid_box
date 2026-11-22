@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from src.app.core.timeutil import utcnow
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import (
     BidAnnouncement,
     BidCompareStatsSnapshot,
@@ -47,6 +48,16 @@ def _add_announcement(db, bid_ntce_no: str, bid_ntce_dt):
         collected_at=utcnow(),
     )
     db.add(row)
+    db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no=bid_ntce_no,
+            bid_ntce_ord="000",
+            lmt_grp_no="1",
+            lmt_sno="1",
+            permsn_indstryty_list="업종/1172",
+            collected_at=utcnow(),
+        )
+    )
     db.flush()
     return row
 
