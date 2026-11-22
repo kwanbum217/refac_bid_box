@@ -131,8 +131,9 @@ def test_home_removes_shortcuts_and_moves_open_matching_to_panels(auth_client):
     body = auth_client.get("/").text
 
     assert "data-home-shortcut" not in body
-    for metric in ("accuracy", "recent-year"):
-        assert f'data-home-metric="{metric}"' in body, metric
+    assert 'data-home-metric="accuracy"' in body
+    # 2026-11-22: 최근 365일 공고 카드는 삭제했다.
+    assert 'data-home-metric="recent-year"' not in body
     for removed in ("open", "matching"):
         assert f'data-home-metric="{removed}"' not in body, removed
     for panel in ("open", "matching"):
@@ -145,48 +146,32 @@ def test_home_removes_shortcuts_and_moves_open_matching_to_panels(auth_client):
 
 
 def test_deadline_buckets_match_open_count_and_boundaries(isolated_db):
-    _add(
-        isolated_db,
-        bid_ntce_no="BUCKET-TODAY",
-        bid_clse_dt=datetime(2026, 11, 17, 18, 0, 0),
+    bucket_rows = (
+        ("BUCKET-TODAY", "1172", datetime(2026, 11, 17, 18, 0, 0)),
+        ("BUCKET-D1", "1164", datetime(2026, 11, 18, 9, 0, 0)),
+        ("BUCKET-D3", "1162", datetime(2026, 11, 20, 23, 0, 0)),
+        ("BUCKET-D4", "5603", datetime(2026, 11, 21, 9, 0, 0)),
+        ("BUCKET-D7", "1172", datetime(2026, 11, 24, 23, 0, 0)),
+        ("BUCKET-D8", "1167", datetime(2026, 11, 25, 9, 0, 0)),
     )
-    _add(
-        isolated_db,
-        bid_ntce_no="BUCKET-D1",
-        bid_clse_dt=datetime(2026, 11, 18, 9, 0, 0),
-    )
-    _add(
-        isolated_db,
-        bid_ntce_no="BUCKET-D3",
-        bid_clse_dt=datetime(2026, 11, 20, 23, 0, 0),
-    )
-    _add(
-        isolated_db,
-        bid_ntce_no="BUCKET-D4",
-        bid_clse_dt=datetime(2026, 11, 21, 9, 0, 0),
-    )
-    _add(
-        isolated_db,
-        bid_ntce_no="BUCKET-D7",
-        bid_clse_dt=datetime(2026, 11, 24, 23, 0, 0),
-    )
-    _add(
-        isolated_db,
-        bid_ntce_no="BUCKET-D8",
-        bid_clse_dt=datetime(2026, 11, 25, 9, 0, 0),
-    )
-    # 이미 마감된 공고와 다른 분야는 어느 구간에도 들지 않는다.
-    _add(
+    for bid_no, code, close_dt in bucket_rows:
+        bid = _add(isolated_db, bid_ntce_no=bid_no, bid_clse_dt=close_dt)
+        _add_license(isolated_db, bid, code)
+
+    # 이미 마감된 공고와 다른 분야는 4대 업종이어도 어느 구간에도 들지 않는다.
+    closed = _add(
         isolated_db,
         bid_ntce_no="BUCKET-CLOSED",
         bid_clse_dt=BASE_TIME - timedelta(hours=1),
     )
-    _add(
+    _add_license(isolated_db, closed, "1172")
+    other_category = _add(
         isolated_db,
         bid_ntce_no="BUCKET-CNSTWK",
         category="Cnstwk",
         bid_clse_dt=datetime(2026, 11, 19, 9, 0, 0),
     )
+    _add_license(isolated_db, other_category, "1172")
 
     summary = home_summary.get_home_summary(isolated_db, None, now=BASE_TIME)
     buckets = {bucket["key"]: bucket["count"] for bucket in summary["open_deadline_buckets"]}
@@ -239,7 +224,12 @@ def test_matching_list_is_deadline_sorted_limited_and_filtered(isolated_db):
 # --------------------------------------------------------------------------- #
 
 
-def test_no_more_link_when_matching_count_is_five_or_less(auth_client, isolated_db, seeded_user):
+def test_no_more_link_when_matching_count_is_five_or_less(
+    auth_client, isolated_db, seeded_user, monkeypatch
+):
+    # 이 시험의 기준 시각을 고정합니다. 실제 오늘 날짜가 지나면 마감 전 공고가
+    # 아니라서 목록이 비는 시간 의존 결함을 막습니다.
+    monkeypatch.setattr("src.app.services.bid_preferences.kst_now", lambda: BASE_TIME)
     _store_preferences(isolated_db, seeded_user, ["1172"], "seoul")
     bid = _add(
         isolated_db,

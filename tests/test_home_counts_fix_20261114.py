@@ -26,9 +26,14 @@ from src.app.core.security import SESSION_COOKIE_NAME, create_session
 from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement
 from src.app.services import home_summary
-from src.app.services.bid_queries import latest_announcement_filter
+from src.app.services.bid_queries import (
+    BID_INDUSTRY_CODES,
+    latest_announcement_filter,
+    license_match_clause,
+)
 from src.tasks import scheduled_tasks
 from src.tasks.worker import WorkerSettings
 
@@ -82,6 +87,19 @@ def _add(db, **overrides) -> BidAnnouncement:
     return row
 
 
+def _add_license(db, bid: BidAnnouncement, code: str = "1172") -> None:
+    """4대 업종 제한 행을 붙입니다. 입찰 중 셈은 이 행이 있어야 통과합니다."""
+    db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no=bid.bid_ntce_no,
+            bid_ntce_ord=bid.bid_ntce_ord,
+            lcns_lmt_nm=f"/{code}/",
+            collected_at=BASE_TIME,
+        )
+    )
+    db.commit()
+
+
 def _legacy_count(db, *conditions) -> int:
     stmt = select(func.count()).select_from(BidAnnouncement).where(*conditions)
     return int(db.scalar(latest_announcement_filter(stmt)) or 0)
@@ -94,47 +112,52 @@ def _legacy_count(db, *conditions) -> int:
 
 @pytest.fixture
 def mixed_announcements(isolated_db):
-    """차수·업무구분·기간이 섞인 픽스처를 만들고 두 기준 건수를 돌려줍니다."""
-    # 최신 차수가 365일 안쪽인 공고: 2개 차수 중 최신만 1건
-    _add(
+    """차수·업무구분·기간·업종이 섞인 픽스처를 만들고 입찰 중 건수를 돌려줍니다."""
+    # 최신 차수가 스캔 범위 안쪽인 공고: 2개 차수 중 최신만 1건
+    open_prev = _add(
         isolated_db,
         bid_ntce_no="MIX-OPEN",
         bid_ntce_ord="000",
         bid_ntce_dt=BASE_TIME - timedelta(days=30),
         bid_clse_dt=BASE_TIME + timedelta(days=3),
     )
-    _add(
+    _add_license(isolated_db, open_prev)
+    open_latest = _add(
         isolated_db,
         bid_ntce_no="MIX-OPEN",
         bid_ntce_ord="001",
         bid_ntce_dt=BASE_TIME - timedelta(days=10),
         bid_clse_dt=BASE_TIME + timedelta(days=5),
     )
-    # 최신 차수가 365일 밖이면 이전 차수가 안쪽이어도 세지 않는다
-    _add(
+    _add_license(isolated_db, open_latest)
+    # 최신 차수가 90일 밖이면 이전 차수가 안쪽이어도 세지 않는다
+    old_prev = _add(
         isolated_db,
         bid_ntce_no="MIX-LATEST-OLD",
         bid_ntce_ord="000",
         bid_ntce_dt=BASE_TIME - timedelta(days=300),
         bid_clse_dt=BASE_TIME + timedelta(days=1),
     )
-    _add(
+    _add_license(isolated_db, old_prev, "1164")
+    old_latest = _add(
         isolated_db,
         bid_ntce_no="MIX-LATEST-OLD",
         bid_ntce_ord="001",
         bid_ntce_dt=BASE_TIME - timedelta(days=400),
         bid_clse_dt=BASE_TIME + timedelta(days=1),
     )
-    # 최신 차수만 마감된 공고: 365일에는 들고 입찰 중에는 들지 않는다
-    _add(
+    _add_license(isolated_db, old_latest, "1164")
+    # 최신 차수만 마감된 공고: 입찰 중에는 들지 않는다
+    closed = _add(
         isolated_db,
         bid_ntce_no="MIX-CLOSED",
         bid_ntce_ord="001",
         bid_ntce_dt=BASE_TIME - timedelta(days=20),
         bid_clse_dt=BASE_TIME - timedelta(days=1),
     )
+    _add_license(isolated_db, closed, "1162")
     # 같은 공고번호의 다른 업무구분은 독립 그룹이다
-    _add(
+    thng = _add(
         isolated_db,
         bid_ntce_no="MIX-CATEGORY",
         category="Thng",
@@ -142,7 +165,8 @@ def mixed_announcements(isolated_db):
         bid_ntce_dt=BASE_TIME - timedelta(days=5),
         bid_clse_dt=BASE_TIME + timedelta(days=4),
     )
-    _add(
+    _add_license(isolated_db, thng)
+    servc = _add(
         isolated_db,
         bid_ntce_no="MIX-CATEGORY",
         category="Servc",
@@ -150,39 +174,39 @@ def mixed_announcements(isolated_db):
         bid_ntce_dt=BASE_TIME - timedelta(days=30),
         bid_clse_dt=BASE_TIME + timedelta(days=4),
     )
+    _add_license(isolated_db, servc, "1164")
     # 공고일시가 비어 있는 행: 기간 조건에서 빠진다
-    _add(
+    null_dt = _add(
         isolated_db,
         bid_ntce_no="MIX-NULL-DT",
         bid_ntce_dt=None,
         bid_clse_dt=BASE_TIME + timedelta(days=2),
     )
-
-    recent_condition = (
-        BidAnnouncement.category == home_summary.SERVC_CATEGORY,
-        BidAnnouncement.bid_ntce_dt >= BASE_TIME - timedelta(days=home_summary.RECENT_YEAR_DAYS),
+    _add_license(isolated_db, null_dt)
+    # 업종 제한 행이 없는 공고와 4대 업종 밖(7740) 공고는 세지 않는다
+    _add(isolated_db, bid_ntce_no="MIX-NO-LICENSE", bid_clse_dt=BASE_TIME + timedelta(days=2))
+    outside = _add(
+        isolated_db,
+        bid_ntce_no="MIX-OUTSIDE-INDUSTRY",
+        bid_clse_dt=BASE_TIME + timedelta(days=2),
     )
+    _add_license(isolated_db, outside, "7740")
+
     open_condition = (
         BidAnnouncement.category == home_summary.SERVC_CATEGORY,
         BidAnnouncement.bid_clse_dt >= BASE_TIME,
         BidAnnouncement.bid_ntce_dt
         >= BASE_TIME - timedelta(days=home_summary.OPEN_BID_LOOKBACK_DAYS),
+        license_match_clause(BID_INDUSTRY_CODES),
     )
-    return {
-        "legacy_recent_year": _legacy_count(isolated_db, *recent_condition),
-        "legacy_open": _legacy_count(isolated_db, *open_condition),
-    }
+    return {"legacy_open": _legacy_count(isolated_db, *open_condition)}
 
 
 def test_counts_match_latest_announcement_filter_definitions(isolated_db, mixed_announcements):
-    recent_year = home_summary._count_recent_year_servc(isolated_db, BASE_TIME)
     open_count = home_summary._count_open_servc(isolated_db, BASE_TIME)
 
-    assert recent_year == mixed_announcements["legacy_recent_year"]
     assert open_count == mixed_announcements["legacy_open"]
-    # 픽스처가 공허하지 않음: MIX-OPEN(최신), MIX-CLOSED, MIX-CATEGORY(Servc)
-    assert recent_year == 3
-    # 입찰 중: MIX-OPEN(최신) + MIX-CATEGORY(Servc)
+    # 입찰 중 4대 업종: MIX-OPEN(최신) + MIX-CATEGORY(Servc)
     assert open_count == 2
 
 
@@ -195,7 +219,6 @@ def test_count_queries_do_not_use_window_function(isolated_db, mixed_announcemen
     connection = isolated_db.get_bind()
     event.listen(connection, "before_cursor_execute", record)
     try:
-        home_summary._count_recent_year_servc(isolated_db, BASE_TIME)
         home_summary._count_open_servc(isolated_db, BASE_TIME)
     finally:
         event.remove(connection, "before_cursor_execute", record)
@@ -213,12 +236,10 @@ def test_request_path_does_not_aggregate_without_cache(isolated_db, fake_cache, 
     def _fail(*args: Any, **kwargs: Any):
         raise AssertionError("요청 경로에서 대형 건수 집계를 실행했습니다")
 
-    monkeypatch.setattr(home_summary, "_count_recent_year_servc", _fail)
     monkeypatch.setattr(home_summary, "_count_open_servc", _fail)
 
     summary = home_summary.get_home_summary(isolated_db, None)
 
-    assert summary["recent_year_count"] is None
     assert summary["open_count"] is None
     assert fake_cache.sets == []
 
@@ -231,20 +252,19 @@ def test_request_path_does_not_aggregate_without_cache(isolated_db, fake_cache, 
 def test_request_path_reads_cached_counts(isolated_db, fake_cache, monkeypatch):
     fake_cache.set(
         home_summary.SERVIC_COUNTS_CACHE_KEY,
-        {"recent_year_count": 4321, "open_count": 87},
+        {"open_count": 87},
         EXPECTED_CACHE_TTL,
     )
 
     def _fail(*args: Any, **kwargs: Any):
         raise AssertionError("캐시가 있는데 집계를 실행했습니다")
 
-    monkeypatch.setattr(home_summary, "_count_recent_year_servc", _fail)
     monkeypatch.setattr(home_summary, "_count_open_servc", _fail)
 
     summary = home_summary.get_home_summary(isolated_db, None)
 
-    assert summary["recent_year_count"] == 4321
     assert summary["open_count"] == 87
+    assert summary["open_deadline_buckets"] is None
 
 
 # --------------------------------------------------------------------------- #
@@ -254,13 +274,14 @@ def test_request_path_reads_cached_counts(isolated_db, fake_cache, monkeypatch):
 
 def test_warm_task_fills_cache_with_long_ttl(isolated_db, fake_cache, monkeypatch):
     monkeypatch.setattr(home_summary, "kst_now", lambda: BASE_TIME)
-    _add(isolated_db, bid_ntce_no="WARM-OPEN")
+    warm_bid = _add(isolated_db, bid_ntce_no="WARM-OPEN")
+    _add_license(isolated_db, warm_bid)
 
     counts = home_summary.warm_home_summary_cache(isolated_db)
 
-    assert counts["recent_year_count"] == 1
     assert counts["open_count"] == 1
     assert sum(bucket["count"] for bucket in counts["open_deadline_buckets"]) == 1
+    assert "recent_year_count" not in counts
     assert home_summary.SERVIC_COUNTS_CACHE_TTL == EXPECTED_CACHE_TTL
     key, value, ttl = fake_cache.sets[-1]
     assert key == home_summary.SERVIC_COUNTS_CACHE_KEY
@@ -270,7 +291,8 @@ def test_warm_task_fills_cache_with_long_ttl(isolated_db, fake_cache, monkeypatc
 
 def test_warm_schedule_task_returns_counts(isolated_db, fake_cache, monkeypatch):
     monkeypatch.setattr(home_summary, "kst_now", lambda: BASE_TIME)
-    _add(isolated_db, bid_ntce_no="WARM-TASK")
+    warm_bid = _add(isolated_db, bid_ntce_no="WARM-TASK")
+    _add_license(isolated_db, warm_bid)
     monkeypatch.setattr(scheduled_tasks, "SessionLocal", lambda: isolated_db)
     monkeypatch.setattr("src.tasks.worker.record_schedule_result", lambda *args, **kwargs: None)
     monkeypatch.setattr(scheduled_tasks, "acquire_schedule_claim", lambda owner, **kwargs: _claim())
@@ -278,8 +300,8 @@ def test_warm_schedule_task_returns_counts(isolated_db, fake_cache, monkeypatch)
     outcome = asyncio.run(scheduled_tasks.warm_home_summary_task({}))
 
     assert outcome["status"] == "success"
-    assert outcome["recent_year_count"] == 1
     assert outcome["open_count"] == 1
+    assert "recent_year_count" not in outcome
     assert sum(bucket["count"] for bucket in outcome["open_deadline_buckets"]) == 1
     assert fake_cache.sets[-1][2] == EXPECTED_CACHE_TTL
 
@@ -378,20 +400,21 @@ def home_client(isolated_db, fake_cache, monkeypatch, tmp_path):
 def test_home_shows_pending_label_when_cache_is_empty(home_client):
     body = home_client.get("/").text
 
-    assert body.count("집계 중") == 2
-    assert "최근 365일 공고" in body
+    # 정확도는 별도 문구를 쓰고, 입찰 중 카드만 '집계 중' 입니다.
+    assert body.count("집계 중") == 1
     assert "입찰 중 공고" in body
+    assert "최근 365일 공고" not in body
 
 
 def test_home_shows_cached_counts(home_client, fake_cache):
     fake_cache.set(
         home_summary.SERVIC_COUNTS_CACHE_KEY,
-        {"recent_year_count": 1234, "open_count": 56},
+        {"open_count": 56},
         EXPECTED_CACHE_TTL,
     )
 
     body = home_client.get("/").text
 
     assert "집계 중" not in body
-    assert "1,234" in body
+    assert "1,234" not in body
     assert "56" in body

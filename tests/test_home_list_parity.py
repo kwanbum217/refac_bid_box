@@ -276,11 +276,12 @@ def test_index_page_renders_one_screen_home(auth_client, isolated_db):
     for phrase in (
         "공공조달 용역 입찰을 데이터로 해석합니다",
         'data-home-metric="accuracy"',
-        'data-home-metric="recent-year"',
         'data-home-panel="open"',
         'data-home-panel="matching"',
     ):
         assert phrase in body, phrase
+    # 2026-11-22: 최근 365일 공고 카드는 삭제했다.
+    assert 'data-home-metric="recent-year"' not in body
     # 입찰 중·내 조건은 상단 지표에서 하단 패널로 옮겼고 바로가기는 삭제했다.
     assert 'data-home-metric="open"' not in body
     assert 'data-home-metric="matching"' not in body

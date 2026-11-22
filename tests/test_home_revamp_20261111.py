@@ -27,6 +27,7 @@ from src.app.core.timeutil import utcnow
 from src.app.main import app
 from src.app.models.accounts import CustomUser
 from src.app.models.bid_preferences import AccountBidPreference
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement
 from src.app.services import home_summary
 
@@ -99,6 +100,19 @@ def _add(db, **overrides) -> BidAnnouncement:
     return row
 
 
+def _add_license(db, bid: BidAnnouncement, code: str = "1172") -> None:
+    """4대 업종 제한 행을 붙입니다. 입찰 중 셈은 이 행이 있어야 통과합니다."""
+    db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no=bid.bid_ntce_no,
+            bid_ntce_ord=bid.bid_ntce_ord,
+            lcns_lmt_nm=f"/{code}/",
+            collected_at=BASE_TIME,
+        )
+    )
+    db.commit()
+
+
 # --------------------------------------------------------------------------- #
 # (1) 화면 구성
 # --------------------------------------------------------------------------- #
@@ -110,8 +124,10 @@ def test_home_renders_top_metrics_and_bottom_panels(auth_client, monkeypatch, tm
 
     body = auth_client.get("/").text
 
-    for metric in ("accuracy", "recent-year"):
-        assert f'data-home-metric="{metric}"' in body, metric
+    assert 'data-home-metric="accuracy"' in body
+    # 2026-11-22: 최근 365일 공고 카드는 삭제했다.
+    assert 'data-home-metric="recent-year"' not in body
+    assert "최근 365일 공고" not in body
     # 입찰 중·내 조건은 상단 지표가 아니라 하단 2열 패널로 옮겼다.
     assert 'data-home-metric="open"' not in body
     assert 'data-home-metric="matching"' not in body
@@ -120,9 +136,10 @@ def test_home_renders_top_metrics_and_bottom_panels(auth_client, monkeypatch, tm
     # 하단 바로가기 4개는 삭제했다.
     for shortcut in ("bid-list", "result-list", "compare", "chatbot"):
         assert f'data-home-shortcut="{shortcut}"' not in body, shortcut
-    assert "±3.46" in body
+    assert "3.46" in body
     assert ">%p</span>" in body
     assert "2026-01-02" in body
+    assert 'data-home-accuracy-tile="rmse"' in body
     assert "data-home-swipe-slide" not in body
     assert "data-home-swipe-track" not in body
 
@@ -188,20 +205,22 @@ def test_servc_counts_respect_category_period_deadline_and_latest_ord(
         bid_ntce_dt=BASE_TIME - timedelta(days=100),
         bid_clse_dt=BASE_TIME - timedelta(days=99),
     )
-    # 365일 안이며 입찰 중
-    _add(
+    # 365일 안이며 입찰 중 (4대 업종 제한 행 포함)
+    open_bid = _add(
         isolated_db,
         bid_ntce_no="ANN-OPEN",
         bid_ntce_dt=BASE_TIME - timedelta(days=10),
         bid_clse_dt=BASE_TIME + timedelta(days=5),
     )
+    _add_license(isolated_db, open_bid)
     # 90일 스캔 경계 안쪽이며 입찰 중
-    _add(
+    lookback_bid = _add(
         isolated_db,
         bid_ntce_no="ANN-OPEN-LOOKBACK",
         bid_ntce_dt=BASE_TIME - timedelta(days=89),
         bid_clse_dt=BASE_TIME + timedelta(days=1),
     )
+    _add_license(isolated_db, lookback_bid, "1162")
     # 365일 밖이라 어느 쪽에도 들지 않음
     _add(
         isolated_db,
@@ -225,26 +244,28 @@ def test_servc_counts_respect_category_period_deadline_and_latest_ord(
         bid_clse_dt=BASE_TIME - timedelta(days=1),
     )
     # 같은 공고번호의 이전 차수와 최신 차수: 최신 차수만 한 건으로 센다
-    _add(
+    duplicate_prev = _add(
         isolated_db,
         bid_ntce_no="ANN-DUP",
         bid_ntce_ord="000",
         bid_ntce_dt=BASE_TIME - timedelta(days=50),
         bid_clse_dt=BASE_TIME + timedelta(days=2),
     )
-    _add(
+    _add_license(isolated_db, duplicate_prev, "5603")
+    duplicate_latest = _add(
         isolated_db,
         bid_ntce_no="ANN-DUP",
         bid_ntce_ord="001",
         bid_ntce_dt=BASE_TIME - timedelta(days=49),
         bid_clse_dt=BASE_TIME + timedelta(days=2),
     )
+    _add_license(isolated_db, duplicate_latest, "5603")
 
     summary = home_summary.get_home_summary(isolated_db, None, now=BASE_TIME)
 
-    # 연도: YEAR-CLOSED, OPEN, OPEN-LOOKBACK, CLOSED, DUP(최신) = 5
-    assert summary["recent_year_count"] == 5
-    # 입찰 중: OPEN, OPEN-LOOKBACK, DUP(최신) = 3
+    # 2026-11-22: 365일 건수는 화면에서 빠져 요약 문맥에도 두지 않는다.
+    assert "recent_year_count" not in summary
+    # 입찰 중 4대 업종: OPEN, OPEN-LOOKBACK, DUP(최신) = 3
     assert summary["open_count"] == 3
 
 
@@ -287,7 +308,9 @@ def test_summary_counts_are_not_recounted_on_second_request(isolated_db, monkeyp
     뒤에도 요청 경로는 캐시만 읽습니다.
     """
     monkeypatch.setattr(home_summary, "SERVING_ROOT", tmp_path)
-    _add(isolated_db, bid_ntce_no="ANN-CACHE")
+    monkeypatch.setattr(home_summary, "kst_now", lambda: BASE_TIME)
+    cached_bid = _add(isolated_db, bid_ntce_no="ANN-CACHE")
+    _add_license(isolated_db, cached_bid)
 
     statements: list[str] = []
 
@@ -312,10 +335,9 @@ def test_summary_counts_are_not_recounted_on_second_request(isolated_db, monkeyp
     finally:
         event.remove(connection, "before_cursor_execute", record)
 
-    assert first["recent_year_count"] is None
     assert first["open_count"] is None
     assert first_counts == []
     # 예열이 채운 값을 요청 경로가 그대로 쓰고 다시 세지 않는다.
-    assert second["recent_year_count"] == warmed["recent_year_count"]
     assert second["open_count"] == warmed["open_count"]
+    assert second["open_count"] == 1
     assert second_counts == []

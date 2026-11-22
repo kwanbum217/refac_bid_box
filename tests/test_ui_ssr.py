@@ -155,11 +155,12 @@ def test_protected_pages_render_when_logged_in(auth_client, seeded_bid, path):
 
 
 def test_home_renders_summary_metrics_without_swipe(auth_client, seeded_bid):
-    """메인은 상단 지표 두 개와 하단 패널을 스와이프 없이 렌더한다."""
+    """메인은 정확도 지표와 하단 패널을 스와이프 없이 렌더한다."""
     body = auth_client.get("/").text
 
-    for metric in ("accuracy", "recent-year"):
-        assert f'data-home-metric="{metric}"' in body, metric
+    assert 'data-home-metric="accuracy"' in body
+    # 2026-11-22: 최근 365일 공고 카드는 삭제했다.
+    assert 'data-home-metric="recent-year"' not in body
     for panel in ("open", "matching"):
         assert f'data-home-panel="{panel}"' in body, panel
     assert "data-home-shortcut" not in body
