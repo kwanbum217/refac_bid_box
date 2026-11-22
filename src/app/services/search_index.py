@@ -89,7 +89,7 @@ def announcement_document(
 ) -> dict[str, Any]:
     # 판정 정본은 bid_queries 에 있고, 이 모듈은 bid_queries 를 지연 import 합니다
     # (bid_queries 가 이 모듈을 함수 안에서 import 하므로 최상단 import 는 순환입니다).
-    from src.app.services.bid_queries import is_qualification_analyzable
+    from src.app.services.bid_queries import CANCELLED_NTCE_KIND, is_qualification_analyzable
 
     region_codes = _region_codes(row.dminstt_nm, row.ntce_instt_nm)
     participation_region_codes = _region_codes(*(participation_region_names or []))
@@ -105,6 +105,10 @@ def announcement_document(
         "ntce_instt_nm": row.ntce_instt_nm or "",
         "category": row.category,
         "qualification_analyzable": is_qualification_analyzable(row, attachment_regime),
+        # 색인에는 (공고번호, 업무구분)마다 최신 차수 행만 들어가므로 이 값은 그
+        # 공고번호의 최신 차수 취소 여부입니다. 목록 질의는 재색인 전 옛 문서도
+        # 통과하도록 '!= true' 로 거릅니다(필드 없는 문서는 통과).
+        "is_cancelled": row.ntce_kind_nm == CANCELLED_NTCE_KIND,
         "region_codes": region_codes,
         # 발주처 지역(region_codes)과 달리 실제 참가가능지역 제한입니다. 지역 제한
         # 필터는 이 필드를 기준으로 걸어 SQL 경로와 같은 결과를 냅니다.
@@ -191,6 +195,7 @@ class MeiliSearchClient:
                     "dataset",
                     "category",
                     "qualification_analyzable",
+                    "is_cancelled",
                     "region_codes",
                     "participation_region_codes",
                     "license_codes",
@@ -278,6 +283,10 @@ class MeiliSearchClient:
         qualification_only: bool = False,
     ) -> SearchPage:
         filters = [f"dataset = {json.dumps(dataset, ensure_ascii=False)}"]
+        if dataset == "announcement":
+            # 최신 차수가 취소공고인 공고는 목록 기본 조건에서 뺍니다. 아직 재색인하지
+            # 않은 문서에는 이 필드가 없으므로 '!= true' 로 걸러 옛 문서는 통과시킵니다.
+            filters.append("is_cancelled != true")
         if category:
             filters.append(f"category = {json.dumps(category, ensure_ascii=False)}")
         if region:

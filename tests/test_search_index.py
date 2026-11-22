@@ -153,7 +153,8 @@ def test_meili_search_sends_dataset_filters_and_sort(monkeypatch):
     assert page == SearchPage(ids=[7], has_next=True)
     assert request.call_args.args[:2] == ("POST", f"http://search/indexes/{INDEX_UID}/search")
     assert request.call_args.kwargs["json"]["filter"] == (
-        'dataset = "announcement" AND category = "Servc" AND participation_region_codes = "seoul"'
+        'dataset = "announcement" AND is_cancelled != true AND '
+        'category = "Servc" AND participation_region_codes = "seoul"'
     )
 
 
@@ -178,7 +179,8 @@ def test_meili_search_supports_license_code_filter(monkeypatch):
 
     assert page == SearchPage(ids=[9], has_next=False)
     assert request.call_args.kwargs["json"]["filter"] == (
-        'dataset = "announcement" AND category = "Servc" AND license_codes = "0036"'
+        'dataset = "announcement" AND is_cancelled != true AND '
+        'category = "Servc" AND license_codes = "0036"'
     )
 
 
@@ -203,7 +205,8 @@ def test_meili_search_single_license_codes_list_matches_legacy_filter(monkeypatc
     )
 
     assert request.call_args.kwargs["json"]["filter"] == (
-        'dataset = "announcement" AND category = "Servc" AND license_codes = "0036"'
+        'dataset = "announcement" AND is_cancelled != true AND '
+        'category = "Servc" AND license_codes = "0036"'
     )
 
 
@@ -228,7 +231,8 @@ def test_meili_search_multiple_license_codes_uses_in_filter(monkeypatch):
     )
 
     assert request.call_args.kwargs["json"]["filter"] == (
-        'dataset = "announcement" AND license_codes IN ["1164", "1167", "2775"]'
+        'dataset = "announcement" AND is_cancelled != true AND '
+        'license_codes IN ["1164", "1167", "2775"]'
     )
 
 

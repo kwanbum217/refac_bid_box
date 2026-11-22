@@ -54,6 +54,10 @@ DEFAULT_PREDICTION_MODEL = "v25"
 DEFAULT_BID_LIST_SORT = "notice"
 DEFAULT_RESULT_LIST_SORT = "opening"
 DEFAULT_REGION_SORT_RANK = 999
+# 취소공고 차수는 공고 탐색 목록 기본 노출에서 뺍니다. 홈 집계의
+# bid_preferences.not_cancelled_clause() 와 같은 정의(NULL 은 유지, 이 값만 제외)이며
+# 두 브랜치가 병합된 뒤 한 곳으로 합칩니다.
+CANCELLED_NTCE_KIND = "취소공고"
 BID_LIST_SORT_CHOICES = ("notice", "deadline", "amount", "region")
 RESULT_LIST_SORT_CHOICES = ("opening", "amount", "rate")
 PAGE_SIZE = 20
@@ -445,6 +449,19 @@ def latest_announcement_filter(stmt, *, collected_since: datetime | None = None)
     )
 
 
+def not_cancelled_clause() -> Any:
+    """최신 차수가 취소공고인 행을 거르는 조건이다.
+
+    값이 없는 행(NULL)은 유지하고 '취소공고'만 제외합니다. 홈 집계의
+    `bid_preferences.not_cancelled_clause()` 와 같은 정의이며, 병합 뒤 한 곳으로
+    합칩니다. 최신 차수 필터 뒤에 적용해야 이전 차수를 대신 노출하지 않습니다.
+    """
+    return or_(
+        BidAnnouncement.ntce_kind_nm.is_(None),
+        BidAnnouncement.ntce_kind_nm != CANCELLED_NTCE_KIND,
+    )
+
+
 def _is_newer_announcement_clause(other, current) -> Any:
     return or_(
         other.bid_ntce_ord > current.bid_ntce_ord,
@@ -787,6 +804,10 @@ def list_announcements(
 
     # 필터와 무관하게 동일 공고번호·업무구분의 최신 차수만 노출합니다.
     stmt = latest_announcement_filter(stmt)
+    # 홈 '더보기'로 이어지는 목록이 이미 취소된 공고를 재공고와 함께 보여주지 않도록
+    # 최신 차수가 취소공고인 행은 기본으로 뺍니다. 이전 차수 행은 취소되지 않았더라도
+    # 최신 차수 필터에서 이미 빠졌으므로 되살아나지 않습니다.
+    stmt = stmt.where(not_cancelled_clause())
 
     if sort_key == "deadline":
         missing = case((BidAnnouncement.bid_clse_dt.is_(None), 1), else_=0)
