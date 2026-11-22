@@ -5,8 +5,8 @@ src/app/services/home_summary.py
 
 | 지표 | 조건 |
 | --- | --- |
-| 정확도 | 서빙 버전과 일치하는 사이드카 실측값, 없으면 `source_metrics` |
-| 승격 추이 | `generations/*/metadata.json` 의 `source_metrics` 세대별 값 |
+| 정확도 | 서빙 버전과 일치하는 사이드카 실측값과 `distribution`, 없으면 `source_metrics` |
+| 정확도 그래프 | 사이드카 `distribution` 의 오차 범위별 적중 비율과 예측 대 실제 산점도 |
 | 입찰 중 | `category='Servc'` AND `bid_clse_dt >= now` AND `bid_ntce_dt >= now-90일` AND 4대 업종 |
 | 마감 구간 | 위 입찰 중 공고를 KST 날짜 기준 오늘/1~3일/4~7일/8일 이후로 나눈 수 |
 | 내 조건 | 관심 업종·지역에 맞는 입찰 중 용역 공고 수와 마감 임박 순 목록 |
@@ -59,6 +59,11 @@ from src.ml.promotion import METRICS_ROOT, SERVING_ROOT, load_serving_metrics
 SERVC_CATEGORY = "Servc"
 SERVC_MODEL_NAME = "servc_institution_v1"
 
+# 산점도는 화면 성능과 가독성을 위해 최대 300점만 그리고, 정확히 맞힘 띠는
+# ±2%p 입니다. 두 값 모두 계약 사양이며 지표 값이 아닙니다.
+MAX_SCATTER_POINTS = 300
+SCATTER_BAND_PP = 2.0
+
 OPEN_BID_LOOKBACK_DAYS = 90
 
 # KST 날짜 기준 마감 구간입니다. 화면 순서와 인덱스가 같아야 합니다.
@@ -82,12 +87,6 @@ def _to_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number
-
-
-def _rounded(value: Any, digits: int = 4) -> float | None:
-    """지표 파일 값을 그래프 전송용으로 자릅니다. 값이 없으면 None 입니다."""
-    number = _to_float(value)
-    return None if number is None else round(number, digits)
 
 
 def _serving_metadata(serving_root: Path) -> dict[str, Any]:
@@ -138,110 +137,236 @@ def _tile(key: str, label: str, value: str, unit: str, note: str) -> dict[str, s
     return {"key": key, "label": label, "value": value, "unit": unit, "note": note}
 
 
+def _percent_text(ratio: float) -> str:
+    """0~1 비율을 화면 퍼센트 숫자로 만듭니다. 정수면 소수점을 붙이지 않습니다."""
+    percent = round(ratio * 100, 1)
+    if abs(percent - round(percent)) < 1e-9:
+        return str(round(percent))
+    return f"{percent:.1f}"
+
+
+def _ratio(value: Any) -> float | None:
+    """0~1 비율 값만 받습니다. 범위를 벗어나면 근거 없는 값으로 봅니다."""
+    number = _to_float(value)
+    if number is None or number < 0.0 or number > 1.0:
+        return None
+    return number
+
+
+def _band_label(within_pp: float) -> str:
+    """오차 범위 표기입니다. 0.5 는 ±0.5%p, 1.0 은 ±1%p 입니다."""
+    return f"±{within_pp:g}%p"
+
+
+def _scatter_axis(points: list[list[float]]) -> tuple[float, float]:
+    """산점도 두 축이 같은 범위를 쓰도록 점의 최소·최대에 여유를 둡니다."""
+    values = [value for point in points for value in point]
+    low, high = min(values), max(values)
+    padding = max(0.5, (high - low) * 0.08)
+    axis_min = max(0.0, low - padding)
+    axis_max = min(100.0, high + padding)
+    if axis_max - axis_min < 1.0:
+        axis_max = min(100.0, axis_min + 1.0)
+        axis_min = max(0.0, axis_max - 1.0)
+    return round(axis_min, 1), round(axis_max, 1)
+
+
+def _accuracy_distribution(measured: dict[str, Any] | None) -> dict[str, Any] | None:
+    """사이드카 `distribution` 을 화면이 쓸 수 있는 형태로 검증해 돌려줍니다.
+
+    계약은 `bands`(필수), `interval`(없으면 null), `scatter`, `error_reduction`
+    입니다. `bands` 가 없거나 모든 값이 범위를 벗어나면 None 이며 호출부는
+    종전 지표로 물러납니다.
+    """
+    if not isinstance(measured, dict):
+        return None
+    raw = measured.get("distribution")
+    if not isinstance(raw, dict):
+        return None
+
+    bands: list[dict[str, Any]] = []
+    raw_bands = raw.get("bands")
+    if isinstance(raw_bands, list):
+        for item in raw_bands:
+            if not isinstance(item, dict):
+                continue
+            within_pp = _to_float(item.get("within_pp"))
+            share = _ratio(item.get("share"))
+            if within_pp is None or within_pp <= 0 or share is None:
+                continue
+            bands.append(
+                {
+                    "within_pp": within_pp,
+                    "label": _band_label(within_pp),
+                    "share": round(share, 4),
+                    "percent": round(share * 100, 1),
+                }
+            )
+    bands.sort(key=lambda band: band["within_pp"])
+    unique_bands: list[dict[str, Any]] = []
+    seen: set[float] = set()
+    for band in bands:
+        if band["within_pp"] in seen:
+            continue
+        seen.add(band["within_pp"])
+        unique_bands.append(band)
+    if not unique_bands:
+        return None
+
+    interval: dict[str, Any] | None = None
+    raw_interval = raw.get("interval")
+    if isinstance(raw_interval, dict):
+        coverage = _ratio(raw_interval.get("coverage"))
+        if coverage is not None:
+            evaluated = raw_interval.get("evaluated")
+            interval = {
+                "coverage": coverage,
+                "evaluated": (
+                    evaluated
+                    if isinstance(evaluated, int) and not isinstance(evaluated, bool)
+                    else None
+                ),
+            }
+
+    scatter: dict[str, Any] | None = None
+    raw_scatter = raw.get("scatter")
+    if isinstance(raw_scatter, dict) and isinstance(raw_scatter.get("points"), list):
+        points: list[list[float]] = []
+        for point in raw_scatter["points"]:
+            if not isinstance(point, (list, tuple)) or len(point) != 2:
+                continue
+            predicted = _to_float(point[0])
+            actual = _to_float(point[1])
+            if predicted is None or actual is None:
+                continue
+            points.append([round(predicted, 2), round(actual, 2)])
+        if points:
+            points = points[:MAX_SCATTER_POINTS]
+            axis_min, axis_max = _scatter_axis(points)
+            scatter = {
+                "points": points,
+                "axis_min": axis_min,
+                "axis_max": axis_max,
+                "band_pp": SCATTER_BAND_PP,
+            }
+
+    return {
+        "bands": unique_bands,
+        "interval": interval,
+        "scatter": scatter,
+        "error_reduction": _ratio(raw.get("error_reduction")),
+    }
+
+
 def _accuracy_tiles(
     metrics: dict[str, Any],
-    interval: dict[str, Any],
+    distribution: dict[str, Any] | None,
     measured: dict[str, Any] | None,
 ) -> list[dict[str, str]]:
     """확보된 값만 타일로 만듭니다. 없는 값은 타일 자체를 만들지 않습니다."""
     tiles: list[dict[str, str]] = []
-    rmse = _to_float(metrics.get("rmse"))
-    if rmse is not None:
-        tiles.append(_tile("rmse", "RMSE", f"{rmse:.2f}", "%p", "낙찰률 예측 평균 오차"))
+
     mae = _to_float(metrics.get("mae"))
     if mae is not None:
-        tiles.append(_tile("mae", "MAE", f"{mae:.2f}", "%p", "낙찰률 예측 절대 오차"))
-    r2 = _to_float(metrics.get("r2"))
-    if r2 is not None:
-        tiles.append(_tile("r2", "설명력 R2", f"{r2 * 100:.1f}", "%", "낙찰률 변동 설명 비율"))
+        tiles.append(
+            _tile("mae", "평균 오차", f"±{mae:.2f}", "%p", "예측 낙찰률과 실제 낙찰률의 평균 차이")
+        )
 
-    target = _to_float(interval.get("target_coverage"))
-    if target is not None:
-        calibration = interval.get("calibration_samples")
-        note = "예측구간 적중률 목표"
-        if isinstance(calibration, int) and not isinstance(calibration, bool):
-            note += f" · 보정 표본 {calibration:,}건"
-        tiles.append(_tile("coverage", "구간 적중률", f"{target * 100:.0f}", "%", note))
+    band_1pp = None
+    if distribution is not None:
+        for band in distribution["bands"]:
+            if abs(band["within_pp"] - 1.0) < 1e-9:
+                band_1pp = band
+                break
+    if band_1pp is not None:
+        hits = round(band_1pp["share"] * 10)
+        tiles.append(
+            _tile(
+                "within_1pp",
+                f"{band_1pp['label']} 이내 적중",
+                f"10건 중 {hits}건",
+                "",
+                "실제 낙찰률과 ±1%p 이내로 맞힌 공고",
+            )
+        )
 
-    samples = measured.get("samples") if isinstance(measured, dict) else None
-    holdout_since = measured.get("holdout_since") if isinstance(measured, dict) else None
-    if isinstance(samples, int) and not isinstance(samples, bool):
-        note = "검증 표본"
-        if isinstance(holdout_since, str) and holdout_since:
-            note += f" · {holdout_since} 이후"
-        tiles.append(_tile("validation", "검증 표본", f"{samples:,}", "건", note))
+    if distribution is not None and distribution["interval"] is not None:
+        coverage = distribution["interval"]["coverage"]
+        note = "제시한 하한~상한 범위 안에 실제 낙찰률이 들어온 비율(실측)"
+        evaluated = distribution["interval"]["evaluated"]
+        if evaluated:
+            note += f" · 검증 {evaluated:,}건"
+        tiles.append(
+            _tile("interval_coverage", "예측 범위 적중", _percent_text(coverage), "%", note)
+        )
+
+    error_reduction = distribution["error_reduction"] if distribution is not None else None
+    if error_reduction is None:
+        error_reduction = _ratio(metrics.get("r2"))
+    if error_reduction is not None:
+        tiles.append(
+            _tile(
+                "error_reduction",
+                "오차 감소",
+                _percent_text(error_reduction),
+                "%",
+                "모든 공고를 평균 낙찰률로 예측할 때보다 오차(제곱 기준)를 줄인 정도",
+            )
+        )
     return tiles
 
 
-def _generation_rows(serving_root: Path) -> list[dict[str, Any]]:
-    """승격 세대 metadata.json 에서 추이 그래프에 쓸 실제 지표만 모읍니다.
+def _accuracy_meta_line(
+    metrics: dict[str, Any],
+    measured: dict[str, Any] | None,
+    promoted_date: str | None,
+) -> str:
+    """타일 아래 작은 글씨입니다. 읽은 값만 이어 붙이고 없는 항목은 뺍니다."""
+    parts: list[str] = []
+    rmse = _to_float(metrics.get("rmse"))
+    if rmse is not None:
+        parts.append(f"RMSE {rmse:.2f}%p")
+    samples = measured.get("samples") if isinstance(measured, dict) else None
+    if isinstance(samples, int) and not isinstance(samples, bool):
+        parts.append(f"검증 {samples:,}건")
+    holdout_since = measured.get("holdout_since") if isinstance(measured, dict) else None
+    if isinstance(holdout_since, str) and holdout_since:
+        parts.append(f"{holdout_since} 이후 공고")
+    if promoted_date:
+        parts.append(f"{promoted_date} 승격 모델")
+    return " · ".join(parts)
 
-    세대 순서는 promoted_at 입니다. rmse 가 없는 세대는 그래프에서 뺍니다.
+
+def _accuracy_chart(
+    distribution: dict[str, Any] | None,
+    measured: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """실측 분포가 있을 때만 그래프 두 개의 데이터를 만듭니다.
+
+    막대와 산점도는 한 쌍이라 산점도 점이 없으면 둘 다 숨깁니다.
     """
-    generations = serving_root / SERVC_MODEL_NAME / "generations"
-    try:
-        entries = sorted(generations.iterdir())
-    except OSError:
-        return []
-
-    rows: list[dict[str, Any]] = []
-    for entry in entries:
-        if not entry.is_dir():
-            continue
-        try:
-            meta = json.loads((entry / "metadata.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if not isinstance(meta, dict):
-            continue
-        source = meta.get("source_metrics")
-        if not isinstance(source, dict):
-            continue
-        rmse = _to_float(source.get("rmse"))
-        if rmse is None:
-            continue
-        rows.append(
-            {
-                "version": str(meta.get("version") or entry.name),
-                "promoted_at": str(meta.get("promoted_at") or ""),
-                "date": _promoted_date(meta) or "",
-                "rmse": round(rmse, 4),
-                "mape": _rounded(source.get("mape")),
-                "r2": _rounded(source.get("r2")),
-            }
-        )
-    rows.sort(key=lambda row: (row["promoted_at"], row["version"]))
-    return rows
-
-
-def _accuracy_chart(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """승격 세대별 오차 추이를 Chart.js 가 읽을 형태로 만듭니다.
-
-    세대가 두 개 미만이면 그릴 추이가 없으므로 visible=False 이고 화면은
-    그래프 영역을 숨깁니다.
-    """
-    hidden = {"visible": False, "labels": [], "versions": [], "series": [], "note": ""}
-    if len(rows) < 2:
+    hidden = {"visible": False, "bands": [], "scatter": None, "note": ""}
+    if distribution is None or distribution["scatter"] is None:
         return hidden
 
-    series: list[dict[str, Any]] = [
-        {
-            "key": "rmse",
-            "label": "RMSE",
-            "unit": "%p",
-            "data": [row["rmse"] for row in rows],
-        }
-    ]
-    mape_data = [row["mape"] for row in rows]
-    if sum(1 for value in mape_data if value is not None) >= 2:
-        series.append({"key": "mape", "label": "MAPE", "unit": "%", "data": mape_data})
+    samples = measured.get("samples") if isinstance(measured, dict) else None
+    note = ""
+    if isinstance(samples, int) and not isinstance(samples, bool):
+        note = f"실제 예측 {samples:,}건에서 뽑은 표본입니다."
 
     return {
         "visible": True,
-        "labels": [row["date"] or row["version"] for row in rows],
-        "versions": [row["version"] for row in rows],
-        "series": series,
-        "note": "승격 세대별 검증 지표(source_metrics)",
+        "bands": [
+            {
+                "within_pp": band["within_pp"],
+                "label": band["label"],
+                "share": band["share"],
+                "percent": band["percent"],
+            }
+            for band in distribution["bands"]
+        ],
+        "scatter": distribution["scatter"],
+        "note": note,
     }
 
 
@@ -249,12 +374,13 @@ def load_serving_accuracy(
     serving_dir: Path | str | None = None,
     metrics_dir: Path | str | None = None,
 ) -> dict[str, Any]:
-    """서빙 중인 용역 모델의 실측 오차와 승격 추이를 돌려줍니다.
+    """서빙 중인 용역 모델의 실측 정확도를 돌려줍니다.
 
     사이드카의 실측값이 서빙 버전과 일치하면 그것을 씁니다. 없거나 버전이
     다르면 승격이 기록한 metadata.json 의 `source_metrics` 로 물러납니다.
-    그래프는 세대 metadata 의 `source_metrics` 만 쓰며, 읽지 못하면
-    available=False 이고 화면은 '측정값 준비 중' 을 보여 줍니다.
+    그래프는 사이드카의 `distribution`(오차 범위별 적중 비율, 예측 대 실제
+    산점도)이 있을 때만 그리며, 없으면 available 이어도 visible=False 이고
+    화면은 값이 있는 타일만 보여 줍니다.
     """
     serving_root = Path(SERVING_ROOT) if serving_dir is None else Path(serving_dir)
     metrics_root = Path(METRICS_ROOT) if metrics_dir is None else Path(metrics_dir)
@@ -282,19 +408,22 @@ def load_serving_accuracy(
             "rmse_display": None,
             "promoted_date": None,
             "tiles": [],
-            "chart": _accuracy_chart([]),
+            "meta_line": "",
+            "chart": _accuracy_chart(None, None),
         }
 
-    interval = meta.get("interval")
+    promoted_date = _promoted_date(meta)
+    distribution = _accuracy_distribution(measured)
     return {
         "available": True,
         "source": source,
         "source_label": "운영 경로 실측" if source == "measured" else "승격 시 검증 지표",
         "version": version or None,
         "rmse_display": f"{rmse:.2f}",
-        "promoted_date": _promoted_date(meta),
-        "tiles": _accuracy_tiles(metrics, interval if isinstance(interval, dict) else {}, measured),
-        "chart": _accuracy_chart(_generation_rows(serving_root)),
+        "promoted_date": promoted_date,
+        "tiles": _accuracy_tiles(metrics, distribution, measured),
+        "meta_line": _accuracy_meta_line(metrics, measured, promoted_date),
+        "chart": _accuracy_chart(distribution, measured),
     }
 
 
