@@ -598,9 +598,15 @@ def save_serving_metrics(
     metrics: dict,
     *,
     detail: dict | None = None,
+    distribution: dict[str, Any] | None = None,
     metrics_dir: Path | str | None = None,
 ) -> Path:
-    """실측 지표를 사이드카에 기록합니다."""
+    """실측 지표를 사이드카에 기록합니다.
+
+    distribution 은 화면용 보조 분포(오차 밴드 적중 비율, 구간 적중률,
+    산점도 표본)입니다. 넘기지 않으면 키 자체를 쓰지 않아 종전 파일과
+    같은 내용이 됩니다. 읽는 쪽은 키가 없으면 종전 화면으로 물러납니다.
+    """
     root = Path(METRICS_ROOT if metrics_dir is None else metrics_dir)
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{model_name}.json"
@@ -611,6 +617,8 @@ def save_serving_metrics(
         "measured_at": utcnow().isoformat(),
         **(detail or {}),
     }
+    if distribution is not None:
+        payload["distribution"] = distribution
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
 
