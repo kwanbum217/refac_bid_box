@@ -45,7 +45,7 @@
 
         <!-- Pending / Stale Notice -->
         <div id="comparePendingNotice" class="hidden h-card p-5 bg-slate-50 border border-slate-200 rounded-xl">
-            <p class="text-sm font-bold text-slate-600">통계를 집계하고 있습니다. 잠시 뒤 자동으로 다시 불러옵니다.</p>
+            <p class="text-sm font-bold text-slate-600" id="comparePendingMessage">통계를 집계하고 있습니다. 잠시 뒤 자동으로 다시 불러옵니다.</p>
         </div>
         <div id="compareStaleNotice" class="hidden p-2 bg-slate-50 border border-slate-200 rounded-lg">
             <span class="text-xs font-bold text-slate-400">최근 집계 기준</span>
@@ -193,14 +193,73 @@
 <script nonce="{{ csp_nonce }}">
     document.addEventListener('DOMContentLoaded', loadCompareData);
 
+    // worker 보충 주기는 5분이고 재생성이 실측 12.9초 걸립니다. 재요청 간격을
+    // 10초에서 60초까지 늘리며 최소 10분은 기다려야 보충이 끝난 값을 받습니다.
     const COMPARE_PENDING_RETRY_MS = 10000;
-    const COMPARE_PENDING_MAX_RETRIES = 6;
-    let comparePendingRetryCount = 0;
+    const COMPARE_PENDING_RETRY_MAX_MS = 60000;
+    const COMPARE_PENDING_RETRY_WINDOW_MS = 10 * 60 * 1000;
+    const COMPARE_PENDING_MESSAGE = '통계를 집계하고 있습니다. 잠시 뒤 자동으로 다시 불러옵니다.';
+    const COMPARE_PENDING_FINAL_MESSAGE = '통계 집계가 예상보다 오래 걸립니다. 잠시 후 새로고침해 주세요.';
+    let comparePendingRetryDelay = COMPARE_PENDING_RETRY_MS;
+    let comparePendingRetryStartedAt = 0;
+    let comparePendingHiddenAt = 0;
+    let comparePendingTimer = null;
 
     function setCompareNotice(pending, stale) {
         document.getElementById('comparePendingNotice').classList.toggle('hidden', !pending);
         document.getElementById('compareStaleNotice').classList.toggle('hidden', !stale);
     }
+
+    function clearComparePendingTimer() {
+        if (comparePendingTimer !== null) {
+            clearTimeout(comparePendingTimer);
+            comparePendingTimer = null;
+        }
+    }
+
+    function resetComparePendingRetry() {
+        clearComparePendingTimer();
+        comparePendingRetryDelay = COMPARE_PENDING_RETRY_MS;
+        comparePendingRetryStartedAt = 0;
+        comparePendingHiddenAt = 0;
+        document.getElementById('comparePendingMessage').textContent = COMPARE_PENDING_MESSAGE;
+    }
+
+    function scheduleComparePendingRetry() {
+        clearComparePendingTimer();
+        // 탭이 숨겨진 동안에는 재요청을 멈추고 다시 보일 때 이어서 합니다.
+        if (document.hidden) {
+            return;
+        }
+        const elapsed = Date.now() - comparePendingRetryStartedAt;
+        const remaining = COMPARE_PENDING_RETRY_WINDOW_MS - elapsed;
+        if (remaining <= 0) {
+            document.getElementById('comparePendingMessage').textContent = COMPARE_PENDING_FINAL_MESSAGE;
+            return;
+        }
+        comparePendingTimer = setTimeout(loadCompareData, Math.min(comparePendingRetryDelay, remaining));
+        comparePendingRetryDelay = Math.min(
+            comparePendingRetryDelay * 2,
+            COMPARE_PENDING_RETRY_MAX_MS
+        );
+    }
+
+    document.addEventListener('visibilitychange', function () {
+        if (!comparePendingRetryStartedAt) {
+            return;
+        }
+        if (document.hidden) {
+            comparePendingHiddenAt = Date.now();
+            clearComparePendingTimer();
+            return;
+        }
+        // 숨겨져 있던 시간은 재시도 창에서 빼고 이어서 요청합니다.
+        if (comparePendingHiddenAt) {
+            comparePendingRetryStartedAt += Date.now() - comparePendingHiddenAt;
+            comparePendingHiddenAt = 0;
+        }
+        loadCompareData();
+    });
 
     async function fetchJsonOrThrow(url) {
         const res = await fetch(url);
@@ -227,13 +286,14 @@
             // 스냅숏이 준비되지 않았으면 수치 대신 안내를 보이고 잠시 뒤 다시 요청합니다.
             if (data.pending) {
                 setCompareNotice(true, false);
-                if (comparePendingRetryCount < COMPARE_PENDING_MAX_RETRIES) {
-                    comparePendingRetryCount += 1;
-                    setTimeout(loadCompareData, COMPARE_PENDING_RETRY_MS);
+                if (!comparePendingRetryStartedAt) {
+                    comparePendingRetryStartedAt = Date.now();
                 }
+                scheduleComparePendingRetry();
                 return;
             }
 
+            resetComparePendingRetry();
             setCompareNotice(false, Boolean(data.stale));
 
             // Stats

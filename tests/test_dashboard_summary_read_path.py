@@ -307,8 +307,11 @@ def test_stale_response_cached_with_short_ttl(isolated_db):
         compare_ttls = [call.args[2] for call in mock_cache_set.call_args_list]
         assert compare_ttls[0] == COMPARE_STATS_STALE_CACHE_TTL
         assert compare_ttls[0] != COMPARE_STATS_CACHE_TTL
-        assert mock_cache_set.call_args_list[0].args[0].endswith(":stale")
-        assert mock_cache_set.call_args_list[1].args[0].endswith(":stale:last")
+        stale_key = mock_cache_set.call_args_list[0].args[0]
+        last_good_key = mock_cache_set.call_args_list[1].args[0]
+        assert stale_key.endswith(":stale")
+        # 보조 캐시 키는 stale 접미와 무관한 기준 키에서 파생되어야 합니다.
+        assert last_good_key == f"{stale_key.removesuffix(':stale')}:last"
         assert compare_ttls[1] == COMPARE_STATS_LAST_GOOD_CACHE_TTL
 
 

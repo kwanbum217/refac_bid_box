@@ -296,7 +296,7 @@ def test_worker_cron_에_5분_주기로_등록된다():
 
 
 def test_비교_화면이_pending_을_처리하고_csp_nonce_를_쓴다():
-    """(f) pending 이면 안내를 보이고 10초 뒤 최대 6회 다시 요청한다."""
+    """(f) pending 이면 안내를 보이고 간격을 늘려 가며 다시 요청한다."""
     template = (
         Path(__file__).resolve().parents[1] / "src/app/templates/bids/compare.html"
     ).read_text(encoding="utf-8")
@@ -304,8 +304,9 @@ def test_비교_화면이_pending_을_처리하고_csp_nonce_를_쓴다():
     assert "data.pending" in template
     assert "통계를 집계하고 있습니다" in template
     assert "COMPARE_PENDING_RETRY_MS = 10000" in template
-    assert "COMPARE_PENDING_MAX_RETRIES = 6" in template
-    assert "setTimeout(loadCompareData, COMPARE_PENDING_RETRY_MS)" in template
+    assert "COMPARE_PENDING_RETRY_MAX_MS = 60000" in template
+    assert "COMPARE_PENDING_RETRY_WINDOW_MS = 10 * 60 * 1000" in template
+    assert "setTimeout(loadCompareData" in template
     assert "data.stale" in template
     assert 'nonce="{{ csp_nonce }}"' in template
 

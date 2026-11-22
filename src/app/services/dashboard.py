@@ -710,10 +710,12 @@ def get_compare_stats_data(db: Session) -> dict[str, Any]:
             and totals_usable
         )
         is_stale = summaries_stale
-        cache_key = _compare_stats_cache_key(announcement_summary, result_summary)
-        if is_stale:
-            cache_key = f"{cache_key}:stale"
-        last_good_cache_key = _compare_stats_last_good_cache_key(cache_key)
+        base_cache_key = _compare_stats_cache_key(announcement_summary, result_summary)
+        cache_key = f"{base_cache_key}:stale" if is_stale else base_cache_key
+        # 보조 캐시 키는 stale 접미와 무관한 기준 키에서 파생합니다. 요약이
+        # stale 로 바뀌는 순간에도 정상 응답이 저장해 둔 직전 값을 찾아야
+        # pending 대신 stale 표시로 답할 수 있습니다.
+        last_good_cache_key = _compare_stats_last_good_cache_key(base_cache_key)
 
         with latency_segments.compare_stats_segment("cache_lookup"):
             data = cache.get(cache_key)
