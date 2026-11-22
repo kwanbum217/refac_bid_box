@@ -58,6 +58,13 @@ def _applied_conditions_line(filters: dict | None) -> str:
         label = "지역" if institution_name in REGION_KEYWORDS else "기관"
         parts.append(f"{label} {institution_name}")
 
+    # 업종어를 인식해도 집계가 아직 그 조건을 쓰지 않았으면 "미적용" 을 붙입니다.
+    # 용역 전체 집계를 업종 집계로 읽지 않게 하려는 표시입니다.
+    industry_label = _normalize_text(str(filters.get("industry_label") or ""))
+    if industry_label:
+        applied_suffix = "" if filters.get("industry_applied") else "(미적용)"
+        parts.append(f"업종 {industry_label}{applied_suffix}")
+
     return "- 적용 조건: " + ", ".join(parts)
 
 

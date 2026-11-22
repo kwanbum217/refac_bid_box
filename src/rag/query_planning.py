@@ -15,6 +15,11 @@ from datetime import date, timedelta
 from typing import Any
 
 from src.app.models.bids import CATEGORY_LABELS
+from src.rag.industry_terms import (
+    INDUSTRY_QUESTION_NOISE_SUFFIXES,
+    INDUSTRY_TERM_KEYWORDS,
+    INDUSTRY_TITLE_NOISE_TERMS,
+)
 
 # 기존 import 경로(src.rag.query_planning)를 유지하기 위해 이름을 그대로 재노출합니다.
 from src.rag.query_lexicon import (  # noqa: F401
@@ -1434,6 +1439,43 @@ def extract_category(query: str) -> tuple[str, str]:
     return matched_keyword, matched_category
 
 
+def extract_industry_term(query: str) -> dict[str, Any]:
+    """질의에서 업종어(청소·경비 등)를 찾아 라벨과 공고명 키워드를 돌려줍니다.
+
+    업종어는 분야어(용역)와 다른 축이므로 사전을 따로 둡니다. 기관명 일부
+    ("시설관리공단", "인천공항시설관리")와 물품명("청소차")은 업종 지목이 아니므로
+    인식에서 제외합니다. 찾지 못하면 빈 dict 를 돌려주어 업종어 없는 질의의
+    filters 가 그대로 유지되게 합니다. 업종어가 여럿이면 질의에서 가장 먼저 나온
+    하나만 담습니다.
+    """
+    normalized = _normalize_text(query)
+    if not normalized:
+        return {}
+    matches: list[tuple[int, str]] = []
+    for label, keywords in INDUSTRY_TERM_KEYWORDS.items():
+        noise_terms = INDUSTRY_TITLE_NOISE_TERMS.get(label, ())
+        for keyword in keywords:
+            # 잡음 낱말이 키워드로 시작하면("청소차") 키워드 뒤 나머지("차")를
+            # 꼬리로 보고, 기관명 꼬리("공단")와 함께 인식에서 제외합니다.
+            noise_suffixes = (
+                *INDUSTRY_QUESTION_NOISE_SUFFIXES.get(label, ()),
+                *(term[len(keyword) :] for term in noise_terms if term.startswith(keyword)),
+            )
+            for match in re.finditer(re.escape(keyword), normalized):
+                start = match.start()
+                if start and "가" <= normalized[start - 1] <= "힣":
+                    continue
+                rest = normalized[match.end() :]
+                if any(rest.startswith(suffix) for suffix in noise_suffixes):
+                    continue
+                matches.append((start, label))
+                break
+    if not matches:
+        return {}
+    label = min(matches, key=lambda item: item[0])[1]
+    return {"label": label, "title_keywords": list(INDUSTRY_TERM_KEYWORDS[label])}
+
+
 def _category_label(category: str | None) -> str:
     category_code = _normalize_text(str(category or ""))
     return CATEGORY_LABELS.get(category_code, category_code or "-")
@@ -2267,15 +2309,79 @@ UNSUPPORTED_CONDITION_LABELS = {
 }
 
 
+def _industry_scope_label(filters: dict[str, Any]) -> str:
+    """업종 조건을 빼고 조회했을 때의 모집단 이름(예: "인천 용역")을 만듭니다."""
+    category_label = _normalize_text(str(filters.get("category_label") or ""))
+    if not category_label:
+        category = _normalize_text(str(filters.get("category") or ""))
+        category_label = _category_label(category) if category else ""
+    if category_label in ("", "-"):
+        category_label = "용역"
+
+    scope_names: list[str] = []
+    region_names = filters.get("region_names")
+    if isinstance(region_names, list) and region_names:
+        scope_names.append(", ".join(str(name) for name in region_names))
+    else:
+        institution_names = filters.get("institution_names")
+        if isinstance(institution_names, list) and institution_names:
+            scope_names.append(", ".join(str(name) for name in institution_names))
+        elif filters.get("institution_name"):
+            scope_names.append(str(filters["institution_name"]))
+    scope_names.append(category_label)
+    return " ".join(scope_names)
+
+
+def collect_unapplied_industry_conditions(
+    filters: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    """업종어를 인식했지만 집계가 그 조건을 붙이지 못했음을 알리는 항목을 만듭니다.
+
+    집계 계층이 title_keyword_condition 을 실제로 붙이면 filters["industry_applied"]
+    를 True 로 세웁니다. 그 표시가 없는데 업종 라벨만 있으면, 용역 전체 수치를
+    업종 수치로 읽지 않도록 응답 단계가 미적용을 밝힙니다.
+    """
+    if not filters:
+        return []
+    label = _normalize_text(str(filters.get("industry_label") or ""))
+    if not label or filters.get("industry_applied"):
+        return []
+    return [
+        {
+            "kind": "industry",
+            "field": "industry_label",
+            "label": label,
+            "scope": _industry_scope_label(filters),
+        }
+    ]
+
+
+def merge_unapplied_industry_conditions(
+    conditions: list[dict[str, str]] | None,
+    filters: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    """조회 계층이 돌려준 미적용 조건에 응답 단계가 아는 업종 항목을 보탭니다.
+
+    낙찰 목록 조회는 미적용 조건을 직접 모으지만, 단일 지표 통계는 그 경로를 타지
+    않아 업종 항목이 비어 있습니다. 이미 업종 항목이 있으면 중복해 붙이지 않습니다.
+    """
+    merged = [dict(condition) for condition in conditions or []]
+    if any(str(condition.get("kind") or "") == "industry" for condition in merged):
+        return merged
+    merged.extend(collect_unapplied_industry_conditions(filters))
+    return merged
+
+
 def collect_unapplied_result_conditions(
     filters: dict[str, Any] | None,
 ) -> list[dict[str, str]]:
-    """낙찰 결과 조회가 적용하지 못한 금액·정렬 조건을 모읍니다.
+    """낙찰 결과 조회가 적용하지 못한 금액·정렬·업종 조건을 모읍니다.
 
     낙찰 결과 테이블에는 추정가격·기초금액·마감일 열이 없습니다. 금액 조건이나
     정렬 표지가 그 축을 가리키면 조건을 버리지 않고 목록으로 남겨 응답 단계가
     "그 조건 없이 조회했다"고 밝히게 합니다. 낙찰금액 조건과 개찰일 정렬처럼
-    지원되는 축은 담지 않습니다.
+    지원되는 축은 담지 않습니다. 업종어도 조건 연결 전에는 같은 방식으로 남겨,
+    용역 전체 수치가 업종 수치로 오해되지 않게 합니다.
     """
     if not filters:
         return []
@@ -2294,22 +2400,34 @@ def collect_unapplied_result_conditions(
         condition["field"] == "bid_clse_dt" for condition in conditions
     ):
         conditions.append({"kind": "close_window", "field": "bid_clse_dt"})
+    conditions.extend(collect_unapplied_industry_conditions(filters))
     return conditions
 
 
 def unapplied_result_condition_notice(conditions: list[dict[str, str]] | None) -> str:
     """적용하지 못한 조건을 한 줄 안내 문장으로 만듭니다."""
+    notices: list[str] = []
     labels: list[str] = []
     for condition in conditions or []:
-        label = UNSUPPORTED_CONDITION_LABELS.get(str(condition.get("field") or ""))
-        if label and label not in labels:
-            labels.append(label)
-    if not labels:
-        return ""
-    return (
-        f"낙찰 결과에는 {'·'.join(labels)} 정보가 없어 그 조건 없이 조회했습니다. "
-        "낙찰금액 기준 조건이나 개찰일 순 정렬은 적용할 수 있습니다."
-    )
+        if str(condition.get("kind") or "") == "industry":
+            label = _normalize_text(str(condition.get("label") or ""))
+            if not label:
+                continue
+            scope = _normalize_text(str(condition.get("scope") or "")) or "용역"
+            notices.append(
+                f"업종 조건({label})은 적용하지 못해 {scope} 전체로 조회했습니다. "
+                "수치는 해당 업종으로 좁히지 않은 값입니다."
+            )
+            continue
+        condition_label = UNSUPPORTED_CONDITION_LABELS.get(str(condition.get("field") or ""))
+        if condition_label and condition_label not in labels:
+            labels.append(condition_label)
+    if labels:
+        notices.append(
+            f"낙찰 결과에는 {'·'.join(labels)} 정보가 없어 그 조건 없이 조회했습니다. "
+            "낙찰금액 기준 조건이나 개찰일 순 정렬은 적용할 수 있습니다."
+        )
+    return "\n".join(notices)
 
 
 SORT_AMOUNT_DESC_MARKERS = (
@@ -3371,6 +3489,14 @@ def build_retrieval_plan(query: str) -> RetrievalPlan:
     _, matched_category = extract_category(normalized_query)
     if matched_category:
         filters["category"] = matched_category
+    # 업종어(청소·경비 등)는 분야어와 다른 축입니다. 인식한 업종어를 공고명
+    # 키워드 조건과 라벨로 담고, 집계 계층이 그 조건을 붙였는지는
+    # industry_applied 로 드러냅니다. 업종어가 없으면 키를 만들지 않아 기본
+    # 모집단인 용역 전체가 그대로 유지됩니다(사용자 결정 2026-11-22).
+    industry = extract_industry_term(normalized_query)
+    if industry:
+        filters["industry_label"] = industry["label"]
+        filters["title_keywords"] = industry["title_keywords"]
     # 분류 비교는 두 분야를 대상으로 삼으므로 마지막 분야 하나를 공통 조건으로
     # 남기지 않습니다.
     if comparison_dimension == "category":

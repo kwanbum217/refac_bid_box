@@ -426,7 +426,13 @@
       "filters": {
         "date_from": "2026-09-09",
         "date_to": "2026-09-15",
-        "category": "Servc"
+        "category": "Servc",
+        "industry_label": "청소",
+        "title_keywords": [
+          "청소",
+          "미화",
+          "환경미화"
+        ]
       },
       "relative_to_today": {
         "date_from": -6,
