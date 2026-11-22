@@ -896,6 +896,40 @@ def _hint_result_institution_cover(stmt, plan: RetrievalPlan, institution_names:
     return stmt.with_hint(BidResult, RESULT_INSTITUTION_COVER_HINT, dialect_name="mysql")
 
 
+# 지역 별칭이 수천 개 이름으로 풀린 IN 목록에서 날짜 범위까지 걸리면, 개찰일을
+# 담은 이 인덱스가 기관명 범위 조회와 기간 조건을 함께 처리합니다. 낙찰금액·낙찰
+# 업체명은 이 인덱스에 없어 본문을 읽지만, category 선두 인덱스로 Servc 전체를
+# 훑는 것보다 좁습니다("서울" 2,603종 5년 창: 2,404ms 가 1,138ms).
+RESULT_REGION_WINDOW_HINT = "FORCE INDEX (ix_bid_results_repeat_hist)"
+
+
+def _hint_result_region_resolved_cover(
+    stmt,
+    plan: RetrievalPlan,
+    institution_names: list[str] | None,
+    *,
+    prefer_window_index: bool = False,
+):
+    """지역 목록 낙찰 집계에 기관명 선두 인덱스를 강제합니다.
+
+    해석 상한(1,000)을 넘는 IN 목록은 지역 별칭에서만 나옵니다. 그 목록에서는
+    옵티마이저가 기관명 범위 조회 대신 category 선두 커버링 인덱스로 Servc
+    표를 훑습니다. "서울"(2,603종) 실측에서 낙찰 합계와 낙찰업체 순위가
+    각각 7,245ms, 7,242ms(날짜 없이) 였고, 기관명 선두 인덱스를 강제하면
+    111ms, 135ms 입니다(2026-11-22 실측, 결과 동일). 날짜 범위가 있고
+    prefer_window_index 이면 개찰일까지 담은 인덱스를 씁니다.
+    """
+    if not _resolved_region_names(institution_names):
+        return stmt
+    date_from, date_to = _resolve_window(plan.filters or {})
+    hint = (
+        RESULT_REGION_WINDOW_HINT
+        if prefer_window_index and (date_from or date_to)
+        else RESULT_INSTITUTION_COVER_HINT
+    )
+    return stmt.with_hint(BidResult, hint, dialect_name="mysql")
+
+
 def _needs_announcement_date_index_hint(plan: RetrievalPlan) -> bool:
     """날짜 범위는 있고 category 가 없는 공고 집계인지 판정합니다."""
     filters = plan.filters or {}
@@ -918,7 +952,7 @@ def _hint_announcement_date_index(stmt, plan: RetrievalPlan):
 # 16,086~50,236ms, 기관별 집계가 16,069~16,911ms 였고 커버링 인덱스를 강제하면 1,136~1,589ms,
 # 1,296~1,567ms 였습니다(2026-09-13 실측, 결과 동일, docs/analysis/rag_coldsql_root_cause_20260913.md 13장).
 # category 가 없으면 옵티마이저가 이미 기관명 인덱스를 고르고, 날짜 범위가 있으면 위 날짜 인덱스
-# 강제가 적용되므로 붙이지 않습니다. 이름 목록으로 해석된 경우(IN)도 붙이지 않습니다.
+# 강제가 적용되므로 붙이지 않습니다. 이름 목록으로 해석된 경우(IN)도 상한 이하이면 붙이지 않습니다.
 ANNOUNCEMENT_INSTITUTION_COVER_HINT = "FORCE INDEX (ix_bid_ann_inst_cat_ntce)"
 
 
@@ -942,6 +976,52 @@ def _hint_announcement_institution_cover(
 ):
     """조건이 맞을 때만 공고 기관명 커버링 인덱스를 강제합니다. 결과 집합은 바뀌지 않습니다."""
     if not _needs_announcement_institution_cover_hint(plan, institution_names):
+        return stmt
+    return stmt.with_hint(
+        BidAnnouncement, ANNOUNCEMENT_INSTITUTION_COVER_HINT, dialect_name="mysql"
+    )
+
+
+# 지역 별칭이 수천 개 이름으로 풀린 IN 목록에서는 옵티마이저가 범위 조회 대신
+# category 선두 인덱스 ref 로 200만 행을 훑습니다("서울" 2,603종, 기관별 집계가
+# 5년 창에서 7,446ms, 날짜 없이 19,025ms). (기관명, 분류, 공고일시) 인덱스는
+# 건수·기관별 집계를 모두 덮으므로 강제하면 같은 89ms, 214ms 입니다
+# (2026-11-22 실측, 결과 동일).
+ANNOUNCEMENT_INSTITUTION_DT_HINT = "FORCE INDEX (ix_bid_ann_inst_cat_dt)"
+
+
+def _resolved_region_names(institution_names: list[str] | None) -> bool:
+    """해석 상한을 넘는 IN 목록인지 판정합니다. 지역 별칭에서만 나옵니다."""
+    return institution_names is not None and len(institution_names) > INSTITUTION_NAME_RESOLVE_LIMIT
+
+
+def _hint_announcement_resolved_scope(stmt, institution_names: list[str] | None):
+    """지역 목록 건수·기관별 집계에만 기관명 인덱스를 강제합니다. 결과 집합은 바뀌지 않습니다."""
+    if not _resolved_region_names(institution_names):
+        return stmt
+    return stmt.with_hint(BidAnnouncement, ANNOUNCEMENT_INSTITUTION_DT_HINT, dialect_name="mysql")
+
+
+def _needs_announcement_name_cover_hint(
+    plan: RetrievalPlan, institution_names: list[str] | None
+) -> bool:
+    """지역 목록 공고명 순위 집계이고 날짜 범위가 없는지 판정합니다.
+
+    이때 옵티마이저는 (기관명, 분류, 공고일시) 인덱스로 행을 찾은 뒤 공고명을
+    본문에서 읽습니다. 공고명까지 담은 (기관명, 분류, 공고명) 인덱스를 강제하면
+    인천 1,155종에서 웜 1,087ms 가 178ms 로 줄었습니다(2026-11-22 실측, 결과
+    동일). 날짜 범위가 있으면 그 조건을 담은 인덱스가 더 좁히므로 붙이지
+    않습니다(서울 2,603종 5년 창: 강제 15,667ms, 미강제 1,366ms).
+    """
+    if not _resolved_region_names(institution_names):
+        return False
+    date_from, date_to = _resolve_window(plan.filters or {})
+    return not (date_from or date_to)
+
+
+def _hint_announcement_name_cover(stmt, plan: RetrievalPlan, institution_names: list[str] | None):
+    """조건이 맞을 때만 공고명 순위 커버링 인덱스를 강제합니다. 결과 집합은 바뀌지 않습니다."""
+    if not _needs_announcement_name_cover_hint(plan, institution_names):
         return stmt
     return stmt.with_hint(
         BidAnnouncement, ANNOUNCEMENT_INSTITUTION_COVER_HINT, dialect_name="mysql"
@@ -981,10 +1061,18 @@ def _result_availability_conditions(
 # 과대해지므로 상한을 넘을 때는 종전 부분 일치로 돌아갑니다.
 INSTITUTION_NAME_RESOLVE_LIMIT = 1000
 
+# 지역 별칭은 정확 일치로 풀어야 합니다. "경기"는 고유 기관명이 4,110종, "서울"은
+# 2,603종이라 위 상한을 넘어 매번 부분 일치로 되돌아갔고, 그 경로가 5년치
+# category='Servc' 에서 공고 집계 한 문장에 23~38초를 썼습니다(2026-11-22 실측,
+# 인천 1,155종). 이름 목록이 수천 개여도 IN 은 기관명 인덱스 범위 조회라
+# 수십 밀리초이고, 색인 대상 행 수(인천 66,012건)도 부분 일치와 같습니다.
+REGION_NAME_RESOLVE_LIMIT = 6000
+
 # 상한 초과 판정은 오래 둡니다. 기관명 집합은 수집으로 늘기만 하므로 한 번 넘은 검색어가 다시
 # 상한 안으로 들어오지 않고, 넘은 경우의 되돌림은 항상 완전한 부분 일치입니다. "서울"은 요청마다
 # 1,369ms 해석 질의를 돌린 뒤 결과를 버렸습니다(2026-09-13). 이름 목록은 새 기관을 놓치지 않도록
-# 집계와 같은 1시간을 유지합니다(최근 7일 신규 기관명 낙찰 63, 공고 68).
+# 집계와 같은 유효 시간을 씁니다(최근 7일 신규 기관명 낙찰 63, 공고 68). 한글 음절 검색어는
+# 워커가 매시간 덮어쓰는 카탈로그 경로를 먼저 타므로 이 목록의 수명이 길어도 새 이름을 놓치지 않습니다.
 INSTITUTION_OVERFLOW_CACHE_TTL = 7 * 24 * 60 * 60
 
 # 해석 질의 결과가 빈 이름 목록일 때의 유효 시간 (300초).
@@ -1056,24 +1144,32 @@ def _match_institution_catalog(names: list[str], institution_name: str) -> list[
 
 
 @_measure_call("institution_resolve")
-def _resolve_institution_names(db: Session, column, institution_name: str) -> list[str] | None:
+def _resolve_institution_names(
+    db: Session,
+    column,
+    institution_name: str,
+    *,
+    limit: int | None = None,
+) -> list[str] | None:
     """기관명 부분 일치를 정확한 이름 목록으로 풉니다. 상한 초과면 None 입니다.
 
     utf8mb4_unicode_ci 등호는 대소문자와 끝 공백 차이를 같게 보므로, 여기서 얻은
     대표 이름의 IN 조회는 부분 일치가 잡던 변형 행을 함께 잡습니다.
+
+    지역명은 이 상한을 넘는 이름이 흔합니다("경기" 4,110종). 그때 부분 일치로
+    되돌아가면 선행 와일드카드라 인덱스를 쓰지 못하므로, 같은 정확 일치 목록을
+    더 큰 상한으로 허용하려고 호출부가 limit 을 올립니다. limit 을 넘기지 않으면
+    모듈 상수를 그때 읽습니다(상수를 바꿔 끼우는 시험 계약).
     """
+    if limit is None:
+        limit = INSTITUTION_NAME_RESOLVE_LIMIT
     if _catalog_eligible(institution_name):
         matched = _match_institution_catalog(
             _institution_name_catalog(db, column), institution_name
         )
         if matched is not None and len(matched) > 0:
-            return None if len(matched) > INSTITUTION_NAME_RESOLVE_LIMIT else matched
-    stmt = (
-        select(column)
-        .where(column.contains(institution_name))
-        .distinct()
-        .limit(INSTITUTION_NAME_RESOLVE_LIMIT + 1)
-    )
+            return None if len(matched) > limit else matched
+    stmt = select(column).where(column.contains(institution_name)).distinct().limit(limit + 1)
     key = _stmt_cache_key("rag:inst:", stmt, db)
     cached = _timed_cache_get(key)
     if cached is None:
@@ -1081,7 +1177,7 @@ def _resolve_institution_names(db: Session, column, institution_name: str) -> li
             cached = _timed_cache_get(key)
             if cached is None:
                 names = [row[0] for row in db.execute(stmt).all() if row[0] is not None]
-                if len(names) > INSTITUTION_NAME_RESOLVE_LIMIT:
+                if len(names) > limit:
                     cached = {"overflow": True}
                     cache.set(key, cached, INSTITUTION_OVERFLOW_CACHE_TTL)
                 elif not names:
@@ -1093,7 +1189,7 @@ def _resolve_institution_names(db: Session, column, institution_name: str) -> li
     if cached.get("overflow"):
         return None
     names = list(cached["names"])
-    if len(names) > INSTITUTION_NAME_RESOLVE_LIMIT:
+    if len(names) > limit:
         return None
     return names
 
@@ -1131,7 +1227,13 @@ def _resolve_institution_scope_names(
 
     merged: list[str] = []
     for term in terms:
-        names = _resolve_institution_names(db, column, term)
+        # 지역 별칭은 고유 기관명이 수천 개라 기본 상한(1,000)에서 늘 넘칩니다.
+        # 그때 부분 일치로 돌아가면 선행 와일드카드로 5년치 원본을 훑게 되므로
+        # 지역 별칭에만 더 큰 상한을 씁니다. 상한을 넘으면 종전처럼 None 입니다.
+        term_limit = (
+            REGION_NAME_RESOLVE_LIMIT if term in REGION_ALIASES else INSTITUTION_NAME_RESOLVE_LIMIT
+        )
+        names = _resolve_institution_names(db, column, term, limit=term_limit)
         if names is None:
             return None
         for name in names:
@@ -1180,11 +1282,13 @@ def _multi_institution_condition(column, resolved: list[str], fallback: list[str
 # U+FFFD 는 SQL 에서 먼저 쳐내므로 배수는 작아도 됩니다.
 LIVE_OVERFETCH_FACTOR = 3
 
-# 집계 캐시 유효 시간. 원본 데이터는 야간 수집(02:00)에서만 바뀌므로 한 시간
-# 묵은 값이어도 답변의 사실관계가 흔들리지 않습니다. 대시보드 계열이 24시간을
-# 쓰지만 그쪽은 야간에 명시적으로 예열하는 반면 이 경로는 예열 대상이 아니라
-# 짧게 잡습니다.
-AGGREGATE_CACHE_TTL = 60 * 60
+# 집계 캐시 유효 시간. 원본 데이터는 야간 수집(02:00)에서만 바뀌고, 수집이
+# 적재를 마치면 invalidate_rag_aggregate_cache() 가 같은 접두사(rag:agg:,
+# rag:rows:, rag:top:)를 지웁니다. 무효화가 보장되므로 대시보드 계열과 같은
+# 24시간을 써서 캐시 미적중 회수를 낮춥니다. 기관명 해석 목록(rag:inst:)도
+# 같은 값을 쓰지만, 한글 음절 검색어는 먼저 워커가 매시간 덮어쓰는 카탈로그
+# (rag:inst_catalog:)로 풀리므로 실제 영향은 그 경로를 타지 않는 검색어뿐입니다.
+AGGREGATE_CACHE_TTL = 24 * 60 * 60
 
 
 def _dataset_identity(db: Session | Engine | None) -> str:
@@ -2488,6 +2592,24 @@ def _select_recent_results(candidates: list[BidResult], limit: int) -> list[dict
 SAMPLE_ANNOUNCEMENT_OVERFETCH_LIMIT = 60
 
 
+def _hint_announcement_latest_sample(
+    stmt, filters: dict[str, Any], institution_names: list[str] | None
+):
+    """지역 목록 표본 조회를 최신 공고일 인덱스로 내림차순 스트리밍합니다.
+
+    기관명이 수천 개인 IN 목록에서 옵티마이저가 category 선두 인덱스로 정렬
+    대상 200만 행을 모은 뒤 filesort 했습니다("경기" 4,110종 5년 창 16,207ms,
+    날짜 없이 23,998ms, 결과 동일). 공고일 인덱스를 강제하면 기간 경계로 바로
+    seek 해 최신 행부터 훑다가 LIMIT 에서 멈춰 2ms, 6ms 입니다(2026-11-22
+    실측). 정렬 표지가 없을 때만 붙이므로 표본 선정 기준은 그대로입니다.
+    """
+    if not _resolved_region_names(institution_names):
+        return stmt
+    if _normalize_text(str((filters or {}).get("order_by") or "")):
+        return stmt
+    return stmt.with_hint(BidAnnouncement, ANNOUNCEMENT_DATE_INDEX_HINT, dialect_name="mysql")
+
+
 def _fetch_sample_announcements(
     db: Session,
     conditions: list,
@@ -2495,6 +2617,7 @@ def _fetch_sample_announcements(
     *,
     detailed: bool = False,
     filters: dict[str, Any] | None = None,
+    institution_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """표본 공고 목록을 조회하고 화면 표시용 대체 텍스트를 적용합니다.
 
@@ -2523,10 +2646,14 @@ def _fetch_sample_announcements(
             ]
         )
     rows = db.execute(
-        select(*columns)
-        .where(*conditions)
-        .order_by(*_announcement_order_by(filters or {}))
-        .limit(min(limit * LIVE_OVERFETCH_FACTOR, SAMPLE_ANNOUNCEMENT_OVERFETCH_LIMIT))
+        _hint_announcement_latest_sample(
+            select(*columns)
+            .where(*conditions)
+            .order_by(*_announcement_order_by(filters or {}))
+            .limit(min(limit * LIVE_OVERFETCH_FACTOR, SAMPLE_ANNOUNCEMENT_OVERFETCH_LIMIT)),
+            filters or {},
+            institution_names,
+        )
     ).all()
     samples: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -3460,23 +3587,31 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     def result_amounts(session: Session) -> list[Any]:
         return _cached_aggregate(
             session,
-            _hint_result_institution_cover(
-                select(
-                    func.count(BidResult.id),
-                    func.avg(BidResult.sucsf_bid_rate),
-                    func.sum(BidResult.sucsf_bid_amt),
-                ).where(*result_conditions),
+            _hint_result_region_resolved_cover(
+                _hint_result_institution_cover(
+                    select(
+                        func.count(BidResult.id),
+                        func.avg(BidResult.sucsf_bid_rate),
+                        func.sum(BidResult.sucsf_bid_amt),
+                    ).where(*result_conditions),
+                    condition_plan,
+                    result_names_arg,
+                ),
                 condition_plan,
                 result_names_arg,
+                prefer_window_index=True,
             ),
         )
 
     def announcement_total(session: Session) -> list[Any]:
         return _cached_aggregate(
             session,
-            _hint_announcement_institution_cover(
-                select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
-                condition_plan,
+            _hint_announcement_resolved_scope(
+                _hint_announcement_institution_cover(
+                    select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
+                    condition_plan,
+                    announcement_names_arg,
+                ),
                 announcement_names_arg,
             ),
         )
@@ -3488,16 +3623,22 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             dataset=DATASET_RESULT,
             dimension="bidwinnr_nm",
             category=category_filter,
-            live_stmt=_hint_result_institution_cover(
-                _hint_result_winner_group_index(
-                    _hint_result_date_index(
-                        select(BidResult.bidwinnr_nm, func.count(BidResult.id))
-                        .where(exclude_corrupted(BidResult.bidwinnr_nm), *winner_conditions)
-                        .group_by(BidResult.bidwinnr_nm)
-                        .order_by(func.count(BidResult.id).desc()),
+            live_stmt=_hint_result_region_resolved_cover(
+                _hint_result_institution_cover(
+                    _hint_result_winner_group_index(
+                        _hint_result_date_index(
+                            select(BidResult.bidwinnr_nm, func.count(BidResult.id))
+                            .where(exclude_corrupted(BidResult.bidwinnr_nm), *winner_conditions)
+                            .group_by(BidResult.bidwinnr_nm)
+                            # 동률 순위의 순서가 실행 계획에 따라 달라 캐시에 담긴
+                            # 목록이 요청마다 흔들리지 않도록 업체명으로 확정합니다.
+                            .order_by(func.count(BidResult.id).desc(), BidResult.bidwinnr_nm.asc()),
+                            plan,
+                        ),
                         plan,
                     ),
-                    plan,
+                    condition_plan,
+                    result_names_arg,
                 ),
                 condition_plan,
                 result_names_arg,
@@ -3514,15 +3655,23 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             dataset=DATASET_ANNOUNCEMENT,
             dimension="dminstt_nm",
             category=category_filter,
-            live_stmt=_hint_announcement_institution_cover(
-                _hint_announcement_date_index(
-                    select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
-                    .where(exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions)
-                    .group_by(BidAnnouncement.dminstt_nm)
-                    .order_by(func.count(BidAnnouncement.id).desc()),
-                    plan,
+            live_stmt=_hint_announcement_resolved_scope(
+                _hint_announcement_institution_cover(
+                    _hint_announcement_date_index(
+                        select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+                        .where(
+                            exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions
+                        )
+                        .group_by(BidAnnouncement.dminstt_nm)
+                        # 동률 순위를 기관명으로 확정해 목록 순서를 재현 가능하게 합니다.
+                        .order_by(
+                            func.count(BidAnnouncement.id).desc(), BidAnnouncement.dminstt_nm.asc()
+                        ),
+                        plan,
+                    ),
+                    condition_plan,
+                    announcement_names_arg,
                 ),
-                condition_plan,
                 announcement_names_arg,
             ),
             corrupted_probe=select(BidAnnouncement.id).where(
@@ -3540,13 +3689,22 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             dataset=DATASET_ANNOUNCEMENT,
             dimension="bid_ntce_nm",
             category=category_filter,
-            live_stmt=_hint_announcement_institution_cover(
-                _hint_announcement_date_index(
-                    select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
-                    .where(exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions)
-                    .group_by(BidAnnouncement.bid_ntce_nm)
-                    .order_by(func.count(BidAnnouncement.id).desc()),
-                    plan,
+            live_stmt=_hint_announcement_name_cover(
+                _hint_announcement_institution_cover(
+                    _hint_announcement_date_index(
+                        select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+                        .where(
+                            exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions
+                        )
+                        .group_by(BidAnnouncement.bid_ntce_nm)
+                        # 동률 순위를 공고명으로 확정해 목록 순서를 재현 가능하게 합니다.
+                        .order_by(
+                            func.count(BidAnnouncement.id).desc(), BidAnnouncement.bid_ntce_nm.asc()
+                        ),
+                        plan,
+                    ),
+                    condition_plan,
+                    announcement_names_arg,
                 ),
                 condition_plan,
                 announcement_names_arg,
@@ -3626,6 +3784,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         limit=announcement_limit or 3,
         detailed=bool(announcement_limit),
         filters=plan.filters or {},
+        institution_names=announcement_names_arg,
     )
     time_series = _build_time_series(
         db,
