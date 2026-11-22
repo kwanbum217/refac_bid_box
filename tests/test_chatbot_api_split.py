@@ -22,10 +22,12 @@ def test_chatbot_line_counts():
     chatbot_path = repo_root / "src/app/api/v1/chatbot.py"
     format_path = repo_root / "src/app/api/v1/chatbot_format.py"
     conf_path = repo_root / "src/app/api/v1/chatbot_confirmation.py"
+    concurrency_path = repo_root / "src/app/services/chat_concurrency.py"
 
     chatbot_lines = len(chatbot_path.read_text(encoding="utf-8").splitlines())
     format_lines = len(format_path.read_text(encoding="utf-8").splitlines())
     conf_lines = len(conf_path.read_text(encoding="utf-8").splitlines())
+    concurrency_lines = len(concurrency_path.read_text(encoding="utf-8").splitlines())
 
     # 2026-08-18 ruff format 최초 일괄 적용으로 534 -> 553 줄이 됐습니다. 포맷터가
     # 인자를 여러 줄로 펼친 결과이며 로직은 늘지 않았습니다.
@@ -33,10 +35,14 @@ def test_chatbot_line_counts():
     # Request 파라미터와 enforce_anonymous_api_quota 호출뿐이라 별도 모듈로 뺄 수 없습니다.
     # 2026-11-06 SSE-01 스트리밍 DB 세션 수명(try/finally) 도입으로 569 -> 577 줄이 됐습니다.
     # 늘어난 것은 세션 확보와 종료뿐이라 별도 모듈로 뺄 수 없습니다.
+    # 2026-11-22 동시 실행 상한·SSE 세션 반납 추가로 577 -> 607 줄이 됐습니다. 상한·사용자 키·
+    # 설정 읽기 로직은 chat_concurrency.py 로 분리했고, chatbot.py 에는 슬롯 획득·반납 호출과
+    # 근거 준비 뒤 세션 반납만 남겼습니다. 남은 증가분은 두 엔드포인트의 try/finally 배선입니다.
     # 상한은 재증가를 막는 장치이므로 실측값에 여유 5줄만 두고 다시 고정합니다.
-    assert chatbot_lines <= 582, f"chatbot.py exceeds 582 lines: {chatbot_lines}"
+    assert chatbot_lines <= 612, f"chatbot.py exceeds 612 lines: {chatbot_lines}"
     assert format_lines <= 300, f"chatbot_format.py exceeds 300 lines: {format_lines}"
     assert conf_lines <= 300, f"chatbot_confirmation.py exceeds 300 lines: {conf_lines}"
+    assert concurrency_lines <= 95, f"chat_concurrency.py exceeds 95 lines: {concurrency_lines}"
 
 
 def test_no_circular_imports_in_new_modules():

@@ -225,6 +225,11 @@ class Settings(BaseSettings):
     # 기동 시 모델을 미리 올려 첫 질의가 로드 비용을 내지 않게 합니다.
     LLM_WARMUP_ON_STARTUP: bool = True
     VECTOR_WARMUP_ON_STARTUP: bool = True
+    # 챗봇 API(POST /chat, POST /chat/stream)의 프로세스 단위 동시 실행 상한입니다.
+    # 상한을 넘으면 LLM 을 호출하지 않고 즉시 503 과 Retry-After 로 거절합니다.
+    # 프로세스마다 따로 세므로 WEB_CONCURRENCY 가 1 보다 크면 전체 상한은
+    # 이 값의 프로세스 수 배가 됩니다.
+    CHATBOT_MAX_CONCURRENT_REQUESTS: int = 2
     # Readiness 헬스체크 게이트 승격 설정입니다.
     # 기본값은 False (미완료/미가용 시 degraded)이며, True 로 설정 시 not_ready (503)로 승격합니다.
     READINESS_REQUIRE_WARMUP: bool = False
