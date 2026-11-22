@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import BidAnnouncement, BidResult
 from src.app.services import dashboard
 
@@ -21,6 +22,16 @@ def _announcement(db, bid_ntce_no: str) -> BidAnnouncement:
         collected_at=datetime(2026, 9, 1),
     )
     db.add(row)
+    db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no=bid_ntce_no,
+            bid_ntce_ord="000",
+            lmt_grp_no="1",
+            lmt_sno="1",
+            permsn_indstryty_list="업종/1172",
+            collected_at=datetime(2026, 9, 1),
+        )
+    )
     return row
 
 

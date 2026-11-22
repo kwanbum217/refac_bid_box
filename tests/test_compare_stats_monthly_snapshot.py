@@ -7,6 +7,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from src.app.core.timeutil import utcnow
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import (
     DATASET_ANNOUNCEMENT,
     DATASET_RESULT,
@@ -20,6 +21,7 @@ from src.app.services import dashboard
 
 
 def _add_announcement(db, **overrides):
+    industry_code = overrides.pop("industry_code", "1172")
     now = utcnow()
     payload = {
         "bid_ntce_no": "SNAP-M-001",
@@ -35,6 +37,17 @@ def _add_announcement(db, **overrides):
     payload.update(overrides)
     row = BidAnnouncement(**payload)
     db.add(row)
+    if industry_code is not None:
+        db.add(
+            BidAnnouncementLicenseLimit(
+                bid_ntce_no=row.bid_ntce_no,
+                bid_ntce_ord=row.bid_ntce_ord,
+                lmt_grp_no="1",
+                lmt_sno="1",
+                permsn_indstryty_list=f"업종/{industry_code}",
+                collected_at=now,
+            )
+        )
     db.commit()
     db.refresh(row)
     return row
@@ -89,6 +102,7 @@ def test_재집계가_네_스냅샷을_만들고_월별_payload_형태가_사양
         snapshots.SNAPSHOT_KEY_MATCHED_COUNT,
         snapshots.SNAPSHOT_KEY_ANNOUNCE_BY_MONTH,
         snapshots.SNAPSHOT_KEY_RESULT_BY_MONTH,
+        snapshots.SNAPSHOT_KEY_INDUSTRY_TOTALS,
     ]
 
     ann_month_row = isolated_db.get(

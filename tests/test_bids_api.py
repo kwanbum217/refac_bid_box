@@ -109,12 +109,24 @@ def test_dashboard_stats_api_returns_basic_structure(client, isolated_db):
 
 
 def test_compare_stats_api_returns_basic_structure(client, isolated_db):
+    from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
+
     bid = _make_announcement(
         bid_ntce_no="ANN-CMP",
         bid_ntce_nm="Compare test",
         category="Thng",
     )
     isolated_db.add(bid)
+    isolated_db.add(
+        BidAnnouncementLicenseLimit(
+            bid_ntce_no="ANN-CMP",
+            bid_ntce_ord="000",
+            lmt_grp_no="1",
+            lmt_sno="1",
+            permsn_indstryty_list="업종/1172",
+            collected_at=utcnow(),
+        )
+    )
     isolated_db.commit()
 
     response = client.get("/api/v1/bids/compare-stats")

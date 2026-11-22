@@ -8,14 +8,18 @@ GET /api/v1/bids/compare-stats 의 두 무거운 집계(기관별 상위 10,
 실시간으로 다시 셉니다. 응답 캐시가 이미 24시간 TTL 이므로 인덱스가
 아니라 사전 집계로 해결합니다.
 
-스냅샷은 넷입니다. snapshot_key='agency_announce_top10' 의 payload 는
+스냅샷은 다섯입니다. snapshot_key='agency_announce_top10' 의 payload 는
 응답의 agency_announce_top10 리스트와 똑같은 배열이며 각 항목은 name,
 total_base_amount, total_prce, count 네 키를 가집니다.
 snapshot_key='matched_count' 의 payload 는 기존 매칭 건수 value 와 함께
 같은 1년 공고 창의 매칭률 분자·분모인 matched_count_1y, announce_count_1y 를
 가집니다. snapshot_key='announce_by_month' 및 snapshot_key='result_by_month' 의
 payload 는 각각 공고/개찰결과 월별 추세 배열이며 각 항목은 month, count 두 키를
-가집니다. window_days 는 넷 모두 365 입니다.
+가집니다. snapshot_key='industry_totals' 의 payload 는 전체 기간 응답 필드인
+announce_count, announce_total_base_amount, result_count, result_total_amt 를
+가집니다. 모든 수치는 4대 업종(파견, 경비업, 위생관리용역업, 유료직업소개업)
+업종 제한이 걸린 공고와 그 공고의 낙찰 결과만 셉니다. window_days 는 앞의 넷이
+365 이고 전체 기간 집계인 industry_totals 는 0 입니다.
 
 금액 집계는 dashboard._announcement_amount_expr 를 그대로 재사용합니다.
 다시 구현하면 이상치 상한 규칙이 갈라져 같은 화면에 다른 금액이 나옵니다.
@@ -32,10 +36,11 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.app.core.timeutil import kst_now, utcnow
+from src.app.models.bid_restrictions import BidAnnouncementLicenseLimit
 from src.app.models.bids import (
     BidAnnouncement,
     BidCompareStatsSnapshot,
@@ -44,10 +49,53 @@ from src.app.models.bids import (
 
 logger = logging.getLogger(__name__)
 
-SNAPSHOT_KEY_AGENCY_TOP10 = "agency_announce_top10"
-SNAPSHOT_KEY_MATCHED_COUNT = "matched_count"
-SNAPSHOT_KEY_ANNOUNCE_BY_MONTH = "announce_by_month"
-SNAPSHOT_KEY_RESULT_BY_MONTH = "result_by_month"
+# 집계 정의 버전입니다. 2026-11-22 에 4대 업종(파견, 경비업, 위생관리용역업,
+# 유료직업소개업) 업종 제한이 걸린 공고와 그 공고의 낙찰 결과만 세도록 바꿨습니다.
+# 스냅샷 키에 버전을 넣어 옛 업종 무관 payload 가 새 정의에 재사용되지 않게 합니다.
+COMPARE_STATS_DEFINITION_VERSION = 2
+
+SNAPSHOT_KEY_AGENCY_TOP10 = f"agency_announce_top10:v{COMPARE_STATS_DEFINITION_VERSION}"
+SNAPSHOT_KEY_MATCHED_COUNT = f"matched_count:v{COMPARE_STATS_DEFINITION_VERSION}"
+SNAPSHOT_KEY_ANNOUNCE_BY_MONTH = f"announce_by_month:v{COMPARE_STATS_DEFINITION_VERSION}"
+SNAPSHOT_KEY_RESULT_BY_MONTH = f"result_by_month:v{COMPARE_STATS_DEFINITION_VERSION}"
+SNAPSHOT_KEY_INDUSTRY_TOTALS = f"industry_totals:v{COMPARE_STATS_DEFINITION_VERSION}"
+
+
+def industry_announcement_scope():
+    """4대 업종 업종 제한이 걸린 공고만 통과시키는 EXISTS 절입니다.
+
+    업종 코드 정본과 판정 규칙은 bid_queries.license_match_clause 하나를
+    그대로 씁니다. 여기서 다시 적으면 코드 목록이나 LIKE 패턴이 갈라집니다.
+    """
+    from src.app.services.bid_queries import BID_INDUSTRY_CODES, license_match_clause
+
+    return license_match_clause(BID_INDUSTRY_CODES)
+
+
+def industry_result_scope():
+    """4대 업종 업종 제한이 걸린 공고의 낙찰 결과만 통과시키는 EXISTS 절입니다.
+
+    낙찰 결과는 공고와 (bid_ntce_no, bid_ntce_ord) 로 잇고, 판정 규칙은
+    license_match_clause 와 같게 lcns_lmt_nm, permsn_indstryty_list 의
+    '/코드' 포함 여부로 봅니다.
+    """
+    from src.app.services.bid_queries import BID_INDUSTRY_CODES
+
+    like_clauses = []
+    for code in BID_INDUSTRY_CODES:
+        pattern = f"%/{code}%"
+        like_clauses.append(BidAnnouncementLicenseLimit.lcns_lmt_nm.like(pattern))
+        like_clauses.append(BidAnnouncementLicenseLimit.permsn_indstryty_list.like(pattern))
+    return (
+        select(1)
+        .where(
+            BidAnnouncementLicenseLimit.bid_ntce_no == BidResult.bid_ntce_no,
+            BidAnnouncementLicenseLimit.bid_ntce_ord == BidResult.bid_ntce_ord,
+            or_(*like_clauses),
+        )
+        .exists()
+    )
+
 
 # 기관 payload 한 항목이 가져야 하는 키입니다. 리스트라는 것만 보고 항목을 그대로
 # 인덱싱하면 키가 빠진 항목에서 KeyError 가 나 compare-stats 전체가 실패합니다.
@@ -94,6 +142,24 @@ def is_monthly_payload_usable(payload: object) -> bool:
         and isinstance(item.get("count"), int)
         for item in payload
     )
+
+
+# 전체 기간 업종 합계 payload 가 가져야 하는 키입니다. 응답의 전체 기간 필드와
+# 같은 이름을 씁니다. 옛 형태나 손으로 넣은 행에서 KeyError 가 나지 않도록
+# 사용 판정에서 값 타입까지 봅니다.
+INDUSTRY_TOTALS_ITEM_KEYS = (
+    "announce_count",
+    "announce_total_base_amount",
+    "result_count",
+    "result_total_amt",
+)
+
+
+def is_industry_totals_payload_usable(payload: object) -> bool:
+    """전체 기간 업종 합계 payload 를 그대로 쓸 수 있는 형태인지 판정합니다."""
+    if not isinstance(payload, dict):
+        return False
+    return all(isinstance(payload.get(key), int) for key in INDUSTRY_TOTALS_ITEM_KEYS)
 
 
 # 스냅샷의 집계 창(일). 응답의 최근 1년 구간과 같습니다.
@@ -168,6 +234,7 @@ def _compute_agency_top10_payload(db: Session, one_year_ago: datetime) -> list[d
         .where(
             BidAnnouncement.bid_ntce_dt >= one_year_ago,
             BidAnnouncement.dminstt_nm.is_not(None),
+            industry_announcement_scope(),
         )
         .group_by(BidAnnouncement.dminstt_nm)
         .order_by(func.sum(amount_expr).desc())
@@ -195,12 +262,13 @@ def _compute_matched_count_payload(db: Session, one_year_ago: datetime) -> dict[
 
     matched_count = db.scalar(
         select(func.count(BidAnnouncement.id)).where(
+            industry_announcement_scope(),
             select(BidResult.id)
             .where(
                 BidResult.bid_ntce_no == BidAnnouncement.bid_ntce_no,
                 BidResult.rl_openg_dt >= one_year_ago,
             )
-            .exists()
+            .exists(),
         )
     )
     return {"value": int(matched_count or 0), **_query_match_rate_1y_realtime(db, one_year_ago)}
@@ -213,7 +281,8 @@ def _compute_announce_by_month_payload(db: Session, one_year_ago: datetime) -> l
     return _build_monthly_counts(
         db,
         select(BidAnnouncement.id, BidAnnouncement.bid_ntce_dt).where(
-            BidAnnouncement.bid_ntce_dt >= one_year_ago
+            BidAnnouncement.bid_ntce_dt >= one_year_ago,
+            industry_announcement_scope(),
         ),
         BidAnnouncement.bid_ntce_dt,
     )
@@ -225,43 +294,77 @@ def _compute_result_by_month_payload(db: Session, one_year_ago: datetime) -> lis
 
     return _build_monthly_counts(
         db,
-        select(BidResult.id, BidResult.rl_openg_dt).where(BidResult.rl_openg_dt >= one_year_ago),
+        select(BidResult.id, BidResult.rl_openg_dt).where(
+            BidResult.rl_openg_dt >= one_year_ago,
+            industry_result_scope(),
+        ),
         BidResult.rl_openg_dt,
     )
 
 
+def _compute_industry_totals_payload(db: Session) -> dict[str, int]:
+    """전체 기간 응답 필드를 4대 업종 기준으로 계산합니다.
+
+    기존 파생 요약 테이블(bid_dataset_summaries)은 업종 무관 전체값이라 그대로
+    쓰면 화면 숫자가 업종 밖 공고를 포함합니다. 요약 테이블 정의는 건드리지
+    않고, 이 전용 집계를 스냅샷에 담아 요청 경로의 대형 질의를 막습니다.
+    """
+    from src.app.services.dashboard import _announcement_amount_expr
+
+    announce_row = db.execute(
+        select(
+            func.count(BidAnnouncement.id).label("announce_count"),
+            func.sum(_announcement_amount_expr(db)).label("announce_total"),
+        ).where(industry_announcement_scope())
+    ).one()
+    result_row = db.execute(
+        select(
+            func.count(BidResult.id).label("result_count"),
+            func.sum(BidResult.sucsf_bid_amt).label("result_total"),
+        ).where(industry_result_scope())
+    ).one()
+    return {
+        "announce_count": int(announce_row.announce_count or 0),
+        "announce_total_base_amount": int(announce_row.announce_total or 0),
+        "result_count": int(result_row.result_count or 0),
+        "result_total_amt": int(result_row.result_total or 0),
+    }
+
+
 def rebuild_compare_stats_snapshots(db: Session) -> dict[str, Any]:
-    """네 스냅샷을 다시 계산해 upsert 합니다. 야간과 수집 직후 경로에서 부릅니다."""
+    """스냅샷을 다시 계산해 upsert 합니다. 야간과 수집 직후 경로에서 부릅니다."""
     started = utcnow()
     one_year_ago = kst_now(started) - timedelta(days=COMPARE_STATS_WINDOW_DAYS)
     agency_payload = _compute_agency_top10_payload(db, one_year_ago)
     matched_payload = _compute_matched_count_payload(db, one_year_ago)
     announce_by_month_payload = _compute_announce_by_month_payload(db, one_year_ago)
     result_by_month_payload = _compute_result_by_month_payload(db, one_year_ago)
+    industry_totals_payload = _compute_industry_totals_payload(db)
     rebuilt_at = utcnow()
-    for snapshot_key, payload in (
-        (SNAPSHOT_KEY_AGENCY_TOP10, agency_payload),
-        (SNAPSHOT_KEY_MATCHED_COUNT, matched_payload),
-        (SNAPSHOT_KEY_ANNOUNCE_BY_MONTH, announce_by_month_payload),
-        (SNAPSHOT_KEY_RESULT_BY_MONTH, result_by_month_payload),
+    for snapshot_key, payload, window_days in (
+        (SNAPSHOT_KEY_AGENCY_TOP10, agency_payload, COMPARE_STATS_WINDOW_DAYS),
+        (SNAPSHOT_KEY_MATCHED_COUNT, matched_payload, COMPARE_STATS_WINDOW_DAYS),
+        (SNAPSHOT_KEY_ANNOUNCE_BY_MONTH, announce_by_month_payload, COMPARE_STATS_WINDOW_DAYS),
+        (SNAPSHOT_KEY_RESULT_BY_MONTH, result_by_month_payload, COMPARE_STATS_WINDOW_DAYS),
+        (SNAPSHOT_KEY_INDUSTRY_TOTALS, industry_totals_payload, 0),
     ):
         row = db.get(BidCompareStatsSnapshot, snapshot_key)
         if row is None:
             row = BidCompareStatsSnapshot(
                 snapshot_key=snapshot_key,
                 payload=payload,
-                window_days=COMPARE_STATS_WINDOW_DAYS,
+                window_days=window_days,
                 rebuilt_at=rebuilt_at,
             )
             db.add(row)
         else:
             row.payload = payload
-            row.window_days = COMPARE_STATS_WINDOW_DAYS
+            row.window_days = window_days
             row.rebuilt_at = rebuilt_at
     db.commit()
     elapsed = (utcnow() - started).total_seconds()
     logger.info(
-        "비교 통계 스냅샷 재집계 완료 (4건, %.1fs)",
+        "비교 통계 스냅샷 재집계 완료 (5건, %.1fs)",
         elapsed,
     )
     return {
@@ -271,6 +374,7 @@ def rebuild_compare_stats_snapshots(db: Session) -> dict[str, Any]:
             SNAPSHOT_KEY_MATCHED_COUNT,
             SNAPSHOT_KEY_ANNOUNCE_BY_MONTH,
             SNAPSHOT_KEY_RESULT_BY_MONTH,
+            SNAPSHOT_KEY_INDUSTRY_TOTALS,
         ],
         "window_days": COMPARE_STATS_WINDOW_DAYS,
         "rebuilt_at": rebuilt_at.isoformat(),
@@ -279,17 +383,23 @@ def rebuild_compare_stats_snapshots(db: Session) -> dict[str, Any]:
 
 
 __all__ = [
+    "COMPARE_STATS_DEFINITION_VERSION",
     "COMPARE_STATS_SNAPSHOT_MAX_AGE_DAYS",
     "COMPARE_STATS_WINDOW_DAYS",
+    "INDUSTRY_TOTALS_ITEM_KEYS",
     "MATCHED_ITEM_KEYS",
     "MONTHLY_ITEM_KEYS",
     "SNAPSHOT_KEY_AGENCY_TOP10",
     "SNAPSHOT_KEY_ANNOUNCE_BY_MONTH",
+    "SNAPSHOT_KEY_INDUSTRY_TOTALS",
     "SNAPSHOT_KEY_MATCHED_COUNT",
     "SNAPSHOT_KEY_RESULT_BY_MONTH",
     "get_compare_stats_snapshot",
     "get_snapshot_with_age",
+    "industry_announcement_scope",
+    "industry_result_scope",
     "is_agency_payload_usable",
+    "is_industry_totals_payload_usable",
     "is_matched_payload_usable",
     "is_monthly_payload_usable",
     "is_snapshot_fresh",
