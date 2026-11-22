@@ -129,6 +129,7 @@ CORS는 `allow_credentials=true`로 동작합니다. Starlette은 자격증명�
 | `NUMERIC_OMISSION_DETECTION` | 아니오 | `false` | RAG 답변의 낙찰금액·낙찰률 누락을 결정론적으로 검출해 로그로 남길지 여부 |
 | `READ_PATH_PRELOAD_ANNOUNCEMENTS` | 아니오 | `true` | 낙찰 목록의 공고 정보를 일괄 선채움합니다. 읽기 경로 A/B 측정용 스위치이며 기본값은 운영 동작과 같습니다 |
 | `CHATBOT_ENABLE_LLM_PLAN_DRAFT` | 아니오 | `false` | 챗봇 계획 수립에 Gemini 초안 단계를 쓸지 여부. `GEMINI_API_KEY` 가 없으면 초안을 건너뜁니다 |
+| `CHATBOT_MAX_CONCURRENT_REQUESTS` | 아니오 | `2` | 챗봇 API(`/chat`, `/chat/stream`)의 프로세스 단위 동시 실행 상한. 넘치면 LLM 호출 없이 503 과 `Retry-After` 로 거절합니다. 사용자당 동시 1요청은 별도 고정이며, `WEB_CONCURRENCY` 가 1 보다 크면 전체 상한은 프로세스 수만큼 배수가 됩니다 |
 | `GEMINI_MODEL` | 아니오 | `gemini-3.1-flash-lite-preview` | Gemini 모델명 (`LLM_PROVIDER=gemini`일 때만 사용) |
 | `GEMINI_API_KEY` | 아니오 | - | Gemini API 키. `LLM_PROVIDER=gemini` 일 때만 필요 |
 

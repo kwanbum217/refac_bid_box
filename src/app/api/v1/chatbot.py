@@ -11,7 +11,6 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import get_current_user
@@ -50,6 +49,12 @@ from src.app.services.automation_orchestrator import (
     create_automation_request,
     get_automation_request,
     resolve_confirmation_token,
+)
+from src.app.services.chat_concurrency import (
+    ChatStreamingResponse,
+    chat_limiter,
+    max_concurrent_requests,
+    user_key,
 )
 from src.app.services.conversation_state import (
     ensure_session_key,
@@ -450,7 +455,11 @@ async def chat_api(
 ):
     """계획 수립 -> 도구 실행 -> RAG 답변 생성의 원본 파이프라인을 그대로 수행합니다."""
     await asyncio.to_thread(enforce_anonymous_api_quota, request, user)
-    return await asyncio.to_thread(_run_chat, payload, user.id if user else None)
+    release_slot = chat_limiter.acquire(user_key(request, user), max_concurrent_requests())
+    try:
+        return await asyncio.to_thread(_run_chat, payload, user.id if user else None)
+    finally:
+        release_slot()
 
 
 def _sse(event: str, data: dict[str, Any]) -> str:
@@ -481,6 +490,8 @@ async def chat_stream_api(
     """POST /chat 과 같은 파이프라인을 SSE 로 흘립니다. `final` 이 비스트리밍과 같은 정본입니다."""
     await asyncio.to_thread(enforce_anonymous_api_quota, request, user)
     user_id = user.id if user else None
+    # 거절은 스트림을 열기 전에 HTTP 상태 코드로 돌려줘야 클라이언트가 인지합니다.
+    release_slot = chat_limiter.acquire(user_key(request, user), max_concurrent_requests())
 
     async def event_generator():
         trace_id = _new_trace_id()
@@ -504,8 +515,16 @@ async def chat_stream_api(
             answer_text = ""
             latency_started = utcnow()
             # 비스트리밍 경로와 같은 세션을 넘겨야 RAG 가 같은 SQL 근거로 답합니다.
-            # 스트림이 끝나거나 예외·클라이언트 연결 종료로 빠져나갈 때 반드시 닫습니다.
             rag_db, should_close_rag_db = open_thread_session()
+            rag_db_released = False
+
+            def release_rag_db() -> None:
+                """근거 준비가 끝나면 세션을 반납합니다. 이중 close 를 막습니다."""
+                nonlocal rag_db_released
+                if should_close_rag_db and not rag_db_released:
+                    rag_db_released = True
+                    rag_db.close()
+
             try:
                 async for event in rag_engine.stream_tokens(
                     prepared.message,
@@ -515,6 +534,8 @@ async def chat_stream_api(
                 ):
                     kind = event.get("type")
                     if kind == "token":
+                        # 첫 토큰은 근거 준비(_prepare_context)가 끝났다는 뜻입니다.
+                        release_rag_db()
                         text = str(event.get("text") or "")
                         answer_text += text
                         yield _sse("token", {"text": text})
@@ -523,10 +544,12 @@ async def chat_stream_api(
                         answer_text = str(event.get("final_answer") or answer_text)
                         trace_id = str(event.get("trace_id") or trace_id)
                     elif kind == "docs":
+                        # docs 도 근거 준비 뒤에만 나오므로 여기서 세션을 반납합니다.
+                        release_rag_db()
                         yield _sse("docs", {"docs": event.get("docs") or []})
             finally:
-                if should_close_rag_db:
-                    rag_db.close()
+                # 스트림이 정상 종료·예외·클라이언트 연결 끊김으로 끝나도 닫습니다.
+                release_rag_db()
 
             latency_ms = (utcnow() - latency_started).total_seconds() * 1000
             final = await asyncio.to_thread(
@@ -540,12 +563,19 @@ async def chat_stream_api(
         except Exception:
             logger.exception("SSE 챗봇 스트리밍 실패 (trace_id=%s)", trace_id)
             yield _sse("error", {"message": STREAM_ERROR_MESSAGE, "trace_id": trace_id})
+        finally:
+            release_slot()
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    try:
+        return ChatStreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            release=release_slot,
+        )
+    except BaseException:
+        release_slot()
+        raise
 
 
 @router.post("/session/new", summary="새 대화 세션 생성")
