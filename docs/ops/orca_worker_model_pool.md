@@ -475,3 +475,15 @@ probe 했으며, 리뷰어 독립성은 CLI 단위 provider 분리를 그대로 
 읽지도 쓰지도 않는다. 등록 밖 모델, kilo, `--one-shot` 경로는 종전과 같다.
 
 적용 확인은 화면 상태줄이 아니라 `opencode session export` 메시지의 `model.variant` 로 한다.
+
+### 13.3 측정 도구
+
+Dispatch 마다 같은 자로 재려면 `scripts/opencode_session_stats.py` 를 씁니다. `--directory-suffix` 는
+`opencode session list` 에서 directory 가 그 접미사로 끝나는 세션만 골라 export 하고, 이미 받아 둔
+파일은 `--export <파일>...` 로 직접 읽습니다. 세션마다 스텝 수, 평균·최대 컨텍스트, 총 읽기, 새 입력,
+출력+추론, 실제 적용 `model.variant` 집합을 표로 출력하고 마지막 줄에 합계를 냅니다(`--json` 선택).
+
+    uv run python scripts/opencode_session_stats.py --directory-suffix <워크트리 이름> --limit 50
+
+표의 `variant` 열이 런처 `--variant` 지정이 실제로 적용됐는지 판정하는 근거입니다. 화면 상태줄이나
+`OPENCODE_CONFIG_CONTENT` 값이 아니라 세션 기록의 `model.variant` 만 신뢰합니다.
