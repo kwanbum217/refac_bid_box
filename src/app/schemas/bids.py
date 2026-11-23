@@ -148,7 +148,13 @@ class HomeContextResponse(BaseModel):
     recent_bids: list[BidAnnouncementResponse] = Field(default_factory=list)
     recent_results: list[BidResultResponse] = Field(default_factory=list)
     recent_bid_sections: list[HomeCategorySection] = Field(default_factory=list)
-    announcement_total: int = 0
+    announcement_total: int = Field(
+        0,
+        description=(
+            "수집 행 수(bid_announcements 전체 행, 같은 공고의 차수별 행과 취소공고 포함). "
+            "서로 다른 공고 수가 아닙니다."
+        ),
+    )
     result_total: int = 0
     latest_result_rate: float | None = None
     latest_collected_at: datetime | None = None
