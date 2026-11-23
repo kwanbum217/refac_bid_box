@@ -28,6 +28,7 @@ from src.app.services.kb_document_builder import (
     _max_documents,
     _resolve_announcements,
     _resolve_delta_announcements,
+    _resolve_delta_stale_ids,
 )
 from src.app.services.kb_index_sync import (
     CHUNK_SIZE,
@@ -76,6 +77,7 @@ __all__ = (
     "_read_existing_index_value",
     "_resolve_announcements",
     "_resolve_delta_announcements",
+    "_resolve_delta_stale_ids",
     "_sync",
     "_sync_stream",
     "_upsert_kb_status",
@@ -138,14 +140,32 @@ def rebuild_knowledge_base(
         existing_hashes, incremental = (
             ({}, False) if full or delta_mode else _load_existing_index(collection)
         )
+        if incremental:
+            # 공고 원천의 목표 문서는 bid_ 접두뿐입니다. 낙찰 결과 등 다른 접두 문서를
+            # 삭제 후보에 넣으면 증분 색인이 결과 문서까지 지웁니다.
+            existing_hashes = {
+                doc_id: doc_hash
+                for doc_id, doc_hash in existing_hashes.items()
+                if doc_id.startswith("bid_")
+            }
 
         now = utcnow()
         one_year_ago = kst_now(now) - timedelta(days=365)
         collected_one_year_ago = now - timedelta(days=365)
+        delta_stale_ids: list[str] = []
         if delta_mode:
             if collected_since is None:
                 raise ValueError("delta_mode requires collected_since")
             announcements, source_mode = _resolve_delta_announcements(db, collected_since)
+            # 델타 원천에서 빠진 같은 공고의 이전 차수 문서와, 최신 차수가 취소공고가
+            # 되어 원천에서 빠진 문서를 컬렉션에서 제거합니다. 이번에 다시 쓰는 문서는
+            # 경합으로 삭제 대상에 들어도 건드리지 않습니다.
+            target_ids = {announcement.id for announcement in announcements}
+            delta_stale_ids = [
+                f"bid_{row_id}"
+                for row_id in _resolve_delta_stale_ids(db, collected_since)
+                if row_id not in target_ids
+            ]
         else:
             announcements, source_mode = _resolve_announcements(
                 db, one_year_ago, collected_one_year_ago
@@ -196,6 +216,12 @@ def rebuild_knowledge_base(
             prepare_chunk=prepare_ann_chunk,
         )
         current_chunk_results_map.clear()
+
+        # 재색인 뒤에 지웁니다. 먼저 지우면 색인이 실패했을 때 문서만 사라집니다.
+        if delta_stale_ids:
+            collection.delete(ids=delta_stale_ids)
+        if delta_mode:
+            indexed_count = collection.count()
 
         if indexed_count == 0 and not delta_mode:
             source_mode = "results_only"
