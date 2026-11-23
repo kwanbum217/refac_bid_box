@@ -855,7 +855,7 @@ BASE_GROUND_TRUTH: tuple[tuple[str, str], ...] = (
         "sleep·pgrep·ps·processlist·orca orchestration check 를 반복해 진행을 확인하지 않는다. "
         "큰 파일은 grep -n 으로 위치를 먼저 찾고 필요한 구간을 한 번에 읽는다. 편집이 실패하면 "
         "그 구간을 다시 읽은 뒤 고친다. DB 측정 질의는 한 셸 호출에 2~3건씩 묶는다. "
-        "보고 JSON(report_path)은 Capsule 계약 필드를 한 번에 채워 한 번만 쓰고 완료 통보는 한 번만 보낸다",
+        "완료 보고 JSON 은 Capsule 계약 필드를 한 번에 채워 한 번만 쓰고 완료 통보는 한 번만 보낸다",
         "docs/ops/orca_worker_model_pool.md",
     ),
 )
