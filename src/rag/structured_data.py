@@ -745,6 +745,46 @@ def _apply_latest_announcement_scope(stmt):
     )
 
 
+def _announcement_scope_exempt(plan: RetrievalPlan) -> bool:
+    """최신 차수·취소 제외 범위를 걸지 않는 질의인지 판정합니다.
+
+    공고번호 단건 조회와 공고종류(취소공고·재공고 등)를 지정한 질의는 사용자가
+    특정 차수·종류 자체를 물었으므로 범위를 걸지 않습니다.
+    """
+    filters = plan.filters or {}
+    return bool(
+        _normalize_text(str(filters.get("bid_ntce_no") or ""))
+        or _normalize_text(str(filters.get("notice_kind") or ""))
+    )
+
+
+def _apply_latest_announcement_anti_join(stmt):
+    """최신 차수 한 행과 취소공고 제외를 반조인으로 겁니다.
+
+    `bid_ntce_ord = (SELECT MAX(bid_ntce_ord) ...)` 와 같은 행 집합을 고릅니다.
+    유니크 인덱스 (공고번호, 차수, 업무구분) 때문에 같은 공고번호·업무구분 안에
+    같은 차수가 둘일 수 없고, 차수는 NOT NULL 이므로 "자기보다 큰 차수가 없는
+    행"은 곧 "차수가 최대인 행"입니다. 행마다 집계 함수를 다시 계산하지 않아
+    기간이 긴 집계의 콜드 실행 계획이 가볍습니다.
+    """
+    from src.app.services.bid_queries import not_cancelled_clause
+
+    later = aliased(BidAnnouncement, name="later_ann")
+    later_ord = (
+        select(later.id)
+        .where(
+            later.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+            later.category == BidAnnouncement.category,
+            later.bid_ntce_ord > BidAnnouncement.bid_ntce_ord,
+        )
+        .correlate(BidAnnouncement)
+    )
+    return stmt.where(
+        ~exists(later_ord),
+        not_cancelled_clause(),
+    )
+
+
 def _announcement_aggregate_scope(plan: RetrievalPlan):
     """공고 집계 문장에 최신 차수·취소 제외를 거는 문장 변환자를 돌려줍니다.
 
@@ -756,12 +796,22 @@ def _announcement_aggregate_scope(plan: RetrievalPlan):
     특정 차수·종류 자체를 물었으므로 범위를 걸지 않습니다. 공고 목록 표본도
     조건에 맞는 행을 그대로 보여 주는 경로라 이 범위를 쓰지 않습니다.
     """
-    filters = plan.filters or {}
-    if _normalize_text(str(filters.get("bid_ntce_no") or "")):
-        return _identity_statement
-    if _normalize_text(str(filters.get("notice_kind") or "")):
+    if _announcement_scope_exempt(plan):
         return _identity_statement
     return _apply_latest_announcement_scope
+
+
+def _quarter_announcement_scope(plan: RetrievalPlan):
+    """분기 시계열 공고 집계 전용 범위 변환자를 돌려줍니다.
+
+    거르는 행 집합은 `_announcement_aggregate_scope` 와 같고, 상관 MAX 서브쿼리
+    대신 반조인을 씁니다. 분기 시계열은 5년치처럼 행이 많은 창을 한 번에
+    집계하므로, 행마다 집계 함수를 다시 계산하는 형태가 콜드 지연의 대부분을
+    차지했습니다. 다른 집계 경로는 종전 문장을 그대로 씁니다.
+    """
+    if _announcement_scope_exempt(plan):
+        return _identity_statement
+    return _apply_latest_announcement_anti_join
 
 
 def _announcement_conditions(
@@ -3111,12 +3161,26 @@ def _build_time_series(
             )
             .group_by(res_year, res_quarter)
         )
+        # 업무구분 인덱스만으로 본문을 훑으면 기간 밖 행까지 읽어 5년 창의 콜드
+        # 지연이 커집니다. 기간·업무구분 조건을 먼저 건 파생 테이블로 id 를
+        # 인덱스에서만 추린 뒤 본문을 그 id 로 좁힙니다. 같은 조건을 본문에도
+        # 남겨 두어 파생 테이블이 계획에서 빠져도 결과가 같습니다.
+        period_ids = (
+            select(BidAnnouncement.id.label("id"))
+            .where(
+                BidAnnouncement.bid_ntce_dt >= range_start,
+                BidAnnouncement.bid_ntce_dt < range_end,
+                *base_ann_conditions,
+            )
+            .subquery("quarter_period_announcements")
+        )
         ann_stmt = (
             select(
                 ann_year.label("year"),
                 ann_quarter.label("quarter"),
                 func.count(BidAnnouncement.id),
             )
+            .select_from(period_ids.join(BidAnnouncement, BidAnnouncement.id == period_ids.c.id))
             .where(
                 BidAnnouncement.bid_ntce_dt >= range_start,
                 BidAnnouncement.bid_ntce_dt < range_end,
@@ -3126,7 +3190,7 @@ def _build_time_series(
         )
         # 분기별 공고 건수도 총계·축과 같은 모집단이어야 합니다. 같은 공고의
         # 이전 차수와 취소된 최신 차수를 그대로 세면 분기 합계가 총계와 어긋납니다.
-        ann_stmt = _announcement_aggregate_scope(plan)(ann_stmt)
+        ann_stmt = _quarter_announcement_scope(plan)(ann_stmt)
 
         res_by_quarter = {
             (int(row[0]), int(row[1])): (int(row[2] or 0), row[3])
