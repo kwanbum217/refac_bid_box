@@ -46,6 +46,7 @@ from src.app.services.kb_index_sync import (
     _read_existing_index_value,
     _sync,
     _sync_stream,
+    delete_in_batches,
 )
 from src.rag.embeddings import get_collection
 
@@ -219,7 +220,7 @@ def rebuild_knowledge_base(
 
         # 재색인 뒤에 지웁니다. 먼저 지우면 색인이 실패했을 때 문서만 사라집니다.
         if delta_stale_ids:
-            collection.delete(ids=delta_stale_ids)
+            delete_in_batches(collection, list(delta_stale_ids))
         if delta_mode:
             indexed_count = collection.count()
 
