@@ -14,6 +14,11 @@ src/app/services/ranking_snapshots.py
 차수 한 행만 세고 최신 차수가 취소공고인 공고를 뺍니다. 옛 차원 이름
 (`dminstt_nm`, `bid_ntce_nm`)은 차수별 행을 모두 세어 같은 공고를 여러 번
 반영했으므로 재집계·조회 대상에서 빼두었습니다.
+
+집계 비용은 대부분 최신 차수 파생 테이블을 본문 행과 조인하는 단계에서 나옵니다.
+그래서 카테고리 조합에서는 파생 테이블에도 같은 업무구분 조건을 걸고, 라벨
+가짓수가 적은 차원은 전체 카테고리 순위를 카테고리별 결과의 합으로 만듭니다.
+두 방법 모두 순위와 건수를 바꾸지 않는 실행 방식 개선입니다.
 """
 
 from __future__ import annotations
@@ -66,6 +71,11 @@ class DimensionSpec:
     # True 면 같은 공고번호·업무구분의 최신 차수 한 행만 세고, 최신 차수가
     # 취소공고인 공고를 뺍니다.
     latest_ord_only: bool = False
+    # True 면 전체 카테고리 순위를 카테고리별 결과의 합으로 만듭니다. 라벨
+    # 가짓수가 적어 전체 결과를 메모리에 올릴 수 있는 차원만 켭니다. 켜면
+    # 전체 카테고리를 위한 별도 집계가 사라집니다(2026-11-23 실측
+    # dminstt_nm_v2 전체 카테고리 152초).
+    derive_all_category: bool = False
 
 
 # (dataset, dimension) -> 집계 대상 차원
@@ -80,7 +90,10 @@ class DimensionSpec:
 DIMENSIONS: dict[tuple[str, str], DimensionSpec] = {
     (DATASET_RESULT, "bidwinnr_nm"): DimensionSpec(BidResult, BidResult.bidwinnr_nm),
     (DATASET_ANNOUNCEMENT, "dminstt_nm_v2"): DimensionSpec(
-        BidAnnouncement, BidAnnouncement.dminstt_nm, latest_ord_only=True
+        BidAnnouncement,
+        BidAnnouncement.dminstt_nm,
+        latest_ord_only=True,
+        derive_all_category=True,
     ),
     (DATASET_ANNOUNCEMENT, "bid_ntce_nm_v2"): DimensionSpec(
         BidAnnouncement, BidAnnouncement.bid_ntce_nm, latest_ord_only=True
@@ -114,7 +127,7 @@ def exclude_corrupted(column):
     return column.is_not(None) & ~column.contains(REPLACEMENT_CHAR)
 
 
-def _announcement_scope(stmt):
+def _announcement_scope(stmt, category: str | None = None):
     """최신 차수 한 행만 남기고 최신 차수가 취소공고인 공고를 뺍니다.
 
     `bid_announcements` 는 (bid_ntce_no, bid_ntce_ord, category) 가 유니크이므로
@@ -122,18 +135,25 @@ def _announcement_scope(stmt):
     최신 차수는 (bid_ntce_no, category) 별 MAX(bid_ntce_ord) 한 행과 같고,
     목록 필터의 정렬 tie-break(공고일시·수집일시·id)는 결과를 바꾸지 않습니다.
     파생 테이블의 GROUP BY 는 유니크 인덱스만 읽어 본문을 건드리지 않습니다.
+
+    `category` 를 주면 파생 테이블도 그 업무구분만 남깁니다. 업무구분은 이미
+    GROUP BY 키에 들어 있으므로 결과는 같고 조인 대상만 줄어듭니다
+    (2026-11-23 실측 dminstt_nm_v2 Servc 55초 -> 31초). 그런데 `category = :c`
+    로 그대로 쓰면 MySQL 이 category 인덱스를 골라 200만 행을 무작위로 읽습니다
+    (같은 조합 150초). TRIM 은 공백 없는 고정 코드에서 값을 바꾸지 않으므로
+    결과를 유지하면서 그 인덱스를 쓸 수 없게 만듭니다. 값에 공백이 섞여도
+    바깥 조인의 `category` 조건이 정확히 걸러내 최종 결과는 달라지지 않습니다.
     """
     from src.app.services.bid_queries import not_cancelled_clause
 
-    latest = (
-        select(
-            BidAnnouncement.bid_ntce_no.label("bid_ntce_no"),
-            BidAnnouncement.category.label("category"),
-            func.max(BidAnnouncement.bid_ntce_ord).label("bid_ntce_ord"),
-        )
-        .group_by(BidAnnouncement.bid_ntce_no, BidAnnouncement.category)
-        .subquery("latest_ann_ord")
-    )
+    latest_stmt = select(
+        BidAnnouncement.bid_ntce_no.label("bid_ntce_no"),
+        BidAnnouncement.category.label("category"),
+        func.max(BidAnnouncement.bid_ntce_ord).label("bid_ntce_ord"),
+    ).group_by(BidAnnouncement.bid_ntce_no, BidAnnouncement.category)
+    if category:
+        latest_stmt = latest_stmt.where(func.trim(BidAnnouncement.category) == category)
+    latest = latest_stmt.subquery("latest_ann_ord")
     return stmt.join(
         latest,
         and_(
@@ -144,34 +164,73 @@ def _announcement_scope(stmt):
     ).where(not_cancelled_clause())
 
 
-def _scoped(stmt, spec: DimensionSpec):
+def _scoped(stmt, spec: DimensionSpec, category: str | None = None):
     """차원이 정한 범위를 문장에 적용합니다."""
-    return _announcement_scope(stmt) if spec.latest_ord_only else stmt
+    return _announcement_scope(stmt, category) if spec.latest_ord_only else stmt
 
 
-def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> tuple[list, int]:
-    """상위 N 을 집계하되 인코딩이 깨진 값은 순위에서 제외합니다.
-
-    복구 불가능한 손상값(전체의 41%)을 그대로 두면 순위 상위가 전부 깨진 문자열로
-    채워져 답변이 쓸모없어집니다. 대시보드 업체 순위(`_is_readable_company_name`)도
-    같은 방침입니다. 제외한 그룹 수를 함께 돌려주어 호출부가 안내할 수 있게 합니다.
-    """
+def _ranking_statement(dataset: str, dimension: str, category: str, *, complete: bool = False):
+    """집계 후보를 뽑는 SELECT 문을 만듭니다. 실행과 분리해 계획을 검토할 수 있습니다."""
     spec = DIMENSIONS[(dataset, dimension)]
     model, column = spec.model, spec.column
     scope = [model.category == category] if category else []
 
     stmt = _scoped(
-        select(column, func.count(model.id)).where(exclude_corrupted(column), *scope), spec
+        select(column, func.count(model.id)).where(exclude_corrupted(column), *scope),
+        spec,
+        category,
     )
-    stmt = (
-        stmt.group_by(column)
-        .order_by(func.count(model.id).desc())
-        .limit(SNAPSHOT_DEPTH * OVERFETCH_FACTOR)
+    stmt = stmt.group_by(column).order_by(func.count(model.id).desc())
+    if not complete:
+        stmt = stmt.limit(SNAPSHOT_DEPTH * OVERFETCH_FACTOR)
+    return stmt
+
+
+def _corruption_probe_statement(dataset: str, dimension: str, category: str):
+    """집계 범위에 U+FFFD 값이 있는지 보는 SELECT 문을 만듭니다."""
+    spec = DIMENSIONS[(dataset, dimension)]
+    scope = [spec.model.category == category] if category else []
+    return _scoped(
+        select(spec.model.id).where(spec.column.contains(REPLACEMENT_CHAR), *scope).limit(1),
+        spec,
+        category,
     )
 
+
+def _candidate_rows(
+    db: Session, dataset: str, dimension: str, category: str, *, complete: bool = False
+) -> list[tuple[str | None, int]]:
+    """집계 후보를 건수 내림차순으로 돌려줍니다.
+
+    `complete=True` 면 상위 N 자르지 않고 전 라벨을 돌려줍니다. 전체 카테고리
+    순위를 카테고리별 결과의 합으로 만들 때 씁니다. 자르지 않아도 집계 자체는
+    어차피 모든 그룹을 만들므로 비용은 늘지 않습니다.
+    """
+    stmt = _ranking_statement(dataset, dimension, category, complete=complete)
+    return [(label, int(count or 0)) for label, count in db.execute(stmt).all()]
+
+
+def _has_corrupted_label(db: Session, dataset: str, dimension: str, category: str) -> bool:
+    """집계 범위에 U+FFFD 를 포함한 값이 있었는지 확인합니다.
+
+    첫 건에서 멈추므로 저렴합니다. 손상 탐침도 집계와 같은 범위를 봅니다. 그래야
+    "이 순위에서 제외했다" 는 표시가 실제 집계 모수와 일치합니다.
+    """
+    stmt = _corruption_probe_statement(dataset, dimension, category)
+    return db.execute(stmt).first() is not None
+
+
+def _rank(candidates: list[tuple[str | None, int]]) -> tuple[list, bool]:
+    """후보에서 저장할 상위 N 을 고르고 인코딩이 깨진 값은 순위에서 제외합니다.
+
+    복구 불가능한 손상값(전체의 41%)을 그대로 두면 순위 상위가 전부 깨진 문자열로
+    채워져 답변이 쓸모없어집니다. 대시보드 업체 순위(`_is_readable_company_name`)도
+    같은 방침입니다. 걸러낸 것이 있는지를 함께 돌려주어 호출부가 안내할 수 있게
+    합니다.
+    """
     kept: list = []
     dropped = False
-    for label, count in db.execute(stmt).all():
+    for label, count in candidates[: SNAPSHOT_DEPTH * OVERFETCH_FACTOR]:
         # SQL 이 U+FFFD 를 쳐냈어도 다른 형태로 깨진 값이 남을 수 있습니다.
         if is_corrupted_display_text(label):
             dropped = True
@@ -179,17 +238,59 @@ def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> t
         kept.append((label, count))
         if len(kept) >= SNAPSHOT_DEPTH:
             break
-
-    if not dropped:
-        # SQL 단계에서 제외된 것이 있었는지 확인합니다. 첫 건에서 멈추므로 저렴합니다.
-        # 손상 탐침도 집계와 같은 범위를 봅니다. 그래야 "이 순위에서 제외했다" 는
-        # 표시가 실제 집계 모수와 일치합니다.
-        probe = _scoped(
-            select(model.id).where(column.contains(REPLACEMENT_CHAR), *scope).limit(1), spec
-        )
-        dropped = db.execute(probe).first() is not None
-
     return kept, dropped
+
+
+@dataclass(frozen=True)
+class _Combination:
+    """한 (차원, 카테고리) 조합의 집계 결과입니다."""
+
+    # 스냅숏에 저장할 상위 N.
+    rows: list[tuple[str | None, int]]
+    # 손상값을 제외했는지(스냅숏 rank 0 마커).
+    dropped: bool
+    # 합산에 쓰는 후보. 전체 카테고리를 합으로 만들 때만 전 라벨입니다.
+    candidates: list[tuple[str | None, int]]
+    # SQL 단계에서 U+FFFD 를 쳐낸 것이 있었는지.
+    corrupted: bool
+
+
+def _compute_combination(
+    db: Session, dataset: str, dimension: str, category: str, *, complete: bool = False
+) -> _Combination:
+    candidates = _candidate_rows(db, dataset, dimension, category, complete=complete)
+    rows, heuristic_dropped = _rank(candidates)
+    corrupted = _has_corrupted_label(db, dataset, dimension, category)
+    return _Combination(
+        rows=rows,
+        dropped=heuristic_dropped or corrupted,
+        candidates=candidates,
+        corrupted=corrupted,
+    )
+
+
+def _merge_candidates(combinations: list[_Combination]) -> list[tuple[str | None, int]]:
+    """카테고리별 후보를 라벨 기준으로 합산합니다.
+
+    업무구분은 행마다 하나이므로 전체 카테고리의 건수는 카테고리별 건수의 합과
+    정확히 같습니다. 동점은 라벨 오름차순으로 고정해 실행마다 같은 순위가
+    나오게 합니다.
+    """
+    totals: dict[str | None, int] = {}
+    for combination in combinations:
+        for label, count in combination.candidates:
+            totals[label] = totals.get(label, 0) + count
+    return sorted(totals.items(), key=lambda item: (-item[1], item[0] or ""))
+
+
+def _has_unregistered_category(db: Session, model: Any) -> bool:
+    """스냅숏이 다루지 않는 업무구분이 있는지 봅니다.
+
+    전체 카테고리를 카테고리별 합으로 만들면 이 값들이 빠집니다. 하나라도 있으면
+    전체 집계를 직접 실행하는 쪽으로 돌아갑니다.
+    """
+    stmt = select(model.id).where(model.category.not_in(tuple(CATEGORY_LABELS))).limit(1)
+    return db.execute(stmt).first() is not None
 
 
 def _dimension_age_days(db: Session, dataset: str, dimension: str) -> float | None:
@@ -237,9 +338,39 @@ def rebuild_ranking_snapshots(db: Session, *, force_weekly: bool = False) -> dic
         if not _should_rebuild(db, dataset, dimension, force_weekly):
             deferred.append(dimension)
             continue
+
+        spec = DIMENSIONS[(dataset, dimension)]
+        # 전체 카테고리를 카테고리별 합으로 만들 수 있는지 먼저 봅니다. 스냅숏이
+        # 다루지 않는 업무구분이 있으면 합으로는 전체를 재현할 수 없으므로 직접
+        # 집계하는 쪽으로 돌아갑니다.
+        derive_all = spec.derive_all_category and not _has_unregistered_category(db, spec.model)
+        combinations: dict[str, _Combination] = {}
         for category in SNAPSHOT_CATEGORIES:
-            rows, dropped = _compute_rows(db, dataset, dimension, category)
-            skipped += int(dropped)
+            if category == ALL_CATEGORIES and derive_all:
+                continue
+            combinations[category] = _compute_combination(
+                db,
+                dataset,
+                dimension,
+                category,
+                complete=derive_all and category != ALL_CATEGORIES,
+            )
+
+        if derive_all:
+            per_category = [combinations[category] for category in CATEGORY_LABELS]
+            candidates = _merge_candidates(per_category)
+            rows, heuristic_dropped = _rank(candidates)
+            corrupted = any(combination.corrupted for combination in per_category)
+            combinations[ALL_CATEGORIES] = _Combination(
+                rows=rows,
+                dropped=heuristic_dropped or corrupted,
+                candidates=candidates,
+                corrupted=corrupted,
+            )
+
+        for category in SNAPSHOT_CATEGORIES:
+            combination = combinations[category]
+            skipped += int(combination.dropped)
             db.execute(
                 delete(BidRankingSnapshot).where(
                     BidRankingSnapshot.dataset == dataset,
@@ -258,12 +389,12 @@ def rebuild_ranking_snapshots(db: Session, *, force_weekly: bool = False) -> dic
                     category=category,
                     rank=SKIPPED_MARKER_RANK,
                     label=None,
-                    metric_count=int(bool(dropped)),
+                    metric_count=int(combination.dropped),
                     rebuilt_at=started,
                 )
             )
             written += 1
-            for rank, (label, count) in enumerate(rows, start=1):
+            for rank, (label, count) in enumerate(combination.rows, start=1):
                 db.add(
                     BidRankingSnapshot(
                         dataset=dataset,
