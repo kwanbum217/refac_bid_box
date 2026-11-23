@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, quote
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.app.api.v1.accounts import (
@@ -29,6 +29,7 @@ from src.app.api.v1.accounts import (
     register_user,
     update_mypage_profile,
 )
+from src.app.core.cache import cache
 from src.app.core.config import settings
 from src.app.core.db import get_db, open_thread_session
 from src.app.core.security import (
@@ -53,7 +54,7 @@ from src.app.core.security import (
 from src.app.core.templating import templates
 from src.app.core.timeutil import utcnow
 from src.app.models.accounts import CustomUser
-from src.app.models.bids import BidAnnouncement, BidResult
+from src.app.models.bids import BidResult
 from src.app.models.chatbot import ChatSessionState
 from src.app.services import bid_queries
 from src.app.services.announcement_attachments import describe_announcement_links
@@ -71,9 +72,30 @@ from src.app.services.bid_preferences import get_bid_preferences, save_bid_prefe
 from src.app.services.evaluation_rules import find_reputation_item
 from src.app.services.home_summary import get_home_summary
 from src.app.services.search_index import SearchBackendUnavailable
+from src.app.services.search_index_parity import count_db_announcements
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ui"])
+
+# 채팅 헤더의 'Records Indexed' 는 색인 문서 수, 곧 서로 다른 공고 수입니다
+# (search_index.py 의 색인 문서 정의: 공고번호+카테고리별 최신 차수 1행).
+# 전체 행 수를 세면 같은 공고의 차수만큼 부풀려집니다.
+# count_db_announcements 는 운영 규모(약 560만 행)에서 20초 넘게 걸려 요청마다
+# 돌릴 수 없으므로 색인 정의가 그대로인 동안 값을 캐시합니다. 키의 v1 접미가
+# 정의 버전이며, 정의를 바꾸면 접미를 올려 이전 값을 버립니다.
+CHAT_INDEXED_RECORDS_CACHE_KEY = "bids:chat:indexed_records:distinct_announcement:v1"
+CHAT_INDEXED_RECORDS_CACHE_TTL = 60 * 60 * 24
+
+
+def _indexed_announcement_count(db: Session) -> int:
+    """채팅 헤더에 표시할 색인 문서 수(서로 다른 공고 수)를 돌려줍니다."""
+    cached = cache.get(CHAT_INDEXED_RECORDS_CACHE_KEY)
+    if isinstance(cached, int):
+        return cached
+
+    count = count_db_announcements(db)
+    cache.set(CHAT_INDEXED_RECORDS_CACHE_KEY, count, CHAT_INDEXED_RECORDS_CACHE_TTL)
+    return count
 
 
 def _compact_count(value: int) -> str:
@@ -400,7 +422,9 @@ def chat_page(
     else:
         llm_model_label = f"Ollama {settings.OLLAMA_MODEL}"
 
-    indexed_records = int(db.scalar(select(func.count(BidAnnouncement.id))) or 0)
+    # 색인 문서 수는 서로 다른 공고 수입니다. 같은 공고의 차수 행을 모두 세는
+    # 전체 행 수를 쓰면 화면 값이 색인 실체와 어긋납니다.
+    indexed_records = _indexed_announcement_count(db)
 
     context = {
         "sessions": list(sessions),

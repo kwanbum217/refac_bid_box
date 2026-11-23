@@ -6,7 +6,8 @@ apps/bids/home_context.py 1:1 이식).
 
 SSR 메인 화면은 2026-11-11 부터 `home_summary.py` 의 요약 문맥을 씁니다. 이
 모듈은 외부 응답 계약(HomeContextResponse)과 벤치마크 하니스가 계속 쓰므로
-선별 알고리즘을 그대로 유지합니다.
+표본·윈도우 순회 방식은 그대로 두되, 최근 공고 선별은 공고번호+카테고리별
+최신 차수 1행만 남기고 최신 차수가 취소공고인 번호는 뺍니다.
 
 표본 확대(50/200/1000건)와 수집일 윈도우(1/3/7일) 폴백 판정은 그대로 두고,
 전역 정렬 접두를 표본 크기 순서로 필요할 때만 늘려 읽어 윈도우별 후보를 메모리에서
@@ -34,7 +35,11 @@ from src.app.services.band_regime_lookup import (
     attachment_regime_key,
     lookup_attachment_regimes,
 )
-from src.app.services.bid_queries import qualification_analyzable_ids
+from src.app.services.bid_queries import (
+    not_cancelled_clause,
+    qualification_analyzable_ids,
+    similar_announcement_latest_filter,
+)
 
 DEFAULT_HOME_ANNOUNCEMENT_CATEGORIES = ("Cnstwk", "Servc", "Thng", "Frgcpt")
 HOME_CONTEXT_CACHE_TTL = 60 * 60 * 24
@@ -100,6 +105,11 @@ def _recent_unique_announcements(
     limit: int,
     latest_collected_at: datetime | None,
 ) -> list[BidAnnouncement]:
+    # 같은 공고의 이전 차수 행을 파이썬에서만 지우면 수집일이 앞선 옛 차수가 남고,
+    # 최신 차수가 취소공고여도 그대로 노출됩니다. 목록·상세·집계가 함께 쓰는
+    # bid_queries 정의를 그대로 적용합니다. 최신 차수 판정(NOT EXISTS) 뒤에
+    # 취소 조건을 걸어야 이전 차수가 최신 행 대신 올라오지 않습니다.
+    base_stmt = similar_announcement_latest_filter(base_stmt).where(not_cancelled_clause())
     ordered_stmt = base_stmt.order_by(
         BidAnnouncement.collected_at.desc(),
         BidAnnouncement.bid_ntce_dt.desc(),
