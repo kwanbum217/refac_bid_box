@@ -709,6 +709,61 @@ def _final_round_void_condition() -> Any:
     return exists(latest_void)
 
 
+def _identity_statement(stmt):
+    return stmt
+
+
+def _apply_latest_announcement_scope(stmt):
+    """공고 집계 문장에 최신 차수 한 행과 취소공고 제외를 겁니다.
+
+    bid_queries 의 최신 차수 판정과 의미가 같습니다. 유니크 인덱스
+    (bid_ntce_no, bid_ntce_ord, category) 때문에 같은 공고번호·업무구분 안에
+    같은 차수가 둘일 수 없어, 최신 차수는 (공고번호, 업무구분) 별 최대
+    bid_ntce_ord 한 행과 정확히 일치합니다. 이 서브쿼리는 그 인덱스만 읽어
+    본문을 읽지 않습니다.
+
+    취소공고 제외는 최신 차수 판정 뒤에 겁니다. 순서를 뒤집으면 취소된 최신
+    차수가 빠진 자리에 이전 차수가 남아 취소된 공고가 다시 세어집니다.
+    """
+    # 모듈 최상단에서 import 하면 bid_queries -> ml.model_registry 로 이어지는
+    # 무거운 초기화가 RAG 모듈 로드에 붙습니다. 범위를 걸 때만 가져옵니다.
+    from src.app.services.bid_queries import not_cancelled_clause
+
+    newer = aliased(BidAnnouncement, name="latest_ann")
+    latest_ord = (
+        select(func.max(newer.bid_ntce_ord))
+        .where(
+            newer.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+            newer.category == BidAnnouncement.category,
+        )
+        .correlate(BidAnnouncement)
+        .scalar_subquery()
+    )
+    return stmt.where(
+        BidAnnouncement.bid_ntce_ord == latest_ord,
+        not_cancelled_clause(),
+    )
+
+
+def _announcement_aggregate_scope(plan: RetrievalPlan):
+    """공고 집계 문장에 최신 차수·취소 제외를 거는 문장 변환자를 돌려줍니다.
+
+    공고 총계, 업종·지역·금액구간 축, 지역·기관 비교표, 분기 시계열, 기관별·
+    공고명별 순위가 이 함수가 돌려준 범위를 지나므로 총계와 축 합계가 같은
+    모집단을 봅니다.
+
+    공고번호 단건 조회와 공고종류(취소공고·재공고 등)를 지정한 질의는 사용자가
+    특정 차수·종류 자체를 물었으므로 범위를 걸지 않습니다. 공고 목록 표본도
+    조건에 맞는 행을 그대로 보여 주는 경로라 이 범위를 쓰지 않습니다.
+    """
+    filters = plan.filters or {}
+    if _normalize_text(str(filters.get("bid_ntce_no") or "")):
+        return _identity_statement
+    if _normalize_text(str(filters.get("notice_kind") or "")):
+        return _identity_statement
+    return _apply_latest_announcement_scope
+
+
 def _announcement_conditions(
     plan: RetrievalPlan,
     *,
@@ -1664,6 +1719,7 @@ def _category_axis_breakdown(
     result_conditions: list,
     announcement_conditions: list,
     limit: int,
+    announcement_scope: Any = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """분류 축을 집계합니다. 공고 건수는 공고 테이블, 낙찰 지표는 낙찰 테이블입니다."""
     if metric == "announcement_count":
@@ -1672,6 +1728,8 @@ def _category_axis_breakdown(
             .where(*announcement_conditions)
             .group_by(BidAnnouncement.category)
         )
+        if announcement_scope is not None:
+            stmt = announcement_scope(stmt)
         rows = _cached_rows(db, stmt)
         entries = [
             _axis_entry(
@@ -1881,6 +1939,7 @@ def _region_axis_breakdown(
     result_conditions: list,
     announcement_conditions: list,
     limit: int,
+    announcement_scope: Any = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """지역 축을 집계합니다. 단축형과 정식 명칭을 함께 라벨로 묶습니다."""
     hint_target: Any = None
@@ -1918,6 +1977,8 @@ def _region_axis_breakdown(
         .where(column.is_not(None), *conditions)
         .group_by(region_expr)
     )
+    if metric == "announcement_count" and announcement_scope is not None:
+        stmt = announcement_scope(stmt)
     if hint_target is not None and hint_sql:
         stmt = stmt.with_hint(hint_target, hint_sql, dialect_name="mysql")
     rows = _cached_rows(db, stmt)
@@ -1977,6 +2038,7 @@ def _amount_band_axis_breakdown(
     metric: str,
     result_conditions: list,
     announcement_conditions: list,
+    announcement_scope: Any = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """금액 구간 축을 집계합니다.
 
@@ -2009,6 +2071,8 @@ def _amount_band_axis_breakdown(
         .where(*conditions)
         .group_by(band_expr)
     )
+    if metric == "announcement_count" and announcement_scope is not None:
+        stmt = announcement_scope(stmt)
     rows = {str(row[0]): row for row in _cached_rows(db, stmt)}
 
     def entry(label: str, row: tuple[Any, ...] | None) -> dict[str, Any]:
@@ -2041,6 +2105,7 @@ def _build_axis_breakdown(
     result_conditions: list,
     announcement_conditions: list,
     limit: int,
+    announcement_scope=None,
 ) -> tuple[list[dict[str, Any]], bool] | None:
     """축 집계를 실행합니다.
 
@@ -2049,19 +2114,23 @@ def _build_axis_breakdown(
     """
     if group_by == "category":
         return _category_axis_breakdown(
-            db, metric, result_conditions, announcement_conditions, limit
+            db, metric, result_conditions, announcement_conditions, limit, announcement_scope
         )
     if group_by == "institution":
         if metric == "announcement_count":
             return None
         return _institution_result_axis_breakdown(db, metric, result_conditions, limit)
     if group_by == "region":
-        return _region_axis_breakdown(db, metric, result_conditions, announcement_conditions, limit)
+        return _region_axis_breakdown(
+            db, metric, result_conditions, announcement_conditions, limit, announcement_scope
+        )
     if group_by == "winner":
         return _winner_axis_breakdown(db, metric, result_conditions, limit)
     if group_by == "amount_band":
         # 금액 구간은 다섯 칸이 상한이라 group_limit 으로 자르지 않습니다.
-        return _amount_band_axis_breakdown(db, metric, result_conditions, announcement_conditions)
+        return _amount_band_axis_breakdown(
+            db, metric, result_conditions, announcement_conditions, announcement_scope
+        )
     return None
 
 
@@ -2130,6 +2199,7 @@ def _comparison_breakdown(
         .where(BidAnnouncement.dminstt_nm.is_not(None), *_announcement_conditions(scope_plan))
         .group_by(announcement_expr)
     )
+    announcement_stmt = _announcement_aggregate_scope(scope_plan)(announcement_stmt)
     if dimension == "region":
         announcement_stmt = announcement_stmt.with_hint(
             BidAnnouncement, ANNOUNCEMENT_REGION_AXIS_HINT, dialect_name="mysql"
@@ -2346,11 +2416,14 @@ def _period_category_comparison_breakdown(
         ],
         else_=None,
     )
+    # 기간·분류 비교표의 공고 건수도 다른 집계와 같은 모집단을 씁니다. 대상별
+    # 조건과 무관한 공통 범위이므로 문장에 한 번만 겁니다.
     announcement_stmt = (
         select(announcement_expr, func.count())
         .where(or_(*[and_(*conditions) for conditions in announcement_conditions]))
         .group_by(announcement_expr)
     )
+    announcement_stmt = _announcement_aggregate_scope(plan)(announcement_stmt)
     announcement_counts: dict[str, int] = {}
     for key, count in _cached_rows(db, announcement_stmt):
         if key:
@@ -3051,6 +3124,9 @@ def _build_time_series(
             )
             .group_by(ann_year, ann_quarter)
         )
+        # 분기별 공고 건수도 총계·축과 같은 모집단이어야 합니다. 같은 공고의
+        # 이전 차수와 취소된 최신 차수를 그대로 세면 분기 합계가 총계와 어긋납니다.
+        ann_stmt = _announcement_aggregate_scope(plan)(ann_stmt)
 
         res_by_quarter = {
             (int(row[0]), int(row[1])): (int(row[2] or 0), row[3])
@@ -3605,6 +3681,9 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
     announcement_conditions = _announcement_conditions(
         condition_plan, institution_names=announcement_names_arg
     )
+    # 공고 집계 문장에만 최신 차수·취소 제외를 겁니다. 표본 목록은 조건에 맞는
+    # 행을 그대로 보여 주는 경로라 종전 범위를 유지합니다.
+    announcement_scope = _announcement_aggregate_scope(condition_plan)
     if result_name_fallbacks:
         fallback_condition = _multi_institution_condition(
             BidResult.dminstt_nm, result_names or [], result_name_fallbacks
@@ -3697,11 +3776,14 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
         )
 
     def announcement_total(session: Session) -> list[Any]:
+        total_stmt = announcement_scope(
+            select(func.count(BidAnnouncement.id)).where(*announcement_conditions)
+        )
         return _cached_aggregate(
             session,
             _hint_announcement_resolved_scope(
                 _hint_announcement_institution_cover(
-                    select(func.count(BidAnnouncement.id)).where(*announcement_conditions),
+                    total_stmt,
                     condition_plan,
                     announcement_names_arg,
                 ),
@@ -3747,19 +3829,26 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             session,
             scope=snapshot_scope,
             dataset=DATASET_ANNOUNCEMENT,
-            dimension="dminstt_nm",
+            # _v2 차원은 최신 차수·취소 제외 기준으로 집계한 스냅숏입니다. 아직
+            # 등록 전이면 get_top_rankings 가 None 을 돌려 실시간 경로로 내려가고,
+            # 그 경로는 위 공통 조건으로 같은 모집단을 셉니다.
+            dimension="dminstt_nm_v2",
             category=category_filter,
             live_stmt=_hint_announcement_resolved_scope(
                 _hint_announcement_institution_cover(
                     _hint_announcement_date_index(
-                        select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
-                        .where(
-                            exclude_corrupted(BidAnnouncement.dminstt_nm), *institution_conditions
-                        )
-                        .group_by(BidAnnouncement.dminstt_nm)
-                        # 동률 순위를 기관명으로 확정해 목록 순서를 재현 가능하게 합니다.
-                        .order_by(
-                            func.count(BidAnnouncement.id).desc(), BidAnnouncement.dminstt_nm.asc()
+                        announcement_scope(
+                            select(BidAnnouncement.dminstt_nm, func.count(BidAnnouncement.id))
+                            .where(
+                                exclude_corrupted(BidAnnouncement.dminstt_nm),
+                                *institution_conditions,
+                            )
+                            .group_by(BidAnnouncement.dminstt_nm)
+                            # 동률 순위를 기관명으로 확정해 목록 순서를 재현 가능하게 합니다.
+                            .order_by(
+                                func.count(BidAnnouncement.id).desc(),
+                                BidAnnouncement.dminstt_nm.asc(),
+                            )
                         ),
                         plan,
                     ),
@@ -3769,8 +3858,11 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                 announcement_names_arg,
                 plan=condition_plan,
             ),
-            corrupted_probe=select(BidAnnouncement.id).where(
-                BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+            corrupted_probe=announcement_scope(
+                select(BidAnnouncement.id).where(
+                    BidAnnouncement.dminstt_nm.contains(REPLACEMENT_CHAR),
+                    *announcement_conditions,
+                )
             ),
             limit=(
                 group_limit if group_by == "institution" and metric == "announcement_count" else 5
@@ -3782,19 +3874,23 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             session,
             scope=snapshot_scope,
             dataset=DATASET_ANNOUNCEMENT,
-            dimension="bid_ntce_nm",
+            dimension="bid_ntce_nm_v2",
             category=category_filter,
             live_stmt=_hint_announcement_name_cover(
                 _hint_announcement_institution_cover(
                     _hint_announcement_date_index(
-                        select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
-                        .where(
-                            exclude_corrupted(BidAnnouncement.bid_ntce_nm), *announcement_conditions
-                        )
-                        .group_by(BidAnnouncement.bid_ntce_nm)
-                        # 동률 순위를 공고명으로 확정해 목록 순서를 재현 가능하게 합니다.
-                        .order_by(
-                            func.count(BidAnnouncement.id).desc(), BidAnnouncement.bid_ntce_nm.asc()
+                        announcement_scope(
+                            select(BidAnnouncement.bid_ntce_nm, func.count(BidAnnouncement.id))
+                            .where(
+                                exclude_corrupted(BidAnnouncement.bid_ntce_nm),
+                                *announcement_conditions,
+                            )
+                            .group_by(BidAnnouncement.bid_ntce_nm)
+                            # 동률 순위를 공고명으로 확정해 목록 순서를 재현 가능하게 합니다.
+                            .order_by(
+                                func.count(BidAnnouncement.id).desc(),
+                                BidAnnouncement.bid_ntce_nm.asc(),
+                            )
                         ),
                         plan,
                     ),
@@ -3804,8 +3900,11 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
                 condition_plan,
                 announcement_names_arg,
             ),
-            corrupted_probe=select(BidAnnouncement.id).where(
-                BidAnnouncement.bid_ntce_nm.contains(REPLACEMENT_CHAR), *announcement_conditions
+            corrupted_probe=announcement_scope(
+                select(BidAnnouncement.id).where(
+                    BidAnnouncement.bid_ntce_nm.contains(REPLACEMENT_CHAR),
+                    *announcement_conditions,
+                )
             ),
         )
 
@@ -3817,6 +3916,7 @@ def _retrieve_structured_data_impl(db: Session, plan: RetrievalPlan) -> dict[str
             result_conditions=result_conditions,
             announcement_conditions=announcement_conditions,
             limit=group_limit,
+            announcement_scope=announcement_scope,
         )
 
     # 가장 긴 공고명 집계를 마지막에 두어 요청 세션이 직접 맡게 합니다.
