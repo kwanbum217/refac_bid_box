@@ -19,6 +19,10 @@ SSR 메인 화면은 2026-11-11 개편으로 이 선별을 쓰지 않습니다. 
    선별 id 와 순서가 같음을 단언합니다.
 2. 질의 수 - 첫 표본에서 limit 을 채우는 형상에서는 SELECT 1회와 읽는 행 50 이하를,
    어떤 형상에서도 호출당 SELECT 3회 이하와 참조 구현 이하를 단언합니다.
+
+2026-11-23 부터 결과 id 동일성 참조는 최신 차수·취소 제외를 후보에 건
+`_legacy_filtered_recent_unique_announcements` 로, 질의 수 비교 참조는 D8 측정
+당시 조건(필터 적용 전 후보)의 `_legacy_recent_unique_announcements` 로 나눠 씁니다.
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ from sqlalchemy.pool import StaticPool
 from src.app.core.db import Base
 from src.app.models.bids import BidAnnouncement
 from src.app.services import home_context
+from src.app.services.bid_queries import not_cancelled_clause, similar_announcement_latest_filter
 from src.app.services.home_context import (
     HOME_RECENT_DAY_WINDOWS,
     HOME_RECENT_SAMPLE_SIZES,
@@ -131,11 +136,31 @@ def _legacy_dedupe(candidates: list[BidAnnouncement], limit: int) -> list[BidAnn
 
 
 def _legacy_recent_unique_announcements(db, base_stmt, limit: int, latest_collected_at):
-    """수정 전 home_context.py 의 이중 순회 구현 스냅샷입니다.
+    """수정 전 home_context.py 의 이중 순회 구현 스냅샷(필터 적용 전 후보)입니다.
 
-    표본 크기마다, 윈도우마다 SELECT 를 새로 냈고 best_effort 누적 규칙도 그대로
-    옮겼습니다. 이 참조본과 결과가 다르면 리팩터링이 판정을 바꾼 것입니다.
+    D8 최적화를 재던 당시 조건(최신 차수·취소 제외 이전 후보)을 그대로 재현해
+    질의 수 비교의 기준으로 씁니다. 표본 크기마다, 윈도우마다 SELECT 를 새로 냈고
+    best_effort 누적 규칙도 수정 전 그대로입니다.
     """
+    return _legacy_traversal(db, base_stmt, limit, latest_collected_at)
+
+
+def _legacy_filtered_recent_unique_announcements(db, base_stmt, limit: int, latest_collected_at):
+    """같은 이중 순회에 최신 차수·취소 제외를 건 판정 동일성용 참조입니다.
+
+    2026-11-23 부터 최신 차수·취소 제외가 후보 질의의 공통 전제가 되어, 결과 id
+    동일성은 이 경로로만 비교합니다(순회 방식은 수정 전 그대로).
+    """
+    return _legacy_traversal(
+        db,
+        similar_announcement_latest_filter(base_stmt).where(not_cancelled_clause()),
+        limit,
+        latest_collected_at,
+    )
+
+
+def _legacy_traversal(db, base_stmt, limit: int, latest_collected_at):
+    """두 참조 경로가 공유하는 수정 전 표본·윈도 이중 순회입니다."""
     ordered_stmt = base_stmt.order_by(
         BidAnnouncement.collected_at.desc(),
         BidAnnouncement.bid_ntce_dt.desc(),
@@ -284,7 +309,7 @@ def _statement(base_stmt=None):
 
 
 def _assert_same_selection(db, *, limit: int, latest_collected_at, base_stmt=None) -> list[int]:
-    legacy = _legacy_recent_unique_announcements(
+    legacy = _legacy_filtered_recent_unique_announcements(
         db, _statement(base_stmt), limit, latest_collected_at
     )
     fixed = _recent_unique_announcements(db, _statement(base_stmt), limit, latest_collected_at)
@@ -303,6 +328,7 @@ def _count_selection_selects(db, *, limit: int, latest_collected_at, base_stmt=N
 
 
 def _count_legacy_selects(db, *, limit: int, latest_collected_at, base_stmt=None) -> int:
+    """질의 수 비교용입니다. D8 측정 당시 조건(필터 적용 전 후보)으로 셉니다."""
     recorder = _QueryRecorder(db)
     with recorder:
         _legacy_recent_unique_announcements(db, _statement(base_stmt), limit, latest_collected_at)
@@ -376,20 +402,38 @@ def test_selection_matches_legacy_algorithm_when_largest_sample_is_required():
 
 @pytest.mark.parametrize("seed", [1, 2, 3, 4, 5, 6])
 def test_selection_matches_legacy_algorithm_on_seeded_datasets(seed):
-    """중복 밀도와 수집일 분산을 섞은 형상에서도 판정이 같습니다."""
+    """중복 밀도와 수집일 분산을 섞은 형상에서도 판정이 같습니다.
+
+    최신 차수가 취소공고인 공고를 한 건 섞어, 두 구현 모두 그 번호를 빼는지 함께
+    확인합니다.
+    """
     db = _new_session()
     _seed(db, _seeded_specs(seed, 260, key_pool=24, step_choices=(1, 45, 1440, 10080)))
+    cancelled = BidAnnouncement(
+        bid_ntce_no="ANN-CANCELLED-SEEDED",
+        bid_ntce_ord="000",
+        bid_ntce_nm="취소 공고",
+        category="Servc",
+        ntce_kind_nm="취소공고",
+        bid_ntce_dt=BASE_TIME,
+        collected_at=BASE_TIME,
+    )
+    db.add(cancelled)
+    db.commit()
+    db.refresh(cancelled)
     latest = _latest_collected_at(db)
 
     for limit in (8, 6):
-        _assert_same_selection(db, limit=limit, latest_collected_at=latest)
+        selected = _assert_same_selection(db, limit=limit, latest_collected_at=latest)
+        assert cancelled.id not in selected
 
-    _assert_same_selection(
+    servc_selected = _assert_same_selection(
         db,
         limit=6,
         latest_collected_at=latest,
         base_stmt=select(BidAnnouncement).where(BidAnnouncement.category == "Servc"),
     )
+    assert cancelled.id not in servc_selected
 
 
 def test_selection_order_uses_notice_time_then_id_when_collected_at_ties():

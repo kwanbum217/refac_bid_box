@@ -15,6 +15,11 @@ scripts/benchmark_home_recent_selection.py
 - ``current``: 현재 구현(전역 정렬 접두를 표본 크기 50/200/1000 순서로 필요할 때만 확대)
 - ``legacy``: 변경 전 구현(9db0a46d^ 스냅샷, 표본·윈도 이중 순회)을 본 파일에 그대로 옮긴 것
 
+2026-11-23 부터 참조 구현은 두 경로로 나뉩니다. ``legacy_recent_unique_announcements``
+는 D8 측정 당시 조건(최신 차수·취소 제외 이전 후보)을 재현해 질의 수 비교 기준으로
+쓰고, ``legacy_filtered_recent_unique_announcements`` 는 같은 순회에 공통 필터를 걸어
+현재 구현과 결과 id 동일성을 비교합니다. 순회 방식은 두 경로 모두 변경 전 그대로입니다.
+
 한 회차 안에서 두 집단을 교차 순서로 실행한다. 같은 입력에 대해 두 집단이 돌려준
 id 목록이 다르면 그 즉시 ``SelectionMismatchError`` 를 올려 0 이 아닌 코드로 끝낸다.
 동일성이 깨진 상태의 소요 비교는 의미가 없기 때문이다.
@@ -62,6 +67,10 @@ from sqlalchemy.orm import Session  # noqa: E402
 from scripts.benchmark_provenance import get_git_status  # noqa: E402
 from src.app.models.bids import BidAnnouncement  # noqa: E402
 from src.app.services import home_context  # noqa: E402
+from src.app.services.bid_queries import (  # noqa: E402
+    not_cancelled_clause,
+    similar_announcement_latest_filter,
+)
 
 CURRENT_GROUP = "current"
 LEGACY_GROUP = "legacy"
@@ -100,6 +109,7 @@ __all__ = [
     "build_scenarios",
     "collect_db_environment",
     "collect_environment",
+    "legacy_filtered_recent_unique_announcements",
     "legacy_recent_unique_announcements",
     "main",
     "measure_once",
@@ -150,7 +160,38 @@ def legacy_recent_unique_announcements(
     로직을 고치거나 다듬지 않고 그대로 옮겼습니다. 표본 크기마다, 윈도우마다
     SELECT 를 새로 냈고 best_effort 누적 규칙도 원문 그대로입니다. 표본 크기와
     윈도우 상수, 중복 제거 헬퍼는 현재 모듈의 것을 그대로 씁니다.
+    이 경로는 D8 최적화 측정 당시 조건(최신 차수·취소 제외 이전 후보)을 재현해
+    질의 수 비교 기준으로만 씁니다.
     """
+    return _legacy_traversal(db, base_stmt, limit, latest_collected_at)
+
+
+def legacy_filtered_recent_unique_announcements(
+    db: Session,
+    base_stmt,
+    limit: int,
+    latest_collected_at: datetime | None,
+) -> list[BidAnnouncement]:
+    """같은 이중 순회에 최신 차수·취소 제외를 건 판정 동일성용 참조입니다.
+
+    2026-11-23 부터 최신 차수·취소 제외가 후보 질의의 공통 전제가 되어, 현재
+    구현과의 결과 id 동일성은 이 경로로 비교합니다(순회 방식은 수정 전 그대로).
+    """
+    return _legacy_traversal(
+        db,
+        similar_announcement_latest_filter(base_stmt).where(not_cancelled_clause()),
+        limit,
+        latest_collected_at,
+    )
+
+
+def _legacy_traversal(
+    db: Session,
+    base_stmt,
+    limit: int,
+    latest_collected_at: datetime | None,
+) -> list[BidAnnouncement]:
+    """두 참조 경로가 공유하는 수정 전 표본·윈도 이중 순회입니다."""
     ordered_stmt = base_stmt.order_by(
         BidAnnouncement.collected_at.desc(),
         BidAnnouncement.bid_ntce_dt.desc(),
@@ -189,7 +230,7 @@ def legacy_recent_unique_announcements(
 
 DEFAULT_GROUP_FUNCTIONS: dict[str, SelectionFn] = {
     CURRENT_GROUP: home_context._recent_unique_announcements,
-    LEGACY_GROUP: legacy_recent_unique_announcements,
+    LEGACY_GROUP: legacy_filtered_recent_unique_announcements,
 }
 
 

@@ -18,6 +18,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidAnnouncement
+from src.app.services.bid_queries import not_cancelled_clause, similar_announcement_latest_filter
 from src.ml.dataset import announcement_feature_payload
 from src.ml.features import build_feature_dict
 from src.ml.institution_history import lookup_institution_stats
@@ -268,6 +269,10 @@ def _latest_predictable_bids(db: Session, category: str = "", limit: int = 1):
     )
     if category:
         stmt = stmt.where(BidAnnouncement.category == category)
+    # 같은 공고의 이전 차수를 후보에 두면 최신 차수 대신 옛 차수로 예측합니다.
+    # 목록·상세와 같은 bid_queries 정의로 최신 차수만 남기고, 최신 차수가
+    # 취소공고인 번호는 뺍니다(취소 조건을 최신 차수 판정 뒤에 적용).
+    stmt = similar_announcement_latest_filter(stmt).where(not_cancelled_clause())
     stmt = stmt.order_by(
         BidAnnouncement.collected_at.desc(),
         BidAnnouncement.bid_ntce_dt.desc(),

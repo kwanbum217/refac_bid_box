@@ -17,6 +17,10 @@ SSR 메인 화면은 2026-11-11 개편으로 이 선별을 쓰지 않습니다.
    공고 행 수가 들어간다.
 
 호출 성공만 보는 테스트는 증명이 아니다. SQL 수 차이와 결과 동일성을 단언한다.
+
+2026-11-23 부터 질의 수 비교는 D8 측정 당시 조건(필터 적용 전 후보)의
+`legacy_recent_unique_announcements` 로, 결과 id 동일성은 최신 차수·취소 제외를
+후보에 건 `legacy_filtered_recent_unique_announcements` 로 비교합니다.
 """
 
 from __future__ import annotations
@@ -39,6 +43,7 @@ from scripts.benchmark_home_recent_selection import (
     Scenario,
     SelectionMismatchError,
     build_scenarios,
+    legacy_filtered_recent_unique_announcements,
     legacy_recent_unique_announcements,
     main,
     measure_once,
@@ -190,7 +195,11 @@ def test_current_query_count_bounded_and_legacy_varies_with_combinations():
 
 
 def test_groups_return_identical_selection_ids():
-    """같은 입력에서 두 집단의 선별 id 와 순서가 같습니다."""
+    """같은 입력에서 두 집단의 선별 id 와 순서가 같습니다.
+
+    최신 차수가 취소공고인 공고를 섞어, 두 경로 모두 그 번호를 빼는지 함께
+    확인합니다.
+    """
     shapes = ((6, 6), (400, 200), (1400, 200))
     scenarios = build_scenarios(["all", "Servc"])
 
@@ -202,13 +211,20 @@ def test_groups_return_identical_selection_ids():
         )
         Base.metadata.create_all(engine)
         db = _new_session(engine)
-        _seed(db, _clustered_specs(count, rows_per_key=rows_per_key))
+        seeded = _clustered_specs(count, rows_per_key=rows_per_key)
+        cancelled = _spec(0, key="ANN-CANCELLED-01", ord_="000", minutes_ago=0)
+        cancelled["ntce_kind_nm"] = "취소공고"
+        _seed(db, [*seeded, cancelled])
+        cancelled_id = db.scalar(
+            select(BidAnnouncement.id).where(BidAnnouncement.bid_ntce_no == "ANN-CANCELLED-01")
+        )
         latest = _latest(db)
 
         for scenario in scenarios:
             current = measure_once(db, scenario, home_context._recent_unique_announcements, latest)
-            legacy = measure_once(db, scenario, legacy_recent_unique_announcements, latest)
+            legacy = measure_once(db, scenario, legacy_filtered_recent_unique_announcements, latest)
             assert current["announcement_ids"] == legacy["announcement_ids"]
+            assert cancelled_id not in current["announcement_ids"]
 
 
 def test_measure_once_records_contract_fields():
@@ -235,7 +251,7 @@ def test_measure_once_records_contract_fields():
 
 
 def _reversed_legacy(db, base_stmt, limit, latest):
-    return list(reversed(legacy_recent_unique_announcements(db, base_stmt, limit, latest)))
+    return list(reversed(legacy_filtered_recent_unique_announcements(db, base_stmt, limit, latest)))
 
 
 def test_run_measurement_stops_on_group_mismatch():
@@ -298,6 +314,9 @@ def test_main_writes_environment_record_and_raw_rounds(tmp_path):
     )
     Base.metadata.create_all(engine)
     seeded = _clustered_specs(6, rows_per_key=6)
+    cancelled = _spec(0, key="ANN-CANCELLED-02", ord_="000", minutes_ago=0)
+    cancelled["ntce_kind_nm"] = "취소공고"
+    seeded = [*seeded, cancelled]
     _seed(_new_session(engine), seeded)
 
     output = tmp_path / "home_recent_selection.json"
