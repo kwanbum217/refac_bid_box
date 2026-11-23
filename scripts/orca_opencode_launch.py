@@ -20,6 +20,11 @@ subprocess.run 으로 완주시킨 뒤 대화형 셸로 이어받아 터미널 �
 model·variant 를 함께 넣어 고정하며, variant 목록을 확인한 OPENCODE_MODEL_VARIANTS 의
 모델에만 허용합니다(2026-11-23 opencode v2.3.2 의 GET /api/model 과 debug agents 로 확인).
 그 모델들은 --variant 를 생략하면 OPENCODE_DEFAULT_VARIANT(high)로 기동합니다.
+OPENCODE_CONFIG_CONTENT 만으로는 부족합니다. opencode TUI 는 전역 상태 파일
+~/.local/state/opencode/model.json 에 모델별로 기억한 variant 를 우선하므로, 런처는
+등록 모델 대화형 워커마다 작업 디렉터리 아래 .orca/opencode-state/<식별자>/ 를 만들어
+확정 variant 를 담은 opencode/model.json 을 두고 XDG_STATE_HOME 을 그곳으로 돌립니다.
+전역 상태와 XDG_DATA_HOME, XDG_CONFIG_HOME 은 건드리지 않습니다.
 kilo 는 KILO_CONFIG_CONTENT 로 model·variant 를 고정한 전용 에이전트를 주입하고
 --agent 로 선택하며, 단발은 run --variant 로 넘깁니다.
 사용자가 왼쪽 워크트리에서 TUI 로 진행을 볼 수 있습니다.
@@ -53,6 +58,10 @@ KILO_AGENT_NAME = "orca-worker"
 KILO_CONFIG_ENV = "KILO_CONFIG_CONTENT"
 OPENCODE_CONFIG_ENV = "OPENCODE_CONFIG_CONTENT"
 OPENCODE_BUILD_AGENT = "build"
+OPENCODE_STATE_HOME_ENV = "XDG_STATE_HOME"
+OPENCODE_STATE_DIRNAME = "opencode"
+OPENCODE_MODEL_STATE_FILE = "model.json"
+ORCA_WORKER_STATE_DIR = Path(".orca") / "opencode-state"
 # 대화형에서 variant 를 고정할 수 있는 모델과 그 모델이 실제로 제공하는 variant 입니다.
 # medium 이 없습니다. 목록 밖 값은 opencode 가 조용히 무시하므로 여기서 거부합니다.
 OPENCODE_MODEL_VARIANTS: dict[str, tuple[str, ...]] = {
@@ -131,6 +140,42 @@ def build_command(
     return cmd
 
 
+def worker_state_key(model: str, variant: str) -> str:
+    """모델·등급에서 워커 전용 상태 디렉터리 이름을 만듭니다."""
+    raw = f"{model}-{variant}"
+    return "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in raw)
+
+
+def worker_state_home(model: str, variant: str, *, cwd: Path | None = None) -> Path:
+    """워커 전용 XDG 상태 디렉터리 경로를 돌려줍니다."""
+    base = Path(cwd) if cwd is not None else Path.cwd()
+    return base / ORCA_WORKER_STATE_DIR / worker_state_key(model, variant)
+
+
+def pin_variant_state(model: str, variant: str, *, cwd: Path | None = None) -> Path:
+    """전역 대신 쓸 상태 디렉터리에 확정 variant 를 담은 opencode/model.json 을 씁니다.
+
+    opencode TUI 는 전역 상태의 모델별 variant 기억값을 우선하므로, 워커 전용
+    디렉터리에 확정 등급만 담아 두고 XDG_STATE_HOME 으로 그곳을 가리킵니다.
+    """
+    state_home = worker_state_home(model, variant, cwd=cwd)
+    target = state_home / OPENCODE_STATE_DIRNAME / OPENCODE_MODEL_STATE_FILE
+    provider, _, model_id = model.partition("/")
+    payload = {
+        "recent": [{"providerID": provider, "modelID": model_id}],
+        "favorite": [],
+        "variant": {model: variant},
+    }
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+    except OSError as err:
+        raise ValueError(
+            f"워커 전용 상태 디렉터리를 만들 수 없습니다: {state_home} ({err})"
+        ) from err
+    return state_home
+
+
 def build_env(
     env: dict[str, str],
     model: str,
@@ -139,14 +184,17 @@ def build_env(
     binary: str = "opencode",
     variant: str | None = None,
     role: str = "auto",
+    cwd: Path | None = None,
 ) -> dict[str, str]:
     """기동 환경에 모델 설정을 주입합니다.
 
     opencode 대화형은 최상위 TUI 에 --model 이 없어 OPENCODE_CONFIG_CONTENT 에
     {"model": <provider/model>} 를 넣습니다. 이미 값이 있으면 덮어쓰지 않고
-    거부합니다. kilo 대화형에서 등급을 쓰면 model·variant 를 고정한 전용
-    에이전트를 KILO_CONFIG_CONTENT 로 주입합니다. 단발은 모델이 명령 인자로
-    나가므로 환경을 바꾸지 않습니다.
+    거부합니다. 등록 모델이면 확정 variant 를 담은 워커 전용 상태 디렉터리를
+    작업 디렉터리 아래에 만들고 XDG_STATE_HOME 을 그곳으로 돌려, TUI 가 전역
+    model.json 의 variant 기억값을 쓰지 않게 합니다. kilo 대화형에서 등급을 쓰면
+    model·variant 를 고정한 전용 에이전트를 KILO_CONFIG_CONTENT 로 주입합니다.
+    단발은 모델이 명령 인자로 나가므로 환경을 바꾸지 않습니다.
     """
     if one_shot:
         return env
@@ -172,7 +220,11 @@ def build_env(
             build_agent["steps"] = OPENCODE_REVIEWER_STEPS
     if build_agent:
         config["agent"] = {OPENCODE_BUILD_AGENT: build_agent}
-    return {**env, OPENCODE_CONFIG_ENV: json.dumps(config)}
+    resolved_env = {**env, OPENCODE_CONFIG_ENV: json.dumps(config)}
+    if model in OPENCODE_MODEL_VARIANTS:
+        pinned = variant or OPENCODE_DEFAULT_VARIANT
+        resolved_env[OPENCODE_STATE_HOME_ENV] = str(pin_variant_state(model, pinned, cwd=cwd))
+    return resolved_env
 
 
 def resolve_variant(model: str, variant: str | None, *, binary: str, one_shot: bool) -> str | None:
