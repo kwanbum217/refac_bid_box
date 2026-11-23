@@ -157,7 +157,7 @@ def _tailwind_minified_selector(class_name: str) -> str:
         if char == ".":
             parts.append("\\.")
             continue
-        if char in "/:#%()":
+        if char in "/:#%()!":
             parts.append("\\" + char)
             continue
         parts.append(char)
