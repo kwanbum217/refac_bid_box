@@ -8,17 +8,25 @@ Django 내장 필터/태그와 동일한 이름·동작을 제공해 템플릿 �
 
 from __future__ import annotations
 
+import hashlib
 import json
+import posixpath
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
 from markupsafe import Markup
+from starlette.datastructures import URL
 from starlette.requests import Request
 
 APP_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = APP_DIR / "templates"
+STATIC_DIR = APP_DIR / "static"
+STATIC_VERSION_QUERY = "v"
+STATIC_VERSION_LENGTH = 10
 
 # Django url name -> FastAPI SSR 경로. 원본 템플릿의 {% url %} 호출을 그대로 옮기기 위한 표입니다.
 URL_MAP = {
@@ -231,9 +239,69 @@ def csp_nonce_context(request: Request) -> dict[str, str]:
     return {"csp_nonce": str(getattr(request.state, "csp_nonce", ""))}
 
 
+def _resolve_static_path(path: str) -> Path | None:
+    """static 디렉터리 안의 실제 파일 경로를 돌려줍니다. 벗어나면 None 입니다.
+
+    템플릿 변수에서 온 경로라도 정규화한 뒤 부모 디렉터리로 벗어나는지 확인해,
+    static 밖 파일의 stat·노출을 막습니다.
+    """
+    if not path or path.startswith("/"):
+        return None
+    normalized = posixpath.normpath(path)
+    if normalized in ("", ".") or normalized.startswith("..") or normalized.startswith("/"):
+        return None
+    try:
+        resolved = (STATIC_DIR / normalized).resolve(strict=True)
+        static_root = STATIC_DIR.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    try:
+        resolved.relative_to(static_root)
+    except ValueError:
+        return None
+    return resolved if resolved.is_file() else None
+
+
+def static_asset_version(path: str) -> str:
+    """정적 파일의 mtime·크기로 짧은 버전 문자열을 만듭니다.
+
+    렌더마다 stat 한 번만 쓰므로 파일이 바뀌면 프로세스 재시작 없이 새 버전이
+    나갑니다. 파일이 없거나 static 밖 경로면 빈 문자열을 돌려줍니다.
+    """
+    target = _resolve_static_path(path)
+    if target is None:
+        return ""
+    try:
+        stat = target.stat()
+    except OSError:
+        return ""
+    seed = f"{stat.st_mtime_ns}:{stat.st_size}".encode()
+    return hashlib.sha256(seed).hexdigest()[:STATIC_VERSION_LENGTH]
+
+
+@pass_context
+def url_for_static_versioned(context: dict[str, Any], name: str, /, **path_params: Any) -> URL:
+    """url_for 를 감싸 static URL 에만 파일 버전 쿼리를 붙입니다.
+
+    Starlette 의 url_for 와 같은 pass_context 규약을 따릅니다. static 외
+    라우트와 버전을 만들 수 없는 경로는 원래 URL 을 그대로 돌려줍니다.
+    """
+    request: Request = context["request"]
+    generated = request.url_for(name, **path_params)
+    if name != "static":
+        return generated
+    version = static_asset_version(str(path_params.get("path", "")))
+    if not version:
+        return generated
+    url = str(generated)
+    separator = "&" if "?" in url else "?"
+    return URL(f"{url}{separator}{STATIC_VERSION_QUERY}={version}")
+
+
 def _build_templates() -> Jinja2Templates:
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR), context_processors=[csp_nonce_context])
     env = templates.env
+    env.globals["url_for"] = url_for_static_versioned
     env.globals["url"] = url
     env.globals["provider_login_url"] = provider_login_url
     env.filters["intcomma"] = intcomma

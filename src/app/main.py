@@ -5,11 +5,14 @@ import time
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import TypedDict
+from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 from src.app.api.ui import router as ui_router
 from src.app.api.v1.accounts import router as accounts_router
@@ -25,11 +28,33 @@ from src.app.core.config import Settings, get_app_version, settings
 from src.app.core.csp import ContentSecurityPolicyMiddleware
 from src.app.core.logging_config import DEFAULT_DATE_FORMAT, DEFAULT_LOG_FORMAT, configure_logging
 from src.app.core.origin_guard import OriginGuardMiddleware
+from src.app.core.templating import STATIC_VERSION_QUERY
 
 APP_DIR = Path(__file__).resolve().parent
 
 configure_logging()
 logger = logging.getLogger(__name__)
+
+STATIC_IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+STATIC_REVALIDATE_CACHE = "no-cache"
+
+
+class VersionedStaticFiles(StaticFiles):
+    """정적 파일 응답에 버전 쿼리 유무별 Cache-Control 을 답니다.
+
+    템플릿의 url_for 가 붙인 ?v=<버전> 요청은 파일이 바뀌면 URL 이 바뀌므로
+    장기 캐시가 안전합니다. 버전이 없는 요청은 브라우저 경험적 캐시로 옛
+    파일이 남지 않도록 매번 재검증하게 합니다. 다른 경로의 헤더는 건드리지
+    않습니다.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        response = await super().get_response(path, scope)
+        query = parse_qs(scope.get("query_string", b"").decode("latin1"), keep_blank_values=True)
+        response.headers["Cache-Control"] = (
+            STATIC_IMMUTABLE_CACHE if STATIC_VERSION_QUERY in query else STATIC_REVALIDATE_CACHE
+        )
+        return response
 
 
 async def _warm_llm_backend() -> None:
@@ -401,7 +426,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     app.middleware("http")(collapse_bids_double_slash)
     app.middleware("http")(mark_prediction_dispatch)
 
-    app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
+    app.mount("/static", VersionedStaticFiles(directory=str(APP_DIR / "static")), name="static")
 
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(bids_router, prefix="/api/v1")
