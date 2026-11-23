@@ -351,6 +351,6 @@ def test_announcement_marker_always_recorded(isolated_db):
 
     rebuild_ranking_snapshots(isolated_db, force_weekly=True)
 
-    row = _marker_row(isolated_db, DATASET_ANNOUNCEMENT, "dminstt_nm", "Thng")
+    row = _marker_row(isolated_db, DATASET_ANNOUNCEMENT, "dminstt_nm_v2", "Thng")
     assert row is not None
     assert int(row.metric_count) == 0

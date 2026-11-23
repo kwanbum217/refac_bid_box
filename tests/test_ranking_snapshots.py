@@ -148,9 +148,9 @@ def test_deferred_dimension_keeps_its_snapshot(seeded_db):
     from src.app.services.ranking_snapshots import DATASET_ANNOUNCEMENT, get_top_rankings
 
     rebuild_ranking_snapshots(seeded_db)
-    before = get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm", "", 5)
+    before = get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm_v2", "", 5)
     rebuild_ranking_snapshots(seeded_db)
-    after = get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm", "", 5)
+    after = get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm_v2", "", 5)
 
     assert before
     assert after == before
@@ -169,7 +169,7 @@ def test_weekly_dimension_rebuilds_once_stale(seeded_db):
     stale = utcnow() - timedelta(days=WEEKLY_REBUILD_INTERVAL_DAYS + 1)
     seeded_db.query(BidRankingSnapshot).filter(
         BidRankingSnapshot.dataset == DATASET_ANNOUNCEMENT,
-        BidRankingSnapshot.dimension == "bid_ntce_nm",
+        BidRankingSnapshot.dimension == "bid_ntce_nm_v2",
     ).update({BidRankingSnapshot.rebuilt_at: stale})
     seeded_db.commit()
 
@@ -185,7 +185,7 @@ def test_weekly_dimension_is_built_when_missing(seeded_db):
     result = rebuild_ranking_snapshots(seeded_db)
 
     assert result["deferred_dimensions"] == []
-    assert get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm", "", 5)
+    assert get_top_rankings(seeded_db, DATASET_ANNOUNCEMENT, "bid_ntce_nm_v2", "", 5)
 
 
 def test_rebuild_reflects_new_data(seeded_db):

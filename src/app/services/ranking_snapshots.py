@@ -9,15 +9,21 @@ src/app/services/ranking_snapshots.py
 
 **필터가 category 뿐인 질의만 대상입니다.** 날짜나 기관명이 걸린 질의는 조합이
 사실상 무한하므로 기존 실시간 집계를 그대로 씁니다.
+
+공고 차원(`dminstt_nm_v2`, `bid_ntce_nm_v2`)은 같은 공고번호·업무구분의 최신
+차수 한 행만 세고 최신 차수가 취소공고인 공고를 뺍니다. 옛 차원 이름
+(`dminstt_nm`, `bid_ntce_nm`)은 차수별 행을 모두 세어 같은 공고를 여러 번
+반영했으므로 재집계·조회 대상에서 빼두었습니다.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.orm import Session
 
 from src.app.core.timeutil import utcnow
@@ -50,11 +56,35 @@ REPLACEMENT_CHAR = "\ufffd"
 # 필요하므로 집계할 때 함께 남깁니다.
 SKIPPED_MARKER_RANK = 0
 
-# (dataset, dimension) -> (모델, 집계 컬럼)
-DIMENSIONS: dict[tuple[str, str], tuple[Any, Any]] = {
-    (DATASET_RESULT, "bidwinnr_nm"): (BidResult, BidResult.bidwinnr_nm),
-    (DATASET_ANNOUNCEMENT, "dminstt_nm"): (BidAnnouncement, BidAnnouncement.dminstt_nm),
-    (DATASET_ANNOUNCEMENT, "bid_ntce_nm"): (BidAnnouncement, BidAnnouncement.bid_ntce_nm),
+
+@dataclass(frozen=True)
+class DimensionSpec:
+    """한 차원의 집계 대상과 범위입니다."""
+
+    model: Any
+    column: Any
+    # True 면 같은 공고번호·업무구분의 최신 차수 한 행만 세고, 최신 차수가
+    # 취소공고인 공고를 뺍니다.
+    latest_ord_only: bool = False
+
+
+# (dataset, dimension) -> 집계 대상 차원
+#
+# `latest_ord_only` 는 같은 공고번호·업무구분의 최신 차수 한 행만 세고, 최신
+# 차수가 취소공고인 공고를 빼는 차원입니다. 공고는 차수마다 행이 하나씩 쌓이므로
+# 그대로 세면 같은 공고가 여러 번 반영됩니다. 낙찰 결과는 결과 행 자체가 차수별
+# 사건이라 그대로 셉니다.
+#
+# 옛 이름(`dminstt_nm`, `bid_ntce_nm`)은 이 정의가 아니므로 등록하지 않습니다.
+# 등록하지 않은 차원은 재집계 대상이 아니고 조회도 실시간 경로로 넘어갑니다.
+DIMENSIONS: dict[tuple[str, str], DimensionSpec] = {
+    (DATASET_RESULT, "bidwinnr_nm"): DimensionSpec(BidResult, BidResult.bidwinnr_nm),
+    (DATASET_ANNOUNCEMENT, "dminstt_nm_v2"): DimensionSpec(
+        BidAnnouncement, BidAnnouncement.dminstt_nm, latest_ord_only=True
+    ),
+    (DATASET_ANNOUNCEMENT, "bid_ntce_nm_v2"): DimensionSpec(
+        BidAnnouncement, BidAnnouncement.bid_ntce_nm, latest_ord_only=True
+    ),
 }
 
 # 빈 문자열은 "전체" 를 뜻합니다. NULL 은 유니크 제약에서 중복을 허용해 쓰지 않습니다.
@@ -63,14 +93,15 @@ SNAPSHOT_CATEGORIES = (ALL_CATEGORIES, *CATEGORY_LABELS)
 
 # 매일 다시 집계하지 않는 차원입니다.
 #
-# `bid_ntce_nm` 은 varchar(500) 에 인덱스가 없어 6,645,162 행을 전표 스캔한 뒤
-# 임시 테이블과 파일소트를 씁니다. 2026-08-06 실측에서 전체 카테고리 한 조합이
-# 167초로, 야간 재집계 506초의 3분의 1을 혼자 씁니다.
+# `bid_ntce_nm` 은 varchar(500) 에 인덱스가 없어 전 기간을 전표 스캔한 뒤 임시
+# 테이블과 파일소트를 씁니다. 2026-08-06 실측에서 전체 카테고리 한 조합이
+# 167초로, 야간 재집계 506초의 3분의 1을 혼자 썼습니다. `_v2` 는 최신 차수
+# 필터가 붙어 모수가 줄지만 집계 열 자체는 여전히 인덱스가 없습니다.
 #
 # 이 순위는 전 기간 누적이라 하루 만에 뒤집히지 않습니다. 주기를 늘려도 답변이
-# 달라지지 않으므로 비용만 회수합니다. 근거는
+# 달라지지 않으므로 비용만 회수합니다. 자세한 근거는
 # `docs/ops/snapshot_rebuild_cost_20260806.md`.
-WEEKLY_DIMENSIONS = frozenset({(DATASET_ANNOUNCEMENT, "bid_ntce_nm")})
+WEEKLY_DIMENSIONS = frozenset({(DATASET_ANNOUNCEMENT, "bid_ntce_nm_v2")})
 
 # 주간 차원을 다시 집계하는 간격입니다. 요일로 판정하면 크론이 도는 시각의
 # 시간대에 따라 건너뛰거나 두 번 도는 날이 생깁니다. 스냅샷 자체의 나이를
@@ -83,6 +114,41 @@ def exclude_corrupted(column):
     return column.is_not(None) & ~column.contains(REPLACEMENT_CHAR)
 
 
+def _announcement_scope(stmt):
+    """최신 차수 한 행만 남기고 최신 차수가 취소공고인 공고를 뺍니다.
+
+    `bid_announcements` 는 (bid_ntce_no, bid_ntce_ord, category) 가 유니크이므로
+    같은 공고번호·업무구분 안에서 같은 차수를 가진 행이 둘일 수 없습니다. 그래서
+    최신 차수는 (bid_ntce_no, category) 별 MAX(bid_ntce_ord) 한 행과 같고,
+    목록 필터의 정렬 tie-break(공고일시·수집일시·id)는 결과를 바꾸지 않습니다.
+    파생 테이블의 GROUP BY 는 유니크 인덱스만 읽어 본문을 건드리지 않습니다.
+    """
+    from src.app.services.bid_queries import not_cancelled_clause
+
+    latest = (
+        select(
+            BidAnnouncement.bid_ntce_no.label("bid_ntce_no"),
+            BidAnnouncement.category.label("category"),
+            func.max(BidAnnouncement.bid_ntce_ord).label("bid_ntce_ord"),
+        )
+        .group_by(BidAnnouncement.bid_ntce_no, BidAnnouncement.category)
+        .subquery("latest_ann_ord")
+    )
+    return stmt.join(
+        latest,
+        and_(
+            latest.c.bid_ntce_no == BidAnnouncement.bid_ntce_no,
+            latest.c.category == BidAnnouncement.category,
+            latest.c.bid_ntce_ord == BidAnnouncement.bid_ntce_ord,
+        ),
+    ).where(not_cancelled_clause())
+
+
+def _scoped(stmt, spec: DimensionSpec):
+    """차원이 정한 범위를 문장에 적용합니다."""
+    return _announcement_scope(stmt) if spec.latest_ord_only else stmt
+
+
 def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> tuple[list, int]:
     """상위 N 을 집계하되 인코딩이 깨진 값은 순위에서 제외합니다.
 
@@ -90,13 +156,15 @@ def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> t
     채워져 답변이 쓸모없어집니다. 대시보드 업체 순위(`_is_readable_company_name`)도
     같은 방침입니다. 제외한 그룹 수를 함께 돌려주어 호출부가 안내할 수 있게 합니다.
     """
-    model, column = DIMENSIONS[(dataset, dimension)]
+    spec = DIMENSIONS[(dataset, dimension)]
+    model, column = spec.model, spec.column
     scope = [model.category == category] if category else []
 
+    stmt = _scoped(
+        select(column, func.count(model.id)).where(exclude_corrupted(column), *scope), spec
+    )
     stmt = (
-        select(column, func.count(model.id))
-        .where(exclude_corrupted(column), *scope)
-        .group_by(column)
+        stmt.group_by(column)
         .order_by(func.count(model.id).desc())
         .limit(SNAPSHOT_DEPTH * OVERFETCH_FACTOR)
     )
@@ -114,12 +182,12 @@ def _compute_rows(db: Session, dataset: str, dimension: str, category: str) -> t
 
     if not dropped:
         # SQL 단계에서 제외된 것이 있었는지 확인합니다. 첫 건에서 멈추므로 저렴합니다.
-        dropped = (
-            db.execute(
-                select(model.id).where(column.contains(REPLACEMENT_CHAR), *scope).limit(1)
-            ).first()
-            is not None
+        # 손상 탐침도 집계와 같은 범위를 봅니다. 그래야 "이 순위에서 제외했다" 는
+        # 표시가 실제 집계 모수와 일치합니다.
+        probe = _scoped(
+            select(model.id).where(column.contains(REPLACEMENT_CHAR), *scope).limit(1), spec
         )
+        dropped = db.execute(probe).first() is not None
 
     return kept, dropped
 
