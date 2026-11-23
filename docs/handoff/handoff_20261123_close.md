@@ -1,7 +1,7 @@
 # 2026-11-23 세션 인수인계
 
 > **작성일**: 2026-11-23
-> **최종 main**: 이 문서를 담은 병합 커밋(직전 `c3a6cd80`)
+> **최종 main**: 이 문서를 마지막으로 갱신한 병합 커밋
 > **Orca Run**: `run_c1863d8691a3`
 > **상태**: 워커 0대, 워커 워크트리 0개, Docker 가동 중(app·worker·db·redis·meilisearch)
 
@@ -42,7 +42,7 @@
 
 | 항목 | 내용 |
 | --- | --- |
-| KB 백업 | `.cache/backups/chroma_db_pre_dedup_20261123`(재색인 전, 4.2GB). 문제가 없으면 다음 세션에 삭제 판단 |
+| KB 백업 | 재색인 전 백업(4.2GB)은 2026-11-23 사용자 지시로 삭제했다 |
 | KB 색인 실행 위치 | 호스트에서 `chroma_db` 에 쓰면 app 컨테이너와 SQLite 잠금이 맞지 않아 disk I/O error. `docker compose exec -T app python scripts/scale_kb_coverage.py` 로 컨테이너 안에서 실행 |
 | 컨테이너 scripts | app 이미지의 `scripts/` 는 빌드 시점 사본이다(`src/` 만 마운트). 새 스크립트 인자는 호스트 `uv run` 으로 실행 |
 | OpenCode variant 확인 | 화면 상태줄이 아니라 `opencode session export <id>` 의 `messages[].model.variant` |
@@ -71,3 +71,22 @@
 | 최대 원인 | 대형 파일 분절 탐색 236스텝(23.40M), 대기 폴링 65스텝(12.54M) |
 | 스텝당 평균 컨텍스트 | 56~193K(과제별), 압축은 발동하지 않음 |
 | 개선안 추정 절감 | 199스텝(24.2%), 27.0M 토큰(추정) |
+
+---
+
+## 5. 오후 추가 작업 (2026-11-23)
+
+| 영역 | 병합 커밋 | 결과 |
+| --- | --- | --- |
+| 다크 모드 bg-white + dark:bg-* 13곳 `!` 접미사 | `1e48ba5c` | 헤더·홈 그래프 카드 다크 배경 복구 |
+| OpenCode 세션 집계 도구 | `fc931bb5` | `uv run python scripts/opencode_session_stats.py --directory-suffix /<워크트리>` |
+| 다크 모드 테두리·글자색 18쌍 `!` 접미사 | `73087b1b` | 홈·채팅·공통 레이아웃 |
+| `.dark .h-card` 강제 규칙 되돌림 | 이 문서의 병합 커밋 | compare.html·result_detail.html 은 h-card 안 글자에 다크 변형이 없어, 카드만 어둡게 하면 글자가 보이지 않았다. 되돌려 세션 시작 상태(흰 카드)로 복구 |
+
+남은 과업(사용자 결정):
+
+| 과업 | 근거 |
+| --- | --- |
+| Bootstrap 제거와 전 화면 대조 | 조사 보고서 `.orca/reports/bootstrap_conflict_audit_20261123.md`(gitignore). 충돌 736쌍, JS 사용 0건. 라이트 모드 여백·색이 함께 바뀐다 |
+| 비교 분석·낙찰 상세 화면 다크 모드 대응 | 페이지 바탕 `bg-[#F9FAFB]`, 값 `text-slate-900` 에 다크 변형이 없다 |
+| 상단 검색창 다크 모드 | `base.html` 헤더 input 에 다크 변형이 없어 다크 모드에서 입력 글자가 거의 보이지 않는다 |

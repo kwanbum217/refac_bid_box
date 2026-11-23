@@ -1,6 +1,6 @@
 """bootstrap.min.css 의 !important 유틸리티를 Tailwind 다크 모드 값이 이기도록 고정한다.
 
-묶음 1(dark:border-*), 묶음 2(dark:text-blue-*), 묶음 3(.dark .h-card 강화)를 검사한다.
+묶음 1(dark:border-*), 묶음 2(dark:text-blue-*), 묶음 3(.dark .h-card 강화)은 2026-11-23 되돌렸으므로 그 규칙이 없는지 검사한다.
 """
 
 import re
@@ -52,7 +52,10 @@ DARK_TEXT_TARGETS = {
         203: ["dark:text-blue-400!", "dark:hover:text-blue-300!"],
     },
 }
-REQUIRED_CSS_RULES = [
+# 2026-11-23 되돌림: compare.html·result_detail.html 의 h-card 안 글자는 다크 변형이 없어
+# 카드만 어둡게 강제하면 어두운 배경에 어두운 글자가 된다. 그 화면들을 다크 대응하기 전까지
+# 이 강제 규칙을 다시 넣지 않는다.
+FORBIDDEN_CSS_RULES = [
     ".dark .h-card.bg-white",
     ".dark .h-card.border",
 ]
@@ -120,10 +123,7 @@ def test_dark_bg_and_border_utilities_have_important_suffix(path):
     assert not offenders, f"{path.relative_to(ROOT)}: {offenders}"
 
 
-def test_tailwind_css_contains_h_card_important_rules():
+def test_tailwind_css_has_no_forced_h_card_dark_rules():
     css = TAILWIND_CSS.read_text(encoding="utf-8")
-    for selector in REQUIRED_CSS_RULES:
-        pattern = re.compile(re.escape(selector) + r"\s*\{([^}]*)\}")
-        match = pattern.search(css)
-        assert match, f"tailwind.css 에 {selector} 규칙이 없다"
-        assert "!important" in match.group(1), match.group(0)
+    for selector in FORBIDDEN_CSS_RULES:
+        assert selector not in css, f"tailwind.css 에 {selector} 강제 규칙이 다시 들어왔다"
