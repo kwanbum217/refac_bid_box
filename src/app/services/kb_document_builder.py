@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime
 from typing import Any, TypeVar, overload
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import (
@@ -20,6 +20,10 @@ from src.app.models.bids import (
     BidResult,
     extract_business_budget,
     normalize_bid_ntce_ord,
+)
+from src.app.services.bid_queries import (
+    not_cancelled_clause,
+    similar_announcement_latest_filter,
 )
 
 # KB 색인 상한의 단일 정의입니다. kb_builder 는 이 값을 import 해 재수출합니다.
@@ -201,6 +205,16 @@ def _max_documents() -> int:
     return value if value > 0 else DEFAULT_MAX_DOCUMENTS
 
 
+def _latest_announcement_scope(stmt: Any) -> Any:
+    """공고 원천에 최신 차수 1행과 취소 제외를 적용합니다.
+
+    최신 차수를 먼저 판정하고 취소 제외를 나중에 적용해야, 최신 차수가 취소공고인
+    공고에서 이전 차수가 대신 들어가지 않습니다. 최신 차수·취소 정의는 공고 탐색
+    목록과 같은 bid_queries 함수를 씁니다.
+    """
+    return similar_announcement_latest_filter(stmt).where(not_cancelled_clause())
+
+
 def _resolve_announcements(
     db: Session,
     one_year_ago: datetime,
@@ -221,8 +235,10 @@ def _resolve_announcements(
 
     notice_count = (
         db.scalar(
-            select(func.count(BidAnnouncement.id)).where(
-                BidAnnouncement.bid_ntce_dt >= one_year_ago
+            _latest_announcement_scope(
+                select(func.count(BidAnnouncement.id)).where(
+                    BidAnnouncement.bid_ntce_dt >= one_year_ago
+                )
             )
         )
         or 0
@@ -230,7 +246,7 @@ def _resolve_announcements(
 
     if notice_count > 0:
         total = min(notice_count, limit)
-        base_query = (
+        base_query = _latest_announcement_scope(
             select(BidAnnouncement)
             .where(BidAnnouncement.bid_ntce_dt >= one_year_ago)
             .order_by(BidAnnouncement.bid_ntce_dt.desc(), BidAnnouncement.id.desc())
@@ -267,8 +283,10 @@ def _resolve_announcements(
 
     collected_count = (
         db.scalar(
-            select(func.count(BidAnnouncement.id)).where(
-                BidAnnouncement.collected_at >= collected_cutoff
+            _latest_announcement_scope(
+                select(func.count(BidAnnouncement.id)).where(
+                    BidAnnouncement.collected_at >= collected_cutoff
+                )
             )
         )
         or 0
@@ -276,7 +294,7 @@ def _resolve_announcements(
 
     if collected_count > 0:
         total = min(collected_count, limit)
-        base_query = (
+        base_query = _latest_announcement_scope(
             select(BidAnnouncement)
             .where(BidAnnouncement.collected_at >= collected_cutoff)
             .order_by(BidAnnouncement.collected_at.desc(), BidAnnouncement.id.desc())
@@ -314,15 +332,12 @@ def _resolve_announcements(
     return [], "announcements_unavailable"
 
 
-def _resolve_delta_announcements(
-    db: Session, collected_since: datetime
-) -> tuple[Sequence[BidAnnouncement], str]:
-    """이번 수집분과 새 낙찰 결과가 참조하는 공고만 KB에 반영합니다.
+def _delta_scope_filter(db: Session, collected_since: datetime) -> Any:
+    """이번 델타에 반영할 공고 범위를 만듭니다.
 
-    전량 리스트를 만들지 않고 Keyset seek 페이징과 ORM 객체 expunge 가 적용된
-    PagedQuerySequence 를 반환하여 페이지 단위로 읽습니다.
+    수집분과 새 낙찰 결과가 참조하는 공고번호를 함께 봅니다. 최신 차수·취소
+    판정은 이 범위 위에 따로 적용합니다.
     """
-    initial_objs = set(db.identity_map.values()) if hasattr(db, "identity_map") else set()
     result_notice_numbers = list(
         db.scalars(
             select(BidResult.bid_ntce_no)
@@ -331,18 +346,34 @@ def _resolve_delta_announcements(
         ).all()
     )
     if result_notice_numbers:
-        delta_filter = or_(
+        return or_(
             BidAnnouncement.collected_at >= collected_since,
             BidAnnouncement.bid_ntce_no.in_(result_notice_numbers),
         )
-    else:
-        delta_filter = BidAnnouncement.collected_at >= collected_since
+    return BidAnnouncement.collected_at >= collected_since
 
-    delta_count = db.scalar(select(func.count(BidAnnouncement.id)).where(delta_filter)) or 0
+
+def _resolve_delta_announcements(
+    db: Session, collected_since: datetime
+) -> tuple[Sequence[BidAnnouncement], str]:
+    """이번 수집분과 새 낙찰 결과가 참조하는 공고 중 최신 차수만 KB에 반영합니다.
+
+    전량 리스트를 만들지 않고 Keyset seek 페이징과 ORM 객체 expunge 가 적용된
+    PagedQuerySequence 를 반환하여 페이지 단위로 읽습니다.
+    """
+    initial_objs = set(db.identity_map.values()) if hasattr(db, "identity_map") else set()
+    delta_filter = _delta_scope_filter(db, collected_since)
+
+    delta_count = (
+        db.scalar(
+            _latest_announcement_scope(select(func.count(BidAnnouncement.id)).where(delta_filter))
+        )
+        or 0
+    )
     if delta_count == 0:
         return [], "announcements_by_collected_delta"
 
-    base_query = (
+    base_query = _latest_announcement_scope(
         select(BidAnnouncement)
         .where(delta_filter)
         .order_by(BidAnnouncement.collected_at.desc(), BidAnnouncement.id.desc())
@@ -376,6 +407,33 @@ def _resolve_delta_announcements(
         ),
         "announcements_by_collected_delta",
     )
+
+
+def _resolve_delta_stale_ids(db: Session, collected_since: datetime) -> list[int]:
+    """델타 범위에 걸린 공고 파티션에서 문서로 만들지 않는 행 id 를 찾습니다.
+
+    파티션은 (공고번호, 업무구분)이며, 델타 범위의 행이 속한 파티션 전체를 봅니다.
+    파티션마다 최신 차수가 취소공고면 남길 행이 없고, 아니면 최신 차수만 남깁니다.
+    남지 않는 행은 이전 차수와 취소된 최신 차수입니다.
+    """
+    scope = _delta_scope_filter(db, collected_since)
+    partitions = [
+        (row.bid_ntce_no, row.category)
+        for row in db.execute(
+            select(BidAnnouncement.bid_ntce_no, BidAnnouncement.category).where(scope).distinct()
+        ).all()
+    ]
+    if not partitions:
+        return []
+
+    partition_filter = tuple_(BidAnnouncement.bid_ntce_no, BidAnnouncement.category).in_(partitions)
+    all_ids = set(db.scalars(select(BidAnnouncement.id).where(partition_filter)).all())
+    kept_ids = set(
+        db.scalars(
+            _latest_announcement_scope(select(BidAnnouncement.id).where(partition_filter))
+        ).all()
+    )
+    return sorted(all_ids - kept_ids)
 
 
 def _join_key(row: BidAnnouncement | BidResult) -> str:
