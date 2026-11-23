@@ -20,6 +20,15 @@ INDEX_BATCH_SIZE = 100
 # 소진할 수 있습니다. 해시 비교용 조회도 페이지 단위로 제한합니다.
 INDEX_LOOKUP_BATCH_SIZE = 10_000
 
+
+def delete_in_batches(
+    collection: Any, ids: list[str], batch_size: int = INDEX_LOOKUP_BATCH_SIZE
+) -> None:
+    """Chroma 는 한 번에 41,666건을 넘는 요청을 거부하므로 나눠서 지웁니다."""
+    for start in range(0, len(ids), batch_size):
+        collection.delete(ids=ids[start : start + batch_size])
+
+
 INDEX_LOOKUP_MAX_ATTEMPTS = 2
 INDEX_LOOKUP_RETRY_DELAY_SECONDS = 0.25
 
@@ -62,6 +71,7 @@ __all__ = (
     "_read_existing_index_value",
     "_sync",
     "_sync_stream",
+    "delete_in_batches",
 )
 
 
@@ -267,7 +277,7 @@ def _sync_stream(
     if incremental and removed_ids_set:
         final_removed = list(removed_ids_set)
         final_removed_count = len(final_removed)
-        collection.delete(ids=final_removed)
+        delete_in_batches(collection, final_removed)
 
     mode = "delta" if delta_mode else ("incremental" if incremental else "full")
     stats: KbSyncStats = {
