@@ -95,7 +95,8 @@ def test_base_html_static_assets_exist_on_disk():
 
     assert not missing_files, f"Missing static files referenced in base.html: {missing_files}"
     # Ensure vendor assets are among the parsed static paths
-    assert any("vendor/bootstrap" in p for p in checked_files)
+    # 2026-11-23 Bootstrap CSS·JS 를 제거했다(!important 유틸리티가 Tailwind 를 덮던 충돌 해소).
+    assert not any("vendor/bootstrap" in p for p in checked_files)
     assert any("vendor/daisyui" in p for p in checked_files)
     # Tailwind 는 2026-08-26 에 브라우저 JIT(vendor/tailwindcss/*.js)에서
     # 빌드타임 CSS(css/tailwind.css)로 전환했고 미사용 vendor JS 는 삭제했습니다.

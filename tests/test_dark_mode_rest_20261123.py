@@ -22,14 +22,14 @@ LINE_CLASS_RE = re.compile(r'class="([^"]*)"')
 # 묶음 1: dark:border-*, 묶음 2: dark:text-blue-*
 DARK_BORDER_TARGETS = {
     "src/app/templates/base.html": {
-        224: "dark:border-slate-700!",
-        254: "dark:border-slate-700!",
-        260: "dark:border-slate-700!",
-        266: "dark:border-slate-700!",
-        286: "dark:border-slate-800!",
-        305: "dark:border-slate-700!",
-        313: "dark:border-slate-700!",
-        321: "dark:border-slate-700!",
+        223: "dark:border-slate-700!",
+        253: "dark:border-slate-700!",
+        259: "dark:border-slate-700!",
+        265: "dark:border-slate-700!",
+        285: "dark:border-slate-800!",
+        304: "dark:border-slate-700!",
+        312: "dark:border-slate-700!",
+        320: "dark:border-slate-700!",
     },
     "src/app/templates/index.html": {
         69: "dark:border-slate-800!",
