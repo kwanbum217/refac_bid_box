@@ -122,16 +122,23 @@ def _strip_dark_variants(classes: list[str]) -> list[str]:
     ]
 
 
+# 다크 대응 직전의 main 커밋이다. 움직이는 main 과 비교하면 병합 뒤 main 자체가 다크
+# 변형을 포함해 항상 실패하므로, 라이트 모드 기준은 이 고정 커밋으로 둔다.
+LIGHT_BASELINE_REF = "975bb823"
+
+
 def _main_template_text(relpath: str) -> str:
     result = subprocess.run(  # noqa: S603
-        [GIT_BIN, "show", f"main:{relpath}"],
+        [GIT_BIN, "show", f"{LIGHT_BASELINE_REF}:{relpath}"],
         cwd=ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode != 0:
-        pytest.skip(f"main 브랜치에서 {relpath} 를 읽을 수 없습니다: {result.stderr.strip()}")
+        pytest.skip(
+            f"기준 커밋 {LIGHT_BASELINE_REF} 에서 {relpath} 를 읽을 수 없습니다: {result.stderr.strip()}"
+        )
     return result.stdout
 
 
