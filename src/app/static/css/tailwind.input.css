@@ -112,6 +112,15 @@
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
 }
 
+/* Bootstrap .bg-white/.border 의 !important 가 위 규칙을 덮으므로 같은 자리에서 강제한다. */
+.dark .h-card.bg-white {
+  background-color: var(--color-slate-900) !important;
+}
+
+.dark .h-card.border {
+  border-color: var(--color-slate-800) !important;
+}
+
 .dark .h-card:hover {
   border-color: var(--color-slate-700);
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -1px rgb(0 0 0 / 0.3);
