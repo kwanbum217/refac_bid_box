@@ -81,7 +81,7 @@
 | 다크 모드 bg-white + dark:bg-* 13곳 `!` 접미사 | `1e48ba5c` | 헤더·홈 그래프 카드 다크 배경 복구 |
 | OpenCode 세션 집계 도구 | `fc931bb5` | `uv run python scripts/opencode_session_stats.py --directory-suffix /<워크트리>` |
 | 다크 모드 테두리·글자색 18쌍 `!` 접미사 | `73087b1b` | 홈·채팅·공통 레이아웃 |
-| `.dark .h-card` 강제 규칙 되돌림 | 이 문서의 병합 커밋 | compare.html·result_detail.html 은 h-card 안 글자에 다크 변형이 없어, 카드만 어둡게 하면 글자가 보이지 않았다. 되돌려 세션 시작 상태(흰 카드)로 복구 |
+| `.dark .h-card` 강제 규칙 되돌림 | `c62c45bb` | compare.html·result_detail.html 은 h-card 안 글자에 다크 변형이 없어, 카드만 어둡게 하면 글자가 보이지 않았다. 되돌려 세션 시작 상태(흰 카드)로 복구 |
 
 남은 과업(사용자 결정):
 
@@ -89,4 +89,9 @@
 | --- | --- |
 | Bootstrap 제거와 전 화면 대조 | 조사 보고서 `.orca/reports/bootstrap_conflict_audit_20261123.md`(gitignore). 충돌 736쌍, JS 사용 0건. 라이트 모드 여백·색이 함께 바뀐다 |
 | 비교 분석·낙찰 상세 화면 다크 모드 대응 | 페이지 바탕 `bg-[#F9FAFB]`, 값 `text-slate-900` 에 다크 변형이 없다 |
-| 상단 검색창 다크 모드 | `base.html` 헤더 input 에 다크 변형이 없어 다크 모드에서 입력 글자가 거의 보이지 않는다 |
+
+| 영역 | 병합 커밋 | 결과 |
+| --- | --- | --- |
+| 상단 검색창·채팅 대화 기록 패널 다크 모드 | 이 문서의 병합 커밋 | 다크 배경·글자·테두리, 라이트 모드 불변(헤드리스 Chrome 확인) |
+
+정적 파일 캐시 주의: `/static/css/tailwind.css` 응답에 Cache-Control 이 없어(ETag·Last-Modified 만) 브라우저가 경험적 캐시로 옛 CSS 를 쓸 수 있다. 2026-11-23 확인 중 실제로 옛 CSS 가 적용됐다. 보류 과업 M2(정적 캐시)에서 버전 쿼리나 Cache-Control 을 정할 때 함께 다룬다.

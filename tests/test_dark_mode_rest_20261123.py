@@ -37,13 +37,13 @@ DARK_BORDER_TARGETS = {
         96: "dark:border-slate-800!",
     },
     "src/app/templates/chatbot/chat.html": {
-        673: "dark:border-slate-700!",
-        675: "dark:border-slate-600!",
+        686: "dark:border-slate-700!",
+        688: "dark:border-slate-600!",
     },
 }
 DARK_FOCUS_BORDER_TARGETS = {
     "src/app/templates/chatbot/chat.html": {
-        673: "dark:focus:border-primary!",
+        686: "dark:focus:border-primary!",
     },
 }
 DARK_TEXT_TARGETS = {
