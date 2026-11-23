@@ -848,6 +848,12 @@ BASE_GROUND_TRUTH: tuple[tuple[str, str], ...] = (
         "실패는 정상이며, 주 저장소에서 자산을 심볼릭 링크나 복사로 끌어오거나 주 저장소 경로를 건드리지 말 것",
         "tests/test_data_preservation.py",
     ),
+    (
+        "토큰 절약: 스텝마다 대화 전체를 다시 읽으므로 셸 명령은 묶어서 실행하고 출력은 "
+        "tail·grep 으로 필요한 줄만 받는다. 전량 시험은 배경이 아니라 앞에서 한 번만 돌려 "
+        "결과를 기다리고, 끝나면 같은 턴에 이어서 마무리한다(대기 턴을 만들지 말 것)",
+        "docs/ops/orca_worker_model_pool.md",
+    ),
 )
 
 # 재작업 Capsule ground_truth 에 고정으로 붙는 worker_done 보고 작성 규칙.
@@ -862,7 +868,7 @@ REWORK_REPORT_RULES_FACT: str = (
 
 
 def _format_ground_truth(extra_facts: list[str]) -> str:
-    """기본 사실 4건 뒤에 Intent 가 주입한 사실을 덧붙입니다.
+    """기본 사실 뒤에 Intent 가 주입한 사실을 덧붙입니다.
 
     코디네이터가 이미 확인한 경계 조건을 사실로 못박지 않으면 워커가 같은
     것을 다시 조사하거나, 조사하지 않고 잘못된 가정으로 고칩니다.

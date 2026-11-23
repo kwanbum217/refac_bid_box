@@ -60,6 +60,18 @@ OPENCODE_MODEL_VARIANTS: dict[str, tuple[str, ...]] = {
     "opencode-go/glm-5.3-flash": ("low", "high", "max"),
 }
 OPENCODE_DEFAULT_VARIANT = "high"
+# 등록 모델(컨텍스트 100만) 워커에만 넣는 토큰 절약 설정입니다. 비용은 스텝마다 다시
+# 읽는 컨텍스트 크기에 비례하므로(2026-11-23 실측 스텝당 캐시 읽기 평균 약 11만)
+# 도구 출력 상한을 낮추고 약 20만에서 압축합니다. buffer 는 창 대비 여유 토큰이라
+# 창이 작은 모델에 넣으면 매 턴 압축되므로 등록 모델에만 씁니다.
+OPENCODE_WORKER_PROFILE: dict[str, object] = {
+    "compaction": {"auto": True, "buffer": 800000, "keep": {"tokens": 20000}},
+    "tool_output": {"max_lines": 400, "max_bytes": 16384},
+    "update": "disable",
+    "snapshots": False,
+}
+# 리뷰어 스텝 상한입니다. 마지막 스텝은 도구 없이 요약을 강제합니다.
+OPENCODE_REVIEWER_STEPS = 150
 COMMIT_NOTICE = common.COMMIT_NOTICE
 REVIEWER_NOTICE = common.REVIEWER_NOTICE
 
@@ -126,6 +138,7 @@ def build_env(
     one_shot: bool = False,
     binary: str = "opencode",
     variant: str | None = None,
+    role: str = "auto",
 ) -> dict[str, str]:
     """기동 환경에 모델 설정을 주입합니다.
 
@@ -150,8 +163,15 @@ def build_env(
     if env.get(OPENCODE_CONFIG_ENV):
         raise ValueError(f"{OPENCODE_CONFIG_ENV} 가 이미 설정되어 있어 모델을 주입할 수 없습니다")
     config: dict[str, object] = {"model": model}
+    build_agent: dict[str, object] = {}
     if variant is not None:
-        config["agent"] = {OPENCODE_BUILD_AGENT: {"model": model, "variant": variant}}
+        build_agent.update({"model": model, "variant": variant})
+    if model in OPENCODE_MODEL_VARIANTS:
+        config.update(OPENCODE_WORKER_PROFILE)
+        if role == "reviewer":
+            build_agent["steps"] = OPENCODE_REVIEWER_STEPS
+    if build_agent:
+        config["agent"] = {OPENCODE_BUILD_AGENT: build_agent}
     return {**env, OPENCODE_CONFIG_ENV: json.dumps(config)}
 
 
@@ -301,6 +321,7 @@ def main(argv: list[str] | None = None) -> int:
             one_shot=args.one_shot,
             binary=args.binary,
             variant=args.variant,
+            role=args.role,
         )
     except ValueError as err:
         sys.stderr.write(f"오류: {err}\n")

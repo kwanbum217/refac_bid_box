@@ -95,3 +95,33 @@ def test_main_rejects_variant_the_model_does_not_offer(tmp_path: Path):
     with pytest.raises(SystemExit) as exc:
         main(["--model", DEEPSEEK, "--preamble", str(_preamble(tmp_path)), "--variant", "medium"])
     assert exc.value.code == 2
+
+
+def test_build_env_adds_worker_profile_for_registered_models_only():
+    config = json.loads(build_env({}, DEEPSEEK, variant="high")["OPENCODE_CONFIG_CONTENT"])
+    assert config["tool_output"] == {"max_lines": 400, "max_bytes": 16384}
+    assert config["compaction"]["buffer"] == 800000
+    assert config["update"] == "disable"
+    assert config["snapshots"] is False
+    other = json.loads(build_env({}, "opencode/space-bunny-free")["OPENCODE_CONFIG_CONTENT"])
+    assert other == {"model": "opencode/space-bunny-free"}
+
+
+def test_build_env_caps_reviewer_steps_but_not_builder():
+    reviewer = json.loads(
+        build_env({}, GLM, variant="high", role="reviewer")["OPENCODE_CONFIG_CONTENT"]
+    )
+    assert reviewer["agent"]["build"]["steps"] == 150
+    builder = json.loads(
+        build_env({}, DEEPSEEK, variant="high", role="builder")["OPENCODE_CONFIG_CONTENT"]
+    )
+    assert "steps" not in builder["agent"]["build"]
+
+
+@patch("scripts.orca_opencode_launch.os.execvpe")
+def test_main_passes_role_to_profile(mock_exec: MagicMock, tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("OPENCODE_CONFIG_CONTENT", raising=False)
+    argv = ["--model", GLM, "--preamble", str(_preamble(tmp_path)), "--role", "reviewer"]
+    assert main([*argv, "--no-commit-notice"]) == 0
+    config = json.loads(mock_exec.call_args[0][2]["OPENCODE_CONFIG_CONTENT"])
+    assert config["agent"]["build"] == {"model": GLM, "variant": "high", "steps": 150}
