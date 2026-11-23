@@ -16,9 +16,12 @@ subprocess.run 으로 완주시킨 뒤 대화형 셸로 이어받아 터미널 �
 
 추론 등급(--variant)은 두 CLI 모두 모르는 값을 오류 없이 무시하므로 허용 값을 여기서
 제한합니다. opencode 단발은 run --model 의 모델 ID 뒤에 #variant 를 붙이며 --variant
-플래그를 넘기지 않습니다. opencode 대화형 TUI 에는 --variant 전달 경로가 검증되지
-않아 거부합니다. kilo 는 KILO_CONFIG_CONTENT 로 model·variant 를 고정한 전용
-에이전트를 주입하고 --agent 로 선택하며, 단발은 run --variant 로 넘깁니다.
+플래그를 넘기지 않습니다. opencode 대화형은 OPENCODE_CONFIG_CONTENT 의 build 에이전트에
+model·variant 를 함께 넣어 고정하며, variant 목록을 확인한 OPENCODE_MODEL_VARIANTS 의
+모델에만 허용합니다(2026-11-23 opencode v2.3.2 의 GET /api/model 과 debug agents 로 확인).
+그 모델들은 --variant 를 생략하면 OPENCODE_DEFAULT_VARIANT(high)로 기동합니다.
+kilo 는 KILO_CONFIG_CONTENT 로 model·variant 를 고정한 전용 에이전트를 주입하고
+--agent 로 선택하며, 단발은 run --variant 로 넘깁니다.
 사용자가 왼쪽 워크트리에서 TUI 로 진행을 볼 수 있습니다.
 
     --binary kilo --model openrouter/stealth/space-bunny-alpha --variant max
@@ -49,6 +52,14 @@ SUPPORTED_VARIANTS = ("low", "medium", "high", "xhigh", "max")
 KILO_AGENT_NAME = "orca-worker"
 KILO_CONFIG_ENV = "KILO_CONFIG_CONTENT"
 OPENCODE_CONFIG_ENV = "OPENCODE_CONFIG_CONTENT"
+OPENCODE_BUILD_AGENT = "build"
+# 대화형에서 variant 를 고정할 수 있는 모델과 그 모델이 실제로 제공하는 variant 입니다.
+# medium 이 없습니다. 목록 밖 값은 opencode 가 조용히 무시하므로 여기서 거부합니다.
+OPENCODE_MODEL_VARIANTS: dict[str, tuple[str, ...]] = {
+    "opencode-go/deepseek-v4.1-flash": ("low", "high", "max"),
+    "opencode-go/glm-5.3-flash": ("low", "high", "max"),
+}
+OPENCODE_DEFAULT_VARIANT = "high"
 COMMIT_NOTICE = common.COMMIT_NOTICE
 REVIEWER_NOTICE = common.REVIEWER_NOTICE
 
@@ -81,9 +92,14 @@ def build_command(
     승인 대화창을 감시기 판정 경로로 되돌립니다. 권한은 opencode.json 의
     permission 블록(deny)이 담당합니다.
     """
-    if variant is not None and not one_shot and binary != "kilo":
+    if (
+        variant is not None
+        and not one_shot
+        and binary != "kilo"
+        and model not in OPENCODE_MODEL_VARIANTS
+    ):
         raise ValueError(
-            "opencode 대화형 모드에는 --variant 가 없어 --one-shot 과 함께만 쓸 수 있습니다"
+            "opencode 대화형 모드의 --variant 는 OPENCODE_MODEL_VARIANTS 모델에만 쓸 수 있습니다"
         )
     if one_shot:
         model_arg = f"{model}#{variant}" if binary == "opencode" and variant is not None else model
@@ -93,10 +109,10 @@ def build_command(
         cmd.append(prompt)
         return cmd
 
-    if variant is not None:
-        cmd = [binary, "--agent", KILO_AGENT_NAME]
-    elif binary == "opencode":
+    if binary == "opencode":
         cmd = [binary, "--standalone"]
+    elif variant is not None:
+        cmd = [binary, "--agent", KILO_AGENT_NAME]
     else:
         cmd = [binary, "--model", model]
     cmd.extend(["--prompt", prompt])
@@ -133,7 +149,26 @@ def build_env(
 
     if env.get(OPENCODE_CONFIG_ENV):
         raise ValueError(f"{OPENCODE_CONFIG_ENV} 가 이미 설정되어 있어 모델을 주입할 수 없습니다")
-    return {**env, OPENCODE_CONFIG_ENV: json.dumps({"model": model})}
+    config: dict[str, object] = {"model": model}
+    if variant is not None:
+        config["agent"] = {OPENCODE_BUILD_AGENT: {"model": model, "variant": variant}}
+    return {**env, OPENCODE_CONFIG_ENV: json.dumps(config)}
+
+
+def resolve_variant(model: str, variant: str | None, *, binary: str, one_shot: bool) -> str | None:
+    """opencode 등급을 확정합니다. 등록 모델은 생략 시 기본 등급, 목록 밖 값은 거부합니다."""
+    if binary != "opencode":
+        return variant
+    allowed = OPENCODE_MODEL_VARIANTS.get(model)
+    if allowed is None:
+        return variant
+    if variant is None:
+        return OPENCODE_DEFAULT_VARIANT
+    if variant not in allowed:
+        raise ValueError(
+            f"{model} 의 variant 는 {', '.join(allowed)} 중 하나여야 합니다: {variant}"
+        )
+    return variant
 
 
 def build_completion_message(exit_code: int, model: str) -> str:
@@ -198,7 +233,10 @@ def main(argv: list[str] | None = None) -> int:
         "--variant",
         choices=SUPPORTED_VARIANTS,
         default=None,
-        help="추론 등급. opencode 는 --one-shot 과 함께만, kilo 는 대화형에서도 씁니다.",
+        help=(
+            "추론 등급. opencode 대화형은 OPENCODE_MODEL_VARIANTS 모델만(생략 시 high), "
+            "그 밖의 opencode 모델은 --one-shot 과 함께만, kilo 는 대화형에서도 씁니다."
+        ),
     )
     parser.add_argument("--preamble", type=Path, default=DEFAULT_PREAMBLE)
     parser.add_argument("--timeout-sec", type=float, default=300.0)
@@ -229,7 +267,18 @@ def main(argv: list[str] | None = None) -> int:
         help="단발 실행 종료 후 셸로 이어받지 않고 종료 코드를 그대로 반환합니다.",
     )
     args = parser.parse_args(argv)
-    if args.variant is not None and not args.one_shot and args.binary != "kilo":
+    try:
+        args.variant = resolve_variant(
+            args.model, args.variant, binary=args.binary, one_shot=args.one_shot
+        )
+    except ValueError as err:
+        parser.error(str(err))
+    if (
+        args.variant is not None
+        and not args.one_shot
+        and args.binary != "kilo"
+        and args.model not in OPENCODE_MODEL_VARIANTS
+    ):
         parser.error("opencode 대화형에서는 --variant 를 --one-shot 과 함께만 쓸 수 있습니다")
 
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
@@ -274,7 +323,8 @@ def main(argv: list[str] | None = None) -> int:
     mode = "run 단발" if args.one_shot else "대화형"
     if not args.one_shot and args.binary == "opencode":
         print(
-            f"기동: opencode --standalone (모델 {args.model} 주입, {mode}, 지시문 {len(prompt)}자)",
+            f"기동: opencode --standalone (모델 {args.model} 주입, variant {args.variant or '기본'}, "
+            f"{mode}, 지시문 {len(prompt)}자)",
             flush=True,
         )
     else:

@@ -416,3 +416,26 @@ probe 했으며, 리뷰어 독립성은 CLI 단위 provider 분리를 그대로 
 5. **probe 고정**: `OPENROUTER_API_KEY` 가 없는 환경에서는 실제 호출 probe 가
    실패하므로 시험은 네트워크 없이 고정합니다. 등록 계약은 라우터 시험과 qwen
    런처 시험이 검증합니다.
+
+## 13. OpenCode Go 워커 추론 등급 (2026-11-23)
+
+빌더 `opencode-go/deepseek-v4.1-flash` 와 리뷰어 `opencode-go/glm-5.3-flash` 는 대화형 TUI 에서도
+추론 등급을 고정합니다. 3장 3번의 "검증 불가" 는 `opencode run --variant` 플래그 경로에 대한 판정이며,
+이 두 모델에는 다른 경로를 씁니다.
+
+| 항목 | 내용 |
+| --- | --- |
+| 제공 등급 | `low`, `high`, `max` (medium 없음). opencode v2.3.2 `GET /api/model` 의 `variants` 로 확인 |
+| 주입 경로 | `scripts/orca_opencode_launch.py` 가 `OPENCODE_CONFIG_CONTENT` 의 `agent.build` 에 `model`·`variant` 를 넣음. `opencode debug agents` 에서 `variant` 반영 확인 |
+| 기본값 | `--variant` 생략 시 `high` (사용자 지시) |
+| 조정 | Task 마다 `--variant low` 또는 `--variant max` 를 명시. 목록 밖 값은 런처가 거부 |
+
+등급 선택 기준입니다. 토큰 소모와 모델 능력을 함께 봅니다.
+
+| 등급 | 쓰는 경우 |
+| --- | --- |
+| `low` | 절차적 과제(문서 갱신, 기계적 치환, 단순 시험 보강), 범위가 좁은 재검증 리뷰 |
+| `high` | 기본. 일반 구현, 회귀 위험이 있는 수정, 표준 독립 리뷰 |
+| `max` | 집계 정의·성능 설계처럼 판단 실수가 비싼 과제, 같은 Task 에서 반려가 반복될 때 |
+
+`OPENCODE_MODEL_VARIANTS` 에 없는 opencode 모델은 종전처럼 대화형에서 `--variant` 를 거부합니다.
