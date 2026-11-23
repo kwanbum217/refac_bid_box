@@ -460,3 +460,18 @@ probe 했으며, 리뷰어 독립성은 CLI 단위 provider 분리를 그대로 
 창 100만이 확인된 등록 모델에만 넣는다. Capsule 기본 사실(`BASE_GROUND_TRUTH`)에도 셸 명령 묶기,
 출력 줄이기, 전량 시험 앞 실행 규칙을 넣었다. 배경 시험을 기다리는 대기 턴과 깨우기 턴이
 2026-11-23 빌더 2대에서 반복됐기 때문이다.
+
+### 13.2 워커 전용 상태 디렉터리
+
+`OPENCODE_CONFIG_CONTENT` 만으로는 등급이 고정되지 않는다. opencode TUI 는 전역 상태 파일
+`~/.local/state/opencode/model.json` 의 `variant` 맵(`"<provider>/<model>": "<variant>"`)에 기억한
+값을 에이전트 설정보다 우선한다. 그래서 `--variant low` 로 띄운 워커도 실제 요청은 `high` 로
+나갔다(2026-11-23 세션 내보내기 `model.variant` 로 확인).
+
+런처는 `OPENCODE_MODEL_VARIANTS` 등록 모델을 대화형으로 띄울 때만 작업 디렉터리 아래
+`.orca/opencode-state/<모델-등급>/opencode/model.json` 을 만들어 확정 등급을 적고, 그 디렉터리를
+`XDG_STATE_HOME` 으로 넘긴다(`.orca` 는 gitignore 대상). `recent` 에는 해당 모델을 넣고 `variant`
+맵에는 그 모델 하나만 기록한다. `XDG_DATA_HOME`(인증)과 `XDG_CONFIG_HOME`, 사용자의 전역 상태는
+읽지도 쓰지도 않는다. 등록 밖 모델, kilo, `--one-shot` 경로는 종전과 같다.
+
+적용 확인은 화면 상태줄이 아니라 `opencode session export` 메시지의 `model.variant` 로 한다.
