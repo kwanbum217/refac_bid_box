@@ -13,8 +13,12 @@ import datetime
 import json
 import re
 import shlex
+import shutil
 import subprocess  # nosec B404 - 개발 스크립트가 고정 인자 목록으로만 외부 도구를 호출합니다
 import sys
+import tempfile
+import time
+import xml.etree.ElementTree as ET  # nosec B405 - 로컬 pytest 가 만든 junit xml 만 읽습니다
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -58,6 +62,17 @@ DEFAULT_GIT_TIMEOUT = 10
 DEFAULT_PYTEST_TIMEOUT = 900
 DEFAULT_VALIDATE_TIMEOUT = 30
 DEFAULT_MAX_CHARS = 2000
+
+# 게이트 11 은 경고 모드입니다. 판정은 raw_data["verdict"] 에만 남기고 status 는
+# proven 일 때만 pass, 나머지는 required=False 인 skipped 로 둡니다. 이 게이트가
+# fail 을 낼 수 있게 되면 --strict 병합 판정이 조용히 바뀌므로, 도구 오류까지
+# 포함해 어떤 경로에서도 fail 을 만들지 않습니다.
+GATE11_GATE_NAME = "게이트 11 실패→통과 증명"
+GATE11_TIMEOUT_SECONDS = 600
+GATE11_MAX_FAILED_IDS = 20
+GATE11_EXEMPT_COMMIT_TYPES = frozenset({"docs", "chore", "refactor", "test"})
+GATE11_COMMIT_TYPE_RE = re.compile(r"^([a-z]+):")
+GATE11_E2E_PREFIX = "tests/e2e/"
 
 # 병합 판정(--strict) 통과 증거입니다. premerge_full_suite_gate 와 같은 규칙으로
 # 주 저장소 공통 .cache/ 에 기록해 main 병합 훅이 워크트리 기록을 그대로 읽습니다.
@@ -1005,6 +1020,368 @@ def run_gate10_command_reality(repo: Path, changed_files: list[str]) -> GateResu
     )
 
 
+@dataclass
+class Gate11RunCounts:
+    """기준/브랜치 트리에서 pytest 를 한 번 돌린 집계입니다."""
+
+    passed: int = 0
+    failed: int = 0
+    errors: int = 0
+    skipped: int = 0
+    failed_ids: list[str] = field(default_factory=list)
+    error_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 에 남길 수치와 실패 시험 id 를 만듭니다."""
+        return {
+            "passed": self.passed,
+            "failed": self.failed,
+            "errors": self.errors,
+            "skipped": self.skipped,
+            "failed_test_ids": self.failed_ids[:GATE11_MAX_FAILED_IDS],
+            "error_test_ids": self.error_ids[:GATE11_MAX_FAILED_IDS],
+        }
+
+
+def _gate11_git_text(
+    repo: Path,
+    args: list[str],
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+) -> str:
+    """게이트 11 의 텍스트 git 호출을 실행합니다."""
+    code, stdout, stderr, timed_out = run_command_safe(["git", *args], repo, timeout)
+    if timed_out:
+        raise GateToolError(f"git {' '.join(args)} 타임아웃 ({timeout}초)")
+    if code != 0:
+        raise GateToolError(f"git {' '.join(args)} 실패 (종료 코드 {code}): {stderr.strip()}")
+    return stdout
+
+
+def _gate11_git_bytes(repo: Path, args: list[str], timeout: int) -> bytes:
+    """tar 스트림처럼 바이트가 필요한 git 호출을 실행합니다."""
+    try:
+        proc = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+            ["git", "-C", str(repo), *args],
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GateToolError(f"git {' '.join(args)} 타임아웃 ({timeout}초)") from exc
+    except FileNotFoundError as exc:
+        raise GateToolError(f"git 실행 파일을 찾을 수 없음: {exc}") from exc
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise GateToolError(f"git {' '.join(args)} 실패 (종료 코드 {proc.returncode}): {stderr}")
+    return proc.stdout
+
+
+def get_gate11_target_test_files(
+    repo: Path,
+    base: str,
+    branch: str,
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+) -> list[str]:
+    """base...branch 에서 추가·수정된 tests/**/test_*.py 경로를 반환합니다.
+
+    시험 함수 단위로 좁히지 않고 파일 단위로 돌립니다. 삭제된 시험과
+    브라우저 E2E(tests/e2e/)는 대상에서 뺍니다.
+    """
+    stdout = _gate11_git_text(
+        repo,
+        [
+            "diff",
+            "--name-only",
+            "-z",
+            "--diff-filter=AM",
+            f"{base}...{branch}",
+            "--",
+            "tests/",
+        ],
+        timeout,
+    )
+    files: list[str] = []
+    for raw in stdout.split("\0"):
+        rel = raw.strip()
+        if not rel or rel.startswith(GATE11_E2E_PREFIX):
+            continue
+        path = PurePosixPath(rel)
+        if path.suffix != ".py" or not path.name.startswith("test_"):
+            continue
+        files.append(rel)
+    return sorted(dict.fromkeys(files))
+
+
+def get_gate11_commit_types(
+    repo: Path,
+    base: str,
+    branch: str,
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+) -> list[str]:
+    """base..branch 의 비병합 커밋 type 목록을 반환합니다."""
+    stdout = _gate11_git_text(
+        repo,
+        ["log", "--no-merges", "--format=%s", f"{base}..{branch}"],
+        timeout,
+    )
+    types: list[str] = []
+    for subject in stdout.splitlines():
+        cleaned = subject.strip()
+        if not cleaned:
+            continue
+        match = GATE11_COMMIT_TYPE_RE.match(cleaned)
+        types.append(match.group(1) if match else "unknown")
+    return types
+
+
+def gate11_has_src_changes(
+    repo: Path,
+    base: str,
+    branch: str,
+    timeout: int = DEFAULT_GIT_TIMEOUT,
+) -> bool:
+    """base...branch 에 src/ 변경이 있는지 확인합니다."""
+    stdout = _gate11_git_text(
+        repo,
+        ["diff", "--name-only", f"{base}...{branch}", "--", "src/"],
+        timeout,
+    )
+    return bool(stdout.strip())
+
+
+def _gate11_extract_tree(repo: Path, ref: str, destination: Path, timeout: int) -> None:
+    """git archive 로 ref 의 트리를 임시 디렉터리에 풉니다.
+
+    git worktree 를 쓰지 않습니다. worktree 등록이 저장소에 남고, 워커가
+    쓸 수 없는 명령이기 때문입니다.
+    """
+    archive = _gate11_git_bytes(repo, ["archive", "--format=tar", ref], timeout)
+    try:
+        proc = subprocess.run(  # nosec B603 B607 - shell 없이 고정 인자 목록으로 호출합니다
+            ["tar", "-x", "-C", str(destination)],
+            input=archive,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GateToolError(f"{ref} 트리 압축 해제 타임아웃 ({timeout}초)") from exc
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", errors="replace").strip()
+        raise GateToolError(f"{ref} 트리 압축 해제 실패 (종료 코드 {proc.returncode}): {stderr}")
+
+
+def _gate11_overlay_test_files(
+    repo: Path,
+    ref: str,
+    destination: Path,
+    target_files: list[str],
+    timeout: int,
+) -> None:
+    """기준 트리의 대상 시험 파일을 브랜치 판으로 덮어씁니다."""
+    for rel in target_files:
+        parts = PurePosixPath(rel).parts
+        if PurePosixPath(rel).is_absolute() or ".." in parts:
+            raise GateToolError(f"대상 시험 경로가 저장소 밖을 가리킴: {rel}")
+        content = _gate11_git_bytes(repo, ["show", f"{ref}:{rel}"], timeout)
+        path = destination.joinpath(*parts)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+
+def _gate11_parse_junit(xml_path: Path) -> Gate11RunCounts:
+    """junit xml 에서 단언 실패(failure)와 수집·설정 오류(error)를 구분해 셉니다."""
+    try:
+        root = ET.parse(xml_path).getroot()  # noqa: S314  # nosec B314 - pytest 가 만든 로컬 XML 만 읽습니다
+    except (ET.ParseError, OSError) as exc:
+        raise GateToolError(f"junit xml 파싱 실패: {exc}") from exc
+
+    counts = Gate11RunCounts()
+    suites = [root] if root.tag == "testsuite" else list(root.iter("testsuite"))
+    for suite in suites:
+        for case in suite.findall("testcase"):
+            classname = case.get("classname", "")
+            testname = case.get("name", "")
+            node_id = f"{classname}::{testname}" if classname else testname
+            if case.find("failure") is not None:
+                counts.failed += 1
+                counts.failed_ids.append(node_id)
+            elif case.find("error") is not None:
+                counts.errors += 1
+                counts.error_ids.append(node_id)
+            elif case.find("skipped") is not None:
+                counts.skipped += 1
+            else:
+                counts.passed += 1
+    return counts
+
+
+def _gate11_run_tree(
+    repo: Path,
+    ref: str,
+    test_ref: str,
+    destination: Path,
+    target_files: list[str],
+    python_executable: str,
+    timeout: int,
+) -> Gate11RunCounts:
+    """ref 트리를 풀고 대상 시험 파일을 test_ref 판으로 덮어 실행합니다."""
+    _gate11_extract_tree(repo, ref, destination, timeout)
+    _gate11_overlay_test_files(repo, test_ref, destination, target_files, timeout)
+
+    env_file = repo / ".env"
+    if env_file.is_file():
+        shutil.copy2(env_file, destination / ".env")
+
+    xml_path = destination / "gate11_junit.xml"
+    cmd = [
+        python_executable,
+        "-m",
+        "pytest",
+        "-q",
+        "-m",
+        "not data_assets and not e2e",
+        "-p",
+        "no:cacheprovider",
+        f"--junitxml={xml_path}",
+        *target_files,
+    ]
+    try:
+        proc = subprocess.run(  # nosec B603 - shell 없이 고정 인자 목록으로 호출합니다
+            cmd,
+            cwd=str(destination),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise GateToolError(f"{ref} pytest 타임아웃 ({timeout}초)") from exc
+    except FileNotFoundError as exc:
+        raise GateToolError(f"실행 파이썬을 찾을 수 없음 ({python_executable}): {exc}") from exc
+
+    if not xml_path.is_file():
+        tail = strip_ansi(((proc.stdout or "") + "\n" + (proc.stderr or "")).strip())[-300:]
+        raise GateToolError(f"{ref} pytest junit xml 미생성 (종료 코드 {proc.returncode}): {tail}")
+    return _gate11_parse_junit(xml_path)
+
+
+def run_gate11_fail_pass(
+    repo: Path,
+    base: str,
+    branch: str,
+    python_executable: str | None = None,
+    timeout: int = GATE11_TIMEOUT_SECONDS,
+) -> GateResult:
+    """게이트 11: 새 시험이 기준 코드에서는 실패하고 브랜치에서는 통과하는지 확인합니다.
+
+    경고 모드입니다. status 는 proven 일 때만 pass 이고, 나머지 verdict 는
+    모두 skipped + required=False 입니다. 어떤 오류도 fail 로 바꾸지 않습니다.
+    """
+    started = time.monotonic()
+    repo_path = Path(repo).resolve()
+    raw: dict[str, Any] = {
+        "base": base,
+        "branch": branch,
+        "target_files": [],
+        "commit_types": [],
+        "src_changed": False,
+        "verdict": "error",
+    }
+    temp_dir: Path | None = None
+
+    def build(verdict: str, summary: str, details: list[str] | None = None) -> GateResult:
+        raw["verdict"] = verdict
+        raw["duration_seconds"] = round(time.monotonic() - started, 2)
+        return GateResult(
+            name=GATE11_GATE_NAME,
+            status="pass" if verdict == "proven" else "skipped",
+            summary=f"[경고 모드] {summary}",
+            details=details or [],
+            raw_data=raw,
+            required=False,
+        )
+
+    try:
+        target_files = get_gate11_target_test_files(repo_path, base, branch)
+        raw["target_files"] = target_files
+        commit_types = get_gate11_commit_types(repo_path, base, branch)
+        raw["commit_types"] = commit_types
+        raw["src_changed"] = gate11_has_src_changes(repo_path, base, branch)
+
+        if not target_files:
+            return build("exempt", "대상 시험 파일 없음 (tests/ 추가·수정 0건)")
+        if (
+            commit_types
+            and not raw["src_changed"]
+            and all(commit_type in GATE11_EXEMPT_COMMIT_TYPES for commit_type in commit_types)
+        ):
+            kinds = ", ".join(sorted(set(commit_types)))
+            return build(
+                "exempt",
+                f"문서·정리·리팩터링·시험 커밋만 있고 src/ 변경 없음 (커밋 type {kinds})",
+            )
+
+        executable = python_executable or str(repo_path / ".venv" / "bin" / "python")
+        if not Path(executable).is_file():
+            raise GateToolError(f"실행 파이썬이 없습니다: {executable}")
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="orca_gate11_"))
+        base_dir = temp_dir / "base"
+        branch_dir = temp_dir / "branch"
+        base_dir.mkdir()
+        branch_dir.mkdir()
+
+        base_counts = _gate11_run_tree(
+            repo_path, base, branch, base_dir, target_files, executable, timeout
+        )
+        branch_counts = _gate11_run_tree(
+            repo_path, branch, branch, branch_dir, target_files, executable, timeout
+        )
+        raw["base_counts"] = base_counts.to_dict()
+        raw["branch_counts"] = branch_counts.to_dict()
+
+        details = [
+            f"기준({base}): 통과 {base_counts.passed} / 단언 실패 {base_counts.failed} / 오류 {base_counts.errors}",
+            f"브랜치({branch}): 통과 {branch_counts.passed} / 단언 실패 {branch_counts.failed} / 오류 {branch_counts.errors}",
+        ]
+        if base_counts.failed_ids:
+            details.append(f"기준 실패 시험: {', '.join(base_counts.failed_ids[:5])}")
+        if branch_counts.failed_ids:
+            details.append(f"브랜치 실패 시험: {', '.join(branch_counts.failed_ids[:5])}")
+
+        if branch_counts.failed or branch_counts.errors:
+            return build(
+                "branch_failed",
+                f"브랜치에서 단언 실패 {branch_counts.failed}건·오류 {branch_counts.errors}건",
+                details,
+            )
+        if base_counts.failed:
+            return build(
+                "proven",
+                "기준 코드에서 단언 실패 "
+                f"{base_counts.failed}건, 브랜치에서 전부 통과 (시험 파일 {len(target_files)}개)",
+                details,
+            )
+        if base_counts.errors:
+            return build(
+                "collection_only",
+                f"기준 코드에서 수집·import 오류 {base_counts.errors}건만 발생, 단언 실패 0건",
+                details,
+            )
+        return build(
+            "not_proven",
+            f"기준 코드에서도 실패 없음 (통과 {base_counts.passed}건) - 변경을 잡는 시험 미증명",
+            details,
+        )
+    except Exception as exc:  # 경고 모드 계약상 어떤 오류도 fail 로 바꾸지 않습니다
+        message = str(exc) or exc.__class__.__name__
+        return build("error", f"도구 오류: {message[:300]}")
+    finally:
+        if temp_dir is not None:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def strip_ansi(text: str) -> str:
     """터미널 ANSI 제어/색상 코드를 제거합니다."""
     return ANSI_ESCAPE_RE.sub("", text)
@@ -1908,6 +2285,7 @@ def build_json_output(
         "게이트 8 커밋 메시지": "gate8_commit_message",
         "게이트 9 금지 lockfile 검증": "gate9_forbidden_lockfiles",
         "게이트 10 명령 실재성": "gate10_command_reality",
+        "게이트 11 실패→통과 증명": "gate11_fail_pass",
     }
     gates_dict: dict[str, Any] = {}
     fallback_idx = 0
@@ -2233,6 +2611,12 @@ def run_level1_gate(
             # 게이트 9 와 같은 이유로 Capsule 을 받는 병합 판정 호출에서만 돕니다.
             g10 = run_gate10_command_reality(repo_path, changed_files)
             gates.append(g10)
+
+            # 게이트 11: 새 시험이 기준 코드의 결함을 실제로 잡는지 경고 모드로
+            # 확인합니다. proven 이 아니어도 required=False 인 skipped 이므로
+            # --strict 병합 판정을 바꾸지 않습니다.
+            g11 = run_gate11_fail_pass(repo_path, base, branch)
+            gates.append(g11)
 
     except GateToolError as exc:
         error_msg = str(exc)
