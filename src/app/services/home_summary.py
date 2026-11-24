@@ -27,11 +27,17 @@ src/app/services/home_summary.py
 worker 의 10분 예열 작업이 캐시를 채우고, 캐시가 비어 있으면 화면은 '집계 중'
 을 보여 줍니다. 정확도는 서빙 메타데이터를 매 요청 읽어 모델 교체가 화면에
 바로 반영되게 합니다.
+
+관심 조건 건수·목록도 같은 이유로 요청 경로에서 집계하지 않습니다. 예열
+작업이 저장된 관심 조건을 서로 다른 조건별로 한 번씩 집계해 신선 키(10분)와
+보관 키(24시간)를 채우고, 요청 경로는 두 키만 읽습니다. 신선 키가 만료돼도
+보관 키의 마지막 성공 값을 보여 주므로 화면이 비지 않습니다.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -48,6 +54,8 @@ from src.app.services.bid_preferences import (
     get_bid_preferences,
     list_open_servc_matching,
     not_cancelled_clause,
+    stored_bid_preference_views,
+    warm_open_servc_matching,
 )
 from src.app.services.bid_queries import (
     BID_INDUSTRY_CODES,
@@ -59,6 +67,8 @@ from src.ml.promotion import METRICS_ROOT, SERVING_ROOT, load_serving_metrics
 
 SERVC_CATEGORY = "Servc"
 SERVC_MODEL_NAME = "servc_institution_v1"
+
+logger = logging.getLogger(__name__)
 
 # 산점도는 화면 성능과 가독성을 위해 최대 300점만 그리고, 정확히 맞힘 띠는
 # ±2%p 입니다. 두 값 모두 계약 사양이며 지표 값이 아닙니다.
@@ -515,7 +525,7 @@ def get_home_summary(
 
     now 를 넘기면 캐시를 건너뛰고 즉시 집계합니다. 시험이 기준 시각을 고정할 때
     씁니다. 운영 요청 경로에서는 now 가 None 이므로 캐시만 읽고, 캐시가 비어
-    있으면 건수를 None 으로 두어 화면이 '집계 중' 을 보여 줍니다.
+    있으면 건수와 관심 조건 값을 None 으로 두어 화면이 '집계 중' 을 보여 줍니다.
     """
     now_dt = now or kst_now()
     open_count, open_deadline_buckets = _servc_counts(db, now_dt, use_cache=now is None)
@@ -523,10 +533,12 @@ def get_home_summary(
     prefs: BidPreferenceView | None = get_bid_preferences(db, user_id) if user_id else None
     has_preferences = prefs is not None and not prefs.is_empty
     matching_count: int | None = None
-    matching_bids: list[dict[str, Any]] = []
+    matching_bids: list[dict[str, Any]] | None = None
     matching_license_codes: list[str] = []
     matching_region_code = ""
     if has_preferences and prefs is not None:
+        # now 가 None 인 요청 경로에서는 두 함수가 캐시만 읽습니다. 비어 있으면
+        # None 을 돌려주고 화면은 '집계 중' 을 보여 줍니다.
         matching_count = count_open_servc_matching(db, prefs, now=now)
         matching_bids = list_open_servc_matching(db, prefs, now=now)
         matching_license_codes = list(prefs.license_codes)
@@ -544,14 +556,40 @@ def get_home_summary(
     }
 
 
+def _warm_stored_matching_preferences(db: Session, now_dt: datetime) -> tuple[int, int]:
+    """저장된 관심 조건별 건수·목록을 예열하고 (성공, 실패) 건수를 돌려줍니다.
+
+    같은 조건을 여러 계정이 쓰면 한 번만 집계합니다. 한 조건이 실패해도 나머지는
+    계속 채워, 다음 주기의 예열이 성공할 때까지 다른 사용자의 화면이 비지 않게 합니다.
+    """
+    warmed = 0
+    failed = 0
+    for prefs in stored_bid_preference_views(db):
+        try:
+            warm_open_servc_matching(db, prefs, now_dt)
+        except Exception:
+            failed += 1
+            logger.exception(
+                "내 조건 입찰 중 예열 실패 (license=%s, region=%s)",
+                ",".join(prefs.license_codes),
+                prefs.region_code,
+            )
+        else:
+            warmed += 1
+    return warmed, failed
+
+
 def warm_home_summary_cache(db: Session) -> dict[str, Any]:
-    """4대 업종 입찰 중 건수와 마감 구간을 집계해 캐시에 채웁니다. worker 전용입니다."""
+    """메인 요약 캐시와 저장된 관심 조건 캐시를 채웁니다. worker 전용입니다."""
     now_dt = kst_now()
     open_count = _count_open_servc(db, now_dt)
     open_deadline_buckets = _open_deadline_buckets(db, now_dt)
+    matching_warmed, matching_failed = _warm_stored_matching_preferences(db, now_dt)
     payload: dict[str, Any] = {
         "open_count": open_count,
         "open_deadline_buckets": open_deadline_buckets,
+        "matching_warmed": matching_warmed,
+        "matching_failed": matching_failed,
     }
     cache.set(SERVIC_COUNTS_CACHE_KEY, payload, SERVIC_COUNTS_CACHE_TTL)
     return payload

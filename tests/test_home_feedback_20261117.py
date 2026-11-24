@@ -32,7 +32,7 @@ from src.app.models.bid_restrictions import (
     BidAnnouncementParticipationRegion,
 )
 from src.app.models.bids import BidAnnouncement
-from src.app.services import home_summary
+from src.app.services import bid_preferences, home_summary
 from src.app.services.bid_preferences import (
     BidPreferenceView,
     list_open_servc_matching,
@@ -238,6 +238,12 @@ def test_no_more_link_when_matching_count_is_five_or_less(
     )
     _add_license(isolated_db, bid, "1172")
     _add_region(isolated_db, bid, "서울특별시")
+    # 요청 경로는 캐시만 읽으므로 worker 예열과 같은 경로로 미리 채웁니다.
+    bid_preferences.warm_open_servc_matching(
+        isolated_db,
+        BidPreferenceView(["1172"], "seoul"),
+        now=BASE_TIME,
+    )
 
     body = auth_client.get("/").text
 

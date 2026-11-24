@@ -20,6 +20,12 @@ list_announcements)와 같습니다. 업종·지역 코드 정의와 정규화�
 건수와 목록은 같은 조건 함수를 공유해 서로 다른 공고를 고를 수 없습니다.
 업종·지역이 모두 비어 있으면 셈하지 않고 0 또는 빈 목록을 돌려줍니다.
 호출자는 BidPreferenceView.is_empty 로 입력 안내를 띄울 수 있습니다.
+
+집계는 대형 공고 테이블을 훑어 수십 초가 걸릴 수 있으므로 요청 경로에서
+실행하지 않습니다. 기준 시각(now)을 넘기지 않는 호출은 신선 키(10분)를 읽고,
+없으면 보관 키(24시간)의 마지막 성공 값을 씁니다. 두 키 모두 worker 예열
+(warm_open_servc_matching)이 채웁니다. 시험처럼 now 를 넘기거나
+use_cache=False 를 주면 그 자리에서 집계합니다.
 """
 
 from __future__ import annotations
@@ -50,10 +56,15 @@ OPEN_BID_CATEGORY = "Servc"
 # 마감 전 공고만 세지만, 오래된 공고까지 훑지 않도록 공고일 하한을 둡니다.
 OPEN_BID_LOOKBACK_DAYS = 90
 OPEN_BID_COUNT_CACHE_TTL = 60 * 10
+# 신선 키가 만료돼도 화면이 '집계 중' 으로 비지 않도록 마지막 성공 값을
+# 24시간 보관합니다. worker 예열이 한두 번 실패해도 마지막 값을 이어 씁니다.
+OPEN_BID_STALE_CACHE_TTL = 24 * 60 * 60
 # 취소공고 제외 조건이 붙은 뒤 v2 입니다. v1 키에는 취소 행이 포함된 값이 남아
 # 있으므로 접두사를 올려 옛 값을 읽지 않게 합니다.
 OPEN_BID_COUNT_CACHE_PREFIX = "bid_prefs:open_servc_count:v2"
 OPEN_BID_LIST_CACHE_PREFIX = "bid_prefs:open_servc_list:v2"
+OPEN_BID_COUNT_STALE_CACHE_PREFIX = "bid_prefs:open_servc_count:stale:v2"
+OPEN_BID_LIST_STALE_CACHE_PREFIX = "bid_prefs:open_servc_list:stale:v2"
 OPEN_BID_LIST_DEFAULT_LIMIT = 5
 
 
@@ -131,6 +142,14 @@ def _list_cache_key(prefs: BidPreferenceView, limit: int) -> str:
     return f"{OPEN_BID_LIST_CACHE_PREFIX}:{_prefs_cache_suffix(prefs)}:{limit}"
 
 
+def _count_stale_cache_key(prefs: BidPreferenceView) -> str:
+    return f"{OPEN_BID_COUNT_STALE_CACHE_PREFIX}:{_prefs_cache_suffix(prefs)}"
+
+
+def _list_stale_cache_key(prefs: BidPreferenceView, limit: int) -> str:
+    return f"{OPEN_BID_LIST_STALE_CACHE_PREFIX}:{_prefs_cache_suffix(prefs)}:{limit}"
+
+
 def _open_matching_conditions(prefs: BidPreferenceView, now_dt: datetime) -> list[Any]:
     """건수와 목록이 함께 쓰는 입찰 중·관심 조건입니다.
 
@@ -162,61 +181,24 @@ def _matching_row_view(row: Any, now_dt: datetime) -> dict[str, Any]:
     }
 
 
-def count_open_servc_matching(
-    db: Session,
-    prefs: BidPreferenceView | None,
-    now: datetime | None = None,
-) -> int:
-    """저장된 관심 조건에 맞는 현재 입찰 중인 용역 공고 수를 셉니다.
-
-    now 를 넘기지 않으면 KST 현재 시각을 쓰고 결과를 10분 캐시합니다. 시험처럼
-    기준 시각을 고정할 때는 now 를 넘겨 캐시를 건너뜁니다.
-    """
-    if prefs is None or prefs.is_empty:
-        return 0
-
-    now_dt = now or kst_now()
-    cache_key = _count_cache_key(prefs)
-    if now is None:
-        cached = cache.get(cache_key)
-        if isinstance(cached, int):
-            return cached
-
+def _query_open_servc_count(db: Session, prefs: BidPreferenceView, now_dt: datetime) -> int:
+    """관심 조건에 맞는 입찰 중 공고를 즉시 셉니다. worker·시험 전용입니다."""
     stmt = (
         select(func.count())
         .select_from(BidAnnouncement)
         .where(*_open_matching_conditions(prefs, now_dt))
     )
     stmt = similar_announcement_latest_filter(stmt)
-
-    count = int(db.scalar(stmt) or 0)
-    if now is None:
-        cache.set(cache_key, count, OPEN_BID_COUNT_CACHE_TTL)
-    return count
+    return int(db.scalar(stmt) or 0)
 
 
-def list_open_servc_matching(
+def _query_open_servc_list(
     db: Session,
-    prefs: BidPreferenceView | None,
-    limit: int = OPEN_BID_LIST_DEFAULT_LIMIT,
-    now: datetime | None = None,
+    prefs: BidPreferenceView,
+    limit: int,
+    now_dt: datetime,
 ) -> list[dict[str, Any]]:
-    """관심 조건에 맞는 입찰 중 용역 공고를 마감 임박 순으로 돌려줍니다.
-
-    조건은 count_open_servc_matching 과 같은 함수를 쓰고, 캐시도 같은 10분
-    정책입니다. now 를 넘기면 캐시를 건너뜁니다. 화면이 바로 쓰도록 캐시에
-    넣을 수 있는 원시값(dict)만 돌려줍니다.
-    """
-    if prefs is None or prefs.is_empty:
-        return []
-
-    now_dt = now or kst_now()
-    cache_key = _list_cache_key(prefs, limit)
-    if now is None:
-        cached = cache.get(cache_key)
-        if isinstance(cached, list):
-            return cached
-
+    """관심 조건 목록을 즉시 조회합니다. worker·시험 전용입니다."""
     stmt = (
         select(
             BidAnnouncement.id,
@@ -229,8 +211,132 @@ def list_open_servc_matching(
         .limit(limit)
     )
     stmt = similar_announcement_latest_filter(stmt)
+    return [_matching_row_view(row, now_dt) for row in db.execute(stmt).all()]
 
-    items = [_matching_row_view(row, now_dt) for row in db.execute(stmt).all()]
-    if now is None:
-        cache.set(cache_key, items, OPEN_BID_COUNT_CACHE_TTL)
+
+def _store_open_servc_count(prefs: BidPreferenceView, count: int) -> None:
+    cache.set(_count_cache_key(prefs), count, OPEN_BID_COUNT_CACHE_TTL)
+    cache.set(_count_stale_cache_key(prefs), count, OPEN_BID_STALE_CACHE_TTL)
+
+
+def _store_open_servc_list(
+    prefs: BidPreferenceView, limit: int, items: list[dict[str, Any]]
+) -> None:
+    cache.set(_list_cache_key(prefs, limit), items, OPEN_BID_COUNT_CACHE_TTL)
+    cache.set(_list_stale_cache_key(prefs, limit), items, OPEN_BID_STALE_CACHE_TTL)
+
+
+def read_cached_open_servc_count(prefs: BidPreferenceView | None) -> int | None:
+    """신선 키, 없으면 보관 키의 건수를 읽습니다. 집계는 하지 않습니다."""
+    if prefs is None or prefs.is_empty:
+        return 0
+    fresh = cache.get(_count_cache_key(prefs))
+    if isinstance(fresh, int):
+        return fresh
+    stale = cache.get(_count_stale_cache_key(prefs))
+    return stale if isinstance(stale, int) else None
+
+
+def read_cached_open_servc_list(
+    prefs: BidPreferenceView | None,
+    limit: int = OPEN_BID_LIST_DEFAULT_LIMIT,
+) -> list[dict[str, Any]] | None:
+    """신선 키, 없으면 보관 키의 목록을 읽습니다. 집계는 하지 않습니다."""
+    if prefs is None or prefs.is_empty:
+        return []
+    fresh = cache.get(_list_cache_key(prefs, limit))
+    if isinstance(fresh, list):
+        return fresh
+    stale = cache.get(_list_stale_cache_key(prefs, limit))
+    return stale if isinstance(stale, list) else None
+
+
+def stored_bid_preference_views(db: Session) -> list[BidPreferenceView]:
+    """저장된 관심 조건을 서로 다른 조건별로 한 번씩 돌려줍니다.
+
+    같은 업종·지역을 여러 계정이 쓰면 집계 캐시 키도 같으므로 한 번만
+    예열하면 됩니다. 입력 안내만 필요한 빈 조건은 건너뜁니다.
+    """
+    rows = db.execute(select(AccountBidPreference).order_by(AccountBidPreference.id)).scalars()
+    views: list[BidPreferenceView] = []
+    seen: set[str] = set()
+    for row in rows:
+        view = _view_from_row(row)
+        if view is None or view.is_empty:
+            continue
+        suffix = _prefs_cache_suffix(view)
+        if suffix in seen:
+            continue
+        seen.add(suffix)
+        views.append(view)
+    return views
+
+
+def warm_open_servc_matching(
+    db: Session,
+    prefs: BidPreferenceView | None,
+    now: datetime | None = None,
+    limit: int = OPEN_BID_LIST_DEFAULT_LIMIT,
+) -> None:
+    """한 관심 조건의 건수·목록을 집계해 신선 키와 보관 키를 함께 채웁니다.
+
+    worker 예열 전용입니다. 요청 경로에서는 부르지 않습니다.
+    """
+    if prefs is None or prefs.is_empty:
+        return
+    now_dt = now or kst_now()
+    count = _query_open_servc_count(db, prefs, now_dt)
+    items = _query_open_servc_list(db, prefs, limit, now_dt)
+    _store_open_servc_count(prefs, count)
+    _store_open_servc_list(prefs, limit, items)
+
+
+def count_open_servc_matching(
+    db: Session,
+    prefs: BidPreferenceView | None,
+    now: datetime | None = None,
+    *,
+    use_cache: bool = True,
+) -> int | None:
+    """저장된 관심 조건에 맞는 현재 입찰 중인 용역 공고 수를 돌려줍니다.
+
+    now 를 넘기지 않고 use_cache=True 이면 캐시만 읽고, 신선 키가 없으면
+    보관 키를 씁니다. 둘 다 없으면 None 이며 집계하지 않습니다. 시험처럼
+    기준 시각을 고정하거나 use_cache=False 를 주면 그 자리에서 집계합니다.
+    """
+    if prefs is None or prefs.is_empty:
+        return 0
+
+    if use_cache and now is None:
+        return read_cached_open_servc_count(prefs)
+
+    now_dt = now or kst_now()
+    count = _query_open_servc_count(db, prefs, now_dt)
+    _store_open_servc_count(prefs, count)
+    return count
+
+
+def list_open_servc_matching(
+    db: Session,
+    prefs: BidPreferenceView | None,
+    limit: int = OPEN_BID_LIST_DEFAULT_LIMIT,
+    now: datetime | None = None,
+    *,
+    use_cache: bool = True,
+) -> list[dict[str, Any]] | None:
+    """관심 조건에 맞는 입찰 중 용역 공고를 마감 임박 순으로 돌려줍니다.
+
+    조건은 count_open_servc_matching 과 같은 함수를 쓰고, 캐시 정책도 같습니다.
+    now 를 넘기지 않고 use_cache=True 이면 캐시만 읽고, 둘 다 없으면 None 입니다.
+    화면이 바로 쓰도록 캐시에 넣을 수 있는 원시값(dict)만 돌려줍니다.
+    """
+    if prefs is None or prefs.is_empty:
+        return []
+
+    if use_cache and now is None:
+        return read_cached_open_servc_list(prefs, limit)
+
+    now_dt = now or kst_now()
+    items = _query_open_servc_list(db, prefs, limit, now_dt)
+    _store_open_servc_list(prefs, limit, items)
     return items
