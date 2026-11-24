@@ -66,7 +66,7 @@
 
                 <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {% for tile in accuracy.tiles %}
-                    <div data-home-accuracy-tile="{{ tile.key }}" class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800! dark:bg-slate-900/60">
+                    <div data-home-accuracy-tile="{{ tile.key }}" class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
                         <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">{{ tile.label }}</p>
                         <p class="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-white">
                             {{ tile.value }}<span class="ml-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ tile.unit }}</span>
@@ -82,7 +82,7 @@
 
                 {% if accuracy.chart.visible %}
                 <div data-home-accuracy-chart-card class="mt-5 grid gap-4 lg:grid-cols-2">
-                    <div class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800! dark:bg-slate-950/40!">
+                    <div class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
                         <div class="min-w-0">
                             <p class="text-sm font-bold text-slate-800 dark:text-slate-100">오차 범위별 적중 비율</p>
                             <p class="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
@@ -93,7 +93,7 @@
                             <canvas id="home-accuracy-band-chart" role="img" aria-label="오차 범위별 적중 비율"></canvas>
                         </div>
                     </div>
-                    <div class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800! dark:bg-slate-950/40!">
+                    <div class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
                         <div class="min-w-0">
                             <p class="text-sm font-bold text-slate-800 dark:text-slate-100">예측 대 실제 낙찰률</p>
                             <p class="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
@@ -193,14 +193,14 @@
                 {% if matching_count > 5 %}
                 {% set more_url = url('bids:bid_list') ~ '?lic=' ~ (matching_license_codes|join(',')) %}
                 {% if matching_region_code %}{% set more_url = more_url ~ '&region=' ~ matching_region_code %}{% endif %}
-                <a data-home-matching-more href="{{ more_url }}" class="mt-4 inline-flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary-hover dark:text-blue-400! dark:hover:text-blue-300!">
+                <a data-home-matching-more href="{{ more_url }}" class="mt-4 inline-flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary-hover dark:text-blue-400 dark:hover:text-blue-300">
                     내 조건 공고 더보기
                     <i class="fas fa-arrow-right text-[10px]"></i>
                 </a>
                 {% endif %}
                 {% else %}
                 <p class="mt-4 text-base font-black tracking-tight text-slate-900 dark:text-white">관심 조건이 아직 없습니다</p>
-                <a href="{{ url('accounts:mypage_edit') }}" class="mt-2 inline-flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary-hover dark:text-blue-400! dark:hover:text-blue-300!">
+                <a href="{{ url('accounts:mypage_edit') }}" class="mt-2 inline-flex items-center gap-1 text-xs font-bold text-primary transition-colors hover:text-primary-hover dark:text-blue-400 dark:hover:text-blue-300">
                     마이페이지에서 관심 업종·지역 입력
                     <i class="fas fa-arrow-right text-[10px]"></i>
                 </a>

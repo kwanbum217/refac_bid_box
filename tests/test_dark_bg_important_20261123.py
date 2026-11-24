@@ -1,4 +1,9 @@
-"""bootstrap.min.css 의 .bg-white !important 를 Tailwind dark:bg-* 가 이기도록 고정한다."""
+"""bg-white 요소의 dark:bg-* 대응이 빌드 CSS 에 살아 있는지 고정한다.
+
+510ac531 로 Bootstrap 을 제거한 뒤로는 dark:bg-* 의 ! 접미사가 필요 없다. h-card
+요소만 `.dark .h-card` 규칙과 겨루므로 ! 를 남기며, 그 목록은
+tests/test_dark_suffix_cleanup_20261124.py 가 관리한다.
+"""
 
 import re
 from pathlib import Path
@@ -14,25 +19,40 @@ TEMPLATES = [
 TAILWIND_CSS = ROOT / "src/app/static/css/tailwind.css"
 
 CLASS_ATTR_RE = re.compile(r'class="([^"]*)"', re.S)
-REQUIRED_CSS_CLASSES = [
-    r".dark\:bg-slate-950\!",
-    r".dark\:bg-slate-900\!",
-    r".dark\:bg-slate-950\/40\!",
-]
+CLASS_SELECTOR_BOUNDARY = frozenset("{:,")
+
+
+def _css_selector(token: str) -> str:
+    parts = ["."]
+    for char in token:
+        parts.append("\\" + char if char in ":/.#%()[]!,*+~" else char)
+    return "".join(parts)
+
+
+def _selector_present(selector: str, css: str) -> bool:
+    start = 0
+    while True:
+        index = css.find(selector, start)
+        if index == -1:
+            return False
+        following = index + len(selector)
+        if following >= len(css) or css[following] in CLASS_SELECTOR_BOUNDARY:
+            return True
+        start = index + 1
 
 
 @pytest.mark.parametrize("path", TEMPLATES, ids=lambda p: p.name)
-def test_dark_bg_classes_have_important_suffix(path):
-    text = path.read_text(encoding="utf-8")
-    offenders = []
-    for match in CLASS_ATTR_RE.finditer(text):
+def test_dark_bg_variants_exist_in_build_css(path):
+    css = TAILWIND_CSS.read_text(encoding="utf-8")
+    missing = []
+    for match in CLASS_ATTR_RE.finditer(path.read_text(encoding="utf-8")):
         classes = match.group(1).split()
         if "bg-white" not in classes:
             continue
         for cls in classes:
-            if cls.startswith("dark:bg-") and not cls.endswith("!"):
-                offenders.append(cls)
-    assert not offenders, f"{path.relative_to(ROOT)}: {offenders}"
+            if cls.startswith("dark:bg-") and not _selector_present(_css_selector(cls), css):
+                missing.append(cls)
+    assert not missing, f"{path.relative_to(ROOT)}: {missing}"
 
 
 def test_all_bg_white_templates_covered():
@@ -40,11 +60,12 @@ def test_all_bg_white_templates_covered():
     assert found == TEMPLATES
 
 
-def test_tailwind_css_contains_important_rules():
-    css = TAILWIND_CSS.read_text(encoding="utf-8")
-    missing = [selector for selector in REQUIRED_CSS_CLASSES if selector not in css]
-    assert not missing, f"tailwind.css 에 없는 중요도 클래스: {missing}"
-    for selector in REQUIRED_CSS_CLASSES:
-        start = css.index(selector)
-        body = css[start : css.index("}", start) + 1]
-        assert "!important" in body, body
+@pytest.mark.parametrize("path", TEMPLATES, ids=lambda p: p.name)
+def test_bg_white_elements_keep_important_suffix_only_on_h_card(path):
+    offenders = []
+    for match in CLASS_ATTR_RE.finditer(path.read_text(encoding="utf-8")):
+        classes = match.group(1).split()
+        if "bg-white" not in classes or "h-card" in classes:
+            continue
+        offenders += [cls for cls in classes if cls.startswith("dark:bg-") and cls.endswith("!")]
+    assert not offenders, f"{path.relative_to(ROOT)}: {offenders}"

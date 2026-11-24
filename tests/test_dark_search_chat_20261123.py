@@ -15,7 +15,7 @@ def test_header_search_input_has_dark_classes():
     classes = line.split('class="', 1)[1].split('"', 1)[0].split()
     for cls in (
         "dark:bg-slate-800",
-        "dark:border-slate-700!",
+        "dark:border-slate-700",
         "dark:text-slate-100",
         "dark:placeholder:text-slate-500",
         "dark:focus:bg-slate-900",
@@ -37,7 +37,7 @@ def test_built_css_contains_new_dark_utilities():
     css = CSS.read_text(encoding="utf-8")
     for token in (
         "dark\\:placeholder\\:text-slate-500",
-        "dark\\:border-slate-700\\!",
+        "dark\\:border-slate-700",
         "dark\\:focus\\:bg-slate-900",
         "dark\\:bg-transparent",
         "--color-slate-900:",

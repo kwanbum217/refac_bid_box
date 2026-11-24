@@ -2,8 +2,8 @@
 
 (a) 밝은 면·진한 글자·옅은 테두리 클래스에는 같은 요소에 대응 dark: 변형이 있어야 한다.
     (파란 강조 카드처럼 색을 유지하는 요소는 대상 클래스에 넣지 않는다.)
-(b) Bootstrap 과 이름이 같은 유틸리티(bg-white, border, border-white)와 함께 쓰는
-    dark 변형은 !important 접미사 ! 로 끝나야 한다.
+(b) dark: 변형의 ! 접미사는 h-card 요소에만 남는다. tailwind.input.css 의
+    `.dark .h-card` 규칙이 같은 속성을 더 높은 명시도로 덮는 유일한 자리다.
 (c) dark: 변형과 ! 를 지우면 main 브랜치 템플릿의 클래스와 같아야 한다(라이트 모드 불변).
 """
 
@@ -53,12 +53,6 @@ LIGHT_BORDER_CLASSES = frozenset(
         "border-emerald-100",
     }
 )
-# bootstrap.min.css 가 !important 로 덮는 클래스와 그에 대응하는 dark 접두사
-BOOTSTRAP_IMPORTANT_PAIRS = {
-    "bg-white": "dark:bg-",
-    "border": "dark:border-",
-    "border-white": "dark:border-",
-}
 
 
 def _template_path(relpath: str) -> Path:
@@ -99,19 +93,16 @@ def test_light_classes_have_dark_counterparts(relpath):
 
 
 @pytest.mark.parametrize("relpath", RELATIVE_TEMPLATES, ids=lambda value: Path(value).name)
-def test_bootstrap_conflicting_dark_classes_end_with_important(relpath):
+def test_important_suffix_only_on_h_card(relpath):
     text = _template_path(relpath).read_text(encoding="utf-8")
     offenders = []
     for classes in _class_tokens(text):
-        for base, dark_prefix in BOOTSTRAP_IMPORTANT_PAIRS.items():
-            if base not in classes:
-                continue
-            offenders += [
-                token
-                for token in classes
-                if token.startswith(dark_prefix) and not token.endswith("!")
-            ]
-    assert not offenders, f"{relpath}: ! 가 빠진 dark 변형 {sorted(set(offenders))}"
+        if "h-card" in classes:
+            continue
+        offenders += [
+            token for token in classes if token.startswith("dark:") and token.endswith("!")
+        ]
+    assert not offenders, f"{relpath}: h-card 밖에 남은 ! 접미사 {sorted(set(offenders))}"
 
 
 def _strip_dark_variants(classes: list[str]) -> list[str]:
