@@ -1837,6 +1837,14 @@
           "unique": false
         },
         {
+          "name": "ix_bid_ann_cat_clse",
+          "column_names": [
+            "category",
+            "bid_clse_dt"
+          ],
+          "unique": false
+        },
+        {
           "name": "ix_bid_ann_cat_dt",
           "column_names": [
             "category",
@@ -1897,7 +1905,7 @@
           "unique": false
         }
       ],
-      "hash": "88f4d9c9400043f8eac5da3afcfeb705ceddb95358f51b3bd7184532e3f26db9"
+      "hash": "40f449d077d7cd44ab68367ab4b11a593b63e403b143677f842e2172885fd654"
     },
     "bid_compare_stats_snapshots": {
       "name": "bid_compare_stats_snapshots",
@@ -4811,7 +4819,7 @@
     "bid_announcement_license_limits": "a0871740bfc21f95c53509ddb5948275e2a07242da67acc0d845bc3effe258b5",
     "bid_announcement_participation_regions": "5c661943772b6baf82ed0492577310ead3eed005d697e44fac910fea3ec2389b",
     "bid_announcement_regime": "656be9eafe0497ee1db9687c242bf3c48a3df258a83ac267a90d72115a151cd8",
-    "bid_announcements": "88f4d9c9400043f8eac5da3afcfeb705ceddb95358f51b3bd7184532e3f26db9",
+    "bid_announcements": "40f449d077d7cd44ab68367ab4b11a593b63e403b143677f842e2172885fd654",
     "bid_compare_stats_snapshots": "d9e0fe67e1318a2cdf02ff0b2fc15dd89716a4495bde95d916749105311dac60",
     "bid_dataset_summaries": "db63132629b7fd7a107d4ef8dd88e3b75db7645da6e724d0df92115af9288501",
     "bid_evaluation_evidence": "4664a85be484a7370d271c9681a0a07a0ea5e3c539e5073f2075250925f5a79a",
@@ -4841,7 +4849,7 @@
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
     "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
   },
-  "overall_hash": "3363c940f01a37214e230749e84d78044bee924a2d0942997ebc2f81243b7fd2",
+  "overall_hash": "edca4c53aa1e758e868f0dde984ef49237b1c6f5fbf9b1415b30dbdec54bbdb8",
   "orm_tables": [
     "account_bid_preferences",
     "account_company_profiles",
@@ -4925,10 +4933,10 @@
     "socialaccount_socialtoken"
   ],
   "metadata": {
-    "generated_at": "2026-11-11T08:20:53.095434+00:00",
+    "generated_at": "2026-11-24T06:25:32.263593+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "0a3694f83c476cd106b8f648f5ad3b12d11f0650"
+    "git_head": "cc695ca00661fd4c37c141622b8af9b7b431c1ec"
   }
 }
