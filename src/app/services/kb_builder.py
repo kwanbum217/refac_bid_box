@@ -54,6 +54,10 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "bidding_kb"
 
+# 과거 results_only 비상 경로가 남긴 결과 문서의 id 접두와 메타데이터 타입입니다.
+RESULT_DOC_ID_PREFIX = "result_"
+RESULT_DOC_TYPE = "bid_result"
+
 # fmt: off
 __all__ = (
     "CHUNK_SIZE",
@@ -69,6 +73,8 @@ __all__ = (
     "PagedQuerySequence",
     "_build_announcement_document",
     "_build_result_document",
+    "_cleanup_stale_result_documents",
+    "_collect_result_document_ids",
     "_diff_index",
     "_document_hash",
     "_flush",
@@ -100,6 +106,35 @@ def _upsert_kb_status(db: Session, **fields: Any) -> None:
     db.commit()
 
 
+def _collect_result_document_ids(collection: Any) -> list[str]:
+    """컬렉션에 남아 있는 낙찰 결과 문서 id 를 타입 메타데이터로 조회합니다."""
+    ids: list[str] = []
+    batch_size = INDEX_LOOKUP_BATCH_SIZE
+    offset = 0
+    while True:
+        page = collection.get(
+            where={"type": RESULT_DOC_TYPE},
+            include=[],
+            limit=batch_size,
+            offset=offset,
+        )
+        page_ids = [str(doc_id) for doc_id in (page.get("ids") or [])]
+        ids.extend(page_ids)
+        if len(page_ids) < batch_size:
+            return ids
+        offset += batch_size
+
+
+def _cleanup_stale_result_documents(collection: Any, ids: Sequence[str]) -> int:
+    """과거 results_only 경로가 남긴 result_ 문서를 지우고 정리 건수를 돌려줍니다."""
+    stale_ids = list(ids)
+    if not stale_ids:
+        return 0
+    delete_in_batches(collection, stale_ids)
+    logger.info("잔존 낙찰 결과 문서 %d건을 정리했습니다.", len(stale_ids))
+    return len(stale_ids)
+
+
 def rebuild_knowledge_base(
     db: Session,
     pipeline_run_id: str = "",
@@ -128,9 +163,12 @@ def rebuild_knowledge_base(
         os.makedirs(chroma_path, exist_ok=True)
         chroma_client = chromadb.PersistentClient(path=chroma_path)
 
+        collection_reset = False
         if full:
             try:
                 chroma_client.delete_collection(COLLECTION_NAME)
+                # 삭제에 실패하면 기존 컬렉션이 그대로 남아 이전 문서가 살아 있습니다.
+                collection_reset = True
             # 없는 컬렉션 삭제는 정상 흐름이라 무시합니다
             except Exception:  # nosec B110 - 없는 컬렉션 삭제 실패는 정상 흐름이라 무시합니다
                 pass
@@ -141,7 +179,14 @@ def rebuild_knowledge_base(
         existing_hashes, incremental = (
             ({}, False) if full or delta_mode else _load_existing_index(collection)
         )
+        # 과거 results_only 비상 경로가 만든 result_ 문서는 공고 원천 색인의 목표가
+        # 아니므로 증분 비교에서 빠집니다. 삭제 후보로 넘기기 전에 원본 키에서 모아
+        # 두었다가, 공고 원천 색인이 성공한 뒤에만 정리합니다.
+        stale_result_ids: list[str] = []
         if incremental:
+            stale_result_ids = [
+                doc_id for doc_id in existing_hashes if doc_id.startswith(RESULT_DOC_ID_PREFIX)
+            ]
             # 공고 원천의 목표 문서는 bid_ 접두뿐입니다. 낙찰 결과 등 다른 접두 문서를
             # 삭제 후보에 넣으면 증분 색인이 결과 문서까지 지웁니다.
             existing_hashes = {
@@ -149,6 +194,10 @@ def rebuild_knowledge_base(
                 for doc_id, doc_hash in existing_hashes.items()
                 if doc_id.startswith("bid_")
             }
+        elif not delta_mode and not (full and collection_reset) and collection.count() > 0:
+            # 증분 비교 기준이 서지 않았거나(fmt 불일치 등) 컬렉션 삭제가 실패해
+            # 기존 문서가 남은 경로입니다. 여기서도 같은 result_ 문서가 정리 대상입니다.
+            stale_result_ids = _collect_result_document_ids(collection)
 
         now = utcnow()
         one_year_ago = kst_now(now) - timedelta(days=365)
@@ -261,6 +310,17 @@ def rebuild_knowledge_base(
         if indexed_count == 0 and not delta_mode:
             raise RuntimeError("최근 1년 기준으로 인덱싱할 공고/낙찰 데이터가 없습니다.")
 
+        # 잔존 result_ 문서 정리는 공고 원천 색인이 성공한 뒤에만 합니다. 먼저 지우면
+        # 색인이 실패했을 때 문서만 사라집니다. 공고 원천 0건(results_only)이면 방금
+        # 만든 결과 문서를 지울 수 있으므로 건드리지 않습니다.
+        cleaned_result_count = 0
+        if not delta_mode and source_mode != "results_only" and indexed_count > 0:
+            cleaned_result_count = _cleanup_stale_result_documents(collection, stale_result_ids)
+            # KB 상태의 source_bid_count 가 실제 문서 수와 맞도록 다시 읽습니다.
+            indexed_count = collection.count()
+        if cleaned_result_count:
+            stats["removed"] += cleaned_result_count
+
         existing_hashes.clear()
 
         embedded_at = utcnow()
@@ -274,6 +334,8 @@ def rebuild_knowledge_base(
             summary = f"이번 수집분 {stats['embedded']}건 반영 완료 (KB 전체 {indexed_count}건, 기준 {since_repr})"
         else:
             summary = f"최근 1년 데이터 기준 {indexed_count}건 인덱싱 완료"
+            if cleaned_result_count:
+                summary += f" (잔존 결과 문서 {cleaned_result_count}건 정리)"
         _upsert_kb_status(
             db,
             status="ready",
