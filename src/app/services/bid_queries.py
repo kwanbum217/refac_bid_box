@@ -7,6 +7,9 @@ src/app/services/bid_queries.py
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -17,6 +20,7 @@ from sqlalchemy import Integer, and_, case, exists, func, or_, select, tuple_
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased
 
+from src.app.core.cache import cache
 from src.app.core.config import settings
 from src.app.core.timeutil import kst_now, utcnow
 from src.app.models.bid_restrictions import (
@@ -68,6 +72,17 @@ PAGE_SIZE = 20
 MAX_LIST_PAGE = 1_000
 MYSQL_FALLBACK_MAX_EXECUTION_TIME_MS = 5_000
 MYSQL_QUERY_TIMEOUT_ERROR_CODE = 3024
+
+logger = logging.getLogger(__name__)
+
+# 목록 검색 결과(검색이 정한 id 목록과 다음 페이지 여부)만 짧게 캐시합니다. 같은
+# 검색 조건의 페이지 이동·뒤로 가기·새로고침이 Meilisearch 를 다시 부르지 않게 하려는
+# 것이고, 행은 지금처럼 id 로 DB 에서 읽으므로 화면 결과는 달라지지 않습니다.
+# 색인 동기화(sync_search_index)가 10분 주기로 돌기 때문에 300초 캐시는 그보다 짧아,
+# 새 문서가 늦게 보이는 지연이 최대 5분을 넘지 않습니다. 이 지연은 허용 범위이며
+# 명시적 무효화는 두지 않습니다.
+SEARCH_RESULT_CACHE_PREFIX = "search_ids:v1:"
+SEARCH_RESULT_CACHE_TTL_SECONDS = 300
 
 
 def _meili_enabled() -> bool:
@@ -687,6 +702,55 @@ def _page_from_search_ids(
     )
 
 
+def _search_result_cache_key(search_kwargs: Mapping[str, Any]) -> str:
+    """검색 조건 전체를 정렬된 JSON 으로 직렬화한 해시 키입니다.
+
+    dataset·검색어·정렬·오프셋·필터가 하나라도 다르면 다른 키가 됩니다. license_codes
+    는 순서만 다른 같은 조합이 같은 키가 되도록 정렬합니다.
+    """
+    payload = dict(search_kwargs)
+    codes = payload.get("license_codes")
+    if codes:
+        payload["license_codes"] = sorted(codes)
+    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    digest = hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+    return f"{SEARCH_RESULT_CACHE_PREFIX}{digest}"
+
+
+def _read_search_result_cache(key: str) -> tuple[list[int], bool] | None:
+    """캐시에 저장된 (id 목록, 다음 페이지 여부)를 돌려줍니다. 없거나 깨졌으면 None.
+
+    캐시 장애는 검색 실패로 이어지면 안 되므로 어떤 예외든 캐시 미스로 취급하고
+    경고만 남깁니다.
+    """
+    try:
+        cached = cache.get(key)
+    except Exception as exc:
+        logger.warning("검색 결과 캐시 조회 실패, 검색으로 진행합니다 (%s): %s", key, exc)
+        return None
+    if not isinstance(cached, dict):
+        return None
+    ids = cached.get("ids")
+    has_next = cached.get("has_next")
+    if not isinstance(ids, list) or not isinstance(has_next, bool):
+        return None
+    if not all(isinstance(item, int) and not isinstance(item, bool) for item in ids):
+        return None
+    return ids, has_next
+
+
+def _write_search_result_cache(key: str, ids: list[int], has_next: bool) -> None:
+    """검색 결과를 TTL 동안 저장합니다. 저장 실패는 검색 결과를 막지 않습니다."""
+    try:
+        cache.set(
+            key,
+            {"ids": list(ids), "has_next": has_next},
+            SEARCH_RESULT_CACHE_TTL_SECONDS,
+        )
+    except Exception as exc:
+        logger.warning("검색 결과 캐시 저장 실패 (%s): %s", key, exc)
+
+
 def _search_index_page(
     db: Session,
     *,
@@ -719,7 +783,14 @@ def _search_index_page(
             search_kwargs["license_codes"] = license_codes
     if qualification_only:
         search_kwargs["qualification_only"] = True
+    cache_key = _search_result_cache_key(search_kwargs)
+    cached = _read_search_result_cache(cache_key)
+    if cached is not None:
+        cached_ids, cached_has_next = cached
+        return _page_from_search_ids(db, model, cached_ids, page_number, cached_has_next)
     result = MeiliSearchClient().search(**search_kwargs)
+    # 검색 백엔드가 실패하면 위에서 예외가 올라오므로 실패 결과는 캐시되지 않습니다.
+    _write_search_result_cache(cache_key, result.ids, result.has_next)
     return _page_from_search_ids(db, model, result.ids, page_number, result.has_next)
 
 
