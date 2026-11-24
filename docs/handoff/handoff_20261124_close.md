@@ -1,9 +1,9 @@
 # 2026-11-24 세션 인수인계
 
 > **작성일**: 2026-11-24
-> **최종 main**: 이 문서를 담은 병합 커밋(직전 `64577664`)
+> **최종 main**: 이 문서를 담은 병합 커밋(직전 `d04cb58a`)
 > **Orca Run**: `run_c1863d8691a3`
-> **상태**: 빌더 1대 작업 중(TDD 1단계, 워크트리 `gate11`), Docker 5개 기동 중(app·worker 는 `64577664` 반영 재시작 완료)
+> **상태**: 워커 0대, 워커 워크트리 0개, Docker 정지(사용자 컴퓨터 종료 지시)
 > **운영 Meilisearch**: `bid_records` rankingRules = words, sort, typo, proximity, attribute, exactness
 > **운영 DB 리비전**: `b8d9e0f1a2b3` (head)
 
@@ -13,11 +13,11 @@
 
 | 순서 | 할 일 | 근거 |
 | --- | --- | --- |
-| 1 | TDD 1단계 Task `task_d0bb1ea117f6`(워크트리 `gate11`) 상태 확인. 끝났으면 리뷰 → 소급 결과 재확인 → 병합(사용자 승인 완료) | 5장 |
-| 2 | `6ef2b7e6`, `64577664`, 이 문서 병합 커밋의 CI 결과 확인 | 7장 |
-| 3 | 사용자 브라우저 확인: 메인 화면 속도, 키워드 검색 결과 최신순, 다크 모드 hover 색 변화 4곳 | 2장, 4장, 3장 |
-| 4 | Docker Desktop 메모리 증설 여부를 사용자와 확인 | 4장 |
-| 5 | Docker 가 내려가 있으면 `docker compose up -d` 후 준비 상태 확인 | `.agents/skills/web-platform-launch/SKILL.md` |
+| 1 | `docker compose up -d` 후 준비 상태 확인(세션 종료 때 전부 정지) | `.agents/skills/web-platform-launch/SKILL.md` |
+| 2 | `64577664` 이후 병합 커밋(`6bff0d3b`, `d04cb58a`, 이 문서 병합)의 CI 결과 확인 | 7장 |
+| 3 | TDD 3단계: 병합마다 게이트 11 verdict 를 집계 시작(2주, 2026-12-08 까지) | 5장 |
+| 4 | 사용자 브라우저 확인: 메인 화면 속도, 키워드 검색 결과 최신순, 다크 모드 hover 색 변화 4곳 | 2장, 4장, 3장 |
+| 5 | Docker Desktop 메모리 증설 여부를 사용자와 확인 | 4장 |
 
 ---
 
@@ -32,6 +32,9 @@
 | 2026-11-24 세션 인수인계 | `f341b73d` | `56cc27ed` | 이 문서 초판, CURRENT_STATE source_commit 갱신 |
 | 목록 검색 결과 Redis 300초 캐시 | `6ef2b7e6` | `d3b53d6d` | 검색 id 목록·다음 페이지 여부만 캐시, 행은 매번 DB. 리뷰 pass |
 | Meilisearch 순위 규칙 sort 앞당김 | `64577664` | `4b654d1c`, `2094e63c` | 운영 색인 적용(재색인 없음), 전후 측정 기록. 리뷰 pass |
+| 인수인계 오후 작업 반영 | `5ea66a6e` | `2e6e81e0` | 검색 지연·TDD 장 추가 |
+| OpenCode Go 워커 모델 비교 문서 | `6bff0d3b` | `14476336` | 외부 비교표를 원본과 대조, 캐시 읽기 포함 실측 비용 기준. 현행 조합 유지. `docs/analysis/opencode_go_worker_model_comparison_20261124.md` |
+| 게이트 11 실패→통과 증명(경고 모드) | `d04cb58a` | `b9b0ee06` | TDD 1단계. 리뷰 pass, 소급 기준선 재현 일치 |
 
 빌더는 OpenCode Go `deepseek-v4.1-flash`, 리뷰어는 OpenCode Go `glm-5.3-flash` 였다. 빌더 보고서 형식 문제로
 빌더 Capsule 게이트 6 이 실패한 3건(`3c070786`, `bfbda343`, `eca7419c`)과 운영 DB 적용이 필요했던
@@ -88,9 +91,16 @@
 | 항목 | 내용 |
 | --- | --- |
 | 현재 | TDD 규정 없음. 기능과 시험을 한 커밋에 내고 게이트(커버리지 80%, Level 1, 전량 증거)로 강제하는 '시험 동반' 방식 |
-| 결정 | 정통 TDD(커밋 분리) 대신 '실패→통과 증명' 게이트 11 을 단계적으로 도입. 1단계 진행 승인 |
-| 1단계 | 게이트 11 경고 모드 구현(새·수정 시험이 기준 코드에서 단언 실패, 브랜치에서 통과하는지 기록, 병합 차단 없음)과 오늘 병합 6건 소급 실행 기준선. Task `task_d0bb1ea117f6`, 빌더 OpenCode Go deepseek-v4.1-flash max |
-| 2~4단계 | Capsule `tdd` 항목·고지문·리뷰 체크리스트(2), 2주 경고 모드 운영(3), feat·fix 차단 전환(4, 사용자 결정) |
+| 결정 | 정통 TDD(커밋 분리) 대신 '실패→통과 증명' 게이트 11 을 단계적으로 도입 |
+| 1단계(완료) | 게이트 11 경고 모드 병합 `d04cb58a`. 새·수정 시험(`tests/e2e/` 제외)을 `git archive` 로 푼 기준 코드와 브랜치 코드에서 돌려 verdict 를 기록한다(proven, not_proven, collection_only, branch_failed, exempt, error). 어떤 verdict 도 병합을 막지 않는다(proven 만 pass, 나머지 skipped·required=False). Capsule 을 받는 호출에서만 돈다. 소급 스크립트 `scripts/orca_gate11_backfill.py` |
+| 소급 기준선 | 2026-11-24 병합 6건: proven 3(dark-suffix, home-prefs-perf, kb-result-cleanup), collection_only 3(kb-count-perf, meili-ranking, search-cache), not_proven·branch_failed·error 0. 코디네이터 재실행 6건 일치(소요 초만 다름). `docs/analysis/tdd_gate11_baseline_20261124.md` |
+| collection_only 해석 | 새 시험이 기준 코드에 없는 새 함수를 import 해 수집 단계에서 멈춘 경우다. 변경을 잡았다는 증거로 세지 않는다 |
+| 2단계(미착수) | Capsule 템플릿 `tdd: required \| exempt(<사유>)`, 빌더 고지문 '새 시험은 기준 코드에서 단언 실패해야 한다', 리뷰 체크리스트 `test_proves_change`, 시험 작성 지침 '새 심볼 직접 import 대신 공개 동작으로 시험'(collection_only 감소 목적) |
+| 3단계(미착수) | 2주 경고 모드 운영(2026-12-08 까지). 병합마다 verdict 집계, verdict 가 proven 인 Task 에서 리뷰어가 결함을 찾은 비율 집계 |
+| 4단계(사용자 결정) | feat·fix 에 차단 전환, 병합 훅에 게이트 11 증거 대조 추가 |
+| 리뷰어 축소 후보 | 3단계 결과를 보고 결정. 위험도 low + proven + 작은 변경 + 운영 자원(DB·색인·설정) 변경 없음이면 리뷰어 생략, medium 은 리뷰어 effort low, high·운영 자원·측정 Task 는 유지 |
+| 리뷰어 권고(미반영) | 소급 스크립트 단위 시험 부재, 커밋 type 면제 경로 시험 부재 |
+| 병합 절차 메모 | 빌더 Capsule 리뷰 체크리스트 4항목 중 기준선 재현을 코디네이터가 맡아 리뷰 Capsule 에서 빼면 게이트 5 가 'checklist_results 에 없는 id' 로 실패한다. 코디네이터 Capsule 로 strict 를 돌렸다. 다음부터는 리뷰 Capsule 체크리스트 id 를 빌더 것과 맞춘다 |
 | 면제 | 리팩터링·문서·CSS(계산 스타일 대조)·DB 마이그레이션(G1 게이트)·성능(측정 보고서)·조사 Task |
 
 ---
@@ -100,6 +110,8 @@
 | 구분 | 내용 | 근거 |
 | --- | --- | --- |
 | 후속 후보 | 관심 조건 저장 직후 그 조건만 arq 로 예열 | 3장 1행 |
+| TDD 2·3단계 | Capsule tdd 항목·고지문·체크리스트·작성 지침, 2주 verdict 집계 | 5장 |
+| 후속 후보 | `mimo-v2.6-flash`·`longcat-2.5` 를 빌더 대체로 쓰려면 런처·라우터 등록과 시험 Task 필요 | 모델 비교 문서 5장 |
 | 사용자 결정 | Docker Desktop 메모리 증설(처음 검색 지연의 근본 대책) | 4장 |
 | 보류 | Meilisearch 색인 분리(공고·낙찰), 검색 상한 searchCutoffMs | 4장 |
 | 후속 후보 | KB 수집일 폴백 경로의 콜드 69초(상한 520,001건까지 최신 차수 판정) | `docs/analysis/kb_collected_count_perf_20261124.md` |
@@ -111,5 +123,5 @@
 
 | 커밋 | 결과 |
 | --- | --- |
-| `3c070786`, `bfbda343`, `eca7419c`, `a419f41d`, `f341b73d` | 성공 |
-| `6ef2b7e6`, `64577664` | 실행 중 |
+| `3c070786`, `bfbda343`, `eca7419c`, `a419f41d`, `f341b73d`, `6ef2b7e6`, `64577664`, `5ea66a6e` | 성공 |
+| `6bff0d3b`, `d04cb58a`, 이 문서 병합 | 세션 종료 시점 미확인 |
