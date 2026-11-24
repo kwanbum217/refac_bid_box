@@ -215,6 +215,19 @@ def _latest_announcement_scope(stmt: Any) -> Any:
     return similar_announcement_latest_filter(stmt).where(not_cancelled_clause())
 
 
+def _count_announcements_capped(db: Session, stmt: Any, limit: int) -> int:
+    """건수를 limit 에서 끊어 세어 min(count, limit) 을 반환합니다.
+
+    [설계 근거: 폴백 건수 질의의 비용 상한]
+    호출자는 이 값을 총 건수(total)로만 쓰고, total 은 min(count, limit) 입니다.
+    최신 차수 판정(NOT EXISTS)은 후보 행마다 같은 공고번호의 인덱스를 다시 읽어야
+    해서 전량 집계 비용이 후보 행 수에 비례합니다. 상한을 걸면 limit 건을 찾는
+    즉시 스캔이 멈추므로, 결과는 그대로면서 비용이 후보 전체 크기와 분리됩니다.
+    """
+    capped = db.scalar(select(func.count()).select_from(stmt.limit(limit + 1).subquery()))
+    return min(capped or 0, limit)
+
+
 def _resolve_announcements(
     db: Session,
     one_year_ago: datetime,
@@ -228,6 +241,10 @@ def _resolve_announcements(
 
     .scalars().all() 로 전량을 한 번에 로드하지 않고,
     Keyset seek 페이징과 ORM 객체 expunge 가 적용된 PagedQuerySequence 를 반환합니다.
+
+    수집일 폴백 건수는 상한에서 끊어 셉니다. collected_at 은 색인 범위가 넓어
+    전량 집계가 후보 행 수에 비례해 비싸지만, total 이 min(count, limit) 이므로
+    limit 건을 넘는 순간의 정확한 값은 필요하지 않습니다.
     """
     collected_cutoff = one_year_ago if collected_one_year_ago is None else collected_one_year_ago
     limit = _max_documents()
@@ -281,15 +298,12 @@ def _resolve_announcements(
             "announcements_by_notice_date",
         )
 
-    collected_count = (
-        db.scalar(
-            _latest_announcement_scope(
-                select(func.count(BidAnnouncement.id)).where(
-                    BidAnnouncement.collected_at >= collected_cutoff
-                )
-            )
-        )
-        or 0
+    collected_count = _count_announcements_capped(
+        db,
+        _latest_announcement_scope(
+            select(BidAnnouncement.id).where(BidAnnouncement.collected_at >= collected_cutoff)
+        ),
+        limit,
     )
 
     if collected_count > 0:
