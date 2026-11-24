@@ -303,8 +303,8 @@ def test_cache_keys_moved_past_cancelled_inflated_versions(monkeypatch, isolated
     monkeypatch.setattr(home_summary, "cache", cache)
     monkeypatch.setattr(home_summary, "kst_now", lambda: NOW)
 
-    count_open_servc_matching(isolated_db, _prefs())
-    list_open_servc_matching(isolated_db, _prefs())
+    count_open_servc_matching(isolated_db, _prefs(), use_cache=False)
+    list_open_servc_matching(isolated_db, _prefs(), use_cache=False)
     home_summary.warm_home_summary_cache(isolated_db)
 
     written_keys = {key for key, _value, _ttl in cache.sets}
