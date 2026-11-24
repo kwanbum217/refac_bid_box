@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 
 INDEX_UID = "bid_records"
 
+# 정렬 파라미터가 있는 검색에서 정렬을 typo·proximity 계산보다 먼저 적용합니다.
+# 기본 순서는 sort 가 attribute 뒤에 있어 키워드에 걸린 후보 전부의 근접도를 계산한
+# 뒤에야 정렬했습니다. 정렬 파라미터가 없는 검색은 sort 규칙을 건너뛰므로 나머지
+# 규칙의 상대 순서는 기본값과 같습니다.
+RANKING_RULES = ["words", "sort", "typo", "proximity", "attribute", "exactness"]
+
 _LICENSE_CODE_PATTERN = re.compile(r"/(\d{4})(?!\d)")
 
 
@@ -184,6 +190,7 @@ class MeiliSearchClient:
             "PATCH",
             f"/indexes/{INDEX_UID}/settings",
             json={
+                "rankingRules": RANKING_RULES,
                 "searchableAttributes": [
                     "bid_ntce_nm",
                     "bid_ntce_no",
