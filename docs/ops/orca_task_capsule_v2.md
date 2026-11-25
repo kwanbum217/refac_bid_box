@@ -47,6 +47,8 @@ objective: >
 why_now: >
   현재 이 작업이 필요한 이유와 선행/후속 맥락을 1~3문장으로 기술합니다.
 
+tdd: unspecified # required | exempt(<사유>) | unspecified (2.3 절)
+
 ground_truth:
   - fact: "확정된 운영 지표 또는 아키텍처 사실"
     evidence: "docs/context/CURRENT_STATE.md"
@@ -114,6 +116,7 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
 | `role` | string | 예 | 담당 역할명 (예: `Antigravity Gemini Flash High`) |
 | `objective` | string | 예 | 작업의 최종 완료 상태를 기술한 단일 문단 |
 | `why_now` | string | 예 | 작업 착수 이유 및 상위 의존성 맥락 (1~3문장) |
+| `tdd` | enum | 선택 | TDD 증명 요구. `required`, `exempt(<사유>)`, `unspecified` (2.3 절) |
 | `ground_truth` | list[object] | 예 | 이미 검증된 불변 사실 목록. `recheck: false` 명시로 재조사 방지 |
 | `allowed_read_files` | list[string] | 예 | 워커가 읽을 수 있는 파일 또는 경로 glob 목록 |
 | `allowed_write_files` | list[string] | 예 | 워커가 생성/수정할 수 있는 파일 목록 (최소 범위 격리) |
@@ -127,6 +130,55 @@ return_contract: ORCA_WORKER_DONE_V2 # ORCA_WORKER_DONE_V2 | ORCA_REVIEW_DONE_V2
 | `artifact_paths` | list[string] | 선택 | 생성될 상세 보고서/벤치마크 데이터 파일 경로 |
 | `escalate_when` | list[string] | 예 | 자의적 판단 대신 코디네이터에게 에스컬레이션해야 하는 조건 |
 | `return_contract` | enum | 예 | 반환 보고 형식 (`ORCA_WORKER_DONE_V2` 또는 `ORCA_REVIEW_DONE_V2`) |
+
+### 2.3 tdd 항목 (시험 증명 요구)
+
+Intent 의 `tdd` 값은 Capsule 확장 시 `tdd` 필드로 옮겨집니다. 허용 값은 두 형태뿐이며
+키를 쓰지 않으면 `unspecified` 로 남습니다.
+
+| 값 | Capsule 결과 |
+| --- | --- |
+| `required` | `tdd: required`. 빌더 사실 1줄과 `review_checklist` 의 `test_proves_change` 항목을 자동으로 붙입니다 |
+| `exempt(<사유>)` | `tdd: exempt(<사유>)`. 사유를 Capsule 에 그대로 기록하고 아무것도 붙이지 않습니다 |
+| 키 없음 | `tdd: unspecified`. 아무것도 붙이지 않습니다 (하위 호환) |
+| 그 밖의 값, 빈 사유 | `expand` 가 종료 코드 2 로 거부합니다 |
+
+`tdd: required` 는 구현을 바꾸는 `builder` Task 의 요구입니다. `reviewer`, `investigator`
+역할 Intent 에 `required` 가 오면 같은 방식으로 거부합니다.
+
+#### 2.3.1 required 가 자동으로 붙이는 것
+
+| 위치 | 내용 |
+| --- | --- |
+| `ground_truth` | 새·수정 시험은 기준(base) 코드에서 단언 실패로 떨어지고 브랜치 코드에서 통과해야 한다는 사실. 게이트 11 이 `git archive` 로 푼 기준 트리에서 확인한다는 점과, 시험 파일 맨 위의 새 심볼 직접 import 는 `collection_only` 가 되어 증명으로 세지 않는다는 점을 포함합니다 |
+| `review_checklist` | `id: test_proves_change`, `defect_when: yes`, 게이트 11 `raw_data` 의 `verdict` 와 기준 `failed` 수를 보라는 `how`. 같은 `id` 가 이미 있으면 중복으로 붙이지 않습니다 |
+
+리뷰 Capsule 의 체크리스트 `id` 가 빌더 Capsule 과 같아야 Level 1 게이트 5 가
+통과하므로, 리뷰 Intent 작성자는 이 항목을 그대로 옮겨 적습니다.
+
+#### 2.3.2 exempt 대상 (문서 서술, 코드로 강제하지 않음)
+
+| 대상 | 면제 근거 |
+| --- | --- |
+| 리팩터링 | 동작 불변. 기준 코드에서 실패할 단언이 없습니다 |
+| 문서 | 실행 코드가 없습니다 |
+| CSS | 계산 스타일 대조로 검증합니다 |
+| DB 마이그레이션 | G1 게이트가 스키마·행 수 보존을 판정합니다 |
+| 성능 | 측정 보고서가 판정 근거입니다 |
+| 조사 Task | 산출물이 코드가 아닙니다 |
+
+게이트 11 의 `verdict` 6종(`proven`, `not_proven`, `collection_only`, `branch_failed`,
+`exempt`, `error`)은 [`../analysis/tdd_gate11_baseline_20261124.md`](../analysis/tdd_gate11_baseline_20261124.md)
+에 있습니다. 게이트 11 은 경고 모드이며 증명되지 않은 시험도 Task 를 차단하지 않습니다.
+
+#### 2.3.3 시험 작성 지침
+
+| 지침 | 이유 |
+| --- | --- |
+| 공개 진입점(라우트, 기존 서비스 함수, CLI)으로 동작을 시험합니다 | 기준 코드에도 있는 경로라야 기준 트리에서 단언까지 도달합니다 |
+| 새 함수·클래스를 시험 파일 맨 위에서 직접 import 하지 않습니다 | 기준 코드에 심볼이 없어 수집 단계에서 멈추고 `collection_only` 가 됩니다 |
+| 새 심볼 import 는 시험 함수 안에서 합니다 | 수집은 통과하고 단언에서 실패하므로 증명으로 인정됩니다 |
+| 시험은 바뀐 동작을 단언합니다 | 기준 코드에서도 통과하면 `not_proven` 입니다 |
 
 ---
 

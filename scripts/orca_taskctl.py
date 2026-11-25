@@ -252,6 +252,8 @@ objective: >
 why_now: >
   {why_now}
 
+tdd: {tdd}
+
 ground_truth:
 {ground_truth}
 
@@ -860,6 +862,35 @@ BASE_GROUND_TRUTH: tuple[tuple[str, str], ...] = (
     ),
 )
 
+# TDD 증명 요구. Intent 의 tdd 값이 required 이면 빌더 사실과 리뷰 체크리스트
+# 항목을 자동으로 붙이고, exempt(<사유>) 이면 사유를 Capsule 에 기록합니다.
+# 키가 없으면 아무것도 붙이지 않고 tdd 를 unspecified 로 남깁니다(하위 호환).
+TDD_FIELD = "tdd"
+TDD_REQUIRED = "required"
+TDD_UNSPECIFIED = "unspecified"
+TDD_EXEMPT_PREFIX = "exempt("
+TDD_ROLES_DENIED_REQUIRED = frozenset({"reviewer", "investigator"})
+TDD_REVIEW_ITEM_ID = "test_proves_change"
+TDD_REQUIRED_FACT: str = (
+    "새·수정 시험은 기준(base) 코드에서 단언 실패(assert)로 떨어지고 브랜치 코드에서 "
+    "통과해야 한다. Level 1 게이트 11 이 git archive 로 푼 기준 트리에서 이를 확인한다. "
+    "새 함수·클래스를 시험 파일 맨 위에서 직접 import 하면 기준 코드에서 수집 오류"
+    "(collection_only)가 되어 증명으로 세지 않는다. 공개 진입점(라우트, 기존 서비스 함수, "
+    "CLI)으로 동작을 시험하거나, 새 심볼 import 를 시험 함수 안에서 하라."
+)
+TDD_REVIEW_ITEM: dict[str, str] = {
+    "id": TDD_REVIEW_ITEM_ID,
+    "question": (
+        "새·수정 시험이 기준 코드에서 단언 실패하지 않거나(not_proven) 수집 오류로만 "
+        "멈추는가(collection_only)"
+    ),
+    "defect_when": "yes",
+    "how": (
+        "게이트 11 raw_data 의 verdict 와 기준 failed 수를 보고, 없으면 시험이 바뀐 동작을 "
+        "단언하는지 읽는다"
+    ),
+}
+
 # 재작업 Capsule ground_truth 에 고정으로 붙는 worker_done 보고 작성 규칙.
 # Level 1 게이트 6 이 changed_files 를 git diff main...HEAD 와, verification 의
 # command 를 문자 그대로 재실행해 대조하므로 보고 작성 규칙을 상수로 못박는다.
@@ -891,6 +922,54 @@ def _format_ground_truth(extra_facts: list[str]) -> str:
 
 def _escape(text: str) -> str:
     return str(text).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _attach_tdd_review_item(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    """tdd: required 의 리뷰 체크리스트 항목을 중복 없이 붙입니다.
+
+    리뷰 Capsule 의 체크리스트 id 가 빌더 Capsule 과 같아야 Level 1 게이트 5 가
+    통과하므로, 리뷰 Intent 작성자가 그대로 옮길 수 있게 빌더 Capsule 에 둡니다.
+    """
+    existing_ids = {str(item.get("id", "")).strip() for item in items if isinstance(item, dict)}
+    if TDD_REVIEW_ITEM_ID in existing_ids:
+        return list(items)
+    return [*items, dict(TDD_REVIEW_ITEM)]
+
+
+def format_tdd_value(mode: str, reason: str = "") -> str:
+    """Capsule 에 적을 tdd 단일값을 만듭니다."""
+    if mode == "exempt":
+        return f"{TDD_EXEMPT_PREFIX}{reason})"
+    return mode
+
+
+def resolve_tdd(intent: dict[str, Any]) -> tuple[str, str]:
+    """Intent 의 tdd 값을 검증하고 (mode, exempt_reason) 을 반환합니다.
+
+    허용 값은 required 와 exempt(<사유>) 두 형태뿐입니다. 키가 없으면
+    (unspecified, "") 을 반환해 아무것도 붙이지 않습니다(하위 호환). 그 밖의
+    값은 ValueError 로 거부하며 cmd_expand 가 종료 코드 2 로 바꿉니다.
+    """
+    raw = intent.get(TDD_FIELD)
+    if raw is None:
+        return TDD_UNSPECIFIED, ""
+    value = str(raw).strip()
+    role = str(intent.get("role") or "builder").strip()
+    if value == TDD_REQUIRED:
+        if role in TDD_ROLES_DENIED_REQUIRED:
+            raise ValueError(
+                f"tdd: required 는 {role} 역할 Intent 에 쓸 수 없습니다. "
+                "시험 증명은 구현을 바꾸는 builder Task 의 요구입니다."
+            )
+        return TDD_REQUIRED, ""
+    if value.startswith(TDD_EXEMPT_PREFIX) and value.endswith(")"):
+        reason = value[len(TDD_EXEMPT_PREFIX) : -1].strip()
+        if reason:
+            return "exempt", reason
+        raise ValueError("tdd: exempt(<사유>) 의 사유가 비어 있습니다.")
+    raise ValueError(
+        f"tdd 값이 올바르지 않습니다: {value!r}. 허용 값은 'required' 또는 'exempt(<사유>)' 입니다."
+    )
 
 
 def parse_intent(text: str) -> dict[str, Any]:
@@ -1124,8 +1203,14 @@ def expand_intent_to_capsule(
     role = intent.get("role", "builder")
     is_reviewer = role == "reviewer"
 
+    # TDD 증명 요구. tdd 키가 없으면 아무것도 붙이지 않고 unspecified 로 남깁니다.
+    tdd_mode, tdd_reason = resolve_tdd(intent)
+    tdd_value = format_tdd_value(tdd_mode, tdd_reason)
+
     # Reviewer 인 경우 review_checklist 필수 검증 (결함 3 해결)
     review_checklist = intent.get("review_checklist", [])
+    if tdd_mode == TDD_REQUIRED:
+        review_checklist = _attach_tdd_review_item(review_checklist)
     if is_reviewer and not review_checklist:
         raise ValueError("리뷰어(reviewer) Intent 에는 review_checklist 가 1개 이상 필요합니다.")
 
@@ -1228,6 +1313,10 @@ def expand_intent_to_capsule(
 
     verification_commands = resolve_verification_commands(intent, write_files)
 
+    extra_facts = [str(item) for item in intent.get("ground_truth", []) if str(item).strip()]
+    if tdd_mode == TDD_REQUIRED and TDD_REQUIRED_FACT not in extra_facts:
+        extra_facts.append(TDD_REQUIRED_FACT)
+
     capsule = CAPSULE_TEMPLATE.format(
         version=CAPSULE_VERSION,
         mode=mode,
@@ -1236,13 +1325,12 @@ def expand_intent_to_capsule(
         role=role,
         objective=objective,
         why_now=why_now,
+        tdd=tdd_value,
         allowed_read_files=allowed_read_formatted,
         allowed_write_files=allowed_write_formatted,
         required_write_files=required_write_formatted,
         allowed_globs=allowed_globs_formatted,
-        ground_truth=_format_ground_truth(
-            [str(item) for item in intent.get("ground_truth", []) if str(item).strip()]
-        ),
+        ground_truth=_format_ground_truth(extra_facts),
         required_change=required_change_formatted,
         acceptance=acceptance_formatted,
         shared_resources=_format_shared_resources(
