@@ -226,6 +226,8 @@ def bid_list(
     sort: str = Query(""),
     lic: list[str] = Query(default=[]),
     qual: str = Query(""),
+    amount: str = Query(""),
+    contract: str = Query(""),
     page: int = Query(1),
     db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
@@ -242,6 +244,8 @@ def bid_list(
         if code in bid_queries.BID_INDUSTRY_CODE_SET
     ]
     qualification_only = qual == "1"
+    amount_band = bid_queries.normalize_amount_band(amount)
+    contract_filter = bid_queries.normalize_contract_filter(contract)
     try:
         page_obj = bid_queries.list_announcements(
             db,
@@ -252,6 +256,8 @@ def bid_list(
             page=page,
             lic=normalized_lic,
             qualification_only=qualification_only,
+            amount=amount_band,
+            contract=contract_filter,
         )
     except SearchBackendUnavailable as exc:
         logger.exception("공고 SSR 목록 검색 백엔드 실패")
@@ -279,6 +285,15 @@ def bid_list(
         "region": bid_queries.normalize_region_code(region),
         "lic": normalized_lic,
         "qual": "1" if qualification_only else "",
+        "amount": amount_band,
+        "contract": contract_filter,
+        "amount_choices": [
+            {"code": code, "label": label}
+            for code, label, _lower, _upper in bid_queries.AMOUNT_BAND_CHOICES
+        ],
+        "contract_choices": [
+            {"code": code, "label": label} for code, label in bid_queries.CONTRACT_FILTER_CHOICES
+        ],
         "industry_groups": bid_queries.industry_groups_payload(selected_industry_codes),
         "region_groups": bid_queries.region_groups_payload(),
     }

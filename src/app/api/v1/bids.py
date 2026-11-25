@@ -124,6 +124,14 @@ def list_bids(
     ),
     page: int = Query(1, ge=1),
     lic: str = Query("", description="면허 업종 코드 (쉼표 구분, 미지정 시 업종 제한 없음)"),
+    amount: str = Query(
+        "",
+        description="금액 구간 (under_100m/100m_500m/500m_1b/over_1b, 미지정 시 전체)",
+    ),
+    contract: str = Query(
+        "",
+        description="계약방법 (exclude_private/only_private, 미지정 시 전체)",
+    ),
     db: Session = Depends(get_db),
     user: CustomUser | None = Depends(get_current_user),
 ):
@@ -142,6 +150,8 @@ def list_bids(
             sort=sort,
             page=page,
             lic=",".join(bid_queries.normalize_license_codes(lic)),
+            amount=amount,
+            contract=contract,
         )
     except SearchBackendUnavailable as exc:
         logger.exception("공고 목록 검색 백엔드 실패")

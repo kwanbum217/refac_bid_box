@@ -63,6 +63,31 @@ DEFAULT_REGION_SORT_RANK = 999
 CANCELLED_NTCE_KIND = "취소공고"
 BID_LIST_SORT_CHOICES = ("notice", "deadline", "amount", "region")
 RESULT_LIST_SORT_CHOICES = ("opening", "amount", "rate")
+# 금액 구간 필터입니다. 사용자 결정(2026-10-31)의 금액대 4구간과 같은 축이며,
+# 금액은 추정가격(presmpt_prce), 없으면 기초금액(base_amount)입니다. 경계값은
+# 상위 구간에 들어갑니다(1억 정확히는 '1억~5억'). SQL·Meilisearch 두 경로가
+# 이 상수 하나를 같이 쓰므로 경계가 갈라지지 않습니다.
+AMOUNT_BAND_CHOICES: tuple[tuple[str, str, int | None, int | None], ...] = (
+    ("under_100m", "1억 미만", None, 100_000_000),
+    ("100m_500m", "1억~5억", 100_000_000, 500_000_000),
+    ("500m_1b", "5억~10억", 500_000_000, 1_000_000_000),
+    ("over_1b", "10억 이상", 1_000_000_000, None),
+)
+AMOUNT_BAND_BOUNDS: dict[str, tuple[int | None, int | None]] = {
+    code: (lower, upper) for code, _label, lower, upper in AMOUNT_BAND_CHOICES
+}
+CONTRACT_FILTER_ALL = ""
+CONTRACT_FILTER_EXCLUDE_PRIVATE = "exclude_private"
+CONTRACT_FILTER_ONLY_PRIVATE = "only_private"
+CONTRACT_FILTER_CHOICES: tuple[tuple[str, str], ...] = (
+    (CONTRACT_FILTER_ALL, "전체"),
+    (CONTRACT_FILTER_EXCLUDE_PRIVATE, "수의계약 제외"),
+    (CONTRACT_FILTER_ONLY_PRIVATE, "수의계약만"),
+)
+CONTRACT_FILTER_CODES = frozenset(code for code, _label in CONTRACT_FILTER_CHOICES)
+# 계약방법명에 이 표기가 있으면 수의계약입니다(소액수의 포함). 수집기는
+# G2B cntrctCnclsMthdNm 을 cntrct_mthd_nm 에 그대로 저장합니다.
+PRIVATE_CONTRACT_MARKER = "수의"
 PAGE_SIZE = 20
 # 정렬된 목록의 깊은 offset 은 Meilisearch 에서 깊이에 비례해 비싸집니다.
 # 같은 색인(공고 483만 건)에서 공고일 정렬 기준 page 1000 은 12ms, page 5000 은
@@ -200,6 +225,55 @@ def normalize_bid_sort(sort_key: str | None) -> str:
 
 def normalize_result_sort(sort_key: str | None) -> str:
     return sort_key if sort_key in RESULT_LIST_SORT_CHOICES else DEFAULT_RESULT_LIST_SORT
+
+
+def normalize_amount_band(amount_band: str | None) -> str:
+    """금액 구간 코드를 정규화합니다. 모르는 값은 전체(빈 문자열)입니다."""
+    return amount_band if amount_band in AMOUNT_BAND_BOUNDS else ""
+
+
+def normalize_contract_filter(contract: str | None) -> str:
+    """계약방법 필터 코드를 정규화합니다. 모르는 값은 전체(빈 문자열)입니다."""
+    return contract if contract in CONTRACT_FILTER_CODES else CONTRACT_FILTER_ALL
+
+
+def amount_band_bounds(amount_band: str | None) -> tuple[int | None, int | None] | None:
+    """금액 구간의 (하한, 상한)을 돌려줍니다. 하한 미만·상한 이상은 제외입니다."""
+    return AMOUNT_BAND_BOUNDS.get(normalize_amount_band(amount_band))
+
+
+def is_private_contract(cntrct_mthd_nm: str | None) -> bool:
+    """계약방법명에 '수의'가 들어 있으면 수의계약으로 판정합니다."""
+    return PRIVATE_CONTRACT_MARKER in (cntrct_mthd_nm or "")
+
+
+def filter_amount_value(presmpt_prce: int | None, base_amount: int | None) -> int | None:
+    """금액 구간 필터가 쓰는 금액입니다. 추정가격, 없으면 기초금액입니다."""
+    return presmpt_prce if presmpt_prce is not None else base_amount
+
+
+def _announcement_amount_clause(amount_band: str) -> Any:
+    bounds = AMOUNT_BAND_BOUNDS[amount_band]
+    amount_expr = func.coalesce(BidAnnouncement.presmpt_prce, BidAnnouncement.base_amount)
+    clauses = []
+    if bounds[0] is not None:
+        clauses.append(amount_expr >= bounds[0])
+    if bounds[1] is not None:
+        clauses.append(amount_expr < bounds[1])
+    return and_(*clauses)
+
+
+def _announcement_contract_clause(contract: str) -> Any:
+    if contract == CONTRACT_FILTER_ONLY_PRIVATE:
+        return BidAnnouncement.cntrct_mthd_nm.contains(PRIVATE_CONTRACT_MARKER)
+    if contract == CONTRACT_FILTER_EXCLUDE_PRIVATE:
+        # 계약방법명이 비어 있는 공고도 수의계약은 아니므로 남깁니다. NULL 은
+        # NOT LIKE 결과가 NULL 이 되어 그냥 두면 빠지므로 명시적으로 포함합니다.
+        return or_(
+            BidAnnouncement.cntrct_mthd_nm.is_(None),
+            ~BidAnnouncement.cntrct_mthd_nm.contains(PRIVATE_CONTRACT_MARKER),
+        )
+    return None
 
 
 def normalize_license_code(lic: str | None) -> str:
@@ -763,6 +837,8 @@ def _search_index_page(
     page_number: int,
     license_codes: list[str] | None = None,
     qualification_only: bool = False,
+    amount_band: str = "",
+    contract: str = "",
 ) -> OffsetPage:
     from src.app.services.search_index import MeiliSearchClient
 
@@ -783,6 +859,11 @@ def _search_index_page(
             search_kwargs["license_codes"] = license_codes
     if qualification_only:
         search_kwargs["qualification_only"] = True
+    # 비어 있는 필터는 search 인자로 넘기지 않아 기존 검색 조건·캐시 키를 보존합니다.
+    if amount_band:
+        search_kwargs["amount_band"] = amount_band
+    if contract:
+        search_kwargs["contract"] = contract
     cache_key = _search_result_cache_key(search_kwargs)
     cached = _read_search_result_cache(cache_key)
     if cached is not None:
@@ -822,10 +903,14 @@ def list_announcements(
     page: int = 1,
     lic: str | None = None,
     qualification_only: bool = False,
+    amount: str | None = None,
+    contract: str | None = None,
 ) -> OffsetPage:
     region_code = normalize_region_code(region)
     license_codes = normalize_license_codes(lic)
     sort_key = normalize_bid_sort(sort)
+    amount_band = normalize_amount_band(amount)
+    contract_filter = normalize_contract_filter(contract)
     page_number = max(page, 1)
     query = (q or "").strip()
 
@@ -845,6 +930,8 @@ def list_announcements(
                 qualification_only=qualification_only,
                 sort=_announcement_search_sort(sort_key),
                 page_number=page_number,
+                amount_band=amount_band,
+                contract=contract_filter,
             )
         )
 
@@ -872,6 +959,13 @@ def list_announcements(
 
     if license_codes:
         stmt = stmt.where(license_match_clause(license_codes))
+
+    if amount_band:
+        stmt = stmt.where(_announcement_amount_clause(amount_band))
+
+    contract_clause = _announcement_contract_clause(contract_filter)
+    if contract_clause is not None:
+        stmt = stmt.where(contract_clause)
 
     # 필터와 무관하게 동일 공고번호·업무구분의 최신 차수만 노출합니다.
     stmt = latest_announcement_filter(stmt)
