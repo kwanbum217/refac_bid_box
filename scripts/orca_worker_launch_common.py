@@ -37,12 +37,18 @@ PERMISSION_SETUP_FLAG = "--setup-permissions"
 COMMIT_NOTICE = (
     "\n\n추가 지시: 작업을 마치면 반드시 변경 파일을 스테이징하고 커밋하십시오. "
     "git add -A 는 쓰지 마십시오. 커밋 없이 완료를 선언하면 계약 위반입니다. "
-    "커밋 후 git log --oneline main..HEAD 로 확인하고 해시를 보고하십시오."
+    "커밋 후 git log --oneline main..HEAD 로 확인하고 해시를 보고하십시오. "
+    "전량 시험과 긴 명령은 배경(& 또는 run_in_background)으로 돌리지 말고 앞에서 실행해 "
+    "끝까지 기다리십시오. 배경 작업의 완료 알림은 오지 않으므로, 결과를 기다리겠다며 턴을 "
+    "끝내면 작업이 멈춥니다. 같은 턴에 커밋·보고서·worker_done 까지 마치십시오."
 )
 
 REVIEWER_NOTICE = (
     "\n\n추가 지시: 리뷰어는 소스 코드를 수정하지 않으며 커밋이나 git add 를 절대 수행하지 마십시오. "
     ".orca/ 아래 review_done.json 은 검토 산출물이므로 gitignore 대상이며 커밋하지 않습니다. "
+    "전량 시험과 긴 명령은 배경으로 돌리지 말고 앞에서 실행해 끝까지 기다리십시오. "
+    "결과를 기다리겠다며 턴을 끝내면 작업이 멈추므로 같은 턴에 review_done.json 작성과 "
+    "worker_done 전송까지 마치십시오. "
     "검토를 마치면 review_done.json 작성과 orca orchestration send --type worker_done 전송을 "
     "둘 다 마쳐야 완료입니다."
 )

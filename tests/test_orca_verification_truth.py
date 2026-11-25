@@ -500,3 +500,50 @@ def test_execution_failure_is_fail_closed(tmp_path: Path):
     assert ok is False
     assert any("타임아웃" in v for v in violations)
     assert details[0]["status"] == "fail"
+
+
+# ---------------------------------------------------------------------------
+# (f) 2026-11-25 결과 문구 오독: 커버리지 하한 설정 이름은 실패가 아니다
+# ---------------------------------------------------------------------------
+def test_fail_under_setting_is_not_read_as_failure():
+    """'fail-under' 는 커버리지 하한 설정 이름이며 실패 표기가 아니다.
+
+    실제 실패 문구('N failed', error, traceback)는 계속 실패로 판정되어야 한다.
+    """
+    from scripts.orca_contract import _is_failure_result_str
+
+    # 커버리지 하한 설정 이름은 실패가 아니다
+    assert _is_failure_result_str("coverage report 79.72% (fail-under 74 충족)") is False
+    assert _is_failure_result_str("--cov-fail-under=0 통과") is False
+    assert _is_failure_result_str("coverage report 79.72% (fail_under 74 충족)") is False
+    # 실제 실패 문구는 계속 실패다
+    assert _is_failure_result_str("3 failed, 10 passed") is True
+    assert _is_failure_result_str("error: module not found") is True
+    assert _is_failure_result_str("Traceback (most recent call last):") is True
+    # "0 failed" 는 기존대로 성공 표기다
+    assert _is_failure_result_str("0 failed, 10 passed") is False
+
+
+def test_fail_under_coverage_result_is_not_a_false_claim(tmp_path: Path):
+    """exit code 0 으로 통과한 실행의 커버리지 하한 문구를 실패로 오독하지 않는다."""
+    repo, _base, branch, sha = _init_git_repo(tmp_path)
+    report_rel = ".orca/capsules/task_verif_test/worker_done.json"
+    capsule_path = _create_capsule(repo, report_rel)
+
+    report_path = _create_report(
+        repo,
+        report_rel,
+        branch,
+        sha,
+        verification=[
+            {
+                "command": "uv run pytest tests/test_app.py -q",
+                "result": "1 passed, coverage report 79.72% (fail-under 74 충족)",
+            }
+        ],
+    )
+
+    summ = summarize_worker_report(report_path, capsule_path=capsule_path, repo_path=repo)
+    assert summ["exit_code"] == 0
+    assert summ["violations"] == []
+    assert summ["verification_details"][0]["status"] == "pass"
