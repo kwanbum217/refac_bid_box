@@ -167,11 +167,41 @@ Intent 의 `tdd` 값은 Capsule 확장 시 `tdd` 필드로 옮겨집니다. 허�
 | 성능 | 측정 보고서가 판정 근거입니다 |
 | 조사 Task | 산출물이 코드가 아닙니다 |
 
-게이트 11 의 `verdict` 6종(`proven`, `not_proven`, `collection_only`, `branch_failed`,
-`exempt`, `error`)은 [`../analysis/tdd_gate11_baseline_20261124.md`](../analysis/tdd_gate11_baseline_20261124.md)
-에 있습니다. 게이트 11 은 경고 모드이며 증명되지 않은 시험도 Task 를 차단하지 않습니다.
+게이트 11 의 `verdict` 8종(`proven`, `not_proven`, `collection_only`, `branch_failed`,
+`no_tests`, `exempt`, `exempt_declared`, `error`)과 차단 판정표는
+[`../analysis/tdd_gate11_baseline_20261124.md`](../analysis/tdd_gate11_baseline_20261124.md)
+10 절에 있습니다. 게이트 11 은 차단 모드이며 `proven` 만 병합을 통과시킵니다.
 
-#### 2.3.3 시험 작성 지침
+#### 2.3.3 차단 판정표
+
+| verdict | 조건 | status | required |
+| --- | --- | --- | --- |
+| `proven` | 기준 코드에서 단언 실패, 브랜치에서 전부 통과 | `pass` | `True` |
+| `not_proven` | 기준 코드에서도 전부 통과 | `fail` | `True` |
+| `collection_only` | 기준 코드에서 수집·import 오류만 발생 | `fail` | `True` |
+| `branch_failed` | 브랜치에서 단언 실패 또는 오류 발생 | `fail` | `True` |
+| `error` | git·pytest·junit 파싱 등 도구 오류 | `fail` | `True` |
+| `no_tests` | `src/` 변경이 있는데 대상 시험 파일 0개 | `fail` | `True` |
+| `exempt` | 면제 type 커밋만 있고 `src/` 변경 없음, 또는 `src/` 변경 없이 대상 시험 0개 | `skipped` | `False` |
+| `exempt_declared` | Capsule 의 `tdd: exempt(<사유>)` 선언 | `skipped` | `False` |
+
+`fail` 은 `--strict` 병합 판정을 막고 통과 증거도 기록하지 않습니다. `src/` 변경이
+없는 커밋은 대상 시험이 없어도 면제되지만, `src/` 변경이 있으면 커밋 type 과 무관하게
+대상 시험이 필요합니다.
+
+#### 2.3.4 exempt 선언 방법
+
+시험 증명을 낼 수 없는 Task 는 Intent 의 `tdd` 에 사유를 적어 Capsule 에 남깁니다.
+
+```yaml
+tdd: exempt(동작 불변 리팩터링이라 기준 코드에서 실패할 단언이 없다)
+```
+
+게이트 11 은 사유를 summary 와 `raw_data["tdd_reason"]` 에 기록하고 병합을 막지
+않습니다. 사유가 비었거나 형식이 다르면 `unspecified` 로 보아 `required` 와 같은
+차단 판정을 받습니다.
+
+#### 2.3.5 시험 작성 지침
 
 | 지침 | 이유 |
 | --- | --- |

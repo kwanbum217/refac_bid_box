@@ -1892,6 +1892,59 @@ def test_record_evidence_written_on_strict_pass(tmp_path: Path):
     assert datetime.datetime.fromisoformat(evidence["recorded_at"]).tzinfo is not None
 
 
+def test_strict_fails_when_gate11_not_proven_and_writes_no_evidence(tmp_path: Path):
+    """(f) 게이트 11 fail 은 --strict 병합 판정을 막고 통과 증거도 남기지 않습니다.
+
+    기준 코드에서도 통과하는 시험만 추가한 커밋은 변경을 잡는 증명이 아니므로
+    not_proven 이고, required=True 인 fail 이라 증거 기록 경로에 도달하지 않습니다.
+    """
+    repo, base, branch = _init_git_repo(tmp_path)
+    capsule = _write_capsule(tmp_path, ["common.txt", "unique_new.txt", "tests/test_ok.py"])
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, "checkout", branch], cwd=str(repo), check=True, capture_output=True
+    )
+    _write_passing_test(repo)
+    subprocess.run(  # noqa: S603
+        [GIT_BIN, "add", "tests/test_ok.py"], cwd=str(repo), check=True, capture_output=True
+    )
+    subprocess.run(  # noqa: S603
+        [
+            GIT_BIN,
+            "-c",
+            "user.email=t@e.com",
+            "-c",
+            "user.name=T",
+            "commit",
+            "-m",
+            "test: 항상 통과하는 시험을 추가한다",
+        ],
+        cwd=str(repo),
+        check=True,
+        capture_output=True,
+    )
+
+    code, output = run_level1_gate(
+        base=base,
+        branch=branch,
+        repo=repo,
+        capsule=capsule,
+        tests=["tests/test_ok.py -q"],
+        as_json=True,
+        strict=True,
+        record_evidence=True,
+    )
+
+    data = json.loads(output)
+    gate11 = data["gates"]["gate11_fail_pass"]
+    assert gate11["status"] == "fail"
+    assert gate11["required"] is True
+    assert gate11["verdict"] == "not_proven"
+    assert data["verdict"] == "fail"
+    assert code == 1
+    assert data["evidence"]["recorded"] is False
+    assert not (repo / ".cache" / "level1_strict_evidence.json").exists()
+
+
 def test_gate7_passes_when_tracked_ignored_file_is_untracked(tmp_path: Path):
     """무시 대상인데 과거에 추적된 파일을 git rm --cached 로 빼는 정리는 위반이 아닙니다."""
     repo, base, branch = _make_gitignore_repo(tmp_path)

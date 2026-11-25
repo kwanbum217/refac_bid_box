@@ -63,16 +63,24 @@ DEFAULT_PYTEST_TIMEOUT = 900
 DEFAULT_VALIDATE_TIMEOUT = 30
 DEFAULT_MAX_CHARS = 2000
 
-# 게이트 11 은 경고 모드입니다. 판정은 raw_data["verdict"] 에만 남기고 status 는
-# proven 일 때만 pass, 나머지는 required=False 인 skipped 로 둡니다. 이 게이트가
-# fail 을 낼 수 있게 되면 --strict 병합 판정이 조용히 바뀌므로, 도구 오류까지
-# 포함해 어떤 경로에서도 fail 을 만들지 않습니다.
+# 게이트 11 은 차단 모드입니다. 대상 커밋(src/ 변경이 있거나 커밋 type 이 면제
+# type 이 아닌 경우)의 시험은 기준 코드에서 실패하고 브랜치에서 통과해야 합니다.
+# proven 만 status pass 이고, not_proven·collection_only·branch_failed·error 와
+# 대상 시험 없는 src 변경(no_tests)은 required=True 인 fail 이라 --strict 병합
+# 판정을 막습니다. 면제 type 만 있는 커밋과 Capsule 의 tdd: exempt(<사유>) 선언만
+# required=False 인 skipped 로 통과합니다.
 GATE11_GATE_NAME = "게이트 11 실패→통과 증명"
 GATE11_TIMEOUT_SECONDS = 600
 GATE11_MAX_FAILED_IDS = 20
 GATE11_EXEMPT_COMMIT_TYPES = frozenset({"docs", "chore", "refactor", "test"})
 GATE11_COMMIT_TYPE_RE = re.compile(r"^([a-z]+):")
 GATE11_E2E_PREFIX = "tests/e2e/"
+GATE11_EXEMPT_PREFIX = "exempt("
+GATE11_TDD_UNSPECIFIED = "unspecified"
+GATE11_TDD_REQUIRED = "required"
+GATE11_FAIL_VERDICTS = frozenset(
+    {"not_proven", "collection_only", "branch_failed", "error", "no_tests"}
+)
 
 # 병합 판정(--strict) 통과 증거입니다. premerge_full_suite_gate 와 같은 규칙으로
 # 주 저장소 공통 .cache/ 에 기록해 main 병합 훅이 워크트리 기록을 그대로 읽습니다.
@@ -1149,6 +1157,58 @@ def gate11_has_src_changes(
     return bool(stdout.strip())
 
 
+def _gate11_capsule_tdd_raw(capsule_text: str) -> str | None:
+    """Capsule 원문에서 tdd 값을 찾아 원문 그대로 돌려줍니다.
+
+    Capsule 은 tdd 를 최상위 키로 둘 수도 있고 ORCA_TASK_CAPSULE_V2 루트
+    아래에 들여쓰기해 둘 수도 있습니다. 들여쓰기 값은 가장 가까운 0열 키가
+    루트일 때만 인정해 다른 중첩 키의 tdd 를 잘못 읽지 않습니다.
+    """
+    lines = capsule_text.splitlines()
+    for idx, line in enumerate(lines):
+        match = re.match(r"^([ \t]*)tdd:[ \t]*(.*)$", line)
+        if not match:
+            continue
+        value = re.sub(r"\s+#.*$", "", match.group(2)).strip()
+        value = value.strip("\"'").strip()
+        if not match.group(1):
+            return value
+        if _gate11_tdd_under_root(lines, idx):
+            return value
+    return None
+
+
+def _gate11_tdd_under_root(lines: list[str], idx: int) -> bool:
+    """들여쓰기된 tdd 줄의 가장 가까운 0열 키가 Capsule 루트인지 확인합니다."""
+    for prev in range(idx - 1, -1, -1):
+        line = lines[prev]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if line[0].isspace():
+            continue
+        match = re.match(r"^([A-Za-z_][\w-]*):[ \t]*(?:#.*)?$", line)
+        return bool(match and match.group(1) == "ORCA_TASK_CAPSULE_V2")
+    return False
+
+
+def parse_gate11_tdd(capsule_text: str) -> tuple[str, str]:
+    """Capsule 의 tdd 선언을 (mode, reason) 으로 해석합니다.
+
+    허용 값은 required 와 exempt(<사유>) 뿐입니다. 키가 없거나 형식이 다르면
+    unspecified 로 두어 같은 차단 판정을 받게 합니다.
+    """
+    raw_value = _gate11_capsule_tdd_raw(capsule_text)
+    if raw_value is None or raw_value in ("", GATE11_TDD_UNSPECIFIED):
+        return GATE11_TDD_UNSPECIFIED, ""
+    if raw_value == GATE11_TDD_REQUIRED:
+        return GATE11_TDD_REQUIRED, ""
+    if raw_value.startswith(GATE11_EXEMPT_PREFIX) and raw_value.endswith(")"):
+        reason = raw_value[len(GATE11_EXEMPT_PREFIX) : -1].strip()
+        if reason:
+            return "exempt", reason
+    return GATE11_TDD_UNSPECIFIED, ""
+
+
 def _gate11_extract_tree(repo: Path, ref: str, destination: Path, timeout: int) -> None:
     """git archive 로 ref 의 트리를 임시 디렉터리에 풉니다.
 
@@ -1272,11 +1332,13 @@ def run_gate11_fail_pass(
     branch: str,
     python_executable: str | None = None,
     timeout: int = GATE11_TIMEOUT_SECONDS,
+    capsule_path: Path | None = None,
 ) -> GateResult:
     """게이트 11: 새 시험이 기준 코드에서는 실패하고 브랜치에서는 통과하는지 확인합니다.
 
-    경고 모드입니다. status 는 proven 일 때만 pass 이고, 나머지 verdict 는
-    모두 skipped + required=False 입니다. 어떤 오류도 fail 로 바꾸지 않습니다.
+    차단 모드입니다. proven 은 pass, not_proven·collection_only·branch_failed·
+    error·no_tests 는 required=True 인 fail 입니다. 면제 type 만 있는 커밋과
+    Capsule 의 tdd: exempt(<사유>) 선언은 required=False 인 skipped 입니다.
     """
     started = time.monotonic()
     repo_path = Path(repo).resolve()
@@ -1286,6 +1348,8 @@ def run_gate11_fail_pass(
         "target_files": [],
         "commit_types": [],
         "src_changed": False,
+        "tdd": GATE11_TDD_UNSPECIFIED,
+        "tdd_reason": "",
         "verdict": "error",
     }
     temp_dir: Path | None = None
@@ -1293,36 +1357,67 @@ def run_gate11_fail_pass(
     def build(verdict: str, summary: str, details: list[str] | None = None) -> GateResult:
         raw["verdict"] = verdict
         raw["duration_seconds"] = round(time.monotonic() - started, 2)
+        if verdict == "proven":
+            status, required = "pass", True
+        elif verdict in GATE11_FAIL_VERDICTS:
+            status, required = "fail", True
+        else:
+            status, required = "skipped", False
         return GateResult(
             name=GATE11_GATE_NAME,
-            status="pass" if verdict == "proven" else "skipped",
-            summary=f"[경고 모드] {summary}",
+            status=status,
+            summary=f"[차단 모드] {summary}",
             details=details or [],
             raw_data=raw,
-            required=False,
+            required=required,
         )
 
     try:
+        tdd_mode, tdd_reason = GATE11_TDD_UNSPECIFIED, ""
+        if capsule_path is not None and Path(capsule_path).exists():
+            tdd_mode, tdd_reason = parse_gate11_tdd(load_capsule(capsule_path))
+        raw["tdd"] = tdd_mode
+        raw["tdd_reason"] = tdd_reason
+        if tdd_mode == "exempt":
+            return build(
+                "exempt_declared",
+                f"Capsule tdd: exempt({tdd_reason}) 로 면제 선언됨",
+                [f"면제 사유: {tdd_reason}"],
+            )
+
         target_files = get_gate11_target_test_files(repo_path, base, branch)
         raw["target_files"] = target_files
         commit_types = get_gate11_commit_types(repo_path, base, branch)
         raw["commit_types"] = commit_types
         raw["src_changed"] = gate11_has_src_changes(repo_path, base, branch)
 
-        if not target_files:
-            return build("exempt", "대상 시험 파일 없음 (tests/ 추가·수정 0건)")
-        if (
-            commit_types
+        exempt_commits_only = (
+            bool(commit_types)
             and not raw["src_changed"]
             and all(commit_type in GATE11_EXEMPT_COMMIT_TYPES for commit_type in commit_types)
-        ):
+        )
+        if exempt_commits_only:
             kinds = ", ".join(sorted(set(commit_types)))
             return build(
                 "exempt",
                 f"문서·정리·리팩터링·시험 커밋만 있고 src/ 변경 없음 (커밋 type {kinds})",
             )
+        if not target_files:
+            if raw["src_changed"]:
+                return build(
+                    "no_tests",
+                    "src/ 변경이 있으나 대상 시험 파일이 없음 (tests/ 추가·수정 0건)",
+                    [
+                        "src/ 를 바꾼 Task 는 기준 코드에서 실패하는 시험을 함께 커밋해야 합니다.",
+                        "불가피하면 Capsule 에 tdd: exempt(<사유>) 를 선언하세요.",
+                    ],
+                )
+            return build("exempt", "대상 시험 파일 없음 (src/ 변경 없음)")
 
-        executable = python_executable or str(repo_path / ".venv" / "bin" / "python")
+        if python_executable is None:
+            venv_python = repo_path / ".venv" / "bin" / "python"
+            python_executable = str(venv_python) if venv_python.is_file() else sys.executable
+        executable = python_executable
         if not Path(executable).is_file():
             raise GateToolError(f"실행 파이썬이 없습니다: {executable}")
 
@@ -1374,9 +1469,13 @@ def run_gate11_fail_pass(
             f"기준 코드에서도 실패 없음 (통과 {base_counts.passed}건) - 변경을 잡는 시험 미증명",
             details,
         )
-    except Exception as exc:  # 경고 모드 계약상 어떤 오류도 fail 로 바꾸지 않습니다
+    except Exception as exc:  # 차단 모드에서 도구 오류도 fail 로 남깁니다
         message = str(exc) or exc.__class__.__name__
-        return build("error", f"도구 오류: {message[:300]}")
+        return build(
+            "error",
+            "도구 오류: "
+            f"{message[:300]} - Capsule 에 tdd: exempt(<사유>) 를 선언하거나 도구 오류를 해결하세요.",
+        )
     finally:
         if temp_dir is not None:
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -2612,10 +2711,10 @@ def run_level1_gate(
             g10 = run_gate10_command_reality(repo_path, changed_files)
             gates.append(g10)
 
-            # 게이트 11: 새 시험이 기준 코드의 결함을 실제로 잡는지 경고 모드로
-            # 확인합니다. proven 이 아니어도 required=False 인 skipped 이므로
-            # --strict 병합 판정을 바꾸지 않습니다.
-            g11 = run_gate11_fail_pass(repo_path, base, branch)
+            # 게이트 11: 새 시험이 기준 코드의 결함을 실제로 잡는지 차단 모드로
+            # 확인합니다. proven 이 아니면 required=True 인 fail 이므로
+            # --strict 병합 판정과 통과 증거 기록을 막습니다.
+            g11 = run_gate11_fail_pass(repo_path, base, branch, capsule_path=capsule_path)
             gates.append(g11)
 
     except GateToolError as exc:
