@@ -36,8 +36,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from decimal import Decimal
-from typing import Any
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
@@ -69,6 +69,7 @@ from src.app.schemas.evaluations import (
     EvaluationSnapshotCreate,
     EvaluationSnapshotResponse,
     EvidenceMetadata,
+    MemberBidRecommendation,
     NegotiationRateDistribution,
     NonPriceScoreItem,
     ParticipantCountStats,
@@ -2634,18 +2635,35 @@ SAJEONG_SCOPE_LABELS: dict[str, str] = {
 
 @dataclass(frozen=True)
 class _MeasuredRateRange:
-    """사정률 실측 (최저, 최고) 예정가격 배수와 근거 문장."""
+    """사정률 실측 분포. 최저·최고와 10·50·90분위 예정가격 배수, 근거 문장."""
 
     rate_low: Decimal
     rate_high: Decimal
+    p10_ratio: Decimal | None
+    p50_ratio: Decimal | None
+    p90_ratio: Decimal | None
     notice: str
 
 
+def _rate_ratio(value: Any) -> Decimal | None:
+    """저장된 사정률 퍼센트를 0 초과 100 이하 예정가격 배수로 바꿉니다."""
+    if value is None:
+        return None
+    try:
+        percent = Decimal(str(value))
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    if percent <= 0 or percent > 100:
+        return None
+    return percent / Decimal("100")
+
+
 def _measured_rate_range(db: Session, bid: BidAnnouncement) -> _MeasuredRateRange | None:
-    """사정률 실측 최솟값·최댓값을 예정가격 배수로 바꿔 돌려줍니다.
+    """사정률 실측 최솟값·최댓값과 분위수를 예정가격 배수로 바꿔 돌려줍니다.
 
     `institution_sajeong_rate_stats` 를 발주처 -> 시·도 -> 업종 순으로 조회해 선택된 scope 의
-    min_rate/max_rate 를 씁니다. 표본이 없거나 비율이 0 이하 또는 100 초과이거나 최솟값이
+    min_rate/max_rate 를 씁니다. p10_rate/p50_rate/p90_rate 가 있으면 예상 사정률 중심과
+    시나리오 근거로 함께 넘깁니다. 표본이 없거나 비율이 0 이하 또는 100 초과이거나 최솟값이
     최댓값보다 크면 None 을 돌려주어 호출자가 이론 범위를 유지하게 합니다. 저장값은 퍼센트
     포인트이므로 100 으로 나눠 compute_price_bounds 가 받는 예정가격 배수로 맞춥니다.
     """
@@ -2675,7 +2693,149 @@ def _measured_rate_range(db: Session, bid: BidAnnouncement) -> _MeasuredRateRang
     return _MeasuredRateRange(
         rate_low=low_pct / Decimal("100"),
         rate_high=high_pct / Decimal("100"),
+        p10_ratio=_rate_ratio(stats.get("p10_rate")),
+        p50_ratio=_rate_ratio(stats.get("p50_rate")),
+        p90_ratio=_rate_ratio(stats.get("p90_rate")),
         notice=notice,
+    )
+
+
+@dataclass(frozen=True)
+class _MemberPricePlan:
+    """보완 투찰률 계산에 쓰는 예상 사정률 중심과 시나리오 예정가격."""
+
+    center_rate: Decimal
+    center_rate_source: Literal["p50", "theoretical"]
+    reference_pred_price: Decimal
+    scenarios: tuple[tuple[str, str, Decimal], ...]
+
+
+def _won_amount(amount: Decimal) -> Decimal:
+    """금액을 원 단위로 ROUND_HALF_UP 확정합니다."""
+    return amount.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def _member_price_plan(
+    base_amount: Decimal,
+    measured: _MeasuredRateRange | None,
+    rate_low: Decimal,
+    rate_high: Decimal,
+) -> _MemberPricePlan:
+    """예상 사정률 중심과 하단·기준·상단 시나리오 예정가격을 정합니다.
+
+    실측 50분위가 있으면 그 값을 중심으로 p10·p50·p90 을 씁니다. 없으면 이론 범위
+    중심(기초금액 그대로, 배수 1.0)과 사정률 하한·상한을 씁니다. 분위 순서가 깨진
+    저장값은 신뢰하지 않고 이론 범위로 물러납니다.
+    """
+    if measured is not None and measured.p50_ratio is not None:
+        center = measured.p50_ratio
+        low = measured.p10_ratio if measured.p10_ratio is not None else rate_low
+        high = measured.p90_ratio if measured.p90_ratio is not None else rate_high
+        source: Literal["p50", "theoretical"] = "p50"
+        if low > center or center > high:
+            center, low, high, source = Decimal("1"), rate_low, rate_high, "theoretical"
+    else:
+        center, low, high, source = Decimal("1"), rate_low, rate_high, "theoretical"
+
+    scenarios = (
+        ("하단", "lower", _won_amount(base_amount * low)),
+        ("기준", "base", _won_amount(base_amount * center)),
+        ("상단", "upper", _won_amount(base_amount * high)),
+    )
+    reference_pred_price = next(price for _, kind, price in scenarios if kind == "base")
+    return _MemberPricePlan(
+        center_rate=center,
+        center_rate_source=source,
+        reference_pred_price=reference_pred_price,
+        scenarios=scenarios,
+    )
+
+
+def _build_member_bid(
+    *,
+    table: ScoreTable,
+    non_price_score: Decimal,
+    band: QuantScoreBand | None,
+    effective_lwlt: Decimal | None,
+    plan: _MemberPricePlan,
+) -> MemberBidRecommendation:
+    """resolve_price_compensation 을 추천 경로에 연결해 보완 투찰가를 만듭니다.
+
+    공고 낙찰하한율이 없으면 하한율을 추측하지 않고 unverifiable 로 남깁니다.
+    추천 금액·투찰률은 기준(중심) 시나리오의 판정 결과를 그대로 옮기며, 여기서 다시
+    계산하지 않습니다. 정량점수 1점 민감도는 Q+1 로 한 번 더 판정한 effective_rate_percent
+    차이입니다. Q+1 이 정량 배점 합계를 넘으면 계산하지 않습니다.
+    """
+    center_percent = format_decimal_plain(plan.center_rate * Decimal("100"))
+    if effective_lwlt is None:
+        return MemberBidRecommendation(
+            status="unverifiable",
+            reason="공고에 낙찰하한율이 없어 보완 투찰률과 추천 금액을 확정하지 못했습니다.",
+            center_rate_percent=center_percent,
+            center_rate_source=plan.center_rate_source,
+        )
+
+    result = resolve_price_compensation(
+        pass_threshold=table.pass_threshold,
+        non_price_score=non_price_score,
+        base_rate=table.base_rate,
+        max_price_score=table.max_price_score,
+        multiplier=table.multiplier,
+        announcement_lwlt_rate=effective_lwlt,
+        reference_pred_price=plan.reference_pred_price,
+        scenarios=plan.scenarios,
+        flat_ratio=table.flat_ratio,
+        flat_score=table.flat_score,
+    )
+    base_row = next(
+        (row for row in result.scenarios if row.scenario_type == "base"),
+        None,
+    )
+    bid_amount = (
+        int(base_row.complement_bid_amount)
+        if base_row is not None and base_row.complement_bid_amount is not None
+        else None
+    )
+    bid_rate_percent = (
+        format(base_row.verified_price_ratio * Decimal("100"), "f")
+        if base_row is not None and base_row.verified_price_ratio is not None
+        else None
+    )
+
+    rate_change: str | None = None
+    if result.score_status != "impossible" and (
+        band is None or non_price_score + Decimal("1") <= band.total_limit
+    ):
+        next_result = resolve_price_compensation(
+            pass_threshold=table.pass_threshold,
+            non_price_score=non_price_score + Decimal("1"),
+            base_rate=table.base_rate,
+            max_price_score=table.max_price_score,
+            multiplier=table.multiplier,
+            announcement_lwlt_rate=effective_lwlt,
+            reference_pred_price=plan.reference_pred_price,
+            scenarios=plan.scenarios,
+            flat_ratio=table.flat_ratio,
+            flat_score=table.flat_score,
+        )
+        rate_change = format_decimal_plain(
+            next_result.effective_rate_percent - result.effective_rate_percent
+        )
+
+    reason = (
+        "필요 가격점수가 배점한도를 넘어 통과할 수 없습니다. 투찰을 권장하지 않습니다."
+        if result.score_status == "impossible"
+        else None
+    )
+    return MemberBidRecommendation(
+        status=result.score_status,
+        reason=reason,
+        bid_amount=bid_amount,
+        bid_rate_percent=bid_rate_percent,
+        center_rate_percent=center_percent,
+        center_rate_source=plan.center_rate_source,
+        rate_change_per_point_pp=rate_change,
+        compensation=_price_compensation_payload(result),
     )
 
 
@@ -2865,6 +3025,16 @@ def recommend_evaluation(
         rate_low, rate_high = theoretical_rate_range(theoretical.range_rate)
     price_bounds = _recommend_price_bounds(inputs, breakdown, rate_low, rate_high)
     bounds_blocked = price_bounds.status != "ok"
+    # 보완 투찰률 기반 추천가는 통과 구간 확정 여부와 별개로 계산합니다. 필요 가격점수가
+    # 배점한도를 넘으면 이 결과가 impossible 로 남아 화면이 투찰 비권장을 표시합니다.
+    member_plan = _member_price_plan(inputs.pred_price, measured_rate, rate_low, rate_high)
+    member_bid = _build_member_bid(
+        table=inputs.table,
+        non_price_score=non_price_score,
+        band=inputs.band,
+        effective_lwlt=inputs.effective_lwlt,
+        plan=member_plan,
+    )
     member_recommendation = (
         None
         if bounds_blocked or prediction is None
@@ -2931,6 +3101,7 @@ def recommend_evaluation(
         ),
         prediction=prediction,
         price_bounds=price_bounds,
+        member_bid=member_bid,
         member_recommended_price=(
             member_recommendation.price if member_recommendation is not None else None
         ),
