@@ -253,3 +253,70 @@ def test_detail_page_has_clipped_notice_only_when_clipped(auth_client, isolated_
     assert notice is not None
     assert notice.group(1).strip() == ""
     assert "dispersed.clipped === true" in body
+
+
+# --------------------------------------------------------------------------- #
+# (e) 내부 호출은 회원 하한 투찰률을 퍼센트로 넘긴다
+# --------------------------------------------------------------------------- #
+def test_internal_call_passes_member_floor_rate_as_percent(
+    client, isolated_db, as_user, monkeypatch
+) -> None:
+    bid = _create_bid(isolated_db)
+    _add_member_facts(isolated_db, 10)
+    _add_win_interval_stats(
+        isolated_db,
+        tuple(CLIPPED_QUANTILE_RATE for _ in QUANTILE_COLUMNS),
+    )
+
+    original = evaluations.user_dispersed_bid
+    recorded: list[dict] = []
+
+    def _recording(*args, **kwargs):
+        recorded.append(dict(kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(evaluations, "user_dispersed_bid", _recording)
+    as_user(10)
+    payload = _recommend(client, bid).json()
+    member_bid = payload["member_bid"]
+
+    assert len(recorded) == 1
+    passed_floor_rate = Decimal(str(recorded[0]["member_floor_rate"]))
+    # 비율(0.87745...)이 아니라 퍼센트(87.745...)로 넘겨야 내부 하한이 실제
+    # 금액이 됩니다. 비율로 넘기면 하한이 1/100 로 줄어 클립이 걸리지 않습니다.
+    assert passed_floor_rate == Decimal(str(member_bid["bid_rate_percent"]))
+    assert passed_floor_rate > Decimal("1")
+
+
+# --------------------------------------------------------------------------- #
+# (f) 내부 반환도 회원 하한에서 클립으로 판정된다
+# --------------------------------------------------------------------------- #
+def test_internal_result_is_clipped_by_member_floor(
+    client, isolated_db, as_user, monkeypatch
+) -> None:
+    bid = _create_bid(isolated_db)
+    _add_member_facts(isolated_db, 10)
+    # 분위표 투찰률이 모두 회원 하한보다 낮아 내부 하한 클립이 반드시 걸린다.
+    _add_win_interval_stats(
+        isolated_db,
+        tuple(CLIPPED_QUANTILE_RATE for _ in QUANTILE_COLUMNS),
+    )
+
+    original = evaluations.user_dispersed_bid
+    results: list = []
+
+    def _recording(*args, **kwargs):
+        result = original(*args, **kwargs)
+        results.append(result)
+        return result
+
+    monkeypatch.setattr(evaluations, "user_dispersed_bid", _recording)
+    as_user(10)
+    payload = _recommend(client, bid).json()
+    member_amount = int(payload["member_bid"]["bid_amount"])
+
+    assert len(results) == 1
+    internal = results[0]
+    assert internal.clipped is True
+    assert internal.amount >= member_amount
+    assert payload["dispersed_bid"]["clipped"] is True
