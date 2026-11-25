@@ -129,6 +129,25 @@ docker build -t refac-bid-box-frontend:orca-gate frontend # docker_build:fronten
 `docker build`, `docker compose config`, `uv run actionlint`)으로 제한되며,
 그 밖의 문자열은 게이트 3 실패로 거부됩니다.
 
+#### 게이트 11 (실패→통과 증명)
+
+새 시험이 **기준(base) 코드에서는 단언 실패**하고 브랜치에서는 통과해야 병합됩니다.
+차단 모드이며 `proven` 만 통과합니다. Intent 에 `tdd: required` 또는
+`tdd: exempt(<사유>)` 를 적고, 키가 없으면 `unspecified` 로 `required` 와 같게 취급합니다.
+
+| verdict | 조건 | 판정 |
+| --- | --- | --- |
+| `proven` | 기준에서 단언 실패, 브랜치 전부 통과 | `pass` |
+| `not_proven`·`collection_only` | 기준에서도 통과, 또는 수집·import 오류만 | `fail` |
+| `branch_failed`·`error`·`no_tests` | 브랜치 실패, 도구 오류, `src/` 변경인데 대상 시험 0개 | `fail` |
+| `exempt` | `docs`·`chore`·`refactor`·`test` 커밋만이고 `src/` 변경 없음 | `skipped` |
+| `exempt_declared` | Capsule 의 `tdd: exempt(<사유>)` 선언 | `skipped` |
+
+`fail` 은 strict 증거가 남지 않아 병합 훅이 막습니다. `tdd: exempt(<사유>)` 는 사유를
+남기고 통과하며 리뷰어가 사유의 타당성을 봅니다. 새 심볼은 시험 함수 **안에서**
+import 하십시오. 시험 파일 맨 위 import 는 기준 코드에서 수집 오류(`collection_only`)가
+됩니다. 상세는 `docs/ops/orca_task_capsule_v2.md` 2.3 절을 참조하십시오.
+
 ### 2.2 워커 창은 현재 워크트리 하위 세션이 기본입니다
 
 공식 스킬의 기본 배치는 `worker-start --worktree current` 입니다. 새 에이전트
@@ -503,6 +522,20 @@ python3 scripts/orca_level1_gate.py --base main --branch <브랜치> --repo . --
 
 2. **Level 2 (독립 리뷰어 워커)**: 독립된 리뷰어 모델이 `ORCA_REVIEW_DONE_V2` 계약([`.agents/templates/review_done_v2.json`](../../../.agents/templates/review_done_v2.json))에 따라 acceptance criteria, 회귀 위험, G1(데이터 무손실), Train/Serve 단일화, 동시성 결함, 스코프 초과 수정을 교차 검증합니다.
 3. **Level 3 (코디네이터 핵심 diff 검토)**: 핵심 알고리즘, DB 변경점, 모델 승격 게이트 등 비가역적 위험 지점만 선별하여 최종 병합을 결정합니다.
+
+#### 리뷰어 축소 규칙 (2026-11-25 사용자 결정)
+
+Level 2 독립 리뷰어는 다음 조건에서 생략할 수 있습니다. Level 3 코디네이터 diff 검토는
+축소 대상이 아닙니다.
+
+| 조건 | 리뷰어 |
+| --- | --- |
+| 위험도 `low` 이고 게이트 11 `proven`, 또는 문서만 변경이며 운영 자원(DB·색인·설정·마이그레이션) 변경 없음 | 생략 가능 |
+| 위험도 `medium` | 유지, `--effort low` |
+| 위험도 `high`, 운영 자원 변경, 측정·백테스트, 운영 런북(스킬·운영 문서) | 유지 |
+
+근거: 차단 모드 뒤 증명 Task 의 리뷰 결함은 0건이었으나, 리뷰가 단위 오류(분산 추천가
+하한 투찰률)와 시험 수집 오류(게이트 11)를 실제로 잡았으므로 `high` 는 유지합니다.
 
 ### 4.3 검증은 완료 순서대로 병렬로 실행합니다
 
