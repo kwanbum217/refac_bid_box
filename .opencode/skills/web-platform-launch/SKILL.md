@@ -54,6 +54,7 @@ docker compose ps
 
 - 최초 기동이거나 `pyproject.toml`, `uv.lock`, `Dockerfile` 이 바뀌었으면 `docker compose up -d --build` 를 씁니다.
 - `git pull`·병합 뒤에는 uvicorn 이 `--reload` 없이 돌아 라우트가 그대로이므로 `docker compose restart app worker` 로 재시작합니다. 템플릿만 바뀌었으면 즉시 반영됩니다.
+- `frontend/` 아래 파일이 바뀐 병합 뒤에는 `npm --prefix frontend ci`(처음 빌드이거나 `frontend/package-lock.json` 이 바뀌었을 때만) 다음 `npm --prefix frontend run build` 로 `frontend/dist` 를 다시 만듭니다. `frontend/dist` 는 `.gitignore` 대상이라 병합으로 갱신되지 않고, 낡으면 화면과 `tests/e2e` 가 옛 프런트를 씁니다. 두 명령은 Windows PowerShell 과 macOS·Linux 에서 같습니다.
 - `make` 가 있으면 `make up` 이 같은 동작이지만 Windows 기본 설치가 아니므로 위 명령을 씁니다. macOS·Linux 도 `docker compose` 명령과 옵션이 같습니다.
 
 ## 3. 준비 대기
@@ -137,6 +138,7 @@ docker compose logs -f app
 | 준비 상태 `503` | 응답 `checks` 의 실패 항목 | `docker compose logs --tail 100 app` 로 원인을 봅니다. |
 | `/bids/` 가 `503` | `app`, `meilisearch` 상태 | 색인이 비었을 수 있습니다. 재색인은 `windows-onboarding` 4장 A 6단계를 따릅니다. |
 | 로그인 불가 | `docker compose logs --tail 100 app` | 인증 오류 원인을 확인합니다. 계정 준비는 범위 밖입니다. |
+| 화면이나 e2e 가 옛 프런트 문구를 보임 | `frontend/src` 변경이 병합됐는지, `frontend/dist` 가 언제 만들어졌는지 | 2장 절차대로 `npm --prefix frontend run build` 로 `frontend/dist` 를 다시 만들고 화면을 새로고침합니다. |
 
 증상이 이어지면 `windows-onboarding` 6장 문제 해결 표를 봅니다.
 
@@ -158,7 +160,7 @@ docker compose logs -f app
 
 1. git status 로 내 작업 트리에 커밋하지 않은 변경이 있는지 먼저 확인해. 변경이 있으면 pull 하지 말고 목록만 보여 주고 멈춰.
 2. 변경이 없으면 main 브랜치에서 git pull 로 최신 커밋을 받아. 받은 커밋 목록(git log --oneline)을 보여 줘.
-3. 받은 변경에 pyproject.toml, uv.lock, Dockerfile, docker-compose.yml 이 있으면 docker compose up -d --build 로 이미지를 다시 만들어. 없으면 docker compose up -d 로 띄우고, 이미 떠 있었다면 docker compose restart app worker 로 새 코드를 반영해.
+3. 받은 변경에 pyproject.toml, uv.lock, Dockerfile, docker-compose.yml 이 있으면 docker compose up -d --build 로 이미지를 다시 만들어. 없으면 docker compose up -d 로 띄우고, 이미 떠 있었다면 docker compose restart app worker 로 새 코드를 반영해. frontend/ 아래 파일이 바뀌었으면 npm --prefix frontend run build 로 frontend/dist 도 다시 만들어.
 4. 스킬의 준비 대기 절차대로 /api/v1/health/ready 가 ready 또는 degraded 가 될 때까지 기다린 다음, 브라우저로 http://localhost:8000 을 열어 줘.
 5. 마지막에 docker compose ps 결과와 접속 주소를 표로 정리해 줘.
 
