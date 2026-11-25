@@ -246,7 +246,43 @@
 
                 <button type="button" data-toggle-theme class="text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
                     <i id="theme-icon" class="fas fa-moon"></i>
-                </button>{# tests/test_dark_mode_rest_20261123.py 가 base.html 줄 번호를 고정하므로 알림 블록은 새 줄을 늘리지 않고 한 줄에 둡니다. #}{% if closing_soon_notice %}<details class="relative" data-closing-soon-notice><summary class="relative inline-flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" aria-label="마감 임박 알림"><i class="fas fa-bell text-sm"></i>{% if closing_soon_notice['count'] is not none and closing_soon_notice['count'] > 0 %}<span data-closing-soon-badge="{{ closing_soon_notice['count'] }}" class="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white">{% if closing_soon_notice['count'] > 99 %}99+{% else %}{{ closing_soon_notice['count'] }}{% endif %}</span>{% endif %}</summary><div class="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900"><div class="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800"><p class="text-xs font-bold text-slate-900 dark:text-white">이번 주 마감 임박</p>{% if closing_soon_notice['count'] is not none %}<span class="text-[11px] font-bold text-rose-500 dark:text-rose-400">{{ closing_soon_notice['count'] }}건</span>{% endif %}</div>{% if closing_soon_notice['count'] is none %}<p class="px-4 py-6 text-center text-xs text-slate-400 dark:text-slate-500" data-closing-soon-pending title="worker 예열이 캐시를 채우면 마감 임박 건수가 표시됩니다">알림 준비 중</p>{% elif closing_soon_notice['items'] %}<ul class="divide-y divide-slate-100 dark:divide-slate-800">{% for bid in closing_soon_notice['items'] %}<li class="px-4 py-3" data-closing-soon-bid="{{ bid.id }}"><a href="{{ url('bids:bid_detail', bid.id) }}" class="block truncate text-sm font-bold text-slate-900 transition-colors hover:text-primary dark:text-white dark:hover:text-blue-300" title="{{ bid.bid_ntce_nm }}">{{ bid.bid_ntce_nm }}</a><span class="mt-0.5 flex items-center justify-between gap-2"><span class="min-w-0 truncate text-xs text-slate-500 dark:text-slate-400" title="{{ bid.dminstt_nm }}">{{ bid.dminstt_nm }}</span><span class="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{{ bid.deadline_label }}</span></span></li>{% endfor %}</ul>{% else %}<p class="px-4 py-6 text-center text-xs text-slate-400 dark:text-slate-500">이번 주 마감 예정 공고가 없습니다.</p>{% endif %}</div></details>{% endif %}
+                </button>
+                {# tests/test_dark_mode_rest_20261123.py 가 base.html 줄 번호를 고정하므로 마크업을 옮기면 그 시험도 함께 갱신합니다. #}
+                {% if closing_soon_notice %}
+                <details class="relative" data-closing-soon-notice>
+                    <summary class="relative inline-flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white" aria-label="마감 임박 알림">
+                        <i class="fas fa-bell text-sm"></i>
+                        {% if closing_soon_notice['count'] is not none and closing_soon_notice['count'] > 0 %}
+                        <span data-closing-soon-badge="{{ closing_soon_notice['count'] }}" class="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white">{% if closing_soon_notice['count'] > 99 %}99+{% else %}{{ closing_soon_notice['count'] }}{% endif %}</span>
+                        {% endif %}
+                    </summary>
+                    <div class="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+                        <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                            <p class="text-xs font-bold text-slate-900 dark:text-white">이번 주 마감 임박</p>
+                            {% if closing_soon_notice['count'] is not none %}
+                            <span class="text-[11px] font-bold text-rose-500 dark:text-rose-400">{{ closing_soon_notice['count'] }}건</span>
+                            {% endif %}
+                        </div>
+                        {% if closing_soon_notice['count'] is none %}
+                        <p class="px-4 py-6 text-center text-xs text-slate-400 dark:text-slate-500" data-closing-soon-pending title="worker 예열이 캐시를 채우면 마감 임박 건수가 표시됩니다">알림 준비 중</p>
+                        {% elif closing_soon_notice['items'] %}
+                        <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+                            {% for bid in closing_soon_notice['items'] %}
+                            <li class="px-4 py-3" data-closing-soon-bid="{{ bid.id }}">
+                                <a href="{{ url('bids:bid_detail', bid.id) }}" class="block truncate text-sm font-bold text-slate-900 transition-colors hover:text-primary dark:text-white dark:hover:text-blue-300" title="{{ bid.bid_ntce_nm }}">{{ bid.bid_ntce_nm }}</a>
+                                <span class="mt-0.5 flex items-center justify-between gap-2">
+                                    <span class="min-w-0 truncate text-xs text-slate-500 dark:text-slate-400" title="{{ bid.dminstt_nm }}">{{ bid.dminstt_nm }}</span>
+                                    <span class="shrink-0 text-[11px] text-slate-500 dark:text-slate-400">{{ bid.deadline_label }}</span>
+                                </span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <p class="px-4 py-6 text-center text-xs text-slate-400 dark:text-slate-500">이번 주 마감 예정 공고가 없습니다.</p>
+                        {% endif %}
+                    </div>
+                </details>
+                {% endif %}
 
                 {% if hide_sidebar %}
                     {% if user %}
