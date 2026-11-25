@@ -55,6 +55,7 @@ from src.app.services.collector_service import _bulk_insert, collect_bids
 from src.app.services.home_summary import warm_home_summary_cache
 from src.app.services.prearng_dminstt_link import link_prearng_dminstt
 from src.app.services.sajeong_rate_stats import rebuild_institution_sajeong_rate_stats
+from src.app.services.win_interval_stats import rebuild_win_interval_stats
 from src.ml.dataset import build_training_dataset
 from src.ml.drift_verdict import DRIFT_EVALUATION_WINDOW_DAYS
 from src.ml.features import (
@@ -2796,10 +2797,10 @@ def _persist_prearng_rows(rows: list[dict[str, Any]]) -> int:
 
 
 def _refresh_institution_sajeong_stats_thread() -> dict[str, Any]:
-    """적재분의 수요기관명 연결과 기관별 사정률 재집계를 수행합니다.
+    """적재분의 수요기관명 연결과 기관별 통계 재집계를 수행합니다.
 
     후속 단계 실패는 로그로만 남깁니다. 수집은 이미 끝났으므로 이 함수의
-    예외가 수집 결과 status 를 뒤집으면 안 됩니다. 연결과 재집계는 서로
+    예외가 수집 결과 status 를 뒤집으면 안 됩니다. 연결과 두 재집계는 서로
     독립으로 시도해 한쪽 실패가 다른 쪽을 막지 않게 합니다.
     """
     result: dict[str, Any] = {"linked": 0, "stats_rebuilt": None}
@@ -2817,6 +2818,12 @@ def _refresh_institution_sajeong_stats_thread() -> dict[str, Any]:
         except Exception:
             session.rollback()
             logger.exception("기관별 사정률 통계 재집계 실패")
+        try:
+            result["win_interval_rebuilt"] = rebuild_win_interval_stats(session)
+        except Exception:
+            # 세션은 finally 에서 닫히며 실패한 트랜잭션을 되돌립니다. 사정률
+            # 재집계는 이미 자체 커밋을 마쳤으므로 그 결과는 남습니다.
+            logger.exception("승리 구간 통계 재집계 실패")
     finally:
         session.close()
     return result
