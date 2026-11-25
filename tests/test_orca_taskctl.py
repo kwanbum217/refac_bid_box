@@ -333,6 +333,141 @@ review_checklist:
     assert "pytest 실행" in parsed_items[1]["how"]
 
 
+def test_expand_tdd_required_attaches_fact_and_checklist(tmp_path: Path):
+    """tdd: required 면 빌더 사실과 test_proves_change 항목이 자동으로 붙습니다."""
+    capsule_file = tmp_path / "task_tdd_req" / "capsule.yaml"
+    intent = parse_intent(SAMPLE_BUILDER_INTENT + "\ntdd: required\n")
+
+    capsule = expand_intent_to_capsule(
+        intent,
+        task_id="task_tdd_req",
+        run_id="run_test",
+        capsule_path=capsule_file,
+    )
+
+    assert parse_capsule_scalar(capsule, "tdd") == "required"
+    assert "기준(base) 코드에서 단언 실패" in capsule
+    assert "collection_only" in capsule
+    parsed_items = parse_checklist(capsule)
+    assert [item["id"] for item in parsed_items] == ["test_proves_change"]
+    assert parsed_items[0]["defect_when"] == "yes"
+    assert "verdict" in parsed_items[0]["how"]
+
+
+def test_expand_tdd_required_keeps_existing_checklist_item(tmp_path: Path):
+    """같은 id 의 test_proves_change 가 이미 있으면 중복으로 붙이지 않습니다."""
+    capsule_file = tmp_path / "task_tdd_dup" / "capsule.yaml"
+    intent_text = """schema: ORCA_TASK_INTENT_V1
+role: builder
+objective: >
+  체크리스트 중복 방지 확인.
+scope:
+  - "scripts/orca_taskctl.py"
+review_checklist:
+  - id: "test_proves_change"
+    question: "이미 있는 항목인가"
+    defect_when: "no"
+tdd: required
+"""
+    intent = parse_intent(intent_text)
+
+    capsule = expand_intent_to_capsule(
+        intent,
+        task_id="task_tdd_dup",
+        run_id="run_test",
+        capsule_path=capsule_file,
+    )
+
+    assert capsule.count('id: "test_proves_change"') == 1
+    parsed_items = parse_checklist(capsule)
+    assert len(parsed_items) == 1
+    assert parsed_items[0]["question"] == "이미 있는 항목인가"
+    assert "기준(base) 코드에서 단언 실패" in capsule
+
+
+def test_expand_tdd_exempt_records_reason(tmp_path: Path):
+    """tdd: exempt(<사유>) 면 사유를 Capsule 에 기록하고 아무것도 붙이지 않습니다."""
+    capsule_file = tmp_path / "task_tdd_exempt" / "capsule.yaml"
+    intent = parse_intent(SAMPLE_BUILDER_INTENT + "\ntdd: exempt(문서 서술만 변경)\n")
+
+    capsule = expand_intent_to_capsule(
+        intent,
+        task_id="task_tdd_exempt",
+        run_id="run_test",
+        capsule_path=capsule_file,
+    )
+
+    assert "tdd: exempt(문서 서술만 변경)" in capsule
+    assert "review_checklist:" not in capsule
+    assert "기준(base) 코드에서 단언 실패" not in capsule
+
+
+def test_expand_tdd_absent_stays_unspecified(tmp_path: Path):
+    """tdd 키가 없는 기존 Intent 는 tdd: unspecified 외에 달라지지 않습니다."""
+    capsule_file = tmp_path / "task_tdd_absent" / "capsule.yaml"
+    intent = parse_intent(SAMPLE_BUILDER_INTENT)
+
+    capsule = expand_intent_to_capsule(
+        intent,
+        task_id="task_tdd_absent",
+        run_id="run_test",
+        capsule_path=capsule_file,
+    )
+
+    assert parse_capsule_scalar(capsule, "tdd") == "unspecified"
+    assert "review_checklist:" not in capsule
+    assert "기준(base) 코드에서 단언 실패" not in capsule
+
+
+@pytest.mark.parametrize(
+    "tdd_value",
+    ["maybe", "exempt()", "exempt", "required(사유)"],
+)
+def test_expand_tdd_invalid_value_rejected(tmp_path: Path, tdd_value: str):
+    """허용 값 밖의 tdd 값은 ValueError 로 거부합니다."""
+    intent = parse_intent(SAMPLE_BUILDER_INTENT + f"\ntdd: {tdd_value}\n")
+
+    with pytest.raises(ValueError, match="tdd"):
+        expand_intent_to_capsule(intent, task_id="task_tdd_bad")
+
+
+def test_expand_tdd_required_rejected_for_reviewer(tmp_path: Path):
+    """reviewer 역할 Intent 에 tdd: required 가 오면 거부합니다."""
+    intent = parse_intent(SAMPLE_REVIEWER_INTENT_VALID + "\ntdd: required\n")
+
+    with pytest.raises(ValueError, match="required"):
+        expand_intent_to_capsule(intent, task_id="task_rev_tdd")
+
+
+def test_expand_tdd_required_rejected_for_investigator():
+    """investigator 역할 Intent 에 tdd: required 가 오면 거부합니다."""
+    intent = parse_intent(
+        """schema: ORCA_TASK_INTENT_V1
+role: investigator
+objective: >
+  조사 Task.
+tdd: required
+"""
+    )
+
+    with pytest.raises(ValueError, match="required"):
+        expand_intent_to_capsule(intent, task_id="task_inv_tdd")
+
+
+def test_cmd_expand_tdd_invalid_value_exit_code_2(tmp_path: Path, capsys: pytest.CaptureFixture):
+    """expand CLI 는 잘못된 tdd 값을 종료 코드 2 로 거부합니다."""
+    intent_file = tmp_path / "intent.yaml"
+    out_file = tmp_path / "capsule.yaml"
+    intent_file.write_text(SAMPLE_BUILDER_INTENT + "\ntdd: sometimes\n", encoding="utf-8")
+
+    code = main(["expand", "--intent", str(intent_file), "--out", str(out_file)])
+
+    assert code == 2
+    assert not out_file.exists()
+    captured = capsys.readouterr()
+    assert "tdd" in captured.err
+
+
 def test_expand_intent_reviewer_without_checklist_rejected(tmp_path: Path):
     """AC3: review_checklist 없는 reviewer Intent 는 거부(종료 코드 2)되어야 함."""
     intent_file = tmp_path / "intent_bad_reviewer.yaml"
