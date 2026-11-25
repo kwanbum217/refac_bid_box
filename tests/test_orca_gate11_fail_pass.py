@@ -194,6 +194,63 @@ def test_gate11_exempt_when_no_target_test_files(tmp_path: Path):
     assert "base_counts" not in result.raw_data
 
 
+def test_gate11_exempt_when_only_exempt_commit_types_without_src(tmp_path: Path):
+    """(i) docs·chore 커밋만 있고 src/ 변경이 없으면 대상 시험이 있어도 exempt 입니다."""
+    repo = tmp_path / "repo"
+    base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
+    _commit_changes(
+        repo,
+        test=CLEAN_TEST + "\n\ndef test_add_zero():\n    assert add(0, 0) == 0\n",
+        message="docs: 계산기 시험 설명을 추가한다",
+    )
+    _commit_changes(repo, extra={"docs/guide.md": "안내\n"}, message="chore: 안내 문서를 추가한다")
+
+    result = _run(repo, base)
+
+    _assert_warning_mode(result)
+    assert result.raw_data["verdict"] == "exempt"
+    assert result.status == "skipped"
+    assert sorted(result.raw_data["commit_types"]) == ["chore", "docs"]
+    assert result.raw_data["src_changed"] is False
+    assert result.raw_data["target_files"] == ["tests/test_calc.py"]
+    assert "base_counts" not in result.raw_data
+
+
+def test_gate11_not_exempt_when_exempt_type_has_src_changes(tmp_path: Path):
+    """(j) docs 커밋이라도 src/ 변경이 있으면 면제하지 않습니다."""
+    repo = tmp_path / "repo"
+    base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
+    _commit_changes(
+        repo,
+        source=CLEAN_SOURCE + "\n\ndef multiply(a, b):\n    return a * b\n",
+        test=CLEAN_TEST + "\n\ndef test_add_zero():\n    assert add(0, 0) == 0\n",
+        message="docs: 계산기 동작을 정리한다",
+    )
+
+    result = _run(repo, base)
+
+    _assert_warning_mode(result)
+    assert result.raw_data["commit_types"] == ["docs"]
+    assert result.raw_data["src_changed"] is True
+    assert result.raw_data["verdict"] != "exempt"
+    assert result.raw_data["verdict"] == "not_proven"
+
+
+def test_gate11_unknown_commit_type_is_not_exempt(tmp_path: Path):
+    """(k) 형식 밖 커밋 제목은 unknown type 이라 면제하지 않습니다."""
+    repo = tmp_path / "repo"
+    base = _init_repo(repo, BASE_DIRTY_SOURCE, BASE_DIRTY_TEST)
+    _commit_changes(repo, source=CLEAN_SOURCE, test=CLEAN_TEST, message="계산기를 고친다")
+
+    result = _run(repo, base)
+
+    _assert_warning_mode(result)
+    assert result.raw_data["commit_types"] == ["unknown"]
+    assert result.raw_data["src_changed"] is True
+    assert result.raw_data["verdict"] != "exempt"
+    assert result.raw_data["verdict"] == "proven"
+
+
 def test_gate11_error_is_skipped_not_fail(tmp_path: Path):
     """(f) 도구 오류도 fail 이 아니라 error verdict 의 skipped 입니다."""
     repo = tmp_path / "repo"
