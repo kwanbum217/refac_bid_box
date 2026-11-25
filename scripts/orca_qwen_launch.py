@@ -174,7 +174,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
-        prompt = wait_for_preamble(args.preamble, args.timeout_sec)
+        prompt, worker_handle = common.wait_for_preamble_with_handle(
+            args.preamble, args.timeout_sec, wait_fn=wait_for_preamble
+        )
     except (TimeoutError, ValueError) as err:
         sys.stderr.write(f"오류: {err}\n")
         return 2
@@ -185,7 +187,9 @@ def main(argv: list[str] | None = None) -> int:
         no_commit_notice=args.no_commit_notice,
     )
 
-    env = dict(os.environ)
+    # preamble 을 소비하는 모든 런처는 같은 지점에서 핸들 파일도 함께 소비합니다.
+    # 읽기만 하고 남기면 다음 시도에 낡은 .handle 이 누적됩니다.
+    env = common.apply_worker_handle(dict(os.environ), worker_handle)
     cmd = build_command(model_id, prompt, args.one_shot)
 
     # Qwen Code 는 -i(대화형)과 -p(--one-shot 단발) 두 모드를 지원합니다.
@@ -194,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     # 또한 prepare_worker_terminal 은 Qwen 메타데이터를 인식하여 shift+tab 전송을
     # 안전하게 건너뛰므로(fail-closed/auto mode 보호), 두 모드 모두 동일하게
     # 권한 자동 승인 준비 자식을 기동합니다.
-    schedule_permission_setup(Path(__file__).resolve(), model_id)
+    schedule_permission_setup(Path(__file__).resolve(), model_id, terminal=worker_handle or None)
 
     mode = "-p 단발" if args.one_shot else "-i 대화형"
     print(f"기동: qwen -m {model_id} --yolo ({mode}, 지시문 {len(prompt)}자)", flush=True)
