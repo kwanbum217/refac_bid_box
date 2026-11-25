@@ -1427,6 +1427,39 @@ def test_task_has_write_scope_missing_capsule_is_write_fail_closed(tmp_path: Pat
     assert is_write is True
 
 
+def test_task_has_write_scope_orca_report_only_is_readonly(tmp_path: Path):
+    """(4-1) .orca/ 아래 보고서만 쓰는 조사·리뷰 Task 는 읽기 전용이다."""
+    task_dir = tmp_path / "task_investigator"
+    task_dir.mkdir(parents=True)
+    (task_dir / "capsule.yaml").write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+role: investigator
+allowed_write_files:
+  - .orca/reports/investigation_20261125.md
+  - .orca/capsules/task_investigator/review_done.json
+""",
+        encoding="utf-8",
+    )
+
+    assert task_has_write_scope("task_investigator", tmp_path) is False
+
+
+def test_task_has_write_scope_mixed_scope_is_write(tmp_path: Path):
+    """(4-2) .orca/ 밖 경로가 하나라도 섞이면 쓰기로 판정된다."""
+    task_dir = tmp_path / "task_mixed"
+    task_dir.mkdir(parents=True)
+    (task_dir / "capsule.yaml").write_text(
+        """schema: ORCA_TASK_CAPSULE_V2
+allowed_write_files:
+  - .orca/reports/review_20261125.md
+  - docs/ops/note.md
+""",
+        encoding="utf-8",
+    )
+
+    assert task_has_write_scope("task_mixed", tmp_path) is True
+
+
 def test_check_write_concurrency_excludes_self_task(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
