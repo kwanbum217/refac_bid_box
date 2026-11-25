@@ -40,9 +40,9 @@ DARK_SUFFIX_CLEARED_TARGETS = {
         326: "dark:bg-slate-900",
     },
     "src/app/templates/index.html": {
-        69: "dark:border-slate-800",
-        85: "dark:border-slate-800",
-        96: "dark:border-slate-800",
+        159: "dark:border-slate-800",
+        175: "dark:border-slate-800",
+        186: "dark:border-slate-800",
     },
     "src/app/templates/chatbot/chat.html": {
         595: "dark:bg-slate-900",
@@ -58,8 +58,8 @@ DARK_FOCUS_BORDER_TARGETS = {
 }
 DARK_TEXT_TARGETS = {
     "src/app/templates/index.html": {
-        196: ["dark:text-blue-400", "dark:hover:text-blue-300"],
-        203: ["dark:text-blue-400", "dark:hover:text-blue-300"],
+        109: ["dark:text-blue-400", "dark:hover:text-blue-300"],
+        116: ["dark:text-blue-400", "dark:hover:text-blue-300"],
     },
 }
 # 2026-11-23 되돌림: compare.html·result_detail.html 의 h-card 안 글자는 다크 변형이 없어

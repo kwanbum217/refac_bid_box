@@ -31,93 +31,6 @@
             </div>
         </section>
 
-        <section>
-            <article data-home-metric="accuracy" class="h-card flex min-w-0 flex-col p-5">
-                <div class="flex items-start justify-between gap-4">
-                    <div class="min-w-0">
-                        <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">모델 정확도</p>
-                        <h2 class="mt-1 text-lg font-black tracking-tight text-slate-900 dark:text-white">용역 낙찰률 예측 모델 실측 정확도</h2>
-                        <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                            학습에 쓰지 않은 2026년 공고로 실제 예측해 잰 값입니다.
-                        </p>
-                    </div>
-                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary dark:bg-primary/20">
-                        <i class="fas fa-bullseye"></i>
-                    </span>
-                </div>
-
-                {% if accuracy.available %}
-                <div class="mt-3 flex flex-wrap items-center gap-2">
-                    <span data-home-accuracy-source="{{ accuracy.source }}" class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-                        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                        {{ accuracy.source_label }}
-                    </span>
-                    {% if accuracy.promoted_date %}
-                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                        {{ accuracy.promoted_date }} 승격
-                    </span>
-                    {% endif %}
-                    {% if accuracy.version %}
-                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                        {{ accuracy.version }}
-                    </span>
-                    {% endif %}
-                </div>
-
-                <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    {% for tile in accuracy.tiles %}
-                    <div data-home-accuracy-tile="{{ tile.key }}" class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-                        <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">{{ tile.label }}</p>
-                        <p class="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-white">
-                            {{ tile.value }}<span class="ml-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ tile.unit }}</span>
-                        </p>
-                        <p class="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ tile.note }}</p>
-                    </div>
-                    {% endfor %}
-                </div>
-
-                {% if accuracy.meta_line %}
-                <p data-home-accuracy-meta class="mt-3 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ accuracy.meta_line }}</p>
-                {% endif %}
-
-                {% if accuracy.chart.visible %}
-                <div data-home-accuracy-chart-card class="mt-5 grid gap-4 lg:grid-cols-2">
-                    <div class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
-                        <div class="min-w-0">
-                            <p class="text-sm font-bold text-slate-800 dark:text-slate-100">오차 범위별 적중 비율</p>
-                            <p class="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-                                실제 낙찰률과의 차이가 기준 안에 들어온 공고 비율입니다.
-                            </p>
-                        </div>
-                        <div class="relative mt-3 h-64 w-full sm:h-80">
-                            <canvas id="home-accuracy-band-chart" role="img" aria-label="오차 범위별 적중 비율"></canvas>
-                        </div>
-                    </div>
-                    <div class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
-                        <div class="min-w-0">
-                            <p class="text-sm font-bold text-slate-800 dark:text-slate-100">예측 대 실제 낙찰률</p>
-                            <p class="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-                                점이 대각선에 가까울수록 정확합니다. 띠는 ±{{ accuracy.chart.scatter.band_pp }}%p 범위입니다.
-                            </p>
-                        </div>
-                        <div class="relative mt-3 h-64 w-full sm:h-80">
-                            <canvas id="home-accuracy-scatter-chart" role="img" aria-label="예측 대 실제 낙찰률 산점도"></canvas>
-                        </div>
-                    </div>
-                </div>
-                {% if accuracy.chart.note %}
-                <p class="mt-2 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ accuracy.chart.note }}</p>
-                {% endif %}
-
-                <script type="application/json" id="home-accuracy-chart-data" nonce="{{ csp_nonce }}">{{ accuracy.chart | tojson }}</script>
-                {% endif %}
-                {% else %}
-                <p class="mt-4 text-2xl font-black tracking-tight text-slate-400 dark:text-slate-500">측정값 준비 중</p>
-                <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">서빙 모델의 실측 지표를 읽는 중입니다.</p>
-                {% endif %}
-            </article>
-        </section>
-
         <section class="grid gap-4 lg:grid-cols-2">
             <article data-home-panel="open" class="h-card flex min-w-0 flex-col p-5">
                 <div class="flex items-center justify-between gap-3">
@@ -204,6 +117,93 @@
                     마이페이지에서 관심 업종·지역 입력
                     <i class="fas fa-arrow-right text-[10px]"></i>
                 </a>
+                {% endif %}
+            </article>
+        </section>
+
+        <section>
+            <article data-home-metric="accuracy" class="h-card flex min-w-0 flex-col p-5">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">모델 정확도</p>
+                        <h2 class="mt-1 text-lg font-black tracking-tight text-slate-900 dark:text-white">용역 낙찰률 예측 모델 실측 정확도</h2>
+                        <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                            학습에 쓰지 않은 2026년 공고로 실제 예측해 잰 값입니다.
+                        </p>
+                    </div>
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary dark:bg-primary/20">
+                        <i class="fas fa-bullseye"></i>
+                    </span>
+                </div>
+
+                {% if accuracy.available %}
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <span data-home-accuracy-source="{{ accuracy.source }}" class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                        <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                        {{ accuracy.source_label }}
+                    </span>
+                    {% if accuracy.promoted_date %}
+                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {{ accuracy.promoted_date }} 승격
+                    </span>
+                    {% endif %}
+                    {% if accuracy.version %}
+                    <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[11px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        {{ accuracy.version }}
+                    </span>
+                    {% endif %}
+                </div>
+
+                <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {% for tile in accuracy.tiles %}
+                    <div data-home-accuracy-tile="{{ tile.key }}" class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
+                        <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">{{ tile.label }}</p>
+                        <p class="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                            {{ tile.value }}<span class="ml-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ tile.unit }}</span>
+                        </p>
+                        <p class="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ tile.note }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if accuracy.meta_line %}
+                <p data-home-accuracy-meta class="mt-3 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ accuracy.meta_line }}</p>
+                {% endif %}
+
+                {% if accuracy.chart.visible %}
+                <div data-home-accuracy-chart-card class="mt-5 grid gap-4 lg:grid-cols-2">
+                    <div class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                        <div class="min-w-0">
+                            <p class="text-sm font-bold text-slate-800 dark:text-slate-100">오차 범위별 적중 비율</p>
+                            <p class="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                                실제 낙찰률과의 차이가 기준 안에 들어온 공고 비율입니다.
+                            </p>
+                        </div>
+                        <div class="relative mt-3 h-64 w-full sm:h-80">
+                            <canvas id="home-accuracy-band-chart" role="img" aria-label="오차 범위별 적중 비율"></canvas>
+                        </div>
+                    </div>
+                    <div class="min-w-0 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/40">
+                        <div class="min-w-0">
+                            <p class="text-sm font-bold text-slate-800 dark:text-slate-100">예측 대 실제 낙찰률</p>
+                            <p class="mt-1 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+                                점이 대각선에 가까울수록 정확합니다. 띠는 ±{{ accuracy.chart.scatter.band_pp }}%p 범위입니다.
+                            </p>
+                        </div>
+                        <div class="relative mt-3 h-64 w-full sm:h-80">
+                            <canvas id="home-accuracy-scatter-chart" role="img" aria-label="예측 대 실제 낙찰률 산점도"></canvas>
+                        </div>
+                    </div>
+                </div>
+                {% if accuracy.chart.note %}
+                <p class="mt-2 text-[11px] leading-4 text-slate-500 dark:text-slate-400">{{ accuracy.chart.note }}</p>
+                {% endif %}
+
+                <script type="application/json" id="home-accuracy-chart-data" nonce="{{ csp_nonce }}">{{ accuracy.chart | tojson }}</script>
+                {% endif %}
+                {% else %}
+                <p class="mt-4 text-2xl font-black tracking-tight text-slate-400 dark:text-slate-500">측정값 준비 중</p>
+                <p class="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">서빙 모델의 실측 지표를 읽는 중입니다.</p>
                 {% endif %}
             </article>
         </section>

@@ -358,7 +358,11 @@
 
         const announceByMonth = data.announce_by_month || [];
         const resultByMonth = data.result_by_month || [];
-        const agencyTop10 = data.agency_announce_top10 || [];
+        const agencyTop10Raw = data.agency_announce_top10 || [];
+        const agencyTop10 = [
+            ...agencyTop10Raw.filter(d => !isPlaceholderAgency(d.name)),
+            ...agencyTop10Raw.filter(d => isPlaceholderAgency(d.name)),
+        ];
 
         const allMonths = [...new Set([
             ...announceByMonth.map(d => d.month),
