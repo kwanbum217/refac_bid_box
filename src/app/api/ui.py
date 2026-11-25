@@ -69,7 +69,11 @@ from src.app.services.band_regime_lookup import (
     attachment_regime_key,
     lookup_attachment_regimes,
 )
-from src.app.services.bid_preferences import get_bid_preferences, save_bid_preferences
+from src.app.services.bid_preferences import (
+    get_bid_preferences,
+    read_closing_soon_notice,
+    save_bid_preferences,
+)
 from src.app.services.evaluation_rules import find_reputation_item
 from src.app.services.home_summary import get_home_summary
 from src.app.services.search_index import SearchBackendUnavailable
@@ -144,7 +148,36 @@ def _safe_next_path(value: str | None) -> str:
 SOCIAL_LOGIN_PROVIDERS = {"kakao": False, "naver": False, "google": False}
 
 
-def _render(request: Request, name: str, context: dict, user, active_nav: str = ""):
+def _closing_soon_notice_context(db: Session, user_id: int) -> dict[str, Any] | None:
+    """헤더 종 알림에 쓸 마감 임박 건수·목록을 캐시에서만 읽습니다.
+
+    관심 조건 1행(PK)만 DB 에서 읽고, 집계는 worker 예열 캐시에서만 읽습니다.
+    알림 때문에 페이지가 실패하면 안 되므로 예외는 삼키고 로그만 남깁니다.
+    관심 조건이 없거나 비어 있으면 알림을 넣지 않습니다(None).
+    """
+    try:
+        prefs = get_bid_preferences(db, user_id)
+        if prefs is None or prefs.is_empty:
+            return None
+        notice = read_closing_soon_notice(prefs)
+        if notice is None:
+            # 예열 전이거나 캐시가 만료된 상태입니다. 화면은 '알림 준비 중' 입니다.
+            return {"count": None, "items": []}
+        return notice
+    except Exception:
+        logger.warning("마감 임박 알림을 읽지 못했습니다 (user_id=%s)", user_id, exc_info=True)
+        return None
+
+
+def _render(
+    request: Request,
+    name: str,
+    context: dict,
+    user,
+    active_nav: str = "",
+    *,
+    db: Session | None = None,
+):
     csrf_token = request.cookies.get(CSRF_COOKIE_NAME) or make_csrf_token()
     payload = {
         "user": user,
@@ -153,6 +186,10 @@ def _render(request: Request, name: str, context: dict, user, active_nav: str = 
         "social_login_providers": SOCIAL_LOGIN_PROVIDERS,
         **context,
     }
+    if user is not None and db is not None:
+        notice = _closing_soon_notice_context(db, user.id)
+        if notice is not None:
+            payload["closing_soon_notice"] = notice
     response = templates.TemplateResponse(request, name, payload)
     if not request.cookies.get(CSRF_COOKIE_NAME):
         response.set_cookie(
@@ -214,7 +251,7 @@ def index(
 ):
     if user is None:
         return _login_redirect(request)
-    return _render(request, "index.html", get_home_summary(db, user.id), user, "index")
+    return _render(request, "index.html", get_home_summary(db, user.id), user, "index", db=db)
 
 
 @router.get("/bids/")
@@ -297,7 +334,7 @@ def bid_list(
         "industry_groups": bid_queries.industry_groups_payload(selected_industry_codes),
         "region_groups": bid_queries.region_groups_payload(),
     }
-    return _render(request, "bids/list.html", context, user, "bids")
+    return _render(request, "bids/list.html", context, user, "bids", db=db)
 
 
 # 아래 네 경로는 /bids/{pk} 보다 먼저 등록해야 합니다. 뒤에 두면 "results" 같은
@@ -335,7 +372,7 @@ def result_list(
         "region": bid_queries.normalize_region_code(region),
         "region_groups": bid_queries.region_groups_payload(),
     }
-    return _render(request, "bids/results.html", context, user, "results")
+    return _render(request, "bids/results.html", context, user, "results", db=db)
 
 
 @router.get("/bids/result/{pk}/")
@@ -350,7 +387,7 @@ def result_detail(
     detail = bid_queries.get_result_detail(db, pk)
     if detail is None:
         raise HTTPException(status_code=404, detail="대상을 찾을 수 없습니다.")
-    return _render(request, "bids/result_detail.html", detail, user, "results")
+    return _render(request, "bids/result_detail.html", detail, user, "results", db=db)
 
 
 @router.get("/bids/dashboard/")
@@ -361,10 +398,14 @@ def dashboard(request: Request, user: CustomUser | None = Depends(get_current_us
 
 
 @router.get("/bids/compare/")
-def compare(request: Request, user: CustomUser | None = Depends(get_current_user)):
+def compare(
+    request: Request,
+    db: Session = Depends(get_db),
+    user: CustomUser | None = Depends(get_current_user),
+):
     if user is None:
         return _login_redirect(request)
-    return _render(request, "bids/compare.html", {}, user, "compare")
+    return _render(request, "bids/compare.html", {}, user, "compare", db=db)
 
 
 @router.get("/bids/{pk}/")
@@ -381,7 +422,7 @@ def bid_detail(
         raise HTTPException(status_code=404, detail="대상을 찾을 수 없습니다.")
     detail["announcement_links"] = describe_announcement_links(detail["bid"].raw_data)
     detail["show_followup_bids"] = bid_queries.is_non_pred_price_blocked(detail["bid"])
-    return _render(request, "bids/detail.html", detail, user, "bids")
+    return _render(request, "bids/detail.html", detail, user, "bids", db=db)
 
 
 @router.get("/results/", include_in_schema=False)
@@ -449,7 +490,7 @@ def chat_page(
         "indexed_record_label": _compact_count(indexed_records),
         "initial_message": _result_analysis_prompt(db, result_id),
     }
-    return _render(request, "chatbot/chat.html", context, user, "chatbot")
+    return _render(request, "chatbot/chat.html", context, user, "chatbot", db=db)
 
 
 @router.get("/chat/", include_in_schema=False)
@@ -545,7 +586,7 @@ def mypage(
         "bid_industry_labels": _bid_industry_labels(prefs.license_codes) if prefs else [],
         "bid_region_label": _bid_region_label(prefs.region_code) if prefs else "",
     }
-    return _render(request, "accounts/mypage.html", context, user, "mypage")
+    return _render(request, "accounts/mypage.html", context, user, "mypage", db=db)
 
 
 def _mypage_edit_default_form(user: CustomUser, db: Session) -> dict[str, Any]:
@@ -666,7 +707,12 @@ def mypage_edit(
     if user is None:
         return _login_redirect(request)
     return _render(
-        request, "accounts/mypage_edit.html", _mypage_edit_context(user, db), user, "mypage"
+        request,
+        "accounts/mypage_edit.html",
+        _mypage_edit_context(user, db),
+        user,
+        "mypage",
+        db=db,
     )
 
 
@@ -714,6 +760,7 @@ async def mypage_edit_submit(
             ),
             user,
             "mypage",
+            db=db,
         )
         response.status_code = 200
         return response

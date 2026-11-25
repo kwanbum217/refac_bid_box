@@ -26,6 +26,10 @@ list_announcements)와 같습니다. 업종·지역 코드 정의와 정규화�
 없으면 보관 키(24시간)의 마지막 성공 값을 씁니다. 두 키 모두 worker 예열
 (warm_open_servc_matching)이 채웁니다. 시험처럼 now 를 넘기거나
 use_cache=False 를 주면 그 자리에서 집계합니다.
+
+헤더 종 알림에 쓰는 마감 임박(이번 주) 건수·목록도 같은 예열에서 함께
+집계합니다. 요청 경로의 read_closing_soon_notice 는 캐시만 읽고, 캐시가 없으면
+None(화면은 '알림 준비 중')입니다.
 """
 
 from __future__ import annotations
@@ -66,6 +70,13 @@ OPEN_BID_LIST_CACHE_PREFIX = "bid_prefs:open_servc_list:v2"
 OPEN_BID_COUNT_STALE_CACHE_PREFIX = "bid_prefs:open_servc_count:stale:v2"
 OPEN_BID_LIST_STALE_CACHE_PREFIX = "bid_prefs:open_servc_list:stale:v2"
 OPEN_BID_LIST_DEFAULT_LIMIT = 5
+# 마감 임박(이번 주) 창은 RAG 질의 계획의 마감 임박 정의와 같습니다.
+# 오늘 ~ 오늘+6일이며, query_planning 은 무거운 RAG 모듈이라 서비스 계층에서
+# import 하지 않고 같은 값을 둡니다. 값이 갈라지지 않도록
+# tests/test_closing_soon_notice_20261125.py 가 두 상수의 일치를 고정합니다.
+CLOSING_SOON_DAYS = 7
+CLOSING_SOON_NOTICE_CACHE_PREFIX = "bid_prefs:closing_soon_notice:v1"
+CLOSING_SOON_NOTICE_STALE_CACHE_PREFIX = "bid_prefs:closing_soon_notice:stale:v1"
 
 
 @dataclass(frozen=True)
@@ -150,6 +161,32 @@ def _list_stale_cache_key(prefs: BidPreferenceView, limit: int) -> str:
     return f"{OPEN_BID_LIST_STALE_CACHE_PREFIX}:{_prefs_cache_suffix(prefs)}:{limit}"
 
 
+def _closing_soon_cache_key(prefs: BidPreferenceView, limit: int) -> str:
+    return f"{CLOSING_SOON_NOTICE_CACHE_PREFIX}:{_prefs_cache_suffix(prefs)}:{limit}"
+
+
+def _closing_soon_stale_cache_key(prefs: BidPreferenceView, limit: int) -> str:
+    return f"{CLOSING_SOON_NOTICE_STALE_CACHE_PREFIX}:{_prefs_cache_suffix(prefs)}:{limit}"
+
+
+def _closing_soon_end(now_dt: datetime) -> datetime:
+    """마감 임박 창의 끝(오늘+6일 23:59:59.999999)을 돌려줍니다."""
+    start_of_today = now_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start_of_today + timedelta(days=CLOSING_SOON_DAYS)
+
+
+def _closing_soon_conditions(prefs: BidPreferenceView, now_dt: datetime) -> list[Any]:
+    """입찰 중·관심 조건에 이번 주 마감 상한을 더합니다.
+
+    기존 입찰 중 조건(마감 전, 최신 차수, 취소공고 제외, 업종·지역)을 그대로
+    쓰므로 건수와 목록이 다른 공고를 고를 수 없습니다.
+    """
+    return [
+        *_open_matching_conditions(prefs, now_dt),
+        BidAnnouncement.bid_clse_dt < _closing_soon_end(now_dt),
+    ]
+
+
 def _open_matching_conditions(prefs: BidPreferenceView, now_dt: datetime) -> list[Any]:
     """건수와 목록이 함께 쓰는 입찰 중·관심 조건입니다.
 
@@ -214,6 +251,39 @@ def _query_open_servc_list(
     return [_matching_row_view(row, now_dt) for row in db.execute(stmt).all()]
 
 
+def _query_closing_soon_count(db: Session, prefs: BidPreferenceView, now_dt: datetime) -> int:
+    """이번 주 마감 임박 공고를 즉시 셉니다. worker·시험 전용입니다."""
+    stmt = (
+        select(func.count())
+        .select_from(BidAnnouncement)
+        .where(*_closing_soon_conditions(prefs, now_dt))
+    )
+    stmt = similar_announcement_latest_filter(stmt)
+    return int(db.scalar(stmt) or 0)
+
+
+def _query_closing_soon_list(
+    db: Session,
+    prefs: BidPreferenceView,
+    limit: int,
+    now_dt: datetime,
+) -> list[dict[str, Any]]:
+    """이번 주 마감 임박 공고를 마감 빠른 순으로 즉시 조회합니다. worker·시험 전용입니다."""
+    stmt = (
+        select(
+            BidAnnouncement.id,
+            BidAnnouncement.bid_ntce_nm,
+            BidAnnouncement.dminstt_nm,
+            BidAnnouncement.bid_clse_dt,
+        )
+        .where(*_closing_soon_conditions(prefs, now_dt))
+        .order_by(BidAnnouncement.bid_clse_dt.asc(), BidAnnouncement.id.asc())
+        .limit(limit)
+    )
+    stmt = similar_announcement_latest_filter(stmt)
+    return [_matching_row_view(row, now_dt) for row in db.execute(stmt).all()]
+
+
 def _store_open_servc_count(prefs: BidPreferenceView, count: int) -> None:
     cache.set(_count_cache_key(prefs), count, OPEN_BID_COUNT_CACHE_TTL)
     cache.set(_count_stale_cache_key(prefs), count, OPEN_BID_STALE_CACHE_TTL)
@@ -224,6 +294,21 @@ def _store_open_servc_list(
 ) -> None:
     cache.set(_list_cache_key(prefs, limit), items, OPEN_BID_COUNT_CACHE_TTL)
     cache.set(_list_stale_cache_key(prefs, limit), items, OPEN_BID_STALE_CACHE_TTL)
+
+
+def _store_closing_soon_notice(
+    prefs: BidPreferenceView,
+    limit: int,
+    count: int,
+    items: list[dict[str, Any]],
+) -> None:
+    payload = {"count": count, "items": items}
+    cache.set(_closing_soon_cache_key(prefs, limit), payload, OPEN_BID_COUNT_CACHE_TTL)
+    cache.set(
+        _closing_soon_stale_cache_key(prefs, limit),
+        payload,
+        OPEN_BID_STALE_CACHE_TTL,
+    )
 
 
 def read_cached_open_servc_count(prefs: BidPreferenceView | None) -> int | None:
@@ -249,6 +334,25 @@ def read_cached_open_servc_list(
         return fresh
     stale = cache.get(_list_stale_cache_key(prefs, limit))
     return stale if isinstance(stale, list) else None
+
+
+def read_closing_soon_notice(
+    prefs: BidPreferenceView | None,
+    limit: int = OPEN_BID_LIST_DEFAULT_LIMIT,
+) -> dict[str, Any] | None:
+    """이번 주 마감 임박 건수·목록을 캐시에서만 읽습니다.
+
+    DB 조회를 하지 않으므로 세션을 받지 않습니다. 신선 키가 없으면 보관 키를
+    쓰고, 둘 다 없으면 None(화면은 '알림 준비 중')입니다. 관심 조건이 비어 있으면
+    알림이 없으므로 0건을 돌려줍니다.
+    """
+    if prefs is None or prefs.is_empty:
+        return {"count": 0, "items": []}
+    fresh = cache.get(_closing_soon_cache_key(prefs, limit))
+    if isinstance(fresh, dict):
+        return fresh
+    stale = cache.get(_closing_soon_stale_cache_key(prefs, limit))
+    return stale if isinstance(stale, dict) else None
 
 
 def stored_bid_preference_views(db: Session) -> list[BidPreferenceView]:
@@ -278,7 +382,7 @@ def warm_open_servc_matching(
     now: datetime | None = None,
     limit: int = OPEN_BID_LIST_DEFAULT_LIMIT,
 ) -> None:
-    """한 관심 조건의 건수·목록을 집계해 신선 키와 보관 키를 함께 채웁니다.
+    """한 관심 조건의 건수·목록과 마감 임박 알림을 집계해 신선·보관 키를 함께 채웁니다.
 
     worker 예열 전용입니다. 요청 경로에서는 부르지 않습니다.
     """
@@ -287,8 +391,11 @@ def warm_open_servc_matching(
     now_dt = now or kst_now()
     count = _query_open_servc_count(db, prefs, now_dt)
     items = _query_open_servc_list(db, prefs, limit, now_dt)
+    closing_soon_count = _query_closing_soon_count(db, prefs, now_dt)
+    closing_soon_items = _query_closing_soon_list(db, prefs, limit, now_dt)
     _store_open_servc_count(prefs, count)
     _store_open_servc_list(prefs, limit, items)
+    _store_closing_soon_notice(prefs, limit, closing_soon_count, closing_soon_items)
 
 
 def warm_stored_bid_preference(db: Session, user_id: int) -> BidPreferenceView | None:
