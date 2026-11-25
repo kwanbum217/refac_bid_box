@@ -550,17 +550,41 @@
                                     </button>
                                 </div>
 
-                                <!-- 내 조건 추천 구간. 서빙 모델 실측 오차 범위로 보여 주고 가장 눈에 띄게 둔다. -->
+                                <!-- 보완 투찰률 기반 내 조건 추천 투찰가. 정량점수에 따라 금액과 투찰률이 달라진다. -->
                                 <div id="res-member-recommendation" class="hidden mt-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-xl shadow-xs dark:border-amber-600 dark:bg-slate-900">
                                     <div class="flex flex-wrap items-center justify-between gap-2">
                                         <div class="flex items-center gap-2 min-w-0">
                                             <span class="badge badge-amber text-[10px]">추천</span>
-                                            <div class="detail-label text-amber-700 dark:text-amber-300 mb-0 whitespace-nowrap">내 조건 추천 구간</div>
+                                            <div class="detail-label text-amber-700 dark:text-amber-300 mb-0 whitespace-nowrap">내 조건 추천 투찰가</div>
                                         </div>
-                                        <span class="text-[11px] font-semibold text-amber-700 dark:text-amber-300">모델 실측 오차 ±<span id="res-member-error">-</span>%p 기준</span>
+                                        <span class="text-[11px] font-semibold text-amber-700 dark:text-amber-300">내 조건 추천 구간 참고: 모델 실측 오차 ±<span id="res-member-error">-</span>%p 기준</span>
                                     </div>
-                                    <div id="res-member-price" class="mt-2 text-2xl sm:text-3xl font-black tracking-tight text-amber-900 tabular-nums break-all dark:text-amber-100">-</div>
+                                    <div class="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                                        <div id="res-member-price" class="text-2xl sm:text-3xl font-black tracking-tight text-amber-900 tabular-nums break-all dark:text-amber-100">-</div>
+                                        <span id="res-member-rate" class="text-lg font-black tabular-nums text-amber-800 dark:text-amber-200"></span>
+                                    </div>
                                     <p id="res-member-band-note" class="hidden mt-1 text-xs font-semibold text-amber-800 dark:text-amber-200"></p>
+                                    <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                                        <span id="res-member-gap" class="hidden rounded-sm border border-amber-300 bg-white px-1.5 py-0.5 tabular-nums dark:border-amber-600 dark:bg-slate-800"></span>
+                                        <span id="res-member-per-point" class="hidden rounded-sm border border-amber-300 bg-white px-1.5 py-0.5 tabular-nums dark:border-amber-600 dark:bg-slate-800"></span>
+                                        <span id="res-member-rate-source" class="hidden"></span>
+                                    </div>
+                                    <div id="res-member-impossible" class="hidden mt-2 rounded-lg border border-rose-300 bg-white p-3 text-xs font-bold leading-relaxed text-rose-700 dark:border-rose-500 dark:bg-slate-800 dark:text-rose-300"></div>
+                                    <div id="res-member-unavailable" class="hidden mt-2 rounded-lg border border-amber-300 bg-white p-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-600 dark:bg-slate-800 dark:text-amber-200"></div>
+                                    <div id="res-member-scenarios" class="hidden mt-3 overflow-x-auto">
+                                        <table class="w-full text-left text-[11px] tabular-nums">
+                                            <thead class="text-amber-700 dark:text-amber-300">
+                                                <tr>
+                                                    <th class="py-1 pr-2 font-bold">구분</th>
+                                                    <th class="py-1 pr-2 font-bold">예정가격</th>
+                                                    <th class="py-1 pr-2 font-bold">투찰률</th>
+                                                    <th class="py-1 pr-2 font-bold">투찰금액</th>
+                                                    <th class="py-1 font-bold">판정</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="res-member-scenario-rows" class="text-amber-900 dark:text-amber-100"></tbody>
+                                        </table>
+                                    </div>
                                     <p id="res-member-reason" class="mt-2 text-xs leading-relaxed text-amber-900 dark:text-amber-100"></p>
                                 </div>
 
@@ -1742,7 +1766,12 @@ $(document).ready(function() {
         const bounds = data.price_bounds || {};
         const min = boundsReady ? bounds.min_bid_amount : null;
         const max = boundsReady ? bounds.max_bid_amount : null;
-        const member = boundsReady ? data.member_recommended_price : null;
+        const memberBid = data.member_bid || null;
+        const member = boundsReady
+            ? (memberBid && memberBid.bid_amount != null
+                ? memberBid.bid_amount
+                : data.member_recommended_price)
+            : null;
         const memberLow = boundsReady ? data.member_recommended_low : null;
         const memberHigh = boundsReady ? data.member_recommended_high : null;
         const positions = priceRangePositions(
@@ -1861,6 +1890,8 @@ $(document).ready(function() {
     }
 
     function renderMemberRecommendation(data, boundsReady) {
+        const memberBid = data.member_bid || null;
+        const hasMemberBid = memberBid != null;
         const price = data.member_recommended_price;
         const basis = data.member_recommendation_basis;
         const low = data.member_recommended_low;
@@ -1868,13 +1899,34 @@ $(document).ready(function() {
         const errorPp = data.member_recommended_error_pp == null
             ? null
             : Number(data.member_recommended_error_pp);
-        const show = boundsReady && price != null && basis != null;
+        const impossible = hasMemberBid && memberBid.status === 'impossible';
+        const unverifiable = hasMemberBid && memberBid.status === 'unverifiable';
+        const bidAmount = hasMemberBid ? memberBid.bid_amount : null;
+        const bidRate = hasMemberBid ? memberBid.bid_rate_percent : null;
+        // 보완 투찰가가 있으면 통과 구간 확정 여부와 무관하게 보여 준다. 통과 불가
+        // (impossible)도 금액 대신 사유를 보여 주는 것이 목적이다.
+        const show = hasMemberBid
+            ? (impossible || unverifiable || bidAmount != null)
+            : (boundsReady && price != null && basis != null);
         $('#res-member-recommendation').toggleClass('hidden', !show);
         if (!show) return;
         const hasBand = low != null && high != null;
         const hasError = errorPp != null && Number.isFinite(errorPp);
-        $('#res-member-price').text(
-            hasBand ? amountText(low) + ' ~ ' + amountText(high) : amountText(price)
+        if (hasMemberBid) {
+            $('#res-member-price').text(
+                impossible || unverifiable
+                    ? '-'
+                    : (bidAmount != null ? amountText(bidAmount) : '-')
+            );
+        } else {
+            $('#res-member-price').text(
+                hasBand ? amountText(low) + ' ~ ' + amountText(high) : amountText(price)
+            );
+        }
+        $('#res-member-rate').text(
+            bidRate == null || !Number.isFinite(Number(bidRate))
+                ? ''
+                : Number(bidRate).toFixed(4) + '%'
         );
         $('#res-member-error').text(hasError ? errorPp.toFixed(2) : '-');
         $('#res-member-band-note')
@@ -1884,7 +1936,109 @@ $(document).ready(function() {
                     ? '모델 실측 오차 ±' + errorPp.toFixed(2) + '%p 기준 범위, 중심 ' + amountText(price)
                     : ''
             );
-        $('#res-member-reason').text(memberRecommendationText(data));
+
+        const compensation = hasMemberBid ? (memberBid.compensation || null) : null;
+        const lwltRate = compensation && compensation.announcement_lwlt_rate != null
+            ? Number(compensation.announcement_lwlt_rate)
+            : null;
+        let gapPp = null;
+        if (hasMemberBid && !impossible && !unverifiable && bidRate != null
+                && lwltRate != null && Number.isFinite(lwltRate)) {
+            // 이미 하한율로 충족하면 보완폭은 0 이다. 격자 반올림 차이를 보완폭으로
+            // 오해하지 않도록 상태로 한 번 더 가른다.
+            gapPp = memberBid.status === 'already_sufficient'
+                ? 0
+                : Number(bidRate) - lwltRate;
+        }
+        $('#res-member-gap')
+            .toggleClass('hidden', gapPp == null || !Number.isFinite(gapPp))
+            .text(
+                gapPp == null || !Number.isFinite(gapPp)
+                    ? ''
+                    : '하한율 대비 ' + (gapPp >= 0 ? '+' : '') + gapPp.toFixed(4) + '%p 보완'
+            );
+
+        const perPoint = hasMemberBid && memberBid.rate_change_per_point_pp != null
+            ? Number(memberBid.rate_change_per_point_pp)
+            : null;
+        $('#res-member-per-point')
+            .toggleClass('hidden', perPoint == null || !Number.isFinite(perPoint))
+            .text(
+                perPoint == null || !Number.isFinite(perPoint)
+                    ? ''
+                    : '정량점수 1점 올리면 투찰률 ' + (perPoint > 0 ? '+' : '') + perPoint.toFixed(4) + '%p'
+            );
+
+        let sourceText = '';
+        if (hasMemberBid && memberBid.center_rate_percent != null) {
+            sourceText = '예상 사정률 '
+                + (memberBid.center_rate_source === 'p50' ? '실측 중앙값(p50) ' : '이론 범위 중심 ')
+                + memberBid.center_rate_percent + '%';
+        }
+        $('#res-member-rate-source').toggleClass('hidden', !sourceText).text(sourceText);
+
+        $('#res-member-impossible')
+            .toggleClass('hidden', !impossible)
+            .text(
+                impossible
+                    ? (memberBid.reason || '필요 가격점수가 배점한도를 넘어 통과할 수 없습니다. 투찰을 권장하지 않습니다.')
+                    : ''
+            );
+        $('#res-member-unavailable')
+            .toggleClass('hidden', !unverifiable)
+            .text(
+                unverifiable
+                    ? (memberBid.reason || '공고에 낙찰하한율이 없어 추천 투찰가를 확정하지 못했습니다.')
+                    : ''
+            );
+
+        const scenarioRows = compensation && Array.isArray(compensation.scenarios)
+            ? compensation.scenarios
+            : [];
+        const showScenarios = hasMemberBid && !impossible && !unverifiable && scenarioRows.length > 0;
+        $('#res-member-scenarios').toggleClass('hidden', !showScenarios);
+        if (showScenarios && typeof escapeHtml === 'function') {
+            const statusLabels = {
+                already_sufficient: '하한 충족',
+                compensate: '보완',
+                impossible: '불가'
+            };
+            $('#res-member-scenario-rows').html(scenarioRows.map(function(row) {
+                const rowRate = row.verified_price_ratio == null
+                    ? '-'
+                    : (Number(row.verified_price_ratio) * 100).toFixed(4) + '%';
+                const rowAmount = row.complement_bid_amount == null
+                    ? '-'
+                    : amountText(row.complement_bid_amount);
+                return '<tr class="border-t border-amber-200 dark:border-amber-700">'
+                    + '<td class="py-1 pr-2 font-bold">' + escapeHtml(row.scenario_name || '') + '</td>'
+                    + '<td class="py-1 pr-2">' + escapeHtml(amountText(row.estimated_price)) + '</td>'
+                    + '<td class="py-1 pr-2">' + escapeHtml(rowRate) + '</td>'
+                    + '<td class="py-1 pr-2">' + escapeHtml(rowAmount) + '</td>'
+                    + '<td class="py-1">' + escapeHtml(statusLabels[row.row_status] || row.row_status || '') + '</td>'
+                    + '</tr>';
+            }).join(''));
+        }
+
+        if (!hasMemberBid) {
+            $('#res-member-reason').text(memberRecommendationText(data));
+            return;
+        }
+        if (impossible || unverifiable) {
+            $('#res-member-reason').text(memberBid.reason || '');
+            return;
+        }
+        const score = scoreText(data.non_price_score);
+        const scoreLabel = score == null ? '내 정량점수' : '정량점수 ' + score + '점';
+        if (memberBid.status === 'already_sufficient') {
+            $('#res-member-reason').text(
+                scoreLabel + '이면 낙찰하한율 금액으로 필요 가격점수를 충족합니다. 금액을 더 올리지 않습니다.'
+            );
+            return;
+        }
+        $('#res-member-reason').text(
+            scoreLabel + '으로 필요한 가격점수를 채우는 최저 보완 금액입니다. 낙찰하한율에 가장 가까운 통과 금액을 추천합니다.'
+        );
     }
 
     function boundReasonText(data, bound) {
@@ -2056,27 +2210,34 @@ $(document).ready(function() {
         const memberMissing = !hasMemberQuantData(data);
         const boundsReady = !memberMissing && bounds.status === 'ok'
             && bounds.min_bid_amount != null && bounds.max_bid_amount != null;
+        const memberBid = data.member_bid || null;
+        // 필요 가격점수가 배점한도를 넘어 통과 구간이 막힌 경우에는 금액 대신
+        // '투찰 비권장'을 추천 카드에 보여 주기 위해 차단 화면으로 돌리지 않는다.
+        const memberImpossible = data.blocked && memberBid != null
+            && memberBid.status === 'impossible';
 
         if (data.blocked) {
-            $('#prediction-result').addClass('hidden');
-            $('#res-lwlt-missing').addClass('hidden');
-            $('#recommend-blocked').removeClass('hidden');
-            $('#recommend-blocked-reason').text(
-                getBlockedReasonText(data.blocked_reason)
-                + (data.rule_basis ? ' (' + data.rule_basis + ')' : '')
-            );
-            $('#recommend-blocked-guidance').text($('#blocked-guidance').text());
-            // 수기심사 공고는 자체 심사기준표가 실린 공고 첨부파일 카드로 바로 이어 준다.
-            $('#blocked-attachment-link').toggleClass(
-                'hidden',
-                blockedCodeOf(data.blocked_reason) !== 'MANUAL_EVALUATION'
-            );
-            const showMemberGap = blockedCodeOf(data.blocked_reason) === 'PRICE_BOUNDS_UNRESOLVED'
-                && !hasMemberQuantData(data);
-            $('#recommend-member-missing').toggleClass('hidden', !showMemberGap);
-            renderBlockedPublicValues(data);
-            renderBlockedGap(data);
-            return;
+            if (!memberImpossible) {
+                $('#prediction-result').addClass('hidden');
+                $('#res-lwlt-missing').addClass('hidden');
+                $('#recommend-blocked').removeClass('hidden');
+                $('#recommend-blocked-reason').text(
+                    getBlockedReasonText(data.blocked_reason)
+                    + (data.rule_basis ? ' (' + data.rule_basis + ')' : '')
+                );
+                $('#recommend-blocked-guidance').text($('#blocked-guidance').text());
+                // 수기심사 공고는 자체 심사기준표가 실린 공고 첨부파일 카드로 바로 이어 준다.
+                $('#blocked-attachment-link').toggleClass(
+                    'hidden',
+                    blockedCodeOf(data.blocked_reason) !== 'MANUAL_EVALUATION'
+                );
+                const showMemberGap = blockedCodeOf(data.blocked_reason) === 'PRICE_BOUNDS_UNRESOLVED'
+                    && !hasMemberQuantData(data);
+                $('#recommend-member-missing').toggleClass('hidden', !showMemberGap);
+                renderBlockedPublicValues(data);
+                renderBlockedGap(data);
+                return;
+            }
         }
         $('#recommend-blocked-guidance').text('');
         $('#recommend-blocked-public').addClass('hidden');

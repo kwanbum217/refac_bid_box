@@ -228,16 +228,20 @@ def lookup_sajeong_rate_range(
     session: Any = None,
     window_days: int = DEFAULT_WINDOW_DAYS,
 ) -> dict[str, Any]:
-    """(수요기관명, category) 의 사정률 범위를 대체 순서로 조회합니다.
+    """(수요기관명, category) 의 사정률 분포를 대체 순서로 조회합니다.
 
     institution -> region(시·도) -> category 순으로 찾고, 없으면 scope='none' 을
-    돌려줍니다. 최저가·최상가는 선택된 scope 의 min_rate/max_rate 입니다.
+    돌려줍니다. 최저가·최상가는 선택된 scope 의 min_rate/max_rate 이고, p10_rate·
+    p50_rate·p90_rate 는 예상 사정률 중심과 시나리오의 근거가 됩니다.
     """
     result: dict[str, Any] = {
         "scope": SCOPE_NONE,
         "institution_name": "",
         "min_rate": None,
         "max_rate": None,
+        "p10_rate": None,
+        "p50_rate": None,
+        "p90_rate": None,
         "sample_count": 0,
         "window_days": window_days,
     }
@@ -260,6 +264,9 @@ def lookup_sajeong_rate_range(
             select(
                 InstitutionSajeongRateStat.min_rate,
                 InstitutionSajeongRateStat.max_rate,
+                InstitutionSajeongRateStat.p10_rate,
+                InstitutionSajeongRateStat.p50_rate,
+                InstitutionSajeongRateStat.p90_rate,
                 InstitutionSajeongRateStat.sample_count,
             ).where(
                 InstitutionSajeongRateStat.scope == scope,
@@ -275,6 +282,9 @@ def lookup_sajeong_rate_range(
             "institution_name": scope_name,
             "min_rate": row.min_rate,
             "max_rate": row.max_rate,
+            "p10_rate": row.p10_rate,
+            "p50_rate": row.p50_rate,
+            "p90_rate": row.p90_rate,
             "sample_count": int(row.sample_count),
             "window_days": window_days,
         }

@@ -359,6 +359,37 @@ class PriceCompensation(BaseModel):
     )
 
 
+class MemberBidRecommendation(BaseModel):
+    """보완 투찰률 기반 '내 조건 추천 투찰가'.
+
+    회원 정량점수 Q 로 필요한 가격점수 T-Q 를 만족하는 최저 투찰률과, 그 투찰률을
+    예상 예정가격에 적용해 확정한 추천 금액을 담습니다. 금액·시나리오 판정은
+    PriceCompensation 을 그대로 재사용하고, 화면에 필요한 중심 사정률과 1점 민감도만
+    덧붙입니다.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: Literal["already_sufficient", "compensate", "impossible", "unverifiable"] = Field(
+        ..., description="추천 판정 상태. unverifiable 은 공고 하한율 미상"
+    )
+    reason: str | None = Field(None, description="추천 불가·미확정 사유")
+    bid_amount: int | None = Field(None, description="추천 투찰금액 (원)")
+    bid_rate_percent: str | None = Field(
+        None, description="추천 투찰률 (%). 소수점 넷째 자리 격자 기준"
+    )
+    center_rate_percent: str | None = Field(None, description="예상 사정률 중심 (%)")
+    center_rate_source: Literal["p50", "theoretical"] | None = Field(
+        None, description="중심 사정률 출처. p50 은 과거 실측 중앙값, theoretical 은 이론 범위 중심"
+    )
+    rate_change_per_point_pp: str | None = Field(
+        None, description="정량점수 1점 상승 시 투찰률 변화 (%p). 계산 불가면 null"
+    )
+    compensation: PriceCompensation | None = Field(
+        None, description="시나리오별 보완 판정. 하한율 미상이면 null"
+    )
+
+
 class RuleScoreTable(BaseModel):
     """규칙이 선언한 배점표(B·k·T)와 출처, 미확정·덮어쓰기 표시.
 
@@ -829,6 +860,9 @@ class EvaluationRecommendResponse(BaseModel):
     )
     prediction: RecommendationPrediction | None = Field(None, description="AI 예측가와 근거 재료")
     price_bounds: RecommendationPriceBounds | None = Field(None, description="최저가·최상가 구간")
+    member_bid: MemberBidRecommendation | None = Field(
+        None, description="보완 투찰률 기반 내 조건 추천 투찰가. 하한율 미상이면 unverifiable"
+    )
     member_recommended_price: int | None = Field(
         None,
         description="내 조건 추천가 (원). AI 예측가를 회원 정량점수 기준 통과 구간 안으로 옮긴 값",
