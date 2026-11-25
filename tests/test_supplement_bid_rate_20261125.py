@@ -11,6 +11,7 @@
  (f) 사정률 p50 이 있으면 중심, 없으면 이론 중심 1.0 과 출처 표기
  (g) /evaluations/recommend 응답에 member_bid 가 있고 정량점수에 따라 투찰률이 바뀜
  (h) 기존 member_recommended_* 필드가 유지됨
+ (i) 공고 하한율이 없으면 member_bid.status 는 금액 없이 unverifiable
 """
 # ruff: noqa: F811 - 가져온 픽스처 이름을 시험 인자로 받는다
 
@@ -187,6 +188,35 @@ def test_recommend_marks_impossible_member_bid(client, isolated_db, as_user):
     assert member_bid["bid_amount"] is None
     assert member_bid["bid_rate_percent"] is None
     assert "투찰을 권장하지 않습니다" in member_bid["reason"]
+
+
+def test_recommend_marks_member_bid_unverifiable_without_announcement_lwlt(
+    client, isolated_db, as_user
+):
+    """공고 하한율이 없으면 추천 API 는 금액을 지어내지 않고 unverifiable 로 남긴다."""
+    as_user(10)
+    _add_member_facts(isolated_db, 10, credit_grade=MEMBER_CREDIT_GRADE)
+    bid = _create_bid(
+        isolated_db,
+        method="적격심사제-관리규정외 수기심사",
+        notice_no="SUPP-UNVERIFIABLE-001",
+        raw_overrides={"sucsfbidLwltRate": None},
+    )
+
+    payload = _recommend(
+        client,
+        bid,
+        overrides=_registry_overrides(base_rate=0.88, manual_non_price_score=40.0),
+    ).json()
+
+    assert payload["lower_bound_rate"] is None
+    member_bid = payload["member_bid"]
+    assert member_bid is not None
+    assert member_bid["status"] == "unverifiable"
+    assert member_bid["bid_amount"] is None
+    assert member_bid["bid_rate_percent"] is None
+    assert member_bid["compensation"] is None
+    assert "낙찰하한율이 없어" in member_bid["reason"]
 
 
 # --------------------------------------------------------------------------- #
