@@ -27,9 +27,7 @@ DATA_GAP_CASES = (
     ("낙찰하한율 적용된 용역 공고 보여줘", "낙찰하한율"),
     ("낙찰하한율 90% 넘는 공고 알려줘", "낙찰하한율"),
     ("참가업체 수 10개 이상인 공고 보여줘", "참가업체 수"),
-    ("참가 업체 수 알려줘", "참가업체 수"),
     ("투찰업체 몇 개였어?", "참가업체 수"),
-    ("참여 업체 수 알려줘", "참가업체 수"),
     ("(주)한백이 참여한 입찰 목록 보여줘", "투찰자·참여 업체"),
     ("(주)가온이 참여한 입찰 알려줘", "투찰자·참여 업체"),
     ("참여한 공고 보여줘", "투찰자·참여 업체"),
@@ -59,6 +57,15 @@ UNGUARDED_VALUE_CASES = (
     "경쟁 률 알려줘",
     "경쟁률 높은 공고 알려줘",
     "경쟁 치열했던 용역 공고 5건 보여줘",
+)
+
+# 참가업체 수는 낙찰 1건당 평균(경쟁률)로 집계할 수 있어 가드가 막지 않습니다.
+PARTICIPANT_COUNT_AGGREGATE_CASES = (
+    "참가업체 수 알려줘",
+    "참가 업체 수 알려줘",
+    "참여 업체 수 알려줘",
+    "참가업체 수 평균 알려줘",
+    "참가업체 수 추이 보여줘",
 )
 
 SUPPORTED_CASES = (
@@ -104,6 +111,9 @@ SUPPORTED_CASES = (
 
 DEFAULT_GAP_REASON = "현재 수집하는 입찰 데이터에 포함되어 있지 않아"
 
+# 공고 상세 화면이 공고별 값으로 보여 주는 항목은 미수집이라고 말하지 않습니다.
+DETAIL_SCREEN_ITEMS = ("낙찰하한율", "지역 제한·업종 제한 참가자격")
+
 
 def _fail_prepare(*args: object, **kwargs: object) -> None:
     raise AssertionError("미보유 항목 질문은 검색 컨텍스트를 준비하면 안 됩니다")
@@ -122,6 +132,13 @@ def test_detects_data_gap_items(message: str, item: str) -> None:
 def test_sajeong_and_competition_questions_are_not_data_gap(message: str) -> None:
     """사정률·경쟁률은 원천 집계로 답하므로 가드가 막지 않습니다."""
     assert detect_data_gap(message) is None
+
+
+@pytest.mark.parametrize("message", PARTICIPANT_COUNT_AGGREGATE_CASES)
+def test_participant_count_questions_route_to_competition(message: str) -> None:
+    """참가업체 수 평균 질문은 경쟁률 집계 경로로 보냅니다."""
+    assert detect_data_gap(message) is None
+    assert build_retrieval_plan(message).filters.get("metric") == "avg_participants"
 
 
 @pytest.mark.parametrize("message", SUPPORTED_CASES)
@@ -155,12 +172,26 @@ def test_every_item_has_a_fixed_message() -> None:
 def test_fixed_message_has_no_numbers_or_internal_terms(item: str) -> None:
     message = DATA_GAP_MESSAGES[item]
     assert item in message
-    assert DEFAULT_GAP_REASON in message
     assert "조회할 수 있습니다" in message
     assert re.search(r"\d", message) is None
+    assert "86.745" not in message
     for term in ("검색 컨텍스트", "Source", "시스템", "지침"):
         assert term not in message
     assert contains_system_prompt_leak(message) is False
+
+
+@pytest.mark.parametrize("item", DETAIL_SCREEN_ITEMS)
+def test_detail_screen_items_are_not_called_uncollected(item: str) -> None:
+    """공고 상세가 공고별 값으로 보여 주는 항목을 미수집이라고 말하지 않습니다."""
+    message = DATA_GAP_MESSAGES[item]
+    assert "공고 상세" in message
+    assert DEFAULT_GAP_REASON not in message
+
+
+@pytest.mark.parametrize("item", ["투찰자·참여 업체"])
+def test_bidder_list_item_keeps_uncollected_notice(item: str) -> None:
+    """투찰자·참여 업체 개별 명단은 수집하지 않는다는 안내를 유지합니다."""
+    assert DEFAULT_GAP_REASON in DATA_GAP_MESSAGES[item]
 
 
 @pytest.mark.parametrize(("message", "item"), DATA_GAP_CASES)

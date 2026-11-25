@@ -1,10 +1,11 @@
-"""수집 데이터에 없는 입찰 항목 질문을 고정 안내로 돌리는 가드.
+"""공고 상세·집계 경로로 답할 수 없는 입찰 항목 질문을 고정 안내로 돌리는 가드.
 
-낙찰하한율 실측, 참가업체 수, 투찰자, 지역·업종 제한은 현재 수집
-스키마에 해당 컬럼이 없습니다. 이런 질문을 다른 수치나 다른 조회 축으로 대체
-해석하지 않도록 검색·도구·LLM 호출 전에 판정하고, 항목별 고정 안내 문구를
-반환합니다. 사정률과 경쟁률은 원천 테이블에서 직접 집계하므로 이 가드의
-대상이 아닙니다.
+낙찰하한율과 지역·업종 제한은 공고 원문에 공고별 값으로 있어 공고 상세 화면에서
+확인할 수 있지만, 챗봇은 아직 이를 집계·비교하지 않습니다. 투찰자·참여 업체
+개별 명단은 수집하지 않습니다. 참가업체 수는 낙찰 1건당 평균(경쟁률)로 집계할
+수 있으므로 그 경로로 보내고, 공고별 조건 필터로만 남는 질문에 고정 안내를
+반환합니다. 사정률과 경쟁률은 원천 테이블에서 직접 집계하므로 이 가드의 대상이
+아닙니다.
 """
 
 from __future__ import annotations
@@ -12,16 +13,20 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from src.rag.query_planning import DETAIL_METRIC_PARTICIPANTS, _detail_metric
+
 DATA_GAP_MESSAGES: dict[str, str] = {
     "낙찰하한율": (
-        "낙찰하한율은 현재 수집하는 입찰 데이터에 포함되어 있지 않아 정확한 값을 "
-        "알려드릴 수 없습니다. 대신 공고별 낙찰률, 평균 낙찰률, 낙찰 건수는 "
-        "조회할 수 있습니다."
+        "낙찰하한율은 공고 원문에 공고별 값으로 있으며, 공고 상세 화면에서 해당 "
+        "공고의 낙찰하한율을 확인할 수 있습니다. 챗봇은 아직 이 값을 공고별로 "
+        "집계하거나 비교해 드리지 않습니다. 대신 공고별 낙찰률, 평균 낙찰률, "
+        "낙찰 건수는 조회할 수 있습니다."
     ),
     "참가업체 수": (
-        "참가업체 수는 현재 수집하는 입찰 데이터에 포함되어 있지 않아 정확한 값을 "
-        "알려드릴 수 없습니다. 대신 업체별 낙찰 건수, 최근 낙찰 결과, 수요기관 "
-        "지역별 공고 건수는 조회할 수 있습니다."
+        "참가업체 수는 낙찰 한 건당 평균 참가업체 수(경쟁률)로 조회할 수 있습니다. "
+        "다만 공고별 참가업체 수 조건으로 공고를 걸러 드리지는 않습니다. 대신 "
+        "업체별 낙찰 건수, 최근 낙찰 결과, 수요기관 지역별 공고 건수는 조회할 수 "
+        "있습니다."
     ),
     "투찰자·참여 업체": (
         "투찰자·참여 업체 정보는 현재 수집하는 입찰 데이터에 포함되어 있지 않아 "
@@ -29,9 +34,10 @@ DATA_GAP_MESSAGES: dict[str, str] = {
         "최근 낙찰 결과, 업체 순위는 조회할 수 있습니다."
     ),
     "지역 제한·업종 제한 참가자격": (
-        "지역 제한·업종 제한 참가자격 정보는 현재 수집하는 입찰 데이터에 포함되어 "
-        "있지 않아 정확한 값을 알려드릴 수 없습니다. 대신 수요기관 지역별 공고 건수, "
-        "공고 목록, 낙찰 건수는 조회할 수 있습니다."
+        "지역 제한·업종 제한 참가자격은 공고 상세 화면에서 공고별 조건으로 확인할 "
+        "수 있으며, 일부 과거 공고는 값이 없을 수 있습니다. 챗봇은 아직 이 조건을 "
+        "집계하거나 비교해 드리지 않습니다. 대신 수요기관 지역별 공고 건수, 공고 "
+        "목록, 낙찰 건수는 조회할 수 있습니다."
     ),
 }
 
@@ -112,11 +118,21 @@ def _is_project_name_phrase(text: str, match: re.Match[str]) -> bool:
     return _PROJECT_COUNTERS.sub("", tail).startswith(_PROJECT_HEAD_NOUNS)
 
 
+def _has_competition_route(normalized: str) -> bool:
+    """참가업체 수 질문이 평균 참가업체 수(경쟁률) 집계로 해석되는지 봅니다.
+
+    계획 단계가 같은 질의를 경쟁률 지표로 읽으면 가드가 가로막지 않습니다.
+    수치 조건으로 공고를 거르는 질의는 집계 경로가 아니므로 가드를 유지합니다.
+    """
+    return _detail_metric(normalized) == DETAIL_METRIC_PARTICIPANTS
+
+
 def detect_data_gap(message: str) -> str | None:
     """수집 데이터에 없는 항목 질문이면 항목 이름을, 아니면 None 을 반환합니다.
 
     항목 이름은 `DATA_GAP_MESSAGES` 의 키와 같습니다. 판정은 원문 기준이며
-    다른 축의 필터로 대체 해석하지 않습니다.
+    다른 축의 필터로 대체 해석하지 않습니다. 참가업체 수는 경쟁률 집계로
+    답할 수 있는 질의에 한해 가드를 통과시킵니다.
     """
     normalized = _normalize_request(message)
     if not normalized.strip():
@@ -131,6 +147,8 @@ def detect_data_gap(message: str) -> str | None:
         for pattern in patterns:
             for match in pattern.finditer(text):
                 if _is_project_name_phrase(text, match):
+                    continue
+                if item == "참가업체 수" and _has_competition_route(normalized):
                     continue
                 return item
     return None

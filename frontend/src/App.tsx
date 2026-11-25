@@ -857,7 +857,7 @@ export default function App() {
               value={chatInput}
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendChat()}
-              placeholder="예: 물품구매 적격심사 입찰가격 평점산식을 설명해줘"
+              placeholder="예: 정량점수가 1점 모자라면 투찰률을 얼마나 올려야 하나요?"
               style={{ flex: 1, padding: '12px', backgroundColor: '#0f172a', border: '1px solid #334155', color: '#fff', borderRadius: '6px', fontSize: '13px' }}
             />
             {isStreaming ? (
