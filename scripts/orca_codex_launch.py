@@ -40,15 +40,16 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def cleanup_orphan_handles(worktree: Path) -> list[str]:
-    """preamble 없이 남은 워커 핸들 파일을 정리합니다.
+def cleanup_orphan_handles(worktree: Path, *, now: float | None = None) -> list[str]:
+    """preamble 없이 남은 낡은 워커 핸들 파일을 정리합니다.
 
     이 런처는 preamble 을 직접 소비하지 않고 codex 에이전트를 Orca worker-start
     로 띄웁니다. 에이전트 환경은 Orca 가 소유하므로 여기서 ORCA_TERMINAL_HANDLE
-    을 바꿀 수 없습니다. 대신 짝이 되는 preamble 이 사라진 .handle 을 지워
-    워크트리에 낡은 핸들이 남지 않게 하고, 지운 경로를 돌려줍니다.
+    을 바꿀 수 없습니다. 대신 짝이 되는 preamble 이 사라지고 충분히 오래된
+    .handle 만 지워, taskctl 이 방금 쓴 진행 중 Dispatch 의 핸들을 지우지
+    않습니다. now 는 시험에서 시각을 고정하기 위한 주입점입니다.
     """
-    removed = common.remove_orphan_worker_handles(worktree / ".orca")
+    removed = common.remove_orphan_worker_handles(worktree / ".orca", now=now)
     return [str(path) for path in removed]
 
 
