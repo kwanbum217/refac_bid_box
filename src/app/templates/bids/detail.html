@@ -546,6 +546,7 @@
                                         <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">)</span>
                                         <span id="res-optimal-note" class="min-w-0 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">AI 예측가는 공고 기준 시장 예측이라 정량점수와 무관합니다.</span>
                                         <span class="min-w-0 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">업체 조건이 달라도 같은 값이 나옵니다.</span>
+                                        <span class="min-w-0 text-[11px] font-semibold leading-relaxed text-slate-500 dark:text-slate-400">모든 사용자에게 같은 공통 예측값입니다.</span>
                                         <i class="fas fa-circle-info text-slate-300 text-[10px] shrink-0" aria-hidden="true"></i>
                                     </button>
                                 </div>
@@ -564,6 +565,9 @@
                                         <span id="res-member-rate" class="text-lg font-black tabular-nums text-amber-800 dark:text-amber-200"></span>
                                     </div>
                                     <p id="res-member-band-note" class="hidden mt-1 text-xs font-semibold text-amber-800 dark:text-amber-200"></p>
+                                    <p id="res-member-dispersed-band" class="hidden mt-1 text-xs font-semibold tabular-nums text-amber-800 dark:text-amber-200"></p>
+                                    <p id="res-member-dispersed-floor" class="hidden mt-1 text-xs font-semibold tabular-nums text-amber-800 dark:text-amber-200"></p>
+                                    <p id="res-member-dispersed-note" class="hidden mt-2 rounded-lg border border-amber-300 bg-white p-3 text-[11px] leading-relaxed text-amber-800 ring-1 ring-amber-300 dark:border-amber-600 dark:bg-slate-800 dark:text-amber-200 dark:ring-amber-600">이 추천가는 과거 낙찰 실적으로 측정한 낙찰 가능 구간 안에서 고른 지점입니다. 같은 공고라도 사용자마다 다른 지점이 제시되며, 구간 안 지점들의 과거 낙찰 확률에는 유의한 차이가 없습니다.</p>
                                     <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-amber-800 dark:text-amber-200">
                                         <span id="res-member-gap" class="hidden rounded-sm border border-amber-300 bg-white px-1.5 py-0.5 tabular-nums dark:border-amber-600 dark:bg-slate-800"></span>
                                         <span id="res-member-per-point" class="hidden rounded-sm border border-amber-300 bg-white px-1.5 py-0.5 tabular-nums dark:border-amber-600 dark:bg-slate-800"></span>
@@ -1903,6 +1907,11 @@ $(document).ready(function() {
         const unverifiable = hasMemberBid && memberBid.status === 'unverifiable';
         const bidAmount = hasMemberBid ? memberBid.bid_amount : null;
         const bidRate = hasMemberBid ? memberBid.bid_rate_percent : null;
+        // 사용자별 분산 추천가. 있으면 주 표시를 이 금액으로 바꾸고, 보완 투찰가
+        // (정량점수 기준 최저 통과 금액)는 아래에 근거로 남긴다.
+        const dispersed = data.dispersed_bid || null;
+        const showDispersed = dispersed != null && dispersed.amount != null;
+        const scopeLabels = { institution: '발주처', region: '시·도', category: '업종' };
         // 보완 투찰가가 있으면 통과 구간 확정 여부와 무관하게 보여 준다. 통과 불가
         // (impossible)도 금액 대신 사유를 보여 주는 것이 목적이다.
         const show = hasMemberBid
@@ -1914,19 +1923,22 @@ $(document).ready(function() {
         const hasError = errorPp != null && Number.isFinite(errorPp);
         if (hasMemberBid) {
             $('#res-member-price').text(
-                impossible || unverifiable
-                    ? '-'
-                    : (bidAmount != null ? amountText(bidAmount) : '-')
+                showDispersed
+                    ? amountText(dispersed.amount)
+                    : (impossible || unverifiable
+                        ? '-'
+                        : (bidAmount != null ? amountText(bidAmount) : '-'))
             );
         } else {
             $('#res-member-price').text(
                 hasBand ? amountText(low) + ' ~ ' + amountText(high) : amountText(price)
             );
         }
+        const displayRate = showDispersed ? dispersed.rate_percent : bidRate;
         $('#res-member-rate').text(
-            bidRate == null || !Number.isFinite(Number(bidRate))
+            displayRate == null || !Number.isFinite(Number(displayRate))
                 ? ''
-                : Number(bidRate).toFixed(4) + '%'
+                : Number(displayRate).toFixed(4) + '%'
         );
         $('#res-member-error').text(hasError ? errorPp.toFixed(2) : '-');
         $('#res-member-band-note')
@@ -1936,6 +1948,28 @@ $(document).ready(function() {
                     ? '모델 실측 오차 ±' + errorPp.toFixed(2) + '%p 기준 범위, 중심 ' + amountText(price)
                     : ''
             );
+
+        // 분산 추천가의 구간과 하한, 그리고 숨은 조작이 아님을 밝히는 고정 문구.
+        const scopeLabel = showDispersed
+            ? (scopeLabels[dispersed.scope] || '업종')
+            : '';
+        $('#res-member-dispersed-band')
+            .toggleClass('hidden', !showDispersed)
+            .text(
+                showDispersed
+                    ? '낙찰 가능 구간 ' + amountText(dispersed.band_low_amount) + ' ~ '
+                        + amountText(dispersed.band_high_amount)
+                        + ' (과거 낙찰 실적 ' + dispersed.sample_count + '건, ' + scopeLabel + ' 기준)'
+                    : ''
+            );
+        $('#res-member-dispersed-floor')
+            .toggleClass('hidden', !showDispersed)
+            .text(
+                showDispersed && bidAmount != null
+                    ? '정량점수 기준 최저 통과 금액 ' + amountText(bidAmount)
+                    : ''
+            );
+        $('#res-member-dispersed-note').toggleClass('hidden', !showDispersed);
 
         const compensation = hasMemberBid ? (memberBid.compensation || null) : null;
         const lwltRate = compensation && compensation.announcement_lwlt_rate != null
@@ -2030,6 +2064,13 @@ $(document).ready(function() {
         }
         const score = scoreText(data.non_price_score);
         const scoreLabel = score == null ? '내 정량점수' : '정량점수 ' + score + '점';
+        if (showDispersed) {
+            $('#res-member-reason').text(
+                scoreLabel + ' 기준 최저 통과 금액은 ' + amountText(bidAmount)
+                    + '이며, 이 금액 이상에서 과거 낙찰 가능 구간 안의 지점을 사용자별로 골랐습니다.'
+            );
+            return;
+        }
         if (memberBid.status === 'already_sufficient') {
             $('#res-member-reason').text(
                 scoreLabel + '이면 낙찰하한율 금액으로 필요 가격점수를 충족합니다. 금액을 더 올리지 않습니다.'

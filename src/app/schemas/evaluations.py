@@ -810,6 +810,32 @@ class RecommendationPriceBounds(BaseModel):
     reasons: list[str] = Field(default_factory=list, description="차단·제한 사유")
 
 
+class DispersedBidPayload(BaseModel):
+    """사용자별 분산 추천 투찰가와 공개 근거.
+
+    같은 정량점수의 서로 다른 사용자가 같은 공고에서 같은 금액을 받지 않도록,
+    과거 낙찰 실적으로 측정한 승리 구간 분포(분위표) 안에서 사용자·공고 조합으로
+    한 지점을 결정론적으로 고른 결과입니다. AI 예측가(모델 출력)는 이 값과 무관하게
+    모든 사용자에게 같은 값으로 따로 표시합니다.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    amount: int = Field(..., description="분산 추천 투찰금액 (원)")
+    rate_percent: str = Field(..., description="분산 추천 투찰률 (%). 기초금액 대비")
+    quantile: str = Field(..., description="분포에서 고른 지점의 분위 (0~1)")
+    source: Literal["interval", "fallback"] = Field(
+        ..., description="분포 사용 여부. interval 은 승리 구간 분위표, fallback 은 하한 금액"
+    )
+    clipped: bool = Field(..., description="회원 최저 통과 금액 때문에 금액을 올렸는지")
+    band_low_amount: int = Field(..., description="낙찰 가능 구간 하한 (원, 25분위)")
+    band_high_amount: int = Field(..., description="낙찰 가능 구간 상한 (원, 75분위)")
+    sample_count: int = Field(..., description="분위표를 만든 과거 낙찰 표본 수")
+    scope: Literal["institution", "region", "category"] = Field(
+        ..., description="분위표 범위. 발주처 -> 시·도 -> 업종 순으로 대체"
+    )
+
+
 class EvaluationRecommendResponse(BaseModel):
     """무상태 투찰가 추천 계산 응답. 저장하지 않으며 근거 문장 재료를 구조화해 돌려줍니다."""
 
@@ -862,6 +888,10 @@ class EvaluationRecommendResponse(BaseModel):
     price_bounds: RecommendationPriceBounds | None = Field(None, description="최저가·최상가 구간")
     member_bid: MemberBidRecommendation | None = Field(
         None, description="보완 투찰률 기반 내 조건 추천 투찰가. 하한율 미상이면 unverifiable"
+    )
+    dispersed_bid: DispersedBidPayload | None = Field(
+        None,
+        description="사용자별 분산 추천 투찰가. 승리 구간 분위표가 없거나 추천 불가면 null",
     )
     member_recommended_price: int | None = Field(
         None,

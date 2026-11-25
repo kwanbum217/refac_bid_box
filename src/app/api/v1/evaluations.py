@@ -59,6 +59,7 @@ from src.app.models.evaluations import (
 from src.app.schemas.evaluations import (
     ContractRegimeDescription,
     CreditGradePayload,
+    DispersedBidPayload,
     EvaluationProfileCreate,
     EvaluationProfileResponse,
     EvaluationProfileUpdate,
@@ -182,6 +183,12 @@ from src.app.services.sajeong_rate_stats import (
     SCOPE_NONE,
     SCOPE_REGION,
     lookup_sajeong_rate_range,
+)
+from src.app.services.win_interval_stats import (
+    DEFAULT_DISPERSION_BAND,
+    _interpolate_quantile,
+    lookup_win_interval_quantiles,
+    user_dispersed_bid,
 )
 from src.ml.institution_history import lookup_institution_stats
 from src.ml.model_registry import UNSUPPORTED_CATEGORY_PREDICTION_MESSAGE
@@ -2839,6 +2846,101 @@ def _build_member_bid(
     )
 
 
+def _dispersed_band_amount(
+    base_amount: Decimal,
+    quantiles: tuple[Decimal, ...],
+    quantile: Decimal,
+    floor_amount: int,
+) -> int:
+    """분위표의 한 지점을 같은 보간·원 단위 규칙으로 금액화하고 회원 하한까지 올립니다."""
+    rate = _interpolate_quantile(quantiles, quantile)
+    amount = int(
+        (base_amount * rate / Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+    return max(amount, floor_amount)
+
+
+def _build_dispersed_bid(
+    *,
+    db: Session,
+    bid: BidAnnouncement,
+    base_amount: Decimal,
+    lwlt_rate: Decimal | None,
+    member_bid: MemberBidRecommendation,
+    user_key: str,
+) -> DispersedBidPayload | None:
+    """승리 구간 분위표에서 사용자·공고별로 다른 지점을 골라 추천가를 만듭니다.
+
+    AI 예측가와 정량점수 기준 최저 통과 금액은 바꾸지 않습니다. 분위표가 없거나
+    보완 투찰가를 확정하지 못하면 None 을 돌려주어 화면이 기존 표시를 유지하게
+    합니다. 같은 사용자가 같은 공고를 다시 계산하면 같은 금액이 나옵니다.
+    """
+    if lwlt_rate is None or member_bid.status in ("impossible", "unverifiable"):
+        return None
+    if (
+        member_bid.bid_amount is None
+        or member_bid.bid_rate_percent is None
+        or member_bid.center_rate_percent is None
+    ):
+        return None
+
+    stats = lookup_win_interval_quantiles(
+        db,
+        bid.dminstt_nm,
+        lwlt_rate,
+        category=bid.category or "Servc",
+    )
+    if stats is None:
+        return None
+    quantiles = tuple(stats["quantiles"])
+    if not quantiles:
+        return None
+
+    floor_rate = Decimal(str(member_bid.bid_rate_percent)) / Decimal("100")
+    center_rate = Decimal(str(member_bid.center_rate_percent))
+    try:
+        dispersed = user_dispersed_bid(
+            base_amount=base_amount,
+            quantiles=quantiles,
+            member_floor_rate=floor_rate,
+            center_sajeong_rate=center_rate,
+            user_key=user_key,
+            notice_key=f"{bid.bid_ntce_no}-{bid.bid_ntce_ord or ''}",
+        )
+    except ValueError:
+        logger.warning("분산 추천가 계산을 건너뜁니다: 공고 %s", bid.bid_ntce_no, exc_info=True)
+        return None
+
+    # 보완 투찰가의 금액은 4자리 비율 격자를 거치므로 분위 보간 금액과 원 단위에서
+    # 어긋날 수 있습니다. 화면과 시험이 보는 하한은 member_bid 금액으로 맞춥니다.
+    floor_amount = int(member_bid.bid_amount)
+    amount = max(dispersed.amount, floor_amount)
+    rate_percent = dispersed.bid_rate
+    if amount != dispersed.amount:
+        rate_percent = (Decimal(amount) / base_amount * Decimal("100")).quantize(
+            Decimal("0.0001"), rounding=ROUND_HALF_UP
+        )
+    band_low_quantile, band_high_quantile = DEFAULT_DISPERSION_BAND
+    band_low = _dispersed_band_amount(base_amount, quantiles, band_low_quantile, floor_amount)
+    band_high = _dispersed_band_amount(base_amount, quantiles, band_high_quantile, floor_amount)
+    if band_low > band_high:
+        band_low, band_high = band_high, band_low
+
+    return DispersedBidPayload(
+        amount=amount,
+        rate_percent=format_decimal_plain(rate_percent),
+        quantile=format_decimal_plain(
+            dispersed.quantile.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        ),
+        source=dispersed.source,
+        clipped=dispersed.clipped or amount != dispersed.amount,
+        band_low_amount=band_low,
+        band_high_amount=band_high,
+        sample_count=int(stats["sample_count"]),
+        scope=stats["scope"],
+    )
+
+
 def _recommend_price_bounds(
     inputs: _EvaluationInputs,
     breakdown: NonPriceBreakdown,
@@ -3035,6 +3137,14 @@ def recommend_evaluation(
         effective_lwlt=inputs.effective_lwlt,
         plan=member_plan,
     )
+    dispersed_bid = _build_dispersed_bid(
+        db=db,
+        bid=bid,
+        base_amount=inputs.pred_price,
+        lwlt_rate=inputs.effective_lwlt,
+        member_bid=member_bid,
+        user_key=str(user.id),
+    )
     member_recommendation = (
         None
         if bounds_blocked or prediction is None
@@ -3102,6 +3212,7 @@ def recommend_evaluation(
         prediction=prediction,
         price_bounds=price_bounds,
         member_bid=member_bid,
+        dispersed_bid=dispersed_bid,
         member_recommended_price=(
             member_recommendation.price if member_recommendation is not None else None
         ),
