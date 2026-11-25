@@ -862,6 +862,13 @@ BASE_GROUND_TRUTH: tuple[tuple[str, str], ...] = (
         "완료 보고 JSON 은 Capsule 계약 필드를 한 번에 채워 한 번만 쓰고 완료 통보는 한 번만 보낸다",
         "docs/ops/orca_worker_model_pool.md",
     ),
+    (
+        "토큰 절약(탐색 배칭·확인 회차 상한): 큰 파일은 sed -n 이나 head 로 수십 줄씩 여러 번 "
+        "나눠 읽지 말고 grep -n 으로 필요한 위치를 모두 찾은 뒤 한 번에 필요한 구간을 읽는다"
+        "(2026-11-25 빌더 토큰의 41% 가 분절 탐색). 대상 시험·git status·git diff 확인은 "
+        "수정 묶음마다 한 번씩만 하고, 같은 확인을 연달아 반복하지 않는다",
+        "docs/ops/orca_worker_model_pool.md",
+    ),
 )
 
 # TDD 증명 요구. Intent 의 tdd 값이 required 이면 빌더 사실과 리뷰 체크리스트
@@ -1439,8 +1446,24 @@ def list_dispatched_tasks(
     return dispatched_tasks, None
 
 
+ORCA_INTERNAL_WRITE_ROOT = ".orca/"
+
+
+def _is_orca_internal_write_path(path: str) -> bool:
+    """.orca/ 아래 보고서·Capsule 산출물 경로인지 판정합니다."""
+    normalized = str(path).strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    normalized = normalized.lstrip("/")
+    return normalized == ".orca" or normalized.startswith(ORCA_INTERNAL_WRITE_ROOT)
+
+
 def task_has_write_scope(task_id: str, capsule_dir: Path) -> bool:
-    """<capsule_dir>/<task_id>/capsule.yaml 의 allowed_write_files 가 비어 있지 않은지 검사합니다.
+    """<capsule_dir>/<task_id>/capsule.yaml 의 allowed_write_files 로 쓰기 여부를 판정합니다.
+
+    allowed_write_files 가 비어 있으면 읽기 전용입니다. 항목이 모두 .orca/ 아래
+    보고서·Capsule 산출물뿐이면(조사·리뷰 Task) 코드나 문서를 고칠 수 없으므로
+    읽기 전용으로 봅니다. .orca/ 밖 경로가 하나라도 있으면 쓰기로 셉니다.
 
     파일이 없거나 읽을 수 없으면 fail-closed 로 True 를 반환합니다.
     다른 Run 의 Capsule 은 이 저장소의 capsule_dir 밑에 없어서 파일 부재로
@@ -1455,10 +1478,17 @@ def task_has_write_scope(task_id: str, capsule_dir: Path) -> bool:
 
     try:
         capsule_text = load_capsule(capsule_path)
-        write_files = parse_capsule_list(capsule_text, "allowed_write_files")
-        return len(write_files) > 0
+        write_files = [
+            str(item).strip()
+            for item in parse_capsule_list(capsule_text, "allowed_write_files")
+            if str(item).strip()
+        ]
     except Exception:
         return True
+
+    if not write_files:
+        return False
+    return any(not _is_orca_internal_write_path(item) for item in write_files)
 
 
 def check_write_concurrency(
@@ -1478,7 +1508,7 @@ def check_write_concurrency(
             "limit": limit,
             "occupying": [],
             "probe_error": None,
-            "reason": f"Task {task_id}는 읽기 전용(allowed_write_files 빈 목록)이므로 동시 쓰기 상한 검사를 면제합니다.",
+            "reason": f"Task {task_id}는 읽기 전용(allowed_write_files 가 비었거나 .orca/ 아래 산출물뿐)이므로 동시 쓰기 상한 검사를 면제합니다.",
         }
 
     # Run ID 해석
