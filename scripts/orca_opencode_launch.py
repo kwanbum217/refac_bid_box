@@ -355,7 +355,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
-        prompt = wait_for_preamble(args.preamble, args.timeout_sec)
+        prompt, worker_handle = common.wait_for_preamble_with_handle(
+            args.preamble, args.timeout_sec
+        )
     except (TimeoutError, ValueError) as err:
         sys.stderr.write(f"오류: {err}\n")
         return 2
@@ -378,6 +380,9 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as err:
         sys.stderr.write(f"오류: {err}\n")
         return 2
+    # 부모(코디네이터) 셸의 ORCA_TERMINAL_HANDLE 을 그대로 물려받으면 worker_done 과
+    # escalation 이 코디네이터 터미널 이름으로 발신돼 거부됩니다. 워커 핸들로 확정합니다.
+    env = common.apply_worker_handle(env, worker_handle)
     cmd = build_command(
         args.model,
         prompt,
@@ -390,6 +395,7 @@ def main(argv: list[str] | None = None) -> int:
     common.schedule_permission_setup(
         Path(__file__).resolve(),
         args.model,
+        terminal=worker_handle,
         spawn_fn=spawn_permission_setup,
     )
 

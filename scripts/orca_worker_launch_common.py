@@ -56,8 +56,110 @@ REVIEWER_NOTICE = (
 
 DEFAULT_PREAMBLE = Path(".orca/preamble.txt")
 
+WORKER_HANDLE_ENV_VAR = "ORCA_TERMINAL_HANDLE"
+WORKER_HANDLE_SUFFIX = ".handle"
+WORKER_HANDLE_PREFIX = "term_"
 
-def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> str:
+
+def worker_handle_path(preamble_path: Path) -> Path:
+    """preamble 과 같은 nonce 를 공유하는 워커 핸들 파일 경로를 돌려줍니다.
+
+    taskctl 이 preamble 을 쓰기 직전에 이 경로에 워커 터미널 핸들을 기록합니다.
+    preamble 이름이 `preamble_<task>_<dispatch>_<nonce>.txt` 이므로 핸들 파일은
+    `preamble_<task>_<dispatch>_<nonce>.handle` 이 되어 다른 시도의 값과 섞이지 않습니다.
+    """
+    path = Path(preamble_path)
+    return path.with_name(path.stem + WORKER_HANDLE_SUFFIX)
+
+
+def write_worker_handle(preamble_path: Path, handle: str | None) -> Path | None:
+    """워커 핸들을 preamble 옆 파일에 기록합니다. 핸들이 비었거나 쓰기에 실패하면 None."""
+    text = (handle or "").strip()
+    if not text:
+        return None
+    target = worker_handle_path(preamble_path)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text + "\n", encoding="utf-8")
+    except OSError:
+        return None
+    return target
+
+
+def read_worker_handle(preamble_path: Path) -> str:
+    """preamble 옆 핸들 파일을 읽고 즉시 삭제합니다. 없거나 형식이 틀리면 빈 문자열."""
+    target = worker_handle_path(preamble_path)
+    try:
+        text = target.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    finally:
+        target.unlink(missing_ok=True)
+    if not text.startswith(WORKER_HANDLE_PREFIX):
+        return ""
+    return text
+
+
+def apply_worker_handle(
+    env: dict[str, str],
+    handle: str,
+    *,
+    stderr=None,
+) -> dict[str, str]:
+    """에이전트 환경의 ORCA_TERMINAL_HANDLE 을 워커 자기 터미널 핸들로 확정합니다.
+
+    상속된 값은 신뢰하지 않습니다. 런처는 코디네이터 셸에서 기동되므로 부모 환경에
+    코디네이터 핸들이 남아 있을 수 있고, 그 값이 에이전트로 넘어가면 worker_done 과
+    escalation 이 'not the exact process that owns Dispatch' 로 거부됩니다.
+    워커 핸들을 알면 그 값으로 덮어쓰고, 모르면 상속값을 비운 뒤 경고를 남깁니다.
+    """
+    resolved = dict(env)
+    worker = (handle or "").strip()
+    inherited = resolved.get(WORKER_HANDLE_ENV_VAR, "")
+    if worker:
+        if inherited and inherited != worker:
+            stream = sys.stderr if stderr is None else stderr
+            stream.write(
+                f"안내: 상속된 ORCA_TERMINAL_HANDLE({inherited}) 을 "
+                f"워커 핸들({worker})로 교체합니다\n"
+            )
+            if hasattr(stream, "flush"):
+                stream.flush()
+        resolved[WORKER_HANDLE_ENV_VAR] = worker
+        return resolved
+
+    resolved.pop(WORKER_HANDLE_ENV_VAR, None)
+    if inherited:
+        stream = sys.stderr if stderr is None else stderr
+        stream.write(
+            f"경고: 워커 터미널 핸들을 확인하지 못해 상속된 "
+            f"ORCA_TERMINAL_HANDLE({inherited}) 을 비웠습니다. worker_done 과 escalation 은 "
+            "--from 을 명시하지 않으면 접수되지 않습니다\n"
+        )
+        if hasattr(stream, "flush"):
+            stream.flush()
+    return resolved
+
+
+def wait_for_preamble_with_handle(
+    path: Path,
+    timeout_sec: float,
+    poll_sec: float = 1.0,
+) -> tuple[str, str]:
+    """preamble 본문과 그 preamble 옆에 기록된 워커 핸들을 함께 소비합니다."""
+    consumed: list[Path] = []
+    text = wait_for_preamble(path, timeout_sec, poll_sec, on_consume=consumed.append)
+    handle = read_worker_handle(consumed[0]) if consumed else ""
+    return text, handle
+
+
+def wait_for_preamble(
+    path: Path,
+    timeout_sec: float,
+    poll_sec: float = 1.0,
+    *,
+    on_consume=None,
+) -> str:
     """고유한 파일명의 preamble 이 나타나 내용이 채워질 때까지 기다리고 소비(삭제)합니다.
 
     1. 기본 경로(.orca/preamble.txt) 또는 디렉터리로 대기 중일 때:
@@ -68,6 +170,8 @@ def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> 
        - 해당 파일이 나타나 내용이 채워질 때까지 기다립니다.
        - preamble_*.txt 파일인 경우 소비 후 즉시 삭제합니다.
        - 동일 디렉터리에 preamble_*.txt 후보가 둘 이상이면 거부합니다.
+    3. on_consume 콜백을 주면 소비(삭제) 직전에 선택된 경로로 호출합니다. 런처는
+       이 경로로 같은 nonce 의 워커 핸들 파일을 찾습니다.
     """
     path = Path(path)
     deadline = time.monotonic() + timeout_sec
@@ -91,6 +195,8 @@ def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> 
                     chosen = candidates[0]
                     text = chosen.read_text(encoding="utf-8").strip()
                     if text:
+                        if on_consume is not None:
+                            on_consume(chosen)
                         chosen.unlink(missing_ok=True)
                         print(f"preamble 소비 완료 ({chosen.name}): {len(text)}자", flush=True)
                         return text
@@ -120,6 +226,8 @@ def wait_for_preamble(path: Path, timeout_sec: float, poll_sec: float = 1.0) -> 
             text = path.read_text(encoding="utf-8").strip()
             if text:
                 if path.name.startswith("preamble_"):
+                    if on_consume is not None:
+                        on_consume(path)
                     path.unlink(missing_ok=True)
                     print(f"preamble 소비 완료 ({path.name}): {len(text)}자", flush=True)
                 return text
