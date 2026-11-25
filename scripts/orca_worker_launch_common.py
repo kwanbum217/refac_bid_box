@@ -65,6 +65,11 @@ WORKER_HANDLE_ENV_VAR = "ORCA_TERMINAL_HANDLE"
 WORKER_HANDLE_SUFFIX = ".handle"
 WORKER_HANDLE_PREFIX = "term_"
 
+# taskctl 은 .handle 을 preamble 보다 먼저 씁니다. 그 사이에 고아 정리가 돌면
+# 진행 중인 Dispatch 의 .handle 이 짝 preamble 없이 보여 지워질 수 있습니다.
+# 수정 시각이 이보다 새 파일은 진행 중일 수 있으므로 고아로 판정하지 않습니다.
+ORPHAN_HANDLE_MIN_AGE_SECONDS = 300.0
+
 
 def worker_handle_path(preamble_path: Path) -> Path:
     """preamble 과 같은 nonce 를 공유하는 워커 핸들 파일 경로를 돌려줍니다.
@@ -166,21 +171,34 @@ def wait_for_preamble_with_handle(
     return text, handle
 
 
-def remove_orphan_worker_handles(directory: Path) -> list[Path]:
-    """짝이 되는 preamble 이 없는 낡은 워커 핸들 파일을 지웁니다.
+def remove_orphan_worker_handles(
+    directory: Path,
+    *,
+    now: float | None = None,
+) -> list[Path]:
+    """짝이 되는 preamble 이 없고 충분히 오래된 워커 핸들 파일만 지웁니다.
 
     preamble 을 소비하지 않는 런처(codex 등)는 같은 nonce 의 .handle 을 읽을
-    기회가 없어 파일이 남습니다. preamble 이 이미 사라진 핸들은 그 시도의
-    워커 핸들이므로 다른 시도가 쓸 수 없고, 남겨 두면 워크트리에 누적됩니다.
-    짝이 되는 preamble 이 아직 있으면 소비 대기 중인 다른 런처의 것이므로
-    건드리지 않습니다. 지운 경로만 돌려줍니다.
+    기회가 없어 파일이 남습니다. 다만 taskctl 은 .handle 을 preamble 보다 먼저
+    쓰므로 방금 만들어진 .handle 은 Dispatch 가 진행 중일 수 있습니다. 그
+    파일을 고아로 지우면 워커가 자기 핸들을 잃습니다. 그래서 수정 시각이
+    ORPHAN_HANDLE_MIN_AGE_SECONDS 보다 오래된 파일만 지웁니다. 짝이 되는
+    preamble 이 아직 있으면 소비 대기 중이므로 나이와 무관하게 남깁니다.
+    now 는 시험에서 시각을 고정하기 위한 주입점입니다.
     """
     base = Path(directory)
     removed: list[Path] = []
     if not base.is_dir():
         return removed
+    current = time.time() if now is None else now
     for handle in sorted(base.glob("preamble_*" + WORKER_HANDLE_SUFFIX)):
         if handle.with_suffix(".txt").exists():
+            continue
+        try:
+            age = current - handle.stat().st_mtime
+        except OSError:
+            continue
+        if age < ORPHAN_HANDLE_MIN_AGE_SECONDS:
             continue
         try:
             handle.unlink()

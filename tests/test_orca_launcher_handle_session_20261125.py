@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -181,6 +182,10 @@ def test_codex_launcher_cleans_orphan_handle_files(tmp_path: Path):
     orca_dir.mkdir()
     stale = orca_dir / "preamble_stale_run.handle"
     stale.write_text(WORKER_HANDLE + "\n", encoding="utf-8")
+    # 고아 정리는 수정 시각이 오래된 핸들만 지우므로, 남은 시도가 아닌 낡은
+    # 핸들임을 파일 시각으로도 드러냅니다.
+    stale_mtime = time.time() - 3600
+    os.utime(stale, (stale_mtime, stale_mtime))
     live_handle = orca_dir / "preamble_live_run.handle"
     live_handle.write_text(WORKER_HANDLE + "\n", encoding="utf-8")
     (orca_dir / "preamble_live_run.txt").write_text("지시문", encoding="utf-8")
