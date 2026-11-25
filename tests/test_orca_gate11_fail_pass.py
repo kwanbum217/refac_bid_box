@@ -1,10 +1,11 @@
 """tests/test_orca_gate11_fail_pass.py
 
-게이트 11(실패→통과 증명) 경고 모드 계약을 작은 임시 git 저장소로 검증합니다.
+게이트 11(실패→통과 증명) 차단 모드 계약을 작은 임시 git 저장소로 검증합니다.
 
 실제 저장소의 데이터 자산이나 운영 서비스에 기대지 않습니다. 기준 코드에는
 결함이 있고 브랜치에는 수정이 있는 최소 저장소를 만들어, 게이트가 기준 트리와
-브랜치 트리를 각각 풀어 같은 시험을 돌리는지 확인합니다.
+브랜치 트리를 각각 풀어 같은 시험을 돌리는지 확인합니다. proven 이 아닌 판정과
+대상 시험 없는 src 변경은 --strict 병합 판정을 막아야 합니다.
 """
 
 from __future__ import annotations
@@ -90,29 +91,35 @@ def _commit_changes(
     _git(repo, "commit", "-m", message)
 
 
-def _run(repo: Path, base: str):
-    return run_gate11_fail_pass(repo, base, "HEAD", python_executable=sys.executable)
+def _write_capsule(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "capsule.yaml"
+    path.write_text(body, encoding="utf-8")
+    return path
 
 
-def _assert_warning_mode(result: GateResult) -> None:
-    """어떤 verdict 에서도 fail 이 아니고 summary 접두사가 고정되어 있는지 확인합니다."""
-    assert result.name == GATE11_GATE_NAME
-    assert result.status != "fail"
-    assert result.required is False
-    assert result.summary.startswith("[경고 모드]")
+def _run(repo: Path, base: str, capsule: Path | None = None):
+    return run_gate11_fail_pass(
+        repo,
+        base,
+        "HEAD",
+        python_executable=sys.executable,
+        capsule_path=capsule,
+    )
 
 
-def test_gate11_proven_when_base_fails_and_branch_passes(tmp_path: Path):
-    """(a) 기준에서 단언 실패, 브랜치에서 통과하면 proven 과 status pass 입니다."""
+def test_gate11_proven_passes_in_blocking_mode(tmp_path: Path):
+    """(e) 기준에서 단언 실패, 브랜치에서 통과하면 proven 과 status pass 입니다."""
     repo = tmp_path / "repo"
     base = _init_repo(repo, BASE_DIRTY_SOURCE, BASE_DIRTY_TEST)
     _commit_changes(repo, source=CLEAN_SOURCE, test=CLEAN_TEST)
 
     result = _run(repo, base)
 
-    _assert_warning_mode(result)
-    assert result.raw_data["verdict"] == "proven"
+    assert result.name == GATE11_GATE_NAME
     assert result.status == "pass"
+    assert result.required is True
+    assert result.summary.startswith("[차단 모드]")
+    assert result.raw_data["verdict"] == "proven"
     assert result.raw_data["target_files"] == ["tests/test_calc.py"]
     assert result.raw_data["base_counts"]["failed"] >= 1
     assert result.raw_data["base_counts"]["errors"] == 0
@@ -121,8 +128,8 @@ def test_gate11_proven_when_base_fails_and_branch_passes(tmp_path: Path):
     assert result.raw_data["branch_counts"]["passed"] >= 1
 
 
-def test_gate11_not_proven_when_base_also_passes(tmp_path: Path):
-    """(b) 기준 코드에서도 전부 통과하면 not_proven 이고 skipped 입니다."""
+def test_gate11_not_proven_fails(tmp_path: Path):
+    """(a) 기준 코드에서도 전부 통과하면 not_proven 은 required=True 인 fail 입니다."""
     repo = tmp_path / "repo"
     base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
     _commit_changes(
@@ -132,16 +139,18 @@ def test_gate11_not_proven_when_base_also_passes(tmp_path: Path):
 
     result = _run(repo, base)
 
-    _assert_warning_mode(result)
     assert result.raw_data["verdict"] == "not_proven"
-    assert result.status == "skipped"
+    assert result.status == "fail"
+    assert result.required is True
+    assert result.summary.startswith("[차단 모드]")
+    assert "not_proven" in orca_level1_gate.GATE11_FAIL_VERDICTS
     assert result.raw_data["base_counts"]["failed"] == 0
     assert result.raw_data["base_counts"]["errors"] == 0
     assert result.raw_data["branch_counts"]["failed"] == 0
 
 
-def test_gate11_collection_only_when_base_import_fails(tmp_path: Path):
-    """(c) 기준 코드에서 수집·import 오류만 나면 단언 실패로 세지 않습니다."""
+def test_gate11_collection_only_fails(tmp_path: Path):
+    """(a) 기준 코드에서 수집·import 오류만 나면 collection_only 는 fail 입니다."""
     repo = tmp_path / "repo"
     base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
     extra_source = CLEAN_SOURCE + "\n\ndef multiply(a, b):\n    return a * b\n"
@@ -154,30 +163,54 @@ def test_gate11_collection_only_when_base_import_fails(tmp_path: Path):
 
     result = _run(repo, base)
 
-    _assert_warning_mode(result)
     assert result.raw_data["verdict"] == "collection_only"
-    assert result.status == "skipped"
+    assert result.status == "fail"
+    assert result.required is True
+    assert "collection_only" in orca_level1_gate.GATE11_FAIL_VERDICTS
     assert result.raw_data["base_counts"]["failed"] == 0
     assert result.raw_data["base_counts"]["errors"] >= 1
     assert result.raw_data["branch_counts"]["errors"] == 0
 
 
-def test_gate11_branch_failed_when_branch_test_fails(tmp_path: Path):
-    """(d) 브랜치에서도 시험이 실패하면 branch_failed 입니다."""
+def test_gate11_branch_failed_fails(tmp_path: Path):
+    """(a) 브랜치에서도 시험이 실패하면 branch_failed 는 fail 입니다."""
     repo = tmp_path / "repo"
     base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
     _commit_changes(repo, test=CLEAN_TEST + "\n\ndef test_broken():\n    assert add(1, 2) == 4\n")
 
     result = _run(repo, base)
 
-    _assert_warning_mode(result)
     assert result.raw_data["verdict"] == "branch_failed"
-    assert result.status == "skipped"
+    assert result.status == "fail"
+    assert result.required is True
+    assert "branch_failed" in orca_level1_gate.GATE11_FAIL_VERDICTS
     assert result.raw_data["branch_counts"]["failed"] >= 1
 
 
-def test_gate11_exempt_when_no_target_test_files(tmp_path: Path):
-    """(e) 대상 시험 파일이 없으면 시험을 돌리지 않고 exempt 입니다."""
+def test_gate11_error_fails_with_exempt_guidance(tmp_path: Path):
+    """(a) 도구 오류도 error verdict 의 required=True 인 fail 입니다."""
+    repo = tmp_path / "repo"
+    base = _init_repo(repo, BASE_DIRTY_SOURCE, BASE_DIRTY_TEST)
+    _commit_changes(repo, source=CLEAN_SOURCE, test=CLEAN_TEST)
+
+    result = run_gate11_fail_pass(
+        repo,
+        base,
+        "HEAD",
+        python_executable=str(tmp_path / "missing-python"),
+    )
+
+    assert result.raw_data["verdict"] == "error"
+    assert result.status == "fail"
+    assert result.required is True
+    assert result.summary.startswith("[차단 모드]")
+    assert "도구 오류" in result.summary
+    assert "tdd: exempt(<사유>)" in result.summary
+    assert "error" in orca_level1_gate.GATE11_FAIL_VERDICTS
+
+
+def test_gate11_no_tests_fails_when_src_changes(tmp_path: Path):
+    """(b) src/ 변경 + 시험 없음 + feat 커밋이면 no_tests fail 입니다."""
     repo = tmp_path / "repo"
     base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
     _commit_changes(
@@ -187,15 +220,18 @@ def test_gate11_exempt_when_no_target_test_files(tmp_path: Path):
 
     result = _run(repo, base)
 
-    _assert_warning_mode(result)
-    assert result.raw_data["verdict"] == "exempt"
-    assert result.status == "skipped"
+    assert result.raw_data["verdict"] == "no_tests"
+    assert result.status == "fail"
+    assert result.required is True
+    assert result.summary.startswith("[차단 모드]")
     assert result.raw_data["target_files"] == []
+    assert result.raw_data["src_changed"] is True
     assert "base_counts" not in result.raw_data
+    assert any("tdd: exempt(<사유>)" in line for line in result.details)
 
 
 def test_gate11_exempt_when_only_exempt_commit_types_without_src(tmp_path: Path):
-    """(i) docs·chore 커밋만 있고 src/ 변경이 없으면 대상 시험이 있어도 exempt 입니다."""
+    """(d) docs·chore 커밋만 있고 src/ 변경이 없으면 대상 시험이 있어도 exempt 입니다."""
     repo = tmp_path / "repo"
     base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
     _commit_changes(
@@ -207,13 +243,95 @@ def test_gate11_exempt_when_only_exempt_commit_types_without_src(tmp_path: Path)
 
     result = _run(repo, base)
 
-    _assert_warning_mode(result)
     assert result.raw_data["verdict"] == "exempt"
     assert result.status == "skipped"
+    assert result.required is False
     assert sorted(result.raw_data["commit_types"]) == ["chore", "docs"]
     assert result.raw_data["src_changed"] is False
     assert result.raw_data["target_files"] == ["tests/test_calc.py"]
     assert "base_counts" not in result.raw_data
+
+
+def test_gate11_exempt_when_no_target_tests_without_src(tmp_path: Path):
+    """(d) src/ 변경 없이 대상 시험 파일도 없으면 exempt 입니다."""
+    repo = tmp_path / "repo"
+    base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
+    _commit_changes(repo, extra={"docs/guide.md": "안내\n"}, message="feat: 안내 문서를 추가한다")
+
+    result = _run(repo, base)
+
+    assert result.raw_data["verdict"] == "exempt"
+    assert result.status == "skipped"
+    assert result.required is False
+    assert result.raw_data["target_files"] == []
+    assert result.raw_data["src_changed"] is False
+
+
+def test_gate11_capsule_exempt_declaration_overrides_blocking(tmp_path: Path):
+    """(c) Capsule 의 tdd: exempt(<사유>) 는 차단 대상이어도 면제로 통과합니다."""
+    repo = tmp_path / "repo"
+    base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
+    _commit_changes(
+        repo,
+        source=CLEAN_SOURCE + "\n\ndef multiply(a, b):\n    return a * b\n",
+    )
+    capsule = _write_capsule(
+        tmp_path,
+        "schema: ORCA_TASK_CAPSULE_V2\ntdd: exempt(동작 불변 리팩터링이라 새 단언이 없다)\n",
+    )
+
+    result = _run(repo, base, capsule)
+
+    assert result.raw_data["verdict"] == "exempt_declared"
+    assert result.status == "skipped"
+    assert result.required is False
+    assert result.summary.startswith("[차단 모드]")
+    assert "동작 불변 리팩터링이라 새 단언이 없다" in result.summary
+    assert result.raw_data["tdd"] == "exempt"
+    assert result.raw_data["tdd_reason"] == "동작 불변 리팩터링이라 새 단언이 없다"
+
+
+def test_gate11_capsule_exempt_declaration_under_root_key(tmp_path: Path):
+    """(c) Capsule 이 ORCA_TASK_CAPSULE_V2 루트 아래에 tdd 를 둬도 읽습니다."""
+    repo = tmp_path / "repo"
+    base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
+    _commit_changes(
+        repo,
+        source=CLEAN_SOURCE + "\n\ndef multiply(a, b):\n    return a * b\n",
+    )
+    capsule = _write_capsule(
+        tmp_path,
+        "ORCA_TASK_CAPSULE_V2:\n  schema: ORCA_TASK_CAPSULE_V2\n  tdd: exempt(조사 Task 산출물)\n",
+    )
+
+    result = _run(repo, base, capsule)
+
+    assert result.raw_data["verdict"] == "exempt_declared"
+    assert result.status == "skipped"
+    assert result.required is False
+    assert "조사 Task 산출물" in result.summary
+    assert "조사 Task 산출물" in result.details[0]
+
+
+def test_gate11_required_capsule_still_blocks(tmp_path: Path):
+    """(c) Capsule tdd: required 와 unspecified 는 같은 차단 판정을 받습니다."""
+    repo = tmp_path / "repo"
+    base = _init_repo(repo, CLEAN_SOURCE, CLEAN_TEST)
+    _commit_changes(
+        repo,
+        source=CLEAN_SOURCE + "\n\ndef multiply(a, b):\n    return a * b\n",
+    )
+
+    for body in (
+        "schema: ORCA_TASK_CAPSULE_V2\ntdd: required\n",
+        "schema: ORCA_TASK_CAPSULE_V2\n",
+        "schema: ORCA_TASK_CAPSULE_V2\ntdd: exempt()\n",
+    ):
+        capsule = _write_capsule(tmp_path, body)
+        result = _run(repo, base, capsule)
+        assert result.raw_data["verdict"] == "no_tests"
+        assert result.status == "fail"
+        assert result.required is True
 
 
 def test_gate11_not_exempt_when_exempt_type_has_src_changes(tmp_path: Path):
@@ -229,11 +347,11 @@ def test_gate11_not_exempt_when_exempt_type_has_src_changes(tmp_path: Path):
 
     result = _run(repo, base)
 
-    _assert_warning_mode(result)
     assert result.raw_data["commit_types"] == ["docs"]
     assert result.raw_data["src_changed"] is True
     assert result.raw_data["verdict"] != "exempt"
     assert result.raw_data["verdict"] == "not_proven"
+    assert result.status == "fail"
 
 
 def test_gate11_unknown_commit_type_is_not_exempt(tmp_path: Path):
@@ -244,30 +362,26 @@ def test_gate11_unknown_commit_type_is_not_exempt(tmp_path: Path):
 
     result = _run(repo, base)
 
-    _assert_warning_mode(result)
     assert result.raw_data["commit_types"] == ["unknown"]
     assert result.raw_data["src_changed"] is True
     assert result.raw_data["verdict"] != "exempt"
     assert result.raw_data["verdict"] == "proven"
+    assert result.status == "pass"
 
 
-def test_gate11_error_is_skipped_not_fail(tmp_path: Path):
-    """(f) 도구 오류도 fail 이 아니라 error verdict 의 skipped 입니다."""
-    repo = tmp_path / "repo"
-    base = _init_repo(repo, BASE_DIRTY_SOURCE, BASE_DIRTY_TEST)
-    _commit_changes(repo, source=CLEAN_SOURCE, test=CLEAN_TEST)
-
-    result = run_gate11_fail_pass(
-        repo,
-        base,
-        "HEAD",
-        python_executable=str(tmp_path / "missing-python"),
+def test_parse_gate11_tdd_reads_both_capsule_shapes():
+    """Capsule 의 tdd 는 최상위와 루트 아래 들여쓰기 모두에서 같은 값으로 읽힙니다."""
+    parse_gate11_tdd = orca_level1_gate.parse_gate11_tdd
+    assert parse_gate11_tdd("schema: ORCA_TASK_CAPSULE_V2\ntdd: required\n") == (
+        "required",
+        "",
     )
-
-    _assert_warning_mode(result)
-    assert result.raw_data["verdict"] == "error"
-    assert result.status == "skipped"
-    assert "도구 오류" in result.summary
+    assert parse_gate11_tdd("tdd: exempt(문서만 바뀐다)\n") == ("exempt", "문서만 바뀐다")
+    assert parse_gate11_tdd(
+        "ORCA_TASK_CAPSULE_V2:\n  schema: ORCA_TASK_CAPSULE_V2\n  tdd: exempt(조사)\n"
+    ) == ("exempt", "조사")
+    assert parse_gate11_tdd("schema: ORCA_TASK_CAPSULE_V2\n") == ("unspecified", "")
+    assert parse_gate11_tdd("tdd: suspicious\n") == ("unspecified", "")
 
 
 def test_gate11_key_does_not_shift_existing_gate_keys():

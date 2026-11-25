@@ -16,6 +16,7 @@
 
 이번 단계는 사용자 승인에 따른 **경고 모드**입니다. 게이트 11 은 어떤 경우에도 병합을
 막지 않습니다. 2주 동안 결과를 쌓은 뒤 차단 전환 여부를 사용자가 결정합니다.
+2026-11-25 에 차단 모드로 전환했으며 새 판정표는 10 절에 있습니다.
 
 ---
 
@@ -186,3 +187,59 @@ uv run python scripts/orca_gate11_backfill.py
 uv run python scripts/orca_gate11_backfill.py \
   --refs refs/backup/search-cache-20261124
 ```
+
+---
+
+## 10. 2026-11-25 압축 3단계 결과
+
+경고 모드 집계를 2주 대신 하루로 압축하고, 게이트 11 을 차단 모드로 전환했습니다.
+2026-11-25 병합 7건의 `verdict` 는 다음과 같습니다.
+
+| 참조 | verdict |
+| --- | --- |
+| `5e17d0ef` | `proven` |
+| `prefs-save-warm` | `proven` |
+| `tdd-stage2` | `proven` |
+| `gate11-tests` | `exempt` (시험 커밋만) |
+| `member-range-primary` | `proven` |
+| `chatbot-term-guard` | `proven` |
+| `bid-list-filter` | `proven` |
+
+합계는 `proven` 6건, `exempt` 1건입니다. 2026-11-24 소급 6건의 `collection_only` 3건은
+2단계 지침(새 심볼은 시험 함수 안에서 import) 적용 뒤 0건이 되었고, `proven` 6건의
+독립 리뷰에서 결함은 0건이었습니다. 증명된 시험이 실제로 변경을 잡는다는 근거가
+확보되어 차단 기준을 `proven` 만 통과로 전환했습니다.
+
+### 10.1 차단 모드 판정표
+
+| verdict | 조건 | status | required |
+| --- | --- | --- | --- |
+| `proven` | 기준 코드에서 단언 실패 1건 이상, 브랜치에서 전부 통과 | `pass` | `True` |
+| `not_proven` | 기준 코드에서도 전부 통과 | `fail` | `True` |
+| `collection_only` | 기준 코드에서 수집·import 오류만 발생 | `fail` | `True` |
+| `branch_failed` | 브랜치에서 단언 실패 또는 오류 발생 | `fail` | `True` |
+| `error` | git·압축 해제·pytest·junit 파싱 등 도구 오류 | `fail` | `True` |
+| `no_tests` | `src/` 변경이 있는데 대상 시험 파일 0개 | `fail` | `True` |
+| `exempt` | 문서·정리·리팩터링·시험 커밋만 있고 `src/` 변경 없음, 또는 `src/` 변경 없이 대상 시험 0개 | `skipped` | `False` |
+| `exempt_declared` | Capsule 의 `tdd: exempt(<사유>)` 선언 | `skipped` | `False` |
+
+`fail` 은 required 이므로 `--strict` 병합 판정을 막고, 판정이 pass 가 아니므로
+`.cache/level1_strict_evidence.json` 통과 증거도 기록되지 않습니다. `scripts/premerge_level1_gate.py`
+병합 훅은 이 증거 부재로 병합을 막으므로 훅은 바꾸지 않았습니다.
+
+`src/` 변경이 없는 커밋(feat 포함)은 대상 시험이 없어도 `exempt` 입니다. `src/`
+변경이 있으면 커밋 type 과 무관하게 대상 시험이 필요하므로, 시험 없이 코드만 바꾼
+커밋은 `no_tests` 로 막힙니다.
+
+### 10.2 면제 선언
+
+불가피하게 시험 증명을 낼 수 없으면 Capsule 최상위(또는 `ORCA_TASK_CAPSULE_V2`
+루트 아래)에 사유를 남깁니다.
+
+```yaml
+tdd: exempt(동작 불변 리팩터링이라 기준 코드에서 실패할 단언이 없다)
+```
+
+게이트는 사유를 `raw_data["tdd_reason"]` 과 summary 에 기록하고 `exempt_declared`
+로 통과시킵니다. 사유가 비었거나 형식이 다르면 `unspecified` 로 보아 `required`
+와 같은 차단 판정을 받습니다.

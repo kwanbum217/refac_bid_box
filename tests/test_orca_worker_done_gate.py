@@ -226,6 +226,7 @@ def _create_capsule(
 
     lines = [
         "schema: ORCA_TASK_CAPSULE_V2",
+        "tdd: exempt(게이트 11 이 아닌 worker_done 게이트 단위 시험 픽스처)",
         "version: '2.1.0'",
         "task_id: 'task_test123'",
         f"report_path: '{report_rel_path}'",
