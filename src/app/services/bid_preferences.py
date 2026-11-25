@@ -291,6 +291,19 @@ def warm_open_servc_matching(
     _store_open_servc_list(prefs, limit, items)
 
 
+def warm_stored_bid_preference(db: Session, user_id: int) -> BidPreferenceView | None:
+    """한 사용자의 저장된 관심 조건만 예열하고 그 조건을 돌려줍니다.
+
+    마이페이지 저장 직후 arq 작업이 부릅니다. 조건이 없거나 비어 있으면
+    아무것도 하지 않고 None 을 돌려줍니다.
+    """
+    prefs = get_bid_preferences(db, user_id)
+    if prefs is None or prefs.is_empty:
+        return None
+    warm_open_servc_matching(db, prefs)
+    return prefs
+
+
 def count_open_servc_matching(
     db: Session,
     prefs: BidPreferenceView | None,

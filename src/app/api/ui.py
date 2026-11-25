@@ -64,6 +64,7 @@ from src.app.services.auth_forms import (
     login_form,
     signup_form,
 )
+from src.app.services.automation_jobs import _enqueue_arq_job
 from src.app.services.band_regime_lookup import (
     attachment_regime_key,
     lookup_attachment_regimes,
@@ -654,6 +655,18 @@ def mypage_edit(
     )
 
 
+def _enqueue_bid_preference_warm(user_id: int) -> bool:
+    """저장된 관심 조건 하나만 예열하는 Arq 작업을 넣습니다.
+
+    등록 실패로 저장 응답이 실패하면 안 되므로 예외도 False 로 바꿉니다.
+    """
+    try:
+        return _enqueue_arq_job("warm_bid_preference_task", user_id=user_id)
+    except Exception:
+        logger.warning("관심 조건 예열 작업 등록 실패 (user_id=%s)", user_id, exc_info=True)
+        return False
+
+
 @router.post("/accounts/mypage/edit/")
 async def mypage_edit_submit(
     request: Request,
@@ -696,6 +709,9 @@ async def mypage_edit_submit(
         _form_value(form_data, "bid_region_code"),
     )
     update_mypage_profile(db, user, edit_payload)
+    # 저장이 커밋된 뒤에만 예열을 넣습니다. 다음 10분 주기를 기다리지 않고
+    # '내 조건 입찰 중' 을 채우며, 등록 실패는 저장 결과를 바꾸지 않습니다.
+    await asyncio.to_thread(_enqueue_bid_preference_warm, user.id)
     return RedirectResponse(url="/accounts/mypage/", status_code=303)
 
 
