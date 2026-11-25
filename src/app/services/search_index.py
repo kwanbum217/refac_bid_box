@@ -95,7 +95,12 @@ def announcement_document(
 ) -> dict[str, Any]:
     # 판정 정본은 bid_queries 에 있고, 이 모듈은 bid_queries 를 지연 import 합니다
     # (bid_queries 가 이 모듈을 함수 안에서 import 하므로 최상단 import 는 순환입니다).
-    from src.app.services.bid_queries import CANCELLED_NTCE_KIND, is_qualification_analyzable
+    from src.app.services.bid_queries import (
+        CANCELLED_NTCE_KIND,
+        filter_amount_value,
+        is_private_contract,
+        is_qualification_analyzable,
+    )
 
     region_codes = _region_codes(row.dminstt_nm, row.ntce_instt_nm)
     participation_region_codes = _region_codes(*(participation_region_names or []))
@@ -124,6 +129,14 @@ def announcement_document(
         "bid_ntce_dt": _iso(row.bid_ntce_dt),
         "bid_clse_dt": _iso(row.bid_clse_dt),
         "base_amount": row.resolved_base_amount,
+        # 금액 구간 필터의 정본 값입니다. 추정가격, 없으면 기초금액이며 SQL 경로의
+        # coalesce 와 같은 축입니다. Meilisearch 필터에는 함수가 없어 문서에 미리
+        # 계산해 두고, 두 경로가 같은 경계 상수를 씁니다.
+        "presmpt_prce": row.presmpt_prce,
+        "filter_amount": filter_amount_value(row.presmpt_prce, row.base_amount),
+        # 계약방법 필터(수의계약 제외·수의계약만)가 쓰는 판정입니다. 계약방법명에
+        # '수의'가 없거나 비어 있으면 거짓입니다.
+        "is_private_contract": is_private_contract(row.cntrct_mthd_nm),
         "collected_at": _iso(row.collected_at),
     }
 
@@ -203,10 +216,12 @@ class MeiliSearchClient:
                     "category",
                     "qualification_analyzable",
                     "is_cancelled",
+                    "is_private_contract",
                     "region_codes",
                     "participation_region_codes",
                     "license_codes",
                     "sucsf_bid_rate",
+                    "filter_amount",
                 ],
                 "sortableAttributes": [
                     "bid_ntce_dt",
@@ -288,6 +303,8 @@ class MeiliSearchClient:
         license_code: str | None = None,
         license_codes: Sequence[str] | None = None,
         qualification_only: bool = False,
+        amount_band: str = "",
+        contract: str = "",
     ) -> SearchPage:
         filters = [f"dataset = {json.dumps(dataset, ensure_ascii=False)}"]
         if dataset == "announcement":
@@ -317,6 +334,26 @@ class MeiliSearchClient:
             filters.append(f"license_codes = {json.dumps(license_code, ensure_ascii=False)}")
         if qualification_only:
             filters.append("qualification_analyzable = true")
+        if amount_band or contract:
+            # 경계·판정 상수는 SQL 경로와 같은 곳(bid_queries)에서 가져옵니다.
+            from src.app.services.bid_queries import (
+                CONTRACT_FILTER_EXCLUDE_PRIVATE,
+                CONTRACT_FILTER_ONLY_PRIVATE,
+                amount_band_bounds,
+            )
+
+            if amount_band:
+                bounds = amount_band_bounds(amount_band)
+                if bounds is not None:
+                    lower, upper = bounds
+                    if lower is not None:
+                        filters.append(f"filter_amount >= {lower}")
+                    if upper is not None:
+                        filters.append(f"filter_amount < {upper}")
+            if contract == CONTRACT_FILTER_ONLY_PRIVATE:
+                filters.append("is_private_contract = true")
+            elif contract == CONTRACT_FILTER_EXCLUDE_PRIVATE:
+                filters.append("is_private_contract = false")
         if dataset == "result" and any(
             item in {"sucsf_bid_rate:asc", "sucsf_bid_rate:desc"} for item in sort
         ):

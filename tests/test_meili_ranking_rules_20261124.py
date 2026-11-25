@@ -40,10 +40,12 @@ EXPECTED_FILTERABLE = [
     "category",
     "qualification_analyzable",
     "is_cancelled",
+    "is_private_contract",
     "region_codes",
     "participation_region_codes",
     "license_codes",
     "sucsf_bid_rate",
+    "filter_amount",
 ]
 EXPECTED_SORTABLE = [
     "bid_ntce_dt",

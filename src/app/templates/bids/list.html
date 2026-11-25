@@ -68,6 +68,23 @@
                     >
                     <span class="text-sm font-medium text-slate-700">적격심사 분석 공고만</span>
                 </label>
+                <label class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-slate-700">금액 구간</span>
+                    <select name="amount" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
+                        <option value="" {% if not amount %}selected{% endif %}>전체</option>
+                        {% for choice in amount_choices %}
+                        <option value="{{ choice.code }}" {% if amount == choice.code %}selected{% endif %}>{{ choice.label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-slate-700">계약방법</span>
+                    <select name="contract" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
+                        {% for choice in contract_choices %}
+                        <option value="{{ choice.code }}" {% if contract == choice.code %}selected{% endif %}>{{ choice.label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
                 <select name="sort" class="bg-white border border-slate-200 rounded-md px-3 py-2 text-sm text-slate-700 outline-hidden cursor-pointer">
                     <option value="notice" {% if sort == 'notice' %}selected{% endif %}>공고일</option>
                     <option value="deadline" {% if sort == 'deadline' %}selected{% endif %}>마감일</option>
@@ -212,7 +229,7 @@
 
                 <div class="flex items-center space-x-2">
                     {% if page_obj.has_previous %}
-                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}" class="pagination-btn whitespace-nowrap h-8 px-3 flex items-center justify-center rounded-sm border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <a href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}&amount={{ amount }}&contract={{ contract }}" class="pagination-btn whitespace-nowrap h-8 px-3 flex items-center justify-center rounded-sm border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
                         이전
                     </a>
                     {% endif %}
@@ -222,7 +239,7 @@
                     </span>
 
                     {% if page_obj.has_next %}
-                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}" class="pagination-btn whitespace-nowrap h-8 px-3 flex items-center justify-center rounded-sm border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
+                    <a href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&cat={{ cat }}&sort={{ sort }}&region={{ region }}&lic={{ lic|urlencode }}&qual={{ qual }}&amount={{ amount }}&contract={{ contract }}" class="pagination-btn whitespace-nowrap h-8 px-3 flex items-center justify-center rounded-sm border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
                         다음
                     </a>
                     {% endif %}
