@@ -123,7 +123,7 @@ async def test_react_spa_chatbot_sse_streaming_interaction(
     await expect(page.locator("h2:has-text('하이브리드 RAG 챗봇')")).to_be_visible()
 
     # 2. 질문 입력 및 전송
-    chat_input = page.locator("input[placeholder*='물품구매 적격심사']")
+    chat_input = page.locator("input[placeholder*='정량점수가 1점 모자라면']")
     send_btn = page.locator("button:has-text('전송')")
 
     question = "국가계약법 시행령 제42조 규정에 대해 설명해주세요"
@@ -153,7 +153,7 @@ async def test_react_spa_chatbot_abort_interaction(
     chatbot_tab_btn = page.locator("nav button:has-text('하이브리드 RAG 챗봇')")
     await chatbot_tab_btn.click()
 
-    chat_input = page.locator("input[placeholder*='물품구매 적격심사']")
+    chat_input = page.locator("input[placeholder*='정량점수가 1점 모자라면']")
     send_btn = page.locator("button:has-text('전송')")
 
     await chat_input.fill("공공조달 지식베이스 대량 질의 스트리밍")
