@@ -141,6 +141,7 @@ except (ModuleNotFoundError, ImportError):
 try:
     from scripts.orca_worker_launch_common import (
         inject_role_marker,
+        write_worker_handle,
     )
 except (ModuleNotFoundError, ImportError):
     _repo_root = Path(__file__).resolve().parent.parent
@@ -148,6 +149,7 @@ except (ModuleNotFoundError, ImportError):
         sys.path.insert(0, str(_repo_root))
     from scripts.orca_worker_launch_common import (
         inject_role_marker,
+        write_worker_handle,
     )
 
 # ---------------------------------------------------------------------------
@@ -5545,6 +5547,15 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         preamble_file.parent.mkdir(parents=True, exist_ok=True)
         effective_role = "reviewer" if capsule_role == "reviewer" else "builder"
         preamble_with_marker = inject_role_marker(preamble, effective_role)
+        # 런처가 부모(코디네이터) 셸의 ORCA_TERMINAL_HANDLE 을 물려받지 않도록,
+        # 권위 있는 워커 터미널 핸들을 preamble 과 같은 nonce 의 옆 파일에 먼저 씁니다.
+        # preamble 보다 먼저 써야 런처가 preamble 을 소비하는 순간 핸들을 읽을 수 있습니다.
+        worker_handle_file = write_worker_handle(preamble_file, args.terminal)
+        if worker_handle_file is None:
+            sys.stderr.write(
+                "경고: 워커 터미널 핸들 파일을 쓰지 못했습니다. 런처는 상속된 "
+                "ORCA_TERMINAL_HANDLE 을 비우고 기동합니다.\n"
+            )
         preamble_file.write_text(preamble_with_marker, encoding="utf-8")
         sys.stderr.write(
             f"고유 preamble 작성 완료: {preamble_file} ({len(preamble_with_marker)}자, nonce={nonce}, role={effective_role})\n"
