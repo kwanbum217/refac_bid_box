@@ -17,11 +17,9 @@ from pathlib import Path
 
 from scripts import orca_level1_gate
 from scripts.orca_level1_gate import (
-    GATE11_FAIL_VERDICTS,
     GATE11_GATE_NAME,
     GateResult,
     build_json_output,
-    parse_gate11_tdd,
     run_gate11_fail_pass,
 )
 
@@ -145,7 +143,7 @@ def test_gate11_not_proven_fails(tmp_path: Path):
     assert result.status == "fail"
     assert result.required is True
     assert result.summary.startswith("[차단 모드]")
-    assert "not_proven" in GATE11_FAIL_VERDICTS
+    assert "not_proven" in orca_level1_gate.GATE11_FAIL_VERDICTS
     assert result.raw_data["base_counts"]["failed"] == 0
     assert result.raw_data["base_counts"]["errors"] == 0
     assert result.raw_data["branch_counts"]["failed"] == 0
@@ -168,7 +166,7 @@ def test_gate11_collection_only_fails(tmp_path: Path):
     assert result.raw_data["verdict"] == "collection_only"
     assert result.status == "fail"
     assert result.required is True
-    assert "collection_only" in GATE11_FAIL_VERDICTS
+    assert "collection_only" in orca_level1_gate.GATE11_FAIL_VERDICTS
     assert result.raw_data["base_counts"]["failed"] == 0
     assert result.raw_data["base_counts"]["errors"] >= 1
     assert result.raw_data["branch_counts"]["errors"] == 0
@@ -185,7 +183,7 @@ def test_gate11_branch_failed_fails(tmp_path: Path):
     assert result.raw_data["verdict"] == "branch_failed"
     assert result.status == "fail"
     assert result.required is True
-    assert "branch_failed" in GATE11_FAIL_VERDICTS
+    assert "branch_failed" in orca_level1_gate.GATE11_FAIL_VERDICTS
     assert result.raw_data["branch_counts"]["failed"] >= 1
 
 
@@ -208,7 +206,7 @@ def test_gate11_error_fails_with_exempt_guidance(tmp_path: Path):
     assert result.summary.startswith("[차단 모드]")
     assert "도구 오류" in result.summary
     assert "tdd: exempt(<사유>)" in result.summary
-    assert "error" in GATE11_FAIL_VERDICTS
+    assert "error" in orca_level1_gate.GATE11_FAIL_VERDICTS
 
 
 def test_gate11_no_tests_fails_when_src_changes(tmp_path: Path):
@@ -373,6 +371,7 @@ def test_gate11_unknown_commit_type_is_not_exempt(tmp_path: Path):
 
 def test_parse_gate11_tdd_reads_both_capsule_shapes():
     """Capsule 의 tdd 는 최상위와 루트 아래 들여쓰기 모두에서 같은 값으로 읽힙니다."""
+    parse_gate11_tdd = orca_level1_gate.parse_gate11_tdd
     assert parse_gate11_tdd("schema: ORCA_TASK_CAPSULE_V2\ntdd: required\n") == (
         "required",
         "",
