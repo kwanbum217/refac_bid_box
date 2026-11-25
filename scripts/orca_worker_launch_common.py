@@ -43,7 +43,9 @@ COMMIT_NOTICE = (
     "끝내면 작업이 멈춥니다. 같은 턴에 커밋·보고서·worker_done 까지 마치십시오. "
     "보고서를 쓰기 직전, 마지막 코드·문서 수정 뒤에 전량 시험을 다시 한 번 돌리고 그 출력의 "
     "passed 건수를 verification 에 그대로 적으십시오. 수정 뒤 대상 시험만 다시 돌리고 이전 "
-    "전량 건수를 적으면 Level 1 게이트 6 이 건수 불일치로 막습니다."
+    "전량 건수를 적으면 Level 1 게이트 6 이 건수 불일치로 막습니다. "
+    "같은 세션에서 큰 파일을 여러 번 열어 컨텍스트가 커졌다면, 구현을 마친 뒤 보고서 작성 전에 "
+    "불필요한 재열람을 하지 말고 이미 얻은 결과로 바로 마무리하십시오."
 )
 
 REVIEWER_NOTICE = (
@@ -148,12 +150,44 @@ def wait_for_preamble_with_handle(
     path: Path,
     timeout_sec: float,
     poll_sec: float = 1.0,
+    *,
+    wait_fn=None,
 ) -> tuple[str, str]:
-    """preamble 본문과 그 preamble 옆에 기록된 워커 핸들을 함께 소비합니다."""
+    """preamble 본문과 그 preamble 옆에 기록된 워커 핸들을 함께 소비합니다.
+
+    wait_fn 을 주면 그 함수로 preamble 을 기다립니다. 런처가 자기 모듈의
+    wait_for_preamble 별칭을 넘기면 기존 시험이 그 별칭을 가로채도 같은
+    소비 지점을 관측할 수 있습니다.
+    """
+    waiter = wait_for_preamble if wait_fn is None else wait_fn
     consumed: list[Path] = []
-    text = wait_for_preamble(path, timeout_sec, poll_sec, on_consume=consumed.append)
+    text = waiter(path, timeout_sec, poll_sec, on_consume=consumed.append)
     handle = read_worker_handle(consumed[0]) if consumed else ""
     return text, handle
+
+
+def remove_orphan_worker_handles(directory: Path) -> list[Path]:
+    """짝이 되는 preamble 이 없는 낡은 워커 핸들 파일을 지웁니다.
+
+    preamble 을 소비하지 않는 런처(codex 등)는 같은 nonce 의 .handle 을 읽을
+    기회가 없어 파일이 남습니다. preamble 이 이미 사라진 핸들은 그 시도의
+    워커 핸들이므로 다른 시도가 쓸 수 없고, 남겨 두면 워크트리에 누적됩니다.
+    짝이 되는 preamble 이 아직 있으면 소비 대기 중인 다른 런처의 것이므로
+    건드리지 않습니다. 지운 경로만 돌려줍니다.
+    """
+    base = Path(directory)
+    removed: list[Path] = []
+    if not base.is_dir():
+        return removed
+    for handle in sorted(base.glob("preamble_*" + WORKER_HANDLE_SUFFIX)):
+        if handle.with_suffix(".txt").exists():
+            continue
+        try:
+            handle.unlink()
+        except OSError:
+            continue
+        removed.append(handle)
+    return removed
 
 
 def wait_for_preamble(

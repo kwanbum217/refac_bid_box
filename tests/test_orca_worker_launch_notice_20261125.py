@@ -49,3 +49,21 @@ def test_worker_notice_selection_keeps_background_rule() -> None:
         notice = resolve_notice(role, prompt)
         assert "배경" in notice
         assert "같은 턴" in notice
+
+
+def test_commit_notice_adds_long_session_closing_rule() -> None:
+    """장기 세션 분할 대응: 마무리 전 불필요한 재열람을 막는 문장이 있어야 합니다.
+
+    컨텍스트가 커진 세션이 보고서 직전에 같은 파일을 다시 읽으면 재읽기 비용이
+    누적됩니다. 기존 세 문장(커밋 요구, 배경 금지, 전량 재실행)은 그대로 둡니다.
+    """
+    assert "같은 세션에서 큰 파일을 여러 번 열어 컨텍스트가 커졌다면" in COMMIT_NOTICE
+    assert "불필요한 재열람을 하지 말고" in COMMIT_NOTICE
+    assert "이미 얻은 결과로 바로 마무리하십시오" in COMMIT_NOTICE
+    # 기존 문장 회귀 방지
+    assert "커밋" in COMMIT_NOTICE
+    assert "git add -A" in COMMIT_NOTICE
+    assert "배경" in COMMIT_NOTICE
+    assert "마지막 코드·문서 수정 뒤에 전량 시험을 다시" in COMMIT_NOTICE
+    # 리뷰어 고지문은 바꾸지 않는다.
+    assert "불필요한 재열람" not in REVIEWER_NOTICE

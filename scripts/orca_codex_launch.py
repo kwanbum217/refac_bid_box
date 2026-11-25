@@ -26,12 +26,30 @@ import sys
 import time
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from scripts import orca_worker_launch_common as common  # noqa: E402
+
 POLL_SECONDS = 0.3
 DEFAULT_TIMEOUT = 300
 
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
+
+
+def cleanup_orphan_handles(worktree: Path) -> list[str]:
+    """preamble 없이 남은 워커 핸들 파일을 정리합니다.
+
+    이 런처는 preamble 을 직접 소비하지 않고 codex 에이전트를 Orca worker-start
+    로 띄웁니다. 에이전트 환경은 Orca 가 소유하므로 여기서 ORCA_TERMINAL_HANDLE
+    을 바꿀 수 없습니다. 대신 짝이 되는 preamble 이 사라진 .handle 을 지워
+    워크트리에 낡은 핸들이 남지 않게 하고, 지운 경로를 돌려줍니다.
+    """
+    removed = common.remove_orphan_worker_handles(worktree / ".orca")
+    return [str(path) for path in removed]
 
 
 def place_capsule(worktree: Path, repo: Path) -> list[str]:
@@ -113,6 +131,9 @@ def main(argv: list[str] | None = None) -> int:
     if wait_for_worktree(worktree, args.timeout_sec):
         placed = place_capsule(worktree, repo)
         print(f"Capsule 배치: {', '.join(placed) if placed else '없음'}", flush=True)
+        stale = cleanup_orphan_handles(worktree)
+        if stale:
+            print(f"낡은 워커 핸들 정리: {', '.join(stale)}", flush=True)
     else:
         print(f"경고: 워크트리가 {args.timeout_sec:.0f}초 안에 생기지 않았습니다", flush=True)
 

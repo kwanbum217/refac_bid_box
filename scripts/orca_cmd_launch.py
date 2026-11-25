@@ -226,7 +226,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"preamble 대기 중: {args.preamble} (최대 {args.timeout_sec:.0f}초)", flush=True)
     try:
-        prompt = wait_for_preamble(args.preamble, args.timeout_sec)
+        prompt, worker_handle = common.wait_for_preamble_with_handle(
+            args.preamble, args.timeout_sec, wait_fn=wait_for_preamble
+        )
     except (TimeoutError, ValueError) as err:
         sys.stderr.write(f"오류: {err}\n")
         return 2
@@ -237,7 +239,9 @@ def main(argv: list[str] | None = None) -> int:
         no_commit_notice=args.no_commit_notice,
     )
 
-    env = dict(os.environ)
+    # preamble 을 소비하는 모든 런처는 같은 지점에서 핸들 파일도 함께 소비합니다.
+    # 읽기만 하고 남기면 다음 시도에 낡은 .handle 이 누적됩니다.
+    env = common.apply_worker_handle(dict(os.environ), worker_handle)
     # cmd 는 기동 시 현재 작업 디렉터리의 .commandcode/settings.json 을 읽습니다.
     # 정책 원본은 저장소가 관리하고, 주 저장소가 아닌 워커 워크트리에만 배치합니다.
     deployed = common.deploy_worker_settings(Path.cwd())
@@ -256,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     common.schedule_permission_setup(
         Path(__file__).resolve(),
         args.model,
+        terminal=worker_handle or None,
         spawn_fn=spawn_permission_setup,
     )
 
