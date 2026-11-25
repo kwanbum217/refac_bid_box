@@ -137,3 +137,37 @@ def test_main_returns_process_code_on_bad_payload_and_missing_worktree(tmp_path)
             ]
         )
     assert rc == 2
+
+
+def test_main_reports_removed_orphan_handle(tmp_path, capsys):
+    import os
+    import time
+
+    worktree = tmp_path / "wt"
+    orca_dir = worktree / ".orca"
+    orca_dir.mkdir(parents=True)
+    handle = orca_dir / "preamble_task_old_run.handle"
+    handle.write_text("term_old", encoding="utf-8")
+    old = time.time() - 3600
+    os.utime(handle, (old, old))
+    with patch(
+        "scripts.orca_codex_launch.subprocess.Popen",
+        return_value=_FakeProc(json.dumps({"ok": True})),
+    ):
+        rc = main(
+            [
+                "--task",
+                "task_x",
+                "--name",
+                "wt",
+                "--repo",
+                str(tmp_path),
+                "--workspaces",
+                str(tmp_path),
+                "--timeout-sec",
+                "1",
+            ]
+        )
+    assert rc == 0
+    assert not handle.exists()
+    assert "낡은 워커 핸들 정리" in capsys.readouterr().out
