@@ -567,6 +567,7 @@
                                     <p id="res-member-band-note" class="hidden mt-1 text-xs font-semibold text-amber-800 dark:text-amber-200"></p>
                                     <p id="res-member-dispersed-band" class="hidden mt-1 text-xs font-semibold tabular-nums text-amber-800 dark:text-amber-200"></p>
                                     <p id="res-member-dispersed-floor" class="hidden mt-1 text-xs font-semibold tabular-nums text-amber-800 dark:text-amber-200"></p>
+                                    <p id="res-member-dispersed-clip" class="hidden mt-1 rounded-md border border-amber-300 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-100"></p>
                                     <p id="res-member-dispersed-note" class="hidden mt-2 rounded-lg border border-amber-300 bg-white p-3 text-[11px] leading-relaxed text-amber-800 ring-1 ring-amber-300 dark:border-amber-600 dark:bg-slate-800 dark:text-amber-200 dark:ring-amber-600">이 추천가는 과거 낙찰 실적으로 측정한 낙찰 가능 구간 안에서 고른 지점입니다. 같은 공고라도 사용자마다 다른 지점이 제시되며, 구간 안 지점들의 과거 낙찰 확률에는 유의한 차이가 없습니다.</p>
                                     <div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-amber-800 dark:text-amber-200">
                                         <span id="res-member-gap" class="hidden rounded-sm border border-amber-300 bg-white px-1.5 py-0.5 tabular-nums dark:border-amber-600 dark:bg-slate-800"></span>
@@ -1967,6 +1968,15 @@ $(document).ready(function() {
             .text(
                 showDispersed && bidAmount != null
                     ? '정량점수 기준 최저 통과 금액 ' + amountText(bidAmount)
+                    : ''
+            );
+        // 회원 하한 클립이 걸리면 금액을 왜 올렸는지 밝힌다. 클립이 아니면 비운다.
+        const clippedByFloor = showDispersed && dispersed.clipped === true;
+        $('#res-member-dispersed-clip')
+            .toggleClass('hidden', !clippedByFloor)
+            .text(
+                clippedByFloor
+                    ? '정량점수 기준 최저 통과 금액으로 맞췄습니다.'
                     : ''
             );
         $('#res-member-dispersed-note').toggleClass('hidden', !showDispersed);
