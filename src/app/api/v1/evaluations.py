@@ -2942,6 +2942,18 @@ def recommend_evaluation(
         member_recommended_error_pp=(
             float(member_band.error_pp) if member_band is not None else None
         ),
+        member_range_clipped_by_score=(
+            None
+            if member_band is None
+            else bool(
+                (
+                    member_recommendation is not None
+                    and member_recommendation.basis in ("raised_to_min", "lowered_to_max")
+                )
+                or member_band.clipped_low
+                or member_band.clipped_high
+            )
+        ),
         participant_stats=participant_stats,
         warnings=[
             *warnings,

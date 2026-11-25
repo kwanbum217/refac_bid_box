@@ -68,11 +68,17 @@ def member_recommended_price(
 
 @dataclass(frozen=True)
 class MemberRecommendationBand:
-    """내 조건 추천가의 실측 오차 범위. 추천가를 중심으로 하한·상한을 가집니다."""
+    """내 조건 추천가의 실측 오차 범위. 추천가를 중심으로 하한·상한을 가집니다.
+
+    clipped_low·clipped_high 는 정량점수 기준 통과 구간(최저가·최상가)이 오차 범위를
+    실제로 잘랐는지 표시합니다. 경계와 정확히 같으면 자르지 않은 것으로 봅니다.
+    """
 
     low: int
     high: int
     error_pp: Decimal
+    clipped_low: bool = field(default=False, compare=False)
+    clipped_high: bool = field(default=False, compare=False)
 
 
 def member_recommended_band(
@@ -98,11 +104,19 @@ def member_recommended_band(
     width = int((amount * error / Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
     low = member_price - width
     high = member_price + width
-    if min_bid_amount is not None and low < min_bid_amount:
+    clipped_low = min_bid_amount is not None and low < min_bid_amount
+    clipped_high = max_bid_amount is not None and high > max_bid_amount
+    if clipped_low and min_bid_amount is not None:
         low = min_bid_amount
-    if max_bid_amount is not None and high > max_bid_amount:
+    if clipped_high and max_bid_amount is not None:
         high = max_bid_amount
-    return MemberRecommendationBand(low=low, high=high, error_pp=error)
+    return MemberRecommendationBand(
+        low=low,
+        high=high,
+        error_pp=error,
+        clipped_low=clipped_low,
+        clipped_high=clipped_high,
+    )
 
 
 def disqualification_status(value: bool | None) -> Literal["not_checked", "clear", "disqualified"]:

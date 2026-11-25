@@ -847,6 +847,12 @@ class EvaluationRecommendResponse(BaseModel):
     member_recommended_error_pp: float | None = Field(
         None, description="범위에 쓴 서빙 모델 실측 오차 RMSE (%p)"
     )
+    member_range_clipped_by_score: bool | None = Field(
+        None,
+        description="정량점수 기준 통과 구간이 내 조건 추천 구간을 실제로 잘랐는지. "
+        "true 면 점수에 따라 구간이 달라지고, false 면 현재 점수에서는 시장 예측 범위 전체가 "
+        "통과 구간 안이며, null 이면 구간 자체가 없음",
+    )
     participant_stats: ParticipantCountStats = Field(
         default_factory=ParticipantCountStats, description="발주처 과거 참여업체 수 요약"
     )
