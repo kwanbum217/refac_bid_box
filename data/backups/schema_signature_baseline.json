@@ -4797,6 +4797,228 @@
         }
       ],
       "hash": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
+    },
+    "win_interval_stats": {
+      "name": "win_interval_stats",
+      "columns": [
+        {
+          "name": "category",
+          "type": "VARCHAR(10) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": true,
+          "default": null
+        },
+        {
+          "name": "institution_name",
+          "type": "VARCHAR(200) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "lwlt_rate",
+          "type": "DECIMAL(7, 3)",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p05",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p10",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p15",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p20",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p25",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p30",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p35",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p40",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p45",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p50",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p55",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p60",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p65",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p70",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p75",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p80",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p85",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p90",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "p95",
+          "type": "DECIMAL(10, 4)",
+          "nullable": true,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "rebuilt_at",
+          "type": "DATETIME",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "sample_count",
+          "type": "BIGINT",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "scope",
+          "type": "VARCHAR(20) COLLATE \"UTF8MB4_UNICODE_CI\"",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        },
+        {
+          "name": "window_days",
+          "type": "INTEGER",
+          "nullable": false,
+          "primary_key": false,
+          "default": null
+        }
+      ],
+      "primary_key": [
+        "id"
+      ],
+      "foreign_keys": [],
+      "indexes": [
+        {
+          "name": "ix_win_interval_lookup",
+          "column_names": [
+            "scope",
+            "institution_name",
+            "category",
+            "lwlt_rate"
+          ],
+          "unique": false
+        },
+        {
+          "name": "uq_win_interval_stats",
+          "column_names": [
+            "scope",
+            "institution_name",
+            "category",
+            "lwlt_rate",
+            "window_days"
+          ],
+          "unique": true
+        }
+      ],
+      "hash": "be06ffe56f7ff95d81fb4a32cae5edaa26fa7c1a6289d3ab59bc8388e838d337"
     }
   },
   "table_hashes": {
@@ -4847,9 +5069,10 @@
     "socialaccount_socialaccount": "1f9ceb2497fe293bb2e86f423accedfcb57051fc3686c4b1c43fc1923bb2adfe",
     "socialaccount_socialapp": "2b15551d964b4690a6b2153fe0c06317ee798a189e0567eb1bde220d5dc0dec7",
     "socialaccount_socialapp_sites": "5b1a00848892be743f9380499901e52b1f35a008ce5befd793a38e2701c00b97",
-    "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e"
+    "socialaccount_socialtoken": "cc685815f9224b0530e825dcc70ae5468ef4617435605c79a362449b19766c8e",
+    "win_interval_stats": "be06ffe56f7ff95d81fb4a32cae5edaa26fa7c1a6289d3ab59bc8388e838d337"
   },
-  "overall_hash": "edca4c53aa1e758e868f0dde984ef49237b1c6f5fbf9b1415b30dbdec54bbdb8",
+  "overall_hash": "339687e347ae26aa8e62f1a08c06c7787d903aa93dc1f5453b51369c449b6aec",
   "orm_tables": [
     "account_bid_preferences",
     "account_company_profiles",
@@ -4880,7 +5103,8 @@
     "pipeline_executions",
     "prediction_results",
     "retrain_logs",
-    "schedule_run_log"
+    "schedule_run_log",
+    "win_interval_stats"
   ],
   "database_tables": [
     "account_bid_preferences",
@@ -4930,13 +5154,14 @@
     "socialaccount_socialaccount",
     "socialaccount_socialapp",
     "socialaccount_socialapp_sites",
-    "socialaccount_socialtoken"
+    "socialaccount_socialtoken",
+    "win_interval_stats"
   ],
   "metadata": {
-    "generated_at": "2026-11-24T06:25:32.263593+00:00",
+    "generated_at": "2026-11-25T06:56:04.958387+00:00",
     "database_identifier": "mysql+pymysql://root:***@127.0.0.1:3306/procurement",
     "generated_by": "kwanbum",
     "tool_version": "2.0.0",
-    "git_head": "cc695ca00661fd4c37c141622b8af9b7b431c1ec"
+    "git_head": "bc3d7023ae25e747e80f244359aa43dfe78bdce8"
   }
 }

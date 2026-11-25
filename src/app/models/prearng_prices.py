@@ -172,3 +172,90 @@ class InstitutionSajeongRateStat(Base):
             f"[{self.scope}/{self.category or '전체'}] {self.institution_name or '전체'} "
             f"{self.min_rate}~{self.max_rate}% ({self.sample_count}건)"
         )
+
+
+class WinIntervalStat(Base):
+    """발주처·시·도·업종별 승리 구간 중앙값 분포 사전 집계.
+
+    용역 적격 낙찰의 공고별 승리 구간 중앙값 `x_mid`(기초금액 대비 %)를 하한율
+    (소수 3자리)별로 나눠 p05~p95 분위를 저장합니다. `scope` 로 발주처 -> 시·도
+    -> 업종 순 대체를 같은 테이블에서 표현하며, 조회는 유니크 키 한 번으로
+    끝납니다. 정의와 산출 근거는 docs/analysis/win_prob_backtest_20261125.md
+    2장을 따릅니다.
+
+    문자열 컬럼 콜레이션은 테이블 수준 `utf8mb4_unicode_ci` 로 명시합니다.
+    운영 스키마 기본값(utf8mb4_0900_ai_ci)과 다르면 다른 테이블과 조인할 때
+    콜레이션 충돌이 납니다.
+    """
+
+    __tablename__ = "win_interval_stats"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope",
+            "institution_name",
+            "category",
+            "lwlt_rate",
+            "window_days",
+            name="uq_win_interval_stats",
+        ),
+        Index(
+            "ix_win_interval_lookup",
+            "scope",
+            "institution_name",
+            "category",
+            "lwlt_rate",
+        ),
+        {"mysql_charset": "utf8mb4", "mysql_collate": "utf8mb4_unicode_ci"},
+    )
+
+    id: Mapped[int] = mapped_column(PKBigInteger, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="institution", comment="institution|region|category"
+    )
+    institution_name: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="", comment="수요기관명 또는 지역명"
+    )
+    category: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="", comment="업무구분(전체는 빈 문자열)"
+    )
+    lwlt_rate: Mapped[Decimal] = mapped_column(
+        Numeric(7, 3), nullable=False, comment="낙찰하한율(퍼센트, 소수 3자리)"
+    )
+    window_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=365, comment="집계 창(일)"
+    )
+    sample_count: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, comment="분포 산출에 쓴 표본 건수"
+    )
+    p05: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p10: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p15: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p20: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p25: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p30: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p35: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p40: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p45: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p50: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p55: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p60: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p65: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p70: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p75: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p80: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p85: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p90: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    p95: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    rebuilt_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=utcnow,
+        onupdate=utcnow,
+        comment="집계 갱신 시각",
+    )
+
+    def __str__(self) -> str:
+        return (
+            f"[{self.scope}/{self.category or '전체'}] {self.institution_name or '전체'} "
+            f"하한 {self.lwlt_rate}% x_mid p50 {self.p50}% ({self.sample_count}건)"
+        )
