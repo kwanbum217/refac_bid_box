@@ -719,15 +719,28 @@ def parse_pytest_summary(text: str) -> dict[str, int] | None:
     return None
 
 
+_COVERAGE_FAIL_UNDER_RE = re.compile(
+    r"(?:--)?(?:cov[-_])?fail[-_]under(?:\s*[=:]?\s*\d+(?:\.\d+)?%?)?"
+)
+
+
 def _is_failure_result_str(result_str: str) -> bool:
-    """결과 문자열이 실패/에러를 나타내는지 검사합니다."""
+    """결과 문자열이 실패/에러를 나타내는지 검사합니다.
+
+    커버리지 하한 설정 이름('--cov-fail-under=0', 'fail-under 74', 'fail_under')은
+    실패 신호가 아니므로 판정 전에 지웁니다. 설정 이름의 'fail' 을 실패로 오독하면
+    'coverage 79.72% (fail-under 74 충족)' 같은 정상 보고가 위반으로 판정됩니다.
+    """
     cleaned = (result_str or "").strip().lower()
     if not cleaned:
         return False
+    cleaned = _COVERAGE_FAIL_UNDER_RE.sub(" ", cleaned)
     # "0 failed", "0 errors", "0 failure" 등은 성공 표기
     if re.search(r"\b0\s*(?:failed|errors?|failures?)\b", cleaned):
         return False
-    return bool(re.search(r"\b(?:fail|failed|failure|errors?|blocked|exception|crash)\b", cleaned))
+    return bool(
+        re.search(r"\b(?:fail|failed|failure|errors?|blocked|exception|crash|traceback)\b", cleaned)
+    )
 
 
 def verify_verification_truth(
