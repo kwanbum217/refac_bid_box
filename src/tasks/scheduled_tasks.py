@@ -50,6 +50,7 @@ from src.app.services.api_collector import (
     stream_servc_prearng_by_notices,
 )
 from src.app.services.automation_orchestrator import STATUS_RUNNING
+from src.app.services.bid_preferences import warm_stored_bid_preference
 from src.app.services.collector_service import _bulk_insert, collect_bids
 from src.app.services.home_summary import warm_home_summary_cache
 from src.app.services.prearng_dminstt_link import link_prearng_dminstt
@@ -3016,6 +3017,40 @@ async def warm_home_summary_task(ctx: dict[str, Any]) -> dict[str, Any]:
             release_schedule_claim(key=HOME_SUMMARY_WARM_CLAIM_KEY, token=claim.token)
     logger.info("메인 화면 요약 예열 완료: %s", counts)
     return {"status": "success", **counts}
+
+
+def _warm_bid_preference_thread(user_id: int) -> dict[str, Any]:
+    """관심 조건 하나의 예열을 스레드 전용 세션에서 수행합니다.
+
+    Session 은 생성 스레드 밖으로 나가면 안 되므로 여기서 만들고 닫습니다.
+    """
+    session = SessionLocal()
+    try:
+        prefs = warm_stored_bid_preference(session, user_id)
+        if prefs is None:
+            return {"status": "skipped", "reason": "empty"}
+        return {
+            "status": "success",
+            "license_codes": list(prefs.license_codes),
+            "region_code": prefs.region_code,
+        }
+    finally:
+        session.close()
+
+
+@traced_worker_task
+async def warm_bid_preference_task(ctx: dict[str, Any], user_id: int) -> dict[str, Any]:
+    """관심 조건 저장 직후 그 조건 하나만 예열합니다.
+
+    마이페이지 저장이 만든 조건은 다음 10분 주기 예열 전까지 '집계 중' 으로
+    남습니다. 저장 라우트가 이 작업을 넣어 그 대기를 없앱니다. 실패를 예외로
+    올리면 worker 가 같은 집계를 재시도하므로 status 로만 알립니다.
+    """
+    try:
+        return await asyncio.to_thread(_warm_bid_preference_thread, user_id)
+    except Exception as exc:
+        logger.exception("관심 조건 예열 실패 (user_id=%s)", user_id)
+        return {"status": "failed", **safe_error(exc)}
 
 
 # --------------------------------------------------------------------------- #
