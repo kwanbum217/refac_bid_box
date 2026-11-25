@@ -86,6 +86,8 @@ GATE11_FAIL_VERDICTS = frozenset(
 # 주 저장소 공통 .cache/ 에 기록해 main 병합 훅이 워크트리 기록을 그대로 읽습니다.
 LEVEL1_STRICT_EVIDENCE_SCHEMA = "LEVEL1_STRICT_EVIDENCE_V1"
 DEFAULT_LEVEL1_EVIDENCE_PATH = Path(".cache/level1_strict_evidence.json")
+GATE11_LEDGER_FILENAME = "gate11_verdicts.jsonl"
+GATE11_LEDGER_SCHEMA = "GATE11_VERDICT_LEDGER_V1"
 UTC_TZ = getattr(datetime, "UTC", datetime.timezone.utc)  # noqa: UP017
 
 
@@ -2453,17 +2455,63 @@ def get_git_commit_sha(repo: Path, branch: str) -> str:
     return stdout.strip()
 
 
+def resolve_gate11_ledger_path(repo: Path) -> Path:
+    """게이트 11 판정 원장 경로를 증거 파일과 같은 .cache 디렉터리에서 풉니다."""
+    return resolve_level1_evidence_path(repo).with_name(GATE11_LEDGER_FILENAME)
+
+
+def append_gate11_verdict(
+    *,
+    repo: Path,
+    branch: str,
+    commit: str,
+    base: str,
+    capsule: Path | None,
+    gate11: GateResult | None,
+) -> tuple[bool, str]:
+    """게이트 11 판정을 원장 파일에 한 줄 덧붙입니다.
+
+    strict pass 판정의 부산물이므로 실패해도 판정·증거 기록 결과를 바꾸지 않습니다.
+    게이트 11 이 돌지 않았으면(capsule 없음 등) verdict 를 not_run 으로 남깁니다.
+    """
+    raw = gate11.raw_data if gate11 is not None else {}
+    base_counts = raw.get("base_counts") or {}
+    entry = {
+        "schema": GATE11_LEDGER_SCHEMA,
+        "recorded_at": datetime.datetime.now(UTC_TZ).isoformat(),
+        "branch": branch,
+        "commit": commit,
+        "base": base,
+        "capsule": str(capsule) if capsule is not None else None,
+        "tdd": raw.get("tdd", GATE11_TDD_UNSPECIFIED),
+        "verdict": raw.get("verdict", "not_run") if gate11 is not None else "not_run",
+        "base_failed": base_counts.get("failed"),
+        "base_errors": base_counts.get("errors"),
+        "target_files": len(raw.get("target_files") or []),
+        "status": gate11.status if gate11 is not None else "not_run",
+    }
+    target_path = resolve_gate11_ledger_path(repo)
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with target_path.open("a", encoding="utf-8") as fp:
+            fp.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        return False, f"[gate11-ledger] 원장 기록 실패 ({target_path}): {exc}"
+    return True, f"[gate11-ledger] 판정 원장 기록 완료: {target_path}"
+
+
 def record_strict_evidence(
     *,
     repo: Path,
     branch: str,
     base: str,
     capsule: Path | None,
+    gate11: GateResult | None = None,
 ) -> tuple[int, str]:
     """--strict 판정 pass 의 증거를 주 저장소 공통 .cache/ 에 기록합니다.
 
     verdict 판정이 끝난 뒤 pass 일 때만 호출합니다. fail 판정에서는 호출하지 않으므로
-    기존 증거를 덮어쓰지 않습니다.
+    기존 증거를 덮어쓰지 않습니다. 증거 기록이 성공하면 게이트 11 판정 원장도 덧붙입니다.
     """
     try:
         commit_sha = get_git_commit_sha(repo, branch)
@@ -2491,11 +2539,23 @@ def record_strict_evidence(
     except OSError as exc:
         return 2, f"[level1-evidence] 증거 파일 작성 실패 ({target_path}): {exc}"
 
-    return 0, (
+    ledger_ok, ledger_note = append_gate11_verdict(
+        repo=repo,
+        branch=branch,
+        commit=commit_sha,
+        base=base,
+        capsule=capsule,
+        gate11=gate11,
+    )
+    note = (
         f"[level1-evidence] Level 1 strict 통과 증거 기록 완료\n"
         f"  commit: {commit_sha[:8]}\n"
         f"  file: {target_path}"
     )
+    if not ledger_ok:
+        # 원장은 추이 관측용 부산물이므로 실패를 경고로만 남깁니다.
+        note = f"{note}\n  {ledger_note}"
+    return 0, note
 
 
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
@@ -2764,6 +2824,10 @@ def run_level1_gate(
                 branch=branch,
                 base=base,
                 capsule=capsule_path,
+                gate11=next(
+                    (g for g in gates if g.name == GATE11_GATE_NAME),
+                    None,
+                ),
             )
             if evidence_code != 0:
                 # 기록 실패를 pass 로 넘기면 병합 훅이 증거 부재로 막을 때까지

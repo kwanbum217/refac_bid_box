@@ -23,6 +23,20 @@ def test_commit_notice_forbids_background_and_requires_same_turn_finish() -> Non
     assert "git add -A" in COMMIT_NOTICE
 
 
+def test_commit_notice_requires_full_suite_rerun_after_last_edit() -> None:
+    """최종 수정 뒤 전량 시험 재실행 요구가 빌더 고지문에 있어야 합니다.
+
+    2026-11-25 보완 투찰률 병합에서 빌더가 전량 시험 후 문서를 고치고 대상
+    시험만 다시 돌려 보고 건수(11737)와 실제(11738)가 달라 게이트 6 이 막혔습니다.
+    """
+    assert "마지막 코드·문서 수정 뒤에 전량 시험을 다시" in COMMIT_NOTICE
+    assert "passed 건수" in COMMIT_NOTICE
+    assert "게이트 6" in COMMIT_NOTICE
+    assert "건수 불일치" in COMMIT_NOTICE
+    # 리뷰어 고지문에는 전량 재실행 의무를 넣지 않는다.
+    assert "게이트 6" not in REVIEWER_NOTICE
+
+
 def test_reviewer_notice_forbids_background_and_requires_same_turn_finish() -> None:
     assert "배경" in REVIEWER_NOTICE
     assert "기다리겠다며 턴을 끝내면" in REVIEWER_NOTICE
