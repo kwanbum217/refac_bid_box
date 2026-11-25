@@ -2896,13 +2896,15 @@ def _build_dispersed_bid(
     if not quantiles:
         return None
 
-    floor_rate = Decimal(str(member_bid.bid_rate_percent)) / Decimal("100")
+    # user_dispersed_bid 는 회원 보완 투찰률을 퍼센트로 받습니다. 비율로 바꿔
+    # 넘기면 내부 회원 하한이 실제 금액의 1/100 로 줄어 클립이 걸리지 않습니다.
+    floor_rate_percent = Decimal(str(member_bid.bid_rate_percent))
     center_rate = Decimal(str(member_bid.center_rate_percent))
     try:
         dispersed = user_dispersed_bid(
             base_amount=base_amount,
             quantiles=quantiles,
-            member_floor_rate=floor_rate,
+            member_floor_rate=floor_rate_percent,
             center_sajeong_rate=center_rate,
             user_key=user_key,
             notice_key=f"{bid.bid_ntce_no}-{bid.bid_ntce_ord or ''}",
@@ -2913,16 +2915,23 @@ def _build_dispersed_bid(
 
     # 보완 투찰가의 금액은 4자리 비율 격자를 거치므로 분위 보간 금액과 원 단위에서
     # 어긋날 수 있습니다. 화면과 시험이 보는 하한은 member_bid 금액으로 맞춥니다.
+    # 내부 하한은 올림 근사라 표시 하한과 원 단위에서 어긋날 수 있으므로, 클립일
+    # 때는 표시 하한(member_bid 금액)을 그대로 씁니다.
     floor_amount = int(member_bid.bid_amount)
-    amount = max(dispersed.amount, floor_amount)
-    rate_percent = dispersed.bid_rate
-    if amount != dispersed.amount:
-        rate_percent = (Decimal(amount) / base_amount * Decimal("100")).quantize(
-            Decimal("0.0001"), rounding=ROUND_HALF_UP
-        )
+    clipped = dispersed.clipped or dispersed.amount < floor_amount
+    amount = floor_amount if clipped else dispersed.amount
+    # 표시 투찰률은 항상 표시 금액에서 다시 계산합니다. 클립이 내부 하한에서 걸리면
+    # dispersed.amount 가 그대로 하한이라 금액 비교만으로는 클립을 알 수 없고, 분위
+    # 투찰률을 그대로 쓰면 화면의 금액과 투찰률이 서로 다른 근원이 됩니다.
+    rate_percent = (Decimal(amount) / base_amount * Decimal("100")).quantize(
+        Decimal("0.0001"), rounding=ROUND_HALF_UP
+    )
     band_low_quantile, band_high_quantile = DEFAULT_DISPERSION_BAND
     band_low = _dispersed_band_amount(base_amount, quantiles, band_low_quantile, floor_amount)
     band_high = _dispersed_band_amount(base_amount, quantiles, band_high_quantile, floor_amount)
+    # 클립으로 금액이 올라가면 구간도 그 금액을 포함해야 '최저~최고' 표기가 성립합니다.
+    band_low = min(band_low, amount)
+    band_high = max(band_high, amount)
     if band_low > band_high:
         band_low, band_high = band_high, band_low
 
@@ -2933,7 +2942,7 @@ def _build_dispersed_bid(
             dispersed.quantile.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
         ),
         source=dispersed.source,
-        clipped=dispersed.clipped or amount != dispersed.amount,
+        clipped=clipped,
         band_low_amount=band_low,
         band_high_amount=band_high,
         sample_count=int(stats["sample_count"]),
