@@ -65,7 +65,40 @@
 
 ---
 
-## 5. 종료 상태
+## 5. 다음 에이전트 인수 안내
+
+이 세션 코디네이터(Claude)는 주간 토큰 소진으로 여기서 멈춘다. 다른 에이전트가 이어받는다.
+
+### 5.1 시작 절차
+
+| 순서 | 할 일 |
+| --- | --- |
+| 1 | `AGENTS.md` -> `docs/context/CURRENT_STATE.md` -> 이 문서 순으로 읽는다. 워커를 쓰면 `orca skills get orchestration` 과 `orca-section-coordination` 스킬을 먼저 읽는다 |
+| 2 | `git log --oneline -3` 으로 이 문서 병합 커밋이 main 에 있는지, `gh run list --branch main --limit 3` 으로 CI 성공인지 확인한다 |
+| 3 | Docker 상태 확인: `docker compose ps`. 사용자 확인 중이면 그대로 둔다 |
+
+### 5.2 남은 과업 (우선순위 순)
+
+| 순위 | 과업 | 상태 | 착수 조건·방법 |
+| --- | --- | --- | --- |
+| 1 | B2 분산 추천가 클립 보완 | 사용자 결정 대기 | 2장 B2. 결정 뒤 빌더 Task. 대상 `src/app/services/win_interval_stats.py` 의 `user_dispersed_bid`, `src/app/api/v1/evaluations.py` 2895~2940행 부근. 위험도 high(추천가 산식)라 리뷰어 유지, 병합 전 공고 10453166 으로 클립 여부 재현 |
+| 2 | 상세 화면 안내 2건 | 사용자 착수 결정 대기 | 3장. `src/app/templates/bids/detail.html` 의 `res-member-scenario-rows` 표와 내 조건 추천 투찰가 칸. 템플릿 병합은 `npm run build:css` 와 계산 스타일 대조 필요 |
+| 3 | `schedule_run_log` 오염 확인 | 확인만 | 이 세션 전량 pytest 가 Docker DB 기동 중 돌았다(워커 2회, 코디네이터 1회 중단). 2026-11-13 같은 조건에서 호스트 pytest 행이 남은 전례. 정리는 사용자 승인 뒤 |
+| 4 | C5 worker_done 발신 핸들 원인 | 조사 | 4장. `scripts/orca_worker_launch_common.py` 의 `.handle` 처리와 opencode 런처 환경변수 상속 |
+| 5 | 게이트 11 판정 단위 재검토 | 2026-12-09 이후 | `.cache/gate11_verdicts.jsonl` 2주 운영 뒤 |
+
+### 5.3 함정 (이 세션 실측)
+
+| 함정 | 대응 |
+| --- | --- |
+| opencode 런처는 주 저장소에 preamble 을 못 쓴다 | 조사 워커도 `orca worktree create` 격리 워크트리, 만든 직후 빈 셸 Terminal 1 닫기 |
+| 같은 opencode 계열 리뷰어는 `orca_taskctl dispatch` 가 거부 | `orca terminal create ... --command "uv run python scripts/orca_opencode_launch.py --model opencode-go/glm-5.3-flash --variant low --role reviewer --preamble .orca/preamble_<task>_rev_<nonce>.txt"` 후 `orca orchestration dispatch --task <t> --to <h> --run <r> --return-preamble --json` 의 preamble 을 그 파일에 쓴다 |
+| main 병합 훅은 증거 두 개를 요구 | Level 1 `--strict --record-evidence` 와 `python3 scripts/premerge_full_suite_gate.py --record`(병합 대상 HEAD 가 체크아웃된 곳에서). 문서만 바꾼 브랜치도 전량 시험 증거가 필요하다 |
+| 리뷰 Capsule 경로 | Intent `report_path` 디렉터리와 create 가 만든 `task_<id>` 디렉터리 둘 다 워크트리에 만들어 Capsule 을 복사 |
+
+---
+
+## 6. 종료 상태
 
 | 항목 | 상태 |
 | --- | --- |
