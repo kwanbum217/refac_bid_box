@@ -547,3 +547,56 @@ def test_fail_under_coverage_result_is_not_a_false_claim(tmp_path: Path):
     assert summ["exit_code"] == 0
     assert summ["violations"] == []
     assert summ["verification_details"][0]["status"] == "pass"
+
+
+# ---------------------------------------------------------------------------
+# (g) 2026-11-26 한국어 전용 실패 문구 오독: 실패는 잡고 0건·부정은 통과시킨다
+# ---------------------------------------------------------------------------
+def test_korean_failure_and_success_result_str():
+    """영어 키워드가 없는 한국어 결과 문구도 실패/성공을 정확히 가른다."""
+    from scripts.orca_contract import _is_failure_result_str
+
+    # 한국어 실패 표기
+    assert _is_failure_result_str("coverage 72% (fail-under 74 미달)") is True
+    assert _is_failure_result_str("시험 3건 실패") is True
+    assert _is_failure_result_str("오류 발생") is True
+    assert _is_failure_result_str("에러 2건") is True
+    assert _is_failure_result_str("배포 차단") is True
+    assert _is_failure_result_str("시험 10건 실패") is True
+    # 부정·0건 표기는 성공
+    assert _is_failure_result_str("coverage 79.72% (fail-under 74 충족)") is False
+    assert _is_failure_result_str("실패 0건") is False
+    assert _is_failure_result_str("0건 실패") is False
+    assert _is_failure_result_str("오류 0건") is False
+    assert _is_failure_result_str("오류 없음") is False
+    assert _is_failure_result_str("실패 없음") is False
+    assert _is_failure_result_str("미달 없음") is False
+    assert _is_failure_result_str("0 failed, 10 passed") is False
+    assert _is_failure_result_str("시험 3건 통과") is False
+    # 0건 표기가 섞여도 실제 실패는 남는다
+    assert _is_failure_result_str("시험 3건 실패, 오류 0건") is True
+
+
+def test_korean_failure_result_is_caught_as_false_claim(tmp_path: Path):
+    """exit code 0 인 실행을 한국어로 실패라고 적은 보고는 위반으로 잡는다."""
+    repo, _base, branch, sha = _init_git_repo(tmp_path)
+    report_rel = ".orca/capsules/task_verif_test/worker_done.json"
+    capsule_path = _create_capsule(repo, report_rel)
+
+    report_path = _create_report(
+        repo,
+        report_rel,
+        branch,
+        sha,
+        verification=[
+            {
+                "command": "uv run pytest tests/test_app.py -q",
+                "result": "1 passed, 시험 3건 실패",
+            }
+        ],
+    )
+
+    summ = summarize_worker_report(report_path, capsule_path=capsule_path, repo_path=repo)
+    assert summ["exit_code"] != 0
+    assert any("실패" in v for v in summ["violations"])
+    assert summ["verification_details"][0]["status"] == "fail"

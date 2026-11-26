@@ -723,6 +723,18 @@ _COVERAGE_FAIL_UNDER_RE = re.compile(
     r"(?:--)?(?:cov[-_])?fail[-_]under(?:\s*[=:]?\s*\d+(?:\.\d+)?%?)?"
 )
 
+# 한국어 실패 표기. '충족'·'통과' 는 성공 표기이므로 여기에 넣지 않습니다.
+_KO_FAILURE_TERMS = ("미달", "실패", "오류", "에러", "차단")
+
+# 한국어 부정·0건 표기('실패 0건', '0건 실패', '오류 없음')는 성공입니다.
+# 지우지 않으면 '실패 0건' 의 '실패' 를 실패로 오독합니다. 0 앞뒤로 숫자가
+# 붙은 '10건 실패' 같은 문구를 0건으로 잘못 지우지 않도록 경계를 둡니다.
+_KO_ZERO_OR_ABSENT_RE = re.compile(
+    r"(?<!\d)0\s*건?\s*(?:의\s*)?(?:미달|실패|오류|에러|차단)"
+    r"|(?:미달|실패|오류|에러|차단)\s*(?:은|는|이|가)?\s*"
+    r"(?:(?<!\d)0\s*건?|없(?:음|다|습니다|이))"
+)
+
 
 def _is_failure_result_str(result_str: str) -> bool:
     """결과 문자열이 실패/에러를 나타내는지 검사합니다.
@@ -730,17 +742,22 @@ def _is_failure_result_str(result_str: str) -> bool:
     커버리지 하한 설정 이름('--cov-fail-under=0', 'fail-under 74', 'fail_under')은
     실패 신호가 아니므로 판정 전에 지웁니다. 설정 이름의 'fail' 을 실패로 오독하면
     'coverage 79.72% (fail-under 74 충족)' 같은 정상 보고가 위반으로 판정됩니다.
+
+    영어 실패 키워드만 보면 '미달'·'실패'·'오류' 처럼 한국어로만 적은 실패가
+    성공으로 통과합니다. 한국어 실패 표기를 함께 검사하되, 부정·0건 표기
+    ('실패 0건', '오류 없음', '미달 없음')는 먼저 지워 성공으로 남깁니다.
     """
     cleaned = (result_str or "").strip().lower()
     if not cleaned:
         return False
     cleaned = _COVERAGE_FAIL_UNDER_RE.sub(" ", cleaned)
+    cleaned = _KO_ZERO_OR_ABSENT_RE.sub(" ", cleaned)
     # "0 failed", "0 errors", "0 failure" 등은 성공 표기
     if re.search(r"\b0\s*(?:failed|errors?|failures?)\b", cleaned):
         return False
-    return bool(
-        re.search(r"\b(?:fail|failed|failure|errors?|blocked|exception|crash|traceback)\b", cleaned)
-    )
+    if re.search(r"\b(?:fail|failed|failure|errors?|blocked|exception|crash|traceback)\b", cleaned):
+        return True
+    return any(term in cleaned for term in _KO_FAILURE_TERMS)
 
 
 def verify_verification_truth(
