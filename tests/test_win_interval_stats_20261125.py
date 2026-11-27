@@ -362,22 +362,30 @@ def test_user_dispersed_bid_is_deterministic_and_spreads_users() -> None:
 # ============================================================================
 
 
-def test_user_dispersed_bid_clips_to_member_floor() -> None:
+def test_user_dispersed_bid_shifts_slanted_band_above_member_floor() -> None:
+    """전 분위가 하한 아래여도 역사적 폭을 하한 위로 올려 사용자별 금액이 갈린다."""
     service = _load_service()
     quantiles = [Decimal("80.0") + Decimal("0.1") * index for index in range(19)]
+    arguments = {
+        "base_amount": Decimal("1000000"),
+        "quantiles": quantiles,
+        "member_floor_rate": Decimal("90.0"),
+        "center_sajeong_rate": Decimal("100.0"),
+        "notice_key": "notice-1",
+    }
 
-    result = service.user_dispersed_bid(
-        base_amount=Decimal("1000000"),
-        quantiles=quantiles,
-        member_floor_rate=Decimal("90.0"),
-        center_sajeong_rate=Decimal("100.0"),
-        user_key="user-1",
-        notice_key="notice-1",
-    )
+    results = [
+        service.user_dispersed_bid(user_key=f"user-{index}", **arguments) for index in range(32)
+    ]
 
-    assert result.clipped is True
-    assert result.bid_rate < Decimal("90")
-    assert result.amount == 900000
+    floor_amount = 900000
+    assert all(result.clipped is False for result in results)
+    assert all(result.amount >= floor_amount for result in results)
+    assert all(result.bid_rate >= Decimal("90") for result in results)
+    # 역사적 폭(1.8%p)을 넘지 않는다: 90.0 ~ 91.8%.
+    assert all(result.bid_rate <= Decimal("91.8") for result in results)
+    assert len({result.amount for result in results}) == len(results)
+    assert results[0] == service.user_dispersed_bid(user_key="user-0", **arguments)
 
 
 # ============================================================================

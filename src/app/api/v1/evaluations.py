@@ -185,8 +185,7 @@ from src.app.services.sajeong_rate_stats import (
     lookup_sajeong_rate_range,
 )
 from src.app.services.win_interval_stats import (
-    DEFAULT_DISPERSION_BAND,
-    _interpolate_quantile,
+    dispersed_band_amounts,
     lookup_win_interval_quantiles,
     user_dispersed_bid,
 )
@@ -2846,20 +2845,6 @@ def _build_member_bid(
     )
 
 
-def _dispersed_band_amount(
-    base_amount: Decimal,
-    quantiles: tuple[Decimal, ...],
-    quantile: Decimal,
-    floor_amount: int,
-) -> int:
-    """분위표의 한 지점을 같은 보간·원 단위 규칙으로 금액화하고 회원 하한까지 올립니다."""
-    rate = _interpolate_quantile(quantiles, quantile)
-    amount = int(
-        (base_amount * rate / Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    )
-    return max(amount, floor_amount)
-
-
 def _build_dispersed_bid(
     *,
     db: Session,
@@ -2900,6 +2885,9 @@ def _build_dispersed_bid(
     # 넘기면 내부 회원 하한이 실제 금액의 1/100 로 줄어 클립이 걸리지 않습니다.
     floor_rate_percent = Decimal(str(member_bid.bid_rate_percent))
     center_rate = Decimal(str(member_bid.center_rate_percent))
+    # 보완 투찰가의 금액은 4자리 비율 격자를 거치므로 분위 보간 금액과 원 단위에서
+    # 어긋날 수 있습니다. 화면과 시험이 보는 하한은 member_bid 금액으로 맞춥니다.
+    floor_amount = int(member_bid.bid_amount)
     try:
         dispersed = user_dispersed_bid(
             base_amount=base_amount,
@@ -2908,32 +2896,30 @@ def _build_dispersed_bid(
             center_sajeong_rate=center_rate,
             user_key=user_key,
             notice_key=f"{bid.bid_ntce_no}-{bid.bid_ntce_ord or ''}",
+            floor_amount=floor_amount,
         )
     except ValueError:
         logger.warning("분산 추천가 계산을 건너뜁니다: 공고 %s", bid.bid_ntce_no, exc_info=True)
         return None
 
-    # 보완 투찰가의 금액은 4자리 비율 격자를 거치므로 분위 보간 금액과 원 단위에서
-    # 어긋날 수 있습니다. 화면과 시험이 보는 하한은 member_bid 금액으로 맞춥니다.
-    # 내부 하한은 올림 근사라 표시 하한과 원 단위에서 어긋날 수 있으므로, 클립일
-    # 때는 표시 하한(member_bid 금액)을 그대로 씁니다.
-    floor_amount = int(member_bid.bid_amount)
-    clipped = dispersed.clipped or dispersed.amount < floor_amount
-    amount = floor_amount if clipped else dispersed.amount
-    # 표시 투찰률은 항상 표시 금액에서 다시 계산합니다. 클립이 내부 하한에서 걸리면
-    # dispersed.amount 가 그대로 하한이라 금액 비교만으로는 클립을 알 수 없고, 분위
-    # 투찰률을 그대로 쓰면 화면의 금액과 투찰률이 서로 다른 근원이 됩니다.
+    # 분산 금액을 회원 하한으로 다시 덮어쓰지 않습니다. 하한은 계산 입력으로만
+    # 쓰고, 표시 하한보다 낮게 나온 한 건만 그 금액으로 올립니다.
+    amount = dispersed.amount
+    if amount < floor_amount:
+        amount = floor_amount
+    clipped = dispersed.clipped
+    # 표시 투찰률은 항상 표시 금액에서 다시 계산합니다. 분위 투찰률을 그대로 쓰면
+    # 화면의 금액과 투찰률이 서로 다른 근원이 됩니다.
     rate_percent = (Decimal(amount) / base_amount * Decimal("100")).quantize(
         Decimal("0.0001"), rounding=ROUND_HALF_UP
     )
-    band_low_quantile, band_high_quantile = DEFAULT_DISPERSION_BAND
-    band_low = _dispersed_band_amount(base_amount, quantiles, band_low_quantile, floor_amount)
-    band_high = _dispersed_band_amount(base_amount, quantiles, band_high_quantile, floor_amount)
-    # 클립으로 금액이 올라가면 구간도 그 금액을 포함해야 '최저~최고' 표기가 성립합니다.
-    band_low = min(band_low, amount)
-    band_high = max(band_high, amount)
-    if band_low > band_high:
-        band_low, band_high = band_high, band_low
+    band_low, band_high = dispersed_band_amounts(
+        base_amount=base_amount,
+        quantiles=quantiles,
+        member_floor_rate=floor_rate_percent,
+        center_sajeong_rate=center_rate,
+        floor_amount=floor_amount,
+    )
 
     return DispersedBidPayload(
         amount=amount,

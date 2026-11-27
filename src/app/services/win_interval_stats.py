@@ -16,6 +16,10 @@ src/app/services/win_interval_stats.py
 추천가를 받지 않게 하려는 것입니다. `user_key:notice_key` 의 sha256 으로
 25~75% 구간의 한 점을 고르므로 같은 입력은 항상 같은 값을 냅니다.
 
+분위표가 회원 하한 아래에 있으면 역사적 p25~p75 폭을 그대로 하한 위로
+평행이동합니다. 하한을 넘는 분위 조각이 일부면 그 조각에만 해시를 대응시켜,
+클립으로 여러 사용자가 한 금액에 모이는 일을 막습니다.
+
 정의 근거: docs/analysis/win_prob_backtest_20261125.md 2장, 6장.
 """
 
@@ -447,6 +451,90 @@ def _member_floor_amount(
     return int(exact.to_integral_value(rounding=ROUND_CEILING))
 
 
+def _effective_floor_rate(member_floor_rate: Decimal, center_sajeong_rate: Decimal) -> Decimal:
+    """회원 하한 투찰률(%)을 기초금액 대비 투찰률(%)로 환산합니다."""
+    return member_floor_rate * center_sajeong_rate / _HUNDRED
+
+
+def _quantile_for_rate(quantiles: Sequence[Decimal], target: Decimal) -> Decimal:
+    """분위표에서 `target` 투찰률에 처음 도달하는 분위를 선형 보간으로 구합니다."""
+    if target <= quantiles[0]:
+        return FIRST_QUANTILE
+    if target >= quantiles[-1]:
+        return LAST_QUANTILE
+    for index in range(len(quantiles) - 1):
+        left_rate = quantiles[index]
+        right_rate = quantiles[index + 1]
+        if target > right_rate:
+            continue
+        left_quantile = Decimal(QUANTILE_PERCENTILES[index]) / _HUNDRED
+        right_quantile = Decimal(QUANTILE_PERCENTILES[index + 1]) / _HUNDRED
+        if right_rate <= left_rate:
+            return right_quantile
+        fraction = (target - left_rate) / (right_rate - left_rate)
+        return left_quantile + (right_quantile - left_quantile) * fraction
+    return LAST_QUANTILE
+
+
+@dataclass(frozen=True)
+class _DispersionPlan:
+    """회원 하한을 반영한 분산 구간과 해시 대응 방식.
+
+    `interpolate` 가 참이면 `quantile_low`~`quantile_high` 구간을 보간해
+    투찰률을 고르고, 거짓이면 역사적 폭만큼 하한 위로 평행이동한 구간에서
+    고릅니다. `high_rate` 가 `low_rate` 와 같으면 폭이 없어 하한 한 금액입니다.
+    """
+
+    low_rate: Decimal
+    high_rate: Decimal
+    quantile_low: Decimal
+    quantile_high: Decimal
+    interpolate: bool
+
+    @property
+    def usable(self) -> bool:
+        return self.high_rate > self.low_rate
+
+
+def _dispersion_plan(
+    values: Sequence[Decimal],
+    low: Decimal,
+    high: Decimal,
+    floor_rate: Decimal,
+) -> _DispersionPlan:
+    """역사적 분위 폭을 회원 하한 위로 옮긴 분산 계획을 만듭니다."""
+    low_rate = _interpolate_quantile(values, low)
+    high_rate = _interpolate_quantile(values, high)
+    width = high_rate - low_rate
+    if width <= 0:
+        return _DispersionPlan(floor_rate, floor_rate, low, high, interpolate=True)
+    if low_rate >= floor_rate:
+        return _DispersionPlan(low_rate, high_rate, low, high, interpolate=True)
+    if high_rate < floor_rate:
+        # 전 구간이 하한 아래이면 폭을 유지한 채 하한 위로 평행이동합니다.
+        return _DispersionPlan(
+            floor_rate,
+            floor_rate + width,
+            low,
+            high,
+            interpolate=False,
+        )
+    # 일부만 하한 위이면 하한에 닿는 분위부터 상단까지의 조각만 씁니다.
+    quantile_low = _quantile_for_rate(values, floor_rate)
+    if quantile_low >= high:
+        return _DispersionPlan(floor_rate, floor_rate, low, high, interpolate=True)
+    return _DispersionPlan(floor_rate, high_rate, quantile_low, high, interpolate=True)
+
+
+def _plan_rate(values: Sequence[Decimal], plan: _DispersionPlan, unit: Decimal) -> Decimal:
+    if not plan.usable:
+        return plan.low_rate
+    if not plan.interpolate:
+        return plan.low_rate + (plan.high_rate - plan.low_rate) * unit
+    quantile = plan.quantile_low + (plan.quantile_high - plan.quantile_low) * unit
+    return _interpolate_quantile(values, quantile)
+
+
 def user_dispersed_bid(
     base_amount: Decimal,
     quantiles: Sequence[Decimal] | None,
@@ -455,12 +543,18 @@ def user_dispersed_bid(
     user_key: str,
     notice_key: str,
     band: tuple[Decimal | float | str, Decimal | float | str] = DEFAULT_DISPERSION_BAND,
+    floor_amount: int | None = None,
 ) -> DispersedBid:
     """사용자·공고별로 결정론적으로 다른 분위의 투찰가를 계산합니다.
 
     같은 `user_key`·`notice_key` 는 항상 같은 값을 냅니다. 분위가 없으면
-    (`quantiles is None`) 현행 단일 추천과 같은 하한 금액을 돌려주고,
-    있으면 25~75% 구간(기본)의 한 점을 골라 보간한 뒤 회원 하한으로 올립니다.
+    (`quantiles is None`) 현행 단일 추천과 같은 하한 금액을 돌려줍니다.
+    분위가 있으면 기본 25~75% 폭을 회원 하한 위에 두고, 그 폭 안에서 해시로
+    고른 한 점을 금액화합니다. 폭이 0 이면 하한 한 금액으로 클립합니다.
+
+    `floor_amount` 는 호출자가 이미 확정한 회원 하한 금액(원)입니다. 넘기지
+    않으면 투찰률과 사정률로 올림 계산합니다. 표시 하한이 별도로 있으면 그
+    값을 넘겨 금액과 구간의 기준을 화면과 맞춥니다.
 
     DB·HTTP·시스템 시각에 의존하지 않는 순수 함수입니다.
     """
@@ -470,14 +564,18 @@ def user_dispersed_bid(
     if base <= 0:
         raise ValueError("base_amount 는 0보다 커야 합니다.")
 
-    floor_amount = _member_floor_amount(base, floor_rate, center)
+    floor = (
+        _member_floor_amount(base, floor_rate, center)
+        if floor_amount is None
+        else int(floor_amount)
+    )
     if quantiles is None:
         return DispersedBid(
             quantile=Decimal("0.5"),
             bid_rate=(floor_rate * center / _HUNDRED).quantize(
                 _RATE_QUANTUM, rounding=ROUND_HALF_UP
             ),
-            amount=floor_amount,
+            amount=floor,
             source=SOURCE_FALLBACK,
             clipped=False,
         )
@@ -485,16 +583,56 @@ def user_dispersed_bid(
     values = tuple(_to_decimal(value, "quantiles") for value in quantiles)
     low, high = _normalize_band(band)
     unit = _dispersion_unit(str(user_key), str(notice_key))
-    quantile = low + (high - low) * unit
-    raw_rate = _interpolate_quantile(values, quantile)
-    amount = _won_from_rate(base, raw_rate)
-    clipped = amount < floor_amount
-    if clipped:
-        amount = floor_amount
+    plan = _dispersion_plan(values, low, high, _effective_floor_rate(floor_rate, center))
+    if plan.usable and plan.interpolate:
+        quantile = plan.quantile_low + (plan.quantile_high - plan.quantile_low) * unit
+    else:
+        quantile = low + (high - low) * unit
+    if plan.usable:
+        amount = _won_from_rate(base, _plan_rate(values, plan, unit))
+        if amount < floor:
+            amount = floor
+    else:
+        amount = floor
     return DispersedBid(
         quantile=quantile,
-        bid_rate=raw_rate.quantize(_RATE_QUANTUM, rounding=ROUND_HALF_UP),
+        bid_rate=(Decimal(amount) / base * _HUNDRED).quantize(
+            _RATE_QUANTUM, rounding=ROUND_HALF_UP
+        ),
         amount=amount,
         source=SOURCE_INTERVAL,
-        clipped=clipped,
+        clipped=not plan.usable,
     )
+
+
+def dispersed_band_amounts(
+    base_amount: Decimal,
+    quantiles: Sequence[Decimal],
+    member_floor_rate: Decimal,
+    center_sajeong_rate: Decimal,
+    band: tuple[Decimal | float | str, Decimal | float | str] = DEFAULT_DISPERSION_BAND,
+    floor_amount: int | None = None,
+) -> tuple[int, int]:
+    """공고 단위 분산 구간의 하단·상단 금액을 계산합니다.
+
+    회원 하한을 반영한 같은 구간이므로 모든 사용자에게 같은 값입니다.
+    사용자별 금액은 이 두 값 사이에 있습니다.
+    """
+    base = _to_decimal(base_amount, "base_amount")
+    floor_rate = _to_decimal(member_floor_rate, "member_floor_rate")
+    center = _to_decimal(center_sajeong_rate, "center_sajeong_rate")
+    if base <= 0:
+        raise ValueError("base_amount 는 0보다 커야 합니다.")
+    floor = (
+        _member_floor_amount(base, floor_rate, center)
+        if floor_amount is None
+        else int(floor_amount)
+    )
+    values = tuple(_to_decimal(value, "quantiles") for value in quantiles)
+    low, high = _normalize_band(band)
+    plan = _dispersion_plan(values, low, high, _effective_floor_rate(floor_rate, center))
+    if not plan.usable:
+        return floor, floor
+    low_amount = max(_won_from_rate(base, plan.low_rate), floor)
+    high_amount = max(_won_from_rate(base, plan.high_rate), low_amount)
+    return low_amount, high_amount
