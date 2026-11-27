@@ -494,7 +494,15 @@ def spawn_permission_setup(
 
     부모는 곧바로 CLI 를 exec 하거나 실행하여 제어권을 넘기므로 여기서 기다릴 수 없습니다.
     자식은 자기 세션(start_new_session=True)으로 떨어져 나가 CLI TUI 가 뜬 뒤에 일을 합니다.
+
+    자식 환경은 부모 환경 사본에 ORCA_TERMINAL_HANDLE 을 넘겨받은 터미널 핸들로
+    확정해 넘깁니다. 런처는 코디네이터 셸에서 기동되므로 상속값에 코디네이터 핸들이
+    남아 있을 수 있고, 그대로 물려주면 자식의 prepare-worker 가 다른 Dispatch 를
+    건드립니다. os.environ 자체는 바꾸지 않습니다.
     """
+    child_env = dict(os.environ)
+    child_env[WORKER_HANDLE_ENV_VAR] = terminal.strip()
+
     log_path = Path(log_path)
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -512,6 +520,7 @@ def spawn_permission_setup(
             ],
             stdout=handle,
             stderr=subprocess.STDOUT,
+            env=child_env,
             start_new_session=True,
         )
     finally:
