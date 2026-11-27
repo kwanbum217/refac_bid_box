@@ -5221,6 +5221,28 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             if wt_raw.startswith("path:"):
                 wt_raw = wt_raw[5:]
             worktree_path = Path(wt_raw).resolve()
+            # 터미널이 실제로 속한 워크트리와 --worktree 값이 어긋나면
+            # preamble 과 .handle 을 쓰기 전에 거부한다.
+            actual_worktree = resolve_terminal_worktree(args.terminal, repo=args.repo)
+            # 실제 워크트리는 .git 을 가진다. 메타데이터가 삭제되었거나 워크트리가
+            # 아닌 경로를 가리키면 소속을 판정할 수 없으므로 None 과 같이 경고 후
+            # 진행한다. 정상 워크트리끼리의 대조는 그대로 유지된다.
+            verifiable = actual_worktree is not None and (actual_worktree / ".git").exists()
+            if not verifiable:
+                resolved_detail = (
+                    f" (해석된 경로: {actual_worktree})" if actual_worktree is not None else ""
+                )
+                sys.stderr.write(
+                    f"경고: 터미널 {args.terminal} 의 워크트리를 확인하지 못했습니다"
+                    f"{resolved_detail}. "
+                    f"지정된 워크트리({worktree_path})로 Dispatch 를 계속 진행합니다.\n"
+                )
+            elif actual_worktree != worktree_path:
+                sys.stderr.write(
+                    f"오류: 터미널 {args.terminal} 이 속한 워크트리({actual_worktree})와 "
+                    f"--worktree 값({worktree_path})이 다릅니다. Dispatch 를 중단합니다.\n"
+                )
+                return 2
         elif launcher_mode:
             worktree_path = resolve_terminal_worktree(args.terminal, repo=args.repo)
 
