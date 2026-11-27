@@ -57,6 +57,7 @@ WORKDIR /app
 # 2026-10-02 에 추가했습니다.
 # apt·libapt-pkg7.0(CVE-2026-109518, 3.0.3 -> 3.0.4 stable-security)은 2026-11-06 에 추가했습니다.
 # zlib1g(CVE-2026-76844, CVE-2026-85091, deb13u1 trixie-security)는 2026-11-09 에 추가했습니다.
+# libzstd1(CVE-2026-124851, Zstandard 1.6.0)은 2026-11-26 에 추가했습니다.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && apt-get install -y --no-install-recommends --only-upgrade \
@@ -70,6 +71,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl-provider-legacy \
     perl-base \
     zlib1g \
+    libzstd1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /opt/venv /opt/venv
