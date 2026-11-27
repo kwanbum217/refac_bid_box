@@ -562,6 +562,7 @@
                                     </div>
                                     <div class="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
                                         <div id="res-member-price" class="text-2xl sm:text-3xl font-black tracking-tight text-amber-900 tabular-nums break-all dark:text-amber-100">-</div>
+                                        <span class="text-[11px] font-semibold leading-relaxed text-amber-800 dark:text-amber-200">정량점수가 낮을수록 추천 금액이 올라갑니다</span>
                                         <span id="res-member-rate" class="text-lg font-black tabular-nums text-amber-800 dark:text-amber-200"></span>
                                     </div>
                                     <p id="res-member-band-note" class="hidden mt-1 text-xs font-semibold text-amber-800 dark:text-amber-200"></p>
@@ -577,12 +578,12 @@
                                     <div id="res-member-impossible" class="hidden mt-2 rounded-lg border border-rose-300 bg-white p-3 text-xs font-bold leading-relaxed text-rose-700 dark:border-rose-500 dark:bg-slate-800 dark:text-rose-300"></div>
                                     <div id="res-member-unavailable" class="hidden mt-2 rounded-lg border border-amber-300 bg-white p-3 text-xs font-semibold leading-relaxed text-amber-800 dark:border-amber-600 dark:bg-slate-800 dark:text-amber-200"></div>
                                     <div id="res-member-scenarios" class="hidden mt-3 overflow-x-auto">
+                                        <p class="mb-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">하단·기준·상단 공통 투찰률 <span id="res-member-scenario-rate" class="tabular-nums">-</span></p>
                                         <table class="w-full text-left text-[11px] tabular-nums">
                                             <thead class="text-amber-700 dark:text-amber-300">
                                                 <tr>
                                                     <th class="py-1 pr-2 font-bold">구분</th>
                                                     <th class="py-1 pr-2 font-bold">예정가격</th>
-                                                    <th class="py-1 pr-2 font-bold">투찰률</th>
                                                     <th class="py-1 pr-2 font-bold">투찰금액</th>
                                                     <th class="py-1 font-bold">판정</th>
                                                 </tr>
@@ -2047,17 +2048,18 @@ $(document).ready(function() {
                 compensate: '보완',
                 impossible: '불가'
             };
+            // 투찰률은 예정가격과 무관하게 하나이므로 표 위에 한 번만 적는다.
+            const scenarioRate = scenarioRows[0].verified_price_ratio == null
+                ? '-'
+                : (Number(scenarioRows[0].verified_price_ratio) * 100).toFixed(4) + '%';
+            $('#res-member-scenario-rate').text(scenarioRate);
             $('#res-member-scenario-rows').html(scenarioRows.map(function(row) {
-                const rowRate = row.verified_price_ratio == null
-                    ? '-'
-                    : (Number(row.verified_price_ratio) * 100).toFixed(4) + '%';
                 const rowAmount = row.complement_bid_amount == null
                     ? '-'
                     : amountText(row.complement_bid_amount);
                 return '<tr class="border-t border-amber-200 dark:border-amber-700">'
                     + '<td class="py-1 pr-2 font-bold">' + escapeHtml(row.scenario_name || '') + '</td>'
                     + '<td class="py-1 pr-2">' + escapeHtml(amountText(row.estimated_price)) + '</td>'
-                    + '<td class="py-1 pr-2">' + escapeHtml(rowRate) + '</td>'
                     + '<td class="py-1 pr-2">' + escapeHtml(rowAmount) + '</td>'
                     + '<td class="py-1">' + escapeHtml(statusLabels[row.row_status] || row.row_status || '') + '</td>'
                     + '</tr>';
