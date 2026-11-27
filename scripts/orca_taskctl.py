@@ -4182,6 +4182,25 @@ def resolve_terminal_worktree(terminal: str, repo: Path | str = ".") -> Path | N
     return None
 
 
+def resolve_worktree_root(path: Path | str | None) -> Path | None:
+    """경로에서 위로 올라가며 .git(파일 또는 디렉터리)을 가진 가장 가까운 조상을 워크트리 루트로 돌려줍니다.
+
+    resolve_terminal_worktree 는 cwd 폴백 때문에 워크트리 하위 디렉터리를 돌려줄 수
+    있으므로, 소속 판정은 이 루트 정규화를 거친 값끼리 비교해야 합니다. 조상 중
+    .git 이 하나도 없으면 None 입니다.
+    """
+    if path is None:
+        return None
+    try:
+        current = Path(path).resolve()
+    except OSError:
+        return None
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
 def wait_for_launcher_readiness(
     terminal: str,
     wait_seconds: float = DEFAULT_LAUNCHER_READINESS_WAIT_SECONDS,
@@ -5221,6 +5240,29 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             if wt_raw.startswith("path:"):
                 wt_raw = wt_raw[5:]
             worktree_path = Path(wt_raw).resolve()
+            # 터미널이 실제로 속한 워크트리와 --worktree 값이 어긋나면
+            # preamble 과 .handle 을 쓰기 전에 거부한다.
+            actual_worktree = resolve_terminal_worktree(args.terminal, repo=args.repo)
+            # 해석 경로는 cwd 폴백으로 워크트리 하위 디렉터리일 수 있으므로 양쪽을
+            # .git 을 가진 가장 가까운 조상으로 정규화해 비교한다. 해석 경로의 조상
+            # 중 .git 이 하나도 없거나 해석 결과가 None 일 때만 판정 불가로 본다.
+            actual_root = resolve_worktree_root(actual_worktree)
+            target_root = resolve_worktree_root(worktree_path) or worktree_path
+            if actual_root is None:
+                resolved_detail = (
+                    f" (해석된 경로: {actual_worktree})" if actual_worktree is not None else ""
+                )
+                sys.stderr.write(
+                    f"경고: 터미널 {args.terminal} 의 워크트리를 확인하지 못했습니다"
+                    f"{resolved_detail}. "
+                    f"지정된 워크트리({worktree_path})로 Dispatch 를 계속 진행합니다.\n"
+                )
+            elif actual_root != target_root:
+                sys.stderr.write(
+                    f"오류: 터미널 {args.terminal} 이 속한 워크트리({actual_root})와 "
+                    f"--worktree 값({target_root})이 다릅니다. Dispatch 를 중단합니다.\n"
+                )
+                return 2
         elif launcher_mode:
             worktree_path = resolve_terminal_worktree(args.terminal, repo=args.repo)
 
