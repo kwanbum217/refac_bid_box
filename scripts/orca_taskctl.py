@@ -4182,6 +4182,25 @@ def resolve_terminal_worktree(terminal: str, repo: Path | str = ".") -> Path | N
     return None
 
 
+def resolve_worktree_root(path: Path | str | None) -> Path | None:
+    """경로에서 위로 올라가며 .git(파일 또는 디렉터리)을 가진 가장 가까운 조상을 워크트리 루트로 돌려줍니다.
+
+    resolve_terminal_worktree 는 cwd 폴백 때문에 워크트리 하위 디렉터리를 돌려줄 수
+    있으므로, 소속 판정은 이 루트 정규화를 거친 값끼리 비교해야 합니다. 조상 중
+    .git 이 하나도 없으면 None 입니다.
+    """
+    if path is None:
+        return None
+    try:
+        current = Path(path).resolve()
+    except OSError:
+        return None
+    for candidate in (current, *current.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
 def wait_for_launcher_readiness(
     terminal: str,
     wait_seconds: float = DEFAULT_LAUNCHER_READINESS_WAIT_SECONDS,
@@ -5224,11 +5243,12 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
             # 터미널이 실제로 속한 워크트리와 --worktree 값이 어긋나면
             # preamble 과 .handle 을 쓰기 전에 거부한다.
             actual_worktree = resolve_terminal_worktree(args.terminal, repo=args.repo)
-            # 실제 워크트리는 .git 을 가진다. 메타데이터가 삭제되었거나 워크트리가
-            # 아닌 경로를 가리키면 소속을 판정할 수 없으므로 None 과 같이 경고 후
-            # 진행한다. 정상 워크트리끼리의 대조는 그대로 유지된다.
-            verifiable = actual_worktree is not None and (actual_worktree / ".git").exists()
-            if not verifiable:
+            # 해석 경로는 cwd 폴백으로 워크트리 하위 디렉터리일 수 있으므로 양쪽을
+            # .git 을 가진 가장 가까운 조상으로 정규화해 비교한다. 해석 경로의 조상
+            # 중 .git 이 하나도 없거나 해석 결과가 None 일 때만 판정 불가로 본다.
+            actual_root = resolve_worktree_root(actual_worktree)
+            target_root = resolve_worktree_root(worktree_path) or worktree_path
+            if actual_root is None:
                 resolved_detail = (
                     f" (해석된 경로: {actual_worktree})" if actual_worktree is not None else ""
                 )
@@ -5237,10 +5257,10 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
                     f"{resolved_detail}. "
                     f"지정된 워크트리({worktree_path})로 Dispatch 를 계속 진행합니다.\n"
                 )
-            elif actual_worktree != worktree_path:
+            elif actual_root != target_root:
                 sys.stderr.write(
-                    f"오류: 터미널 {args.terminal} 이 속한 워크트리({actual_worktree})와 "
-                    f"--worktree 값({worktree_path})이 다릅니다. Dispatch 를 중단합니다.\n"
+                    f"오류: 터미널 {args.terminal} 이 속한 워크트리({actual_root})와 "
+                    f"--worktree 값({target_root})이 다릅니다. Dispatch 를 중단합니다.\n"
                 )
                 return 2
         elif launcher_mode:

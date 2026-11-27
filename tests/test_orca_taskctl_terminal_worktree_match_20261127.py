@@ -126,6 +126,56 @@ def test_rejects_mismatched_terminal_worktree_before_side_effects(
     assert list(orca_dir.glob("*.handle")) == []
 
 
+def test_subdirectory_of_other_worktree_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """해석 경로가 A 의 하위 디렉터리여도 A 워크트리 소속으로 판정해 B 와의 불일치를 거부한다."""
+    terminal = "term_worktree_subdir_mismatch"
+    worktree_a = (tmp_path / "worktree_a").resolve()
+    worktree_b = (tmp_path / "worktree_b").resolve()
+    (worktree_a / ".git").mkdir(parents=True)
+    (worktree_b / ".git").mkdir(parents=True)
+    resolved_subdir = worktree_a / "src" / "nested"
+    resolved_subdir.mkdir(parents=True)
+
+    calls = _install_dispatch_mocks(monkeypatch, terminal=terminal, actual_worktree=resolved_subdir)
+    intent_file = _write_intent(tmp_path)
+
+    code = main(_dispatch_argv(intent_file, tmp_path, terminal, worktree_b))
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "다릅니다" in captured.err
+    assert str(worktree_a) in captured.err
+    assert str(worktree_b) in captured.err
+    assert terminal in captured.err
+    assert "dispatch" not in calls
+    assert list((worktree_b / ".orca").glob("preamble_*.txt")) == []
+    assert list((worktree_b / ".orca").glob("*.handle")) == []
+
+
+def test_subdirectory_of_same_worktree_proceeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """해석 경로가 같은 워크트리의 하위 디렉터리이면 루트로 정규화해 거부하지 않는다."""
+    terminal = "term_worktree_subdir_match"
+    worktree_b = (tmp_path / "worktree_b").resolve()
+    (worktree_b / ".git").mkdir(parents=True)
+    resolved_subdir = worktree_b / "src" / "nested"
+    resolved_subdir.mkdir(parents=True)
+
+    calls = _install_dispatch_mocks(monkeypatch, terminal=terminal, actual_worktree=resolved_subdir)
+    intent_file = _write_intent(tmp_path)
+
+    code = main(_dispatch_argv(intent_file, tmp_path, terminal, worktree_b))
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert "다릅니다" not in captured.err
+    assert "확인하지 못했습니다" not in captured.err
+    assert "dispatch" in calls
+
+
 def test_unresolvable_terminal_worktree_warns_and_proceeds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ):
