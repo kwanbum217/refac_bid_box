@@ -111,8 +111,8 @@ def test_chat_page_renders_distinct_announcement_count(isolated_db):
 
     body = client.get("/chatbot/").text
 
-    assert "2 Records Indexed" in body
-    assert "3 Records Indexed" not in body
+    assert "색인 공고 2건" in body
+    assert "색인 공고 3건" not in body
 
 
 # --------------------------------------------------------------------------- #

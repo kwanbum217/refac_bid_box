@@ -17,7 +17,7 @@ async def test_login_page_smoke(page: Page, live_server_url: str) -> None:
     assert response.status == 200
 
     # 브라우저 페이지 타이틀 및 메인 헤딩 검증
-    await expect(page).to_have_title("로그인 - BIDBOX Intelligence")
+    await expect(page).to_have_title("로그인 - BIDBOX")
     await expect(page.locator("h1")).to_contain_text("계정에 로그인하세요")
 
     # 로그인 폼 및 주요 입력 필드 DOM 가시성 검증

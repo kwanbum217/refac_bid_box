@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}BIDBOX 비교 분석 - 입찰공고 vs 낙찰{% endblock %}
+{% block title %}비교 분석 - BIDBOX{% endblock %}
 
 {% block page_header %}비교 분석{% endblock %}
 
@@ -20,26 +20,15 @@
         <!-- Header Section -->
         <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
             <div class="flex items-center space-x-6">
-                <div class="w-14 h-14 rounded-xl bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">
+                <div class="w-14 h-14 rounded-xl bg-primary flex items-center justify-center text-white">
                     <i class="fas fa-exchange-alt text-xl"></i>
                 </div>
                 <div>
-                    <div class="flex items-center space-x-2 mb-1">
-                        <span class="px-2 py-0.5 bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider rounded-sm">Analysis</span>
-                        <span class="text-slate-400 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider">Announcement vs Award</span>
-                    </div>
                     <h1 class="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
                         입찰공고 vs 낙찰 <span class="text-primary">비교 분석</span>
                     </h1>
                     <p class="text-slate-500 dark:text-slate-400 mt-1 font-medium">4대 업종(파견·경비·위생관리·유료직업소개) 업종 제한 공고와 그 낙찰 결과만으로 기초금액과 실제 낙찰가를 매칭 분석합니다.</p>
                 </div>
-            </div>
-            <div class="hidden lg:flex items-center space-x-3 px-4 py-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 shadow-xs">
-                <div class="flex -space-x-2">
-                    <div class="w-8 h-8 rounded-full border-2 border-white dark:border-slate-900 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[8px] font-bold text-slate-400 dark:text-slate-400">DB</div>
-                    <div class="w-8 h-8 rounded-full border-2 border-white dark:border-slate-900 bg-primary/10 flex items-center justify-center text-[8px] font-bold text-primary">AI</div>
-                </div>
-                <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider ml-1">Hybrid Data Match</span>
             </div>
         </div>
 
@@ -58,7 +47,6 @@
                     <div class="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-slate-100 dark:border-slate-800 group-hover:text-primary transition-colors">
                         <i class="fas fa-bullhorn text-sm"></i>
                     </div>
-                    <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest">ANNOUNCEMENT</span>
                 </div>
                 <h4 class="text-slate-500 dark:text-slate-400 text-xs font-bold mb-1">입찰공고 건수 (4대 업종·전체 기간)</h4>
                 <p class="text-2xl font-extrabold text-slate-900 dark:text-slate-100" id="announceCount">-</p>
@@ -69,7 +57,6 @@
                     <div class="w-10 h-10 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-400 border border-slate-100 dark:border-slate-800 group-hover:text-primary transition-colors">
                         <i class="fas fa-calculator text-sm"></i>
                     </div>
-                    <span class="text-[10px] font-bold text-slate-300 uppercase tracking-widest">TOTAL BASE BUDGET</span>
                 </div>
                 <h4 class="text-slate-500 dark:text-slate-400 text-xs font-bold mb-1">총 기초금액</h4>
                 <p class="text-2xl font-extrabold text-slate-900 dark:text-slate-100" id="announceTotalPrce">-</p>
@@ -80,7 +67,6 @@
                     <div class="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-500 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20 group-hover:bg-emerald-500 group-hover:text-white transition-all">
                         <i class="fas fa-trophy text-sm"></i>
                     </div>
-                    <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">WINNING BIDS</span>
                 </div>
                 <h4 class="text-slate-500 dark:text-slate-400 text-xs font-bold mb-1">낙찰 건수 (4대 업종·전체 기간)</h4>
                 <p class="text-2xl font-extrabold text-slate-900 dark:text-slate-100" id="resultCount">-</p>
@@ -91,19 +77,16 @@
                     <div class="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-500 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20 group-hover:bg-emerald-500 group-hover:text-white transition-all">
                         <i class="fas fa-won-sign text-sm"></i>
                     </div>
-                    <span class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">TOTAL AWARDED</span>
                 </div>
                 <h4 class="text-slate-500 dark:text-slate-400 text-xs font-bold mb-1">총 낙찰금액</h4>
                 <p class="text-2xl font-extrabold text-slate-900 dark:text-slate-100" id="resultTotalAmt">-</p>
             </div>
 
-            <div class="h-card p-6 bg-primary! border border-primary/20 rounded-xl shadow-lg shadow-primary/20 relative overflow-hidden group">
-                <div class="absolute -right-4 -bottom-4 w-24 h-24 bg-white/10 rounded-full blur-2xl"></div>
+            <div class="h-card p-6 bg-primary! border border-primary/20 rounded-xl relative overflow-hidden">
                 <div class="flex items-center justify-between mb-4 relative z-10">
                     <div class="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center text-white border border-white/30">
                         <i class="fas fa-link text-sm"></i>
                     </div>
-                    <span class="text-[10px] font-bold text-primary-200 uppercase tracking-widest text-blue-100">MATCH RATE</span>
                 </div>
                 <h4 class="text-blue-100 text-xs font-bold mb-1 relative z-10">데이터 매칭률 (최근 1년 공고 기준)</h4>
                 <p class="text-2xl font-extrabold text-white relative z-10" id="matchRate">-</p>
@@ -119,10 +102,10 @@
                         월별 공고 vs 낙찰 건수
                     </h3>
                     <div class="flex items-center space-x-4">
-                        <div class="flex items-center text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider">
+                        <div class="flex items-center text-[10px] font-bold text-slate-400 dark:text-slate-400">
                             <span class="w-2 h-2 bg-slate-300 rounded-full mr-1.5"></span> 공고
                         </div>
-                        <div class="flex items-center text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-wider">
+                        <div class="flex items-center text-[10px] font-bold text-slate-400 dark:text-slate-400">
                             <span class="w-2 h-2 bg-primary rounded-full mr-1.5"></span> 낙찰
                         </div>
                     </div>
@@ -136,9 +119,9 @@
                 <div class="flex items-center justify-between mb-8">
                     <h3 class="text-lg font-extrabold text-slate-900 dark:text-slate-100 flex items-center tracking-tight">
                         <span class="w-1 h-5 bg-slate-900 dark:bg-slate-300 rounded-full mr-3"></span>
-                        기관별 기초금액 TOP 10
+                        기관별 기초금액 상위 10곳
                     </h3>
-                    <span class="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-widest">Base Budget (KRW)</span>
+                    <span class="text-[10px] font-bold text-slate-400 dark:text-slate-400">단위: 원</span>
                 </div>
                 <div class="h-[350px]">
                     <canvas id="agencyAnnounceChart"></canvas>
@@ -174,13 +157,13 @@
                     </div>
                 </div>
 
-                <div class="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl flex flex-col items-center justify-center min-w-[280px] group hover:-translate-y-1 transition-all duration-300">
-                    <div class="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <div class="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col items-center justify-center min-w-[280px] hover:border-primary/40 transition-colors">
+                    <div class="w-16 h-16 rounded-full bg-primary/5 flex items-center justify-center mb-4">
                         <i class="fas fa-link text-2xl text-primary"></i>
                     </div>
-                    <p class="text-[10px] font-bold text-slate-400 dark:text-slate-400 uppercase tracking-widest mb-1">Matched Announcements (1Y)</p>
+                    <p class="text-[10px] font-bold text-slate-400 dark:text-slate-400 mb-1">매칭된 공고 (최근 1년)</p>
                     <p class="text-4xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tighter" id="matchedCount">-</p>
-                    <div class="mt-6 px-4 py-1.5 bg-primary text-white text-[10px] font-extrabold uppercase tracking-widest rounded-lg shadow-lg shadow-primary/20">
+                    <div class="mt-6 px-4 py-1.5 bg-primary text-white text-[10px] font-extrabold rounded-lg">
                         최근 1년 공고 기준
                     </div>
                 </div>

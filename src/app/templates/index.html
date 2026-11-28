@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}BIDBOX - 용역 입찰 인텔리전스{% endblock %}
+{% block title %}BIDBOX - 공공조달 용역 입찰 분석{% endblock %}
 {% block page_header %}홈{% endblock %}
 
 {% block content %}
@@ -10,9 +10,8 @@
         <section class="overflow-hidden rounded-2xl bg-harness-sidebar px-8 py-8 text-white">
             <div class="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
                 <div class="min-w-0">
-                    <span class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-blue-100">
-                        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-                        Public Procurement Intelligence
+                    <span class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-bold text-blue-100">
+                        나라장터 용역 공고 · 낙찰 결과
                     </span>
                     <h1 class="mt-4 text-3xl font-black tracking-tight">공공조달 용역 입찰을 데이터로 해석합니다</h1>
                     <p class="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
@@ -35,7 +34,7 @@
             <article data-home-panel="open" class="h-card flex min-w-0 flex-col p-5">
                 <div class="flex items-center justify-between gap-3">
                     <div class="min-w-0">
-                        <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">입찰 중 공고</p>
+                        <p class="text-[11px] font-bold text-slate-400 dark:text-slate-500">입찰 중 공고</p>
                         <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">파견·경비·위생관리·유료직업소개 4대 업종 마감 전 용역 공고</p>
                     </div>
                     <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300">
@@ -69,7 +68,7 @@
             <article data-home-panel="matching" class="h-card flex min-w-0 flex-col p-5">
                 <div class="flex items-center justify-between gap-3">
                     <div class="min-w-0">
-                        <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">내 조건 입찰 중</p>
+                        <p class="text-[11px] font-bold text-slate-400 dark:text-slate-500">내 조건 입찰 중</p>
                         <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">관심 업종·지역에 맞는 마감 전 용역 공고</p>
                     </div>
                     <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300">
@@ -125,7 +124,7 @@
             <article data-home-metric="accuracy" class="h-card flex min-w-0 flex-col p-5">
                 <div class="flex items-start justify-between gap-4">
                     <div class="min-w-0">
-                        <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">모델 정확도</p>
+                        <p class="text-[11px] font-bold text-slate-400 dark:text-slate-500">모델 정확도</p>
                         <h2 class="mt-1 text-lg font-black tracking-tight text-slate-900 dark:text-white">용역 낙찰률 예측 모델 실측 정확도</h2>
                         <p class="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
                             학습에 쓰지 않은 2026년 공고로 실제 예측해 잰 값입니다.
@@ -157,7 +156,7 @@
                 <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                     {% for tile in accuracy.tiles %}
                     <div data-home-accuracy-tile="{{ tile.key }}" class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-900/60">
-                        <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">{{ tile.label }}</p>
+                        <p class="text-[11px] font-bold text-slate-400 dark:text-slate-500">{{ tile.label }}</p>
                         <p class="mt-1 text-2xl font-black tracking-tight text-slate-900 dark:text-white">
                             {{ tile.value }}<span class="ml-1 text-xs font-bold text-slate-500 dark:text-slate-400">{{ tile.unit }}</span>
                         </p>

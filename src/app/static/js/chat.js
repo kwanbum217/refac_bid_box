@@ -232,14 +232,14 @@ $(document).ready(function() {
 
     function formatStatusBadge(status) {
         const map = {
-            pending_confirmation: { label: 'Confirmation', classes: 'border-amber-200 bg-amber-50 text-amber-700' },
-            queued: { label: 'Queued', classes: 'border-slate-200 bg-slate-100 text-slate-600' },
-            running: { label: 'Running', classes: 'border-blue-200 bg-blue-50 text-blue-700' },
-            success: { label: 'Completed', classes: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-            failed: { label: 'Failed', classes: 'border-red-200 bg-red-50 text-red-700' },
-            canceled: { label: 'Canceled', classes: 'border-slate-200 bg-slate-100 text-slate-600' }
+            pending_confirmation: { label: '확인 필요', classes: 'border-amber-200 bg-amber-50 text-amber-700' },
+            queued: { label: '대기', classes: 'border-slate-200 bg-slate-100 text-slate-600' },
+            running: { label: '실행 중', classes: 'border-blue-200 bg-blue-50 text-blue-700' },
+            success: { label: '완료', classes: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+            failed: { label: '실패', classes: 'border-red-200 bg-red-50 text-red-700' },
+            canceled: { label: '취소', classes: 'border-slate-200 bg-slate-100 text-slate-600' }
         };
-        return map[status] || { label: 'Active', classes: 'border-slate-200 bg-slate-100 text-slate-600' };
+        return map[status] || { label: '진행', classes: 'border-slate-200 bg-slate-100 text-slate-600' };
     }
 
     function buildAutomationCard(job, options = {}) {
@@ -250,29 +250,29 @@ $(document).ready(function() {
         const badge = formatStatusBadge(job.status);
         const callbackMode = job.callback_mode === 'callback' ? 'Callback' : 'Polling';
         const detailRows = [
-            { label: 'Job ID', value: job.job_id },
-            { label: 'Action', value: job.action_key || '-' },
-            { label: 'Run Mode', value: job.run_mode || '-' },
-            { label: 'Pipeline', value: job.pipeline || job.pipeline_id || '-' },
-            { label: 'Delivery', value: callbackMode },
+            { label: '작업 ID', value: job.job_id },
+            { label: '작업', value: job.action_key || '-' },
+            { label: '실행 방식', value: job.run_mode || '-' },
+            { label: '파이프라인', value: job.pipeline || job.pipeline_id || '-' },
+            { label: '결과 전달', value: callbackMode },
         ];
 
         if (job.plan_execution_id) {
-            detailRows.push({ label: 'Execution', value: job.plan_execution_id });
+            detailRows.push({ label: '실행 ID', value: job.plan_execution_id });
         }
         if (job.stage_name || job.stage_status) {
             detailRows.push({
-                label: 'Stage',
+                label: '단계',
                 value: `${job.stage_name || '-'} / ${job.stage_status || '-'}`
             });
         }
         if (job.result_summary) {
-            detailRows.push({ label: 'Summary', value: job.result_summary });
+            detailRows.push({ label: '요약', value: job.result_summary });
         }
 
         const detailsHtml = detailRows.map((row) => `
             <div class="flex items-center justify-between gap-4 text-[11px]">
-                <span class="font-bold uppercase tracking-[0.14em] text-slate-400">${escapeHtml(row.label)}</span>
+                <span class="font-bold text-slate-400">${escapeHtml(row.label)}</span>
                 <span class="max-w-[70%] break-words text-right font-semibold text-slate-700">${escapeHtml(row.value)}</span>
             </div>
         `).join('');
@@ -333,8 +333,8 @@ $(document).ready(function() {
         return `
             <div class="automation-card mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div class="flex items-center justify-between gap-3">
-                    <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Automation Control</p>
-                    <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${badge.classes}">
+                    <p class="text-[11px] font-bold text-slate-400">자동 작업</p>
+                    <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold ${badge.classes}">
                         ${escapeHtml(badge.label)}
                     </span>
                 </div>
@@ -405,7 +405,7 @@ $(document).ready(function() {
                 <div class="advisory-card-premium p-4 rounded-lg mt-4 flex items-start gap-3">
                     <i class="fas fa-info-circle text-primary mt-1"></i>
                     <div>
-                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Expert Advisor Note</p>
+                        <p class="text-[10px] font-bold text-slate-400 mb-1">참고</p>
                         <p class="text-xs text-slate-700 dark:text-slate-300 font-semibold">${escapeHtml(sig.message)}</p>
                     </div>
                 </div>
@@ -1018,7 +1018,7 @@ $(document).ready(function() {
                     </div>
                     <div class="px-5 py-4 bg-white dark:bg-slate-900 border border-harness-border dark:border-slate-800 rounded-xl shadow-xs">
                         <div class="flex items-center gap-3">
-                            <span class="text-xs font-bold text-slate-500 tracking-widest">AI가 요청을 분석 중입니다</span>
+                            <span class="text-xs font-bold text-slate-500">AI가 요청을 분석 중입니다</span>
                             <div class="flex gap-1">
                                 <div class="typing-dot"></div>
                                 <div class="typing-dot"></div>
