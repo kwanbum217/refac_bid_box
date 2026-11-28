@@ -44,7 +44,13 @@ def _configure_catchup(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "AUTOMATION_DATA_REFRESH_SCHEDULE_ENABLED", True)
 
 
-def _add_success_run(db: Any, started_at: datetime, *, success: bool = True) -> None:
+def _add_success_run(
+    db: Any,
+    started_at: datetime,
+    *,
+    success: bool = True,
+    status: str | None = None,
+) -> None:
     from src.app.models.schedule_run_log import ScheduleRunLog
 
     db.add(
@@ -53,6 +59,7 @@ def _add_success_run(db: Any, started_at: datetime, *, success: bool = True) -> 
             started_at=started_at,
             finished_at=started_at,
             success=success,
+            status=status,
         )
     )
     db.commit()
@@ -200,3 +207,63 @@ def test_nightly_slot_ignores_failed_runs(
     assert needed is True
     assert reason == "nightly_slot_missed"
     assert details["last_success_at"] == SUCCESS_BEFORE_SLOT.isoformat()
+
+
+def test_nightly_slot_missed_when_today_only_skipped_success(
+    isolated_db: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(f) 오늘 슬롯 이후 행이 success=True, status='skipped' 뿐이면 성공으로 보지 않습니다."""
+    _configure_catchup(monkeypatch)
+    _add_success_run(isolated_db, SUCCESS_BEFORE_SLOT)
+    _add_success_run(isolated_db, SUCCESS_AFTER_SLOT, status="skipped")
+
+    needed, reason, details = _judge(
+        monkeypatch,
+        isolated_db,
+        now=NOW_AFTER_SLOT,
+        collected_at=COLLECTED_13H_AGO,
+    )
+
+    assert needed is True
+    assert reason == "nightly_slot_missed"
+    assert details["last_success_at"] == SUCCESS_BEFORE_SLOT.isoformat()
+
+
+def test_nightly_slot_success_with_null_status_still_counts(
+    isolated_db: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(g) status 를 채우지 않은 기존 성공 행은 지금처럼 슬롯 성공으로 봅니다."""
+    _configure_catchup(monkeypatch)
+    _add_success_run(isolated_db, SUCCESS_AFTER_SLOT, status=None)
+
+    needed, reason, details = _judge(
+        monkeypatch,
+        isolated_db,
+        now=NOW_AFTER_SLOT,
+        collected_at=COLLECTED_13H_AGO,
+    )
+
+    assert needed is False
+    assert reason == "threshold_not_exceeded"
+    assert details["last_success_at"] == SUCCESS_AFTER_SLOT.isoformat()
+
+
+def test_nightly_slot_success_after_skipped_row_counts(
+    isolated_db: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """(h) 슬롯 이후 skipped 행과 그 뒤 실제 성공 행이 함께 있으면 후자를 씁니다."""
+    _configure_catchup(monkeypatch)
+    _add_success_run(isolated_db, SUCCESS_AFTER_SLOT, status="skipped")
+    later_success = SUCCESS_AFTER_SLOT + timedelta(hours=1)
+    _add_success_run(isolated_db, later_success)
+
+    needed, reason, details = _judge(
+        monkeypatch,
+        isolated_db,
+        now=NOW_AFTER_SLOT,
+        collected_at=COLLECTED_13H_AGO,
+    )
+
+    assert needed is False
+    assert reason == "threshold_not_exceeded"
+    assert details["last_success_at"] == later_success.isoformat()
