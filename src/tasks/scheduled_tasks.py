@@ -1568,8 +1568,13 @@ def get_latest_successful_schedule_time(
     `schedule_run_log.started_at` 은 UTC naive 이므로 그대로 비교합니다. 성공한
     행이 하나도 없으면 None 을 반환합니다. 조회 실패는 호출자가 판정에서
     제외하도록 예외를 그대로 전파합니다.
+
+    `status` 가 `skipped` 인 행은 성공으로 세지 않습니다. 선행 실행이 claim 을
+    남긴 뒤 재시도가 `already_claimed` 로 skipped 되면 `success=True` 행이 남는데,
+    그 행을 그날 야간 작업의 성공으로 보면 따라잡기가 발화하지 않습니다.
+    `status` 를 채우지 않은 기존 행은 계속 성공으로 봅니다.
     """
-    from sqlalchemy import func, select
+    from sqlalchemy import func, or_, select
 
     from src.app.models.schedule_run_log import ScheduleRunLog
 
@@ -1583,6 +1588,10 @@ def get_latest_successful_schedule_time(
         stmt = select(func.max(ScheduleRunLog.started_at)).where(
             ScheduleRunLog.schedule_name == schedule_name,
             ScheduleRunLog.success.is_(True),
+            or_(
+                ScheduleRunLog.status.is_(None),
+                ScheduleRunLog.status != "skipped",
+            ),
         )
         return session.execute(stmt).scalar()
     finally:
