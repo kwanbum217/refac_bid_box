@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 
-{% block title %}로그인 - BIDBOX Intelligence{% endblock %}
+{% block title %}로그인 - BIDBOX{% endblock %}
 
 {% block content %}
 <div class="min-h-[calc(100vh-128px)] flex items-center justify-center bg-slate-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -12,7 +12,7 @@
                     <i class="fas fa-lock text-primary text-2xl"></i>
                 </div>
                 <h1 class="text-2xl font-bold text-slate-900 tracking-tight mb-2">계정에 로그인하세요</h1>
-                <p class="text-slate-500 text-sm">BIDBOX Intelligence 서비스에 오신 것을 환영합니다</p>
+                <p class="text-slate-500 text-sm">나라장터 용역 공고와 낙찰 결과를 확인하려면 로그인하세요</p>
             </div>
 
             <form method="POST" class="space-y-5">
@@ -20,7 +20,7 @@
                 <input type="hidden" name="next" value="{{ next|default('/', true) }}">
 
                 <div class="space-y-1.5">
-                    <label for="id_username" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">사용자 아이디</label>
+                    <label for="id_username" class="block text-xs font-bold text-slate-500">사용자 아이디</label>
                     <div class="relative group">
                         <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none transition-colors group-focus-within:text-primary text-slate-400">
                             <i class="fas fa-user text-sm"></i>
@@ -33,7 +33,7 @@
 
                 <div class="space-y-1.5">
                     <div class="flex items-center justify-between">
-                        <label for="id_password" class="block text-xs font-bold text-slate-500 uppercase tracking-wider">비밀번호</label>
+                        <label for="id_password" class="block text-xs font-bold text-slate-500">비밀번호</label>
                     </div>
                     <div class="relative group">
                         <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none transition-colors group-focus-within:text-primary text-slate-400">
@@ -52,7 +52,7 @@
                 </div>
                 {% endif %}
 
-                <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-xs text-sm font-bold text-white bg-primary hover:bg-primary/90 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all transform hover:-translate-y-0.5 active:translate-y-0 mt-2">
+                <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-xs text-sm font-bold text-white bg-primary hover:bg-primary/90 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-all transform active:translate-y-0 mt-2">
                     로그인
                 </button>
             </form>
@@ -96,18 +96,6 @@
                     계정이 없으신가요?
                     <a href="{{ url('accounts:signup') }}" class="font-bold text-primary hover:underline ml-1">지금 가입하세요</a>
                 </p>
-            </div>
-        </div>
-
-        <!-- Trust Footer -->
-        <div class="mt-8 flex justify-center space-x-6 text-slate-400">
-            <div class="flex items-center space-x-2">
-                <i class="fas fa-shield-halved text-xs"></i>
-                <span class="text-[10px] font-bold uppercase tracking-widest">Enterprise Secure</span>
-            </div>
-            <div class="flex items-center space-x-2">
-                <i class="fas fa-bolt text-xs"></i>
-                <span class="text-[10px] font-bold uppercase tracking-widest">Low Latency</span>
             </div>
         </div>
     </div>

@@ -335,7 +335,7 @@ def test_chat_header_shows_configured_model(auth_client, seeded_bid):
         assert settings.GEMINI_MODEL in body
     else:
         assert settings.OLLAMA_MODEL in body
-    assert "842K Records Indexed" not in body
+    assert "842K" not in body
 
 
 def test_login_post_success_sets_session(client, seeded_user):

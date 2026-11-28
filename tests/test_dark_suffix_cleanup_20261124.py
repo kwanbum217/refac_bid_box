@@ -20,18 +20,18 @@ H_CARD_RULE_SELECTORS = (".dark .h-card", ".dark .h-card:hover")
 # ! 를 남긴 곳과 근거. 모든 근거는 tailwind.input.css 의 `.dark .h-card` 계열 규칙이다.
 RETAINED_IMPORTANT = {
     "src/app/templates/bids/compare.html": {
-        47: ["dark:border-slate-800!"],
-        56: ["dark:bg-slate-900!", "dark:border-slate-800!"],
-        67: ["dark:bg-slate-900!", "dark:border-slate-800!"],
-        78: ["dark:bg-slate-900!", "dark:border-slate-800!"],
-        89: ["dark:bg-slate-900!", "dark:border-slate-800!"],
-        115: ["dark:bg-slate-900!", "dark:border-slate-800!"],
-        135: ["dark:bg-slate-900!", "dark:border-slate-800!"],
-        151: ["dark:bg-slate-900!", "dark:border-slate-800!"],
+        36: ["dark:border-slate-800!"],
+        45: ["dark:bg-slate-900!", "dark:border-slate-800!"],
+        55: ["dark:bg-slate-900!", "dark:border-slate-800!"],
+        65: ["dark:bg-slate-900!", "dark:border-slate-800!"],
+        75: ["dark:bg-slate-900!", "dark:border-slate-800!"],
+        98: ["dark:bg-slate-900!", "dark:border-slate-800!"],
+        118: ["dark:bg-slate-900!", "dark:border-slate-800!"],
+        134: ["dark:bg-slate-900!", "dark:border-slate-800!"],
     },
     "src/app/templates/bids/result_detail.html": {
         41: ["dark:bg-slate-900!"],
-        112: ["dark:bg-slate-900!"],
+        111: ["dark:bg-slate-900!"],
     },
 }
 PROPERTY_BY_PREFIX = {

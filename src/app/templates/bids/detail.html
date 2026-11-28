@@ -23,8 +23,6 @@
     .detail-label {
         font-size: 0.625rem;
         font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
         color: var(--h-text-muted);
         margin-bottom: 0.25rem;
     }
@@ -66,12 +64,12 @@
 <div class="bg-white min-h-screen">
     <!-- Breadcrumbs & Header -->
     <div class="h-page-header">
-        <nav class="flex items-center space-x-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-4">
-            <a href="{{ url('index') }}" class="hover:text-primary transition-colors">Home</a>
+        <nav class="flex items-center space-x-2 text-[10px] font-bold text-slate-400 mb-4">
+            <a href="{{ url('index') }}" class="hover:text-primary transition-colors">홈</a>
             <i class="fas fa-chevron-right text-[8px] opacity-50"></i>
-            <a href="{{ url('bids:bid_list') }}" class="hover:text-primary transition-colors">Bids</a>
+            <a href="{{ url('bids:bid_list') }}" class="hover:text-primary transition-colors">공고 탐색</a>
             <i class="fas fa-chevron-right text-[8px] opacity-50"></i>
-            <span class="text-slate-600">Notice Detail</span>
+            <span class="text-slate-600">공고 상세</span>
         </nav>
 
         <div class="flex-1 min-w-0">
@@ -79,8 +77,8 @@
                 <span class="badge badge-blue">
                     {{ bid.category_label }}
                 </span>
-                <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                    REF: {{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}
+                <span class="text-[10px] font-bold text-slate-400">
+                    공고번호 {{ bid.bid_ntce_no }}-{{ bid.bid_ntce_ord }}
                 </span>
             </div>
             <h1 class="text-2xl font-bold text-slate-900 leading-tight truncate">
@@ -146,7 +144,7 @@
                 {% if restrictions and (restrictions.collected or restrictions.industry_limited == 'Y') %}
                 <!-- Participation Restrictions Card -->
                 <div class="h-card p-6 space-y-4" id="participation-restrictions">
-                    <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                    <h2 class="text-xs font-bold text-slate-900 flex items-center">
                         <i class="fas fa-id-card text-primary mr-2"></i>
                         참가 자격 제한
                     </h2>
@@ -197,7 +195,7 @@
                 {% elif restrictions and restrictions.uncollected_legacy %}
                 <!-- Participation Restrictions Card (Legacy Uncollected) -->
                 <div class="h-card p-6 space-y-4" id="restriction-uncollected-notice">
-                    <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                    <h2 class="text-xs font-bold text-slate-900 flex items-center">
                         <i class="fas fa-id-card text-primary mr-2"></i>
                         참가 자격 제한
                     </h2>
@@ -208,7 +206,7 @@
             <!-- 공고 기준 분석 카드. 정량평가 입력표와 점수 반영 버튼을 담는다. -->
             <div class="h-card overflow-hidden" id="evaluation-card">
                 <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-                    <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                    <h2 class="text-xs font-bold text-slate-900 flex items-center">
                         <i class="fas fa-clipboard-check text-primary mr-2"></i>
                         공고 기준 분석
                     </h2>
@@ -246,7 +244,7 @@
                         </div>
                         <div id="score-table-rule" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
                             <div class="flex items-center justify-between">
-                                <h3 class="text-xs font-bold text-blue-700 uppercase tracking-widest">규칙 선언 배점표</h3>
+                                <h3 class="text-xs font-bold text-blue-700">규칙 선언 배점표</h3>
                                 <span class="badge badge-gray text-[10px]">이 공고에 자동 적용</span>
                             </div>
                             <p class="text-sm leading-relaxed text-slate-700">
@@ -284,14 +282,14 @@
                          하드코딩하지 않고 서버 응답(quant_score_table)으로 그린다. -->
                     <div id="qualification-section" class="space-y-3 border-t border-slate-200 pt-4">
                         <div class="flex items-center justify-between gap-2">
-                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">정량평가 입력</h3>
+                            <h3 class="text-xs font-bold text-slate-400">정량평가 입력</h3>
                             <span id="quant-attachment" class="badge badge-gray text-[10px]">적용 별표 확인 중</span>
                         </div>
                         <p id="quant-band-note" class="hidden p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-amber-700"></p>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm" id="qualification-input-table">
                                 <thead>
-                                    <tr class="text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                    <tr class="text-left text-[10px] font-bold text-slate-400">
                                         <th class="whitespace-nowrap p-2 pr-4">심사분야</th>
                                         <th class="whitespace-nowrap p-2 pr-4">항목</th>
                                         <th class="whitespace-nowrap p-2 pr-4 text-right">점수</th>
@@ -351,7 +349,7 @@
                         <p id="performance-basis" class="text-[11px] leading-relaxed text-slate-500">수행실적 산정 기준은 공고문 적격심사 배점표를 확인하십시오.</p>
                         <div id="reputation-section" class="hidden mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
                             <div class="flex items-center justify-between gap-2">
-                                <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest">신인도 가점·감점 (별표 11)</h4>
+                                <h4 class="text-xs font-bold text-slate-500">신인도 가점·감점 (별표 11)</h4>
                                 <span id="reputation-cap-note" class="text-[10px] font-semibold text-slate-500"></span>
                             </div>
                             <p id="reputation-applied-note" class="text-xs font-semibold text-slate-600"></p>
@@ -363,7 +361,7 @@
                         <!-- 지방계약(LOCAL)·수기심사(MANUAL_EVALUATION) 차단 해제 입력. 차단 코드에 따라 필요한 입력만 노출한다. -->
                         <div id="local-input-section" class="hidden mt-3 p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
                             <div class="flex items-center justify-between gap-2">
-                                <h4 id="local-input-title" class="text-xs font-bold text-red-700 uppercase tracking-widest">지방계약 차단 해제 입력</h4>
+                                <h4 id="local-input-title" class="text-xs font-bold text-red-700">지방계약 차단 해제 입력</h4>
                                 <span id="local-input-hint" class="text-[10px] font-semibold text-rose-600"></span>
                             </div>
                             <p id="local-candidates" class="hidden text-xs font-semibold text-slate-700"></p>
@@ -395,7 +393,7 @@
 
                     <!-- 4. 종합 경고 및 정보 -->
                     <div id="evaluation-warnings" class="hidden space-y-2 border-t border-slate-200 pt-4">
-                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">경고 및 안내</h3>
+                        <h3 class="text-xs font-bold text-slate-400">경고 및 안내</h3>
                         <div id="warnings-list" class="space-y-2"></div>
                     </div>
 
@@ -416,17 +414,17 @@
                 <!-- AI Prediction Section. 정량평가 입력표와 점수 반영 버튼 아래에서 결과를 보여 준다. -->
                 <div class="h-card overflow-hidden">
                     <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-                        <h2 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center">
+                        <h2 class="text-xs font-bold text-slate-900 flex items-center">
                             <i class="fas fa-brain text-primary mr-2"></i>
                             AI 투찰 금액 분석기
                         </h2>
                         {% if prediction_supported|default(true) %}
                         <div class="flex items-center space-x-2">
-                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span class="text-[10px] font-bold text-slate-500 uppercase">Engine Online</span>
+                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                            <span class="text-[10px] font-bold text-slate-500">예측 사용 가능</span>
                         </div>
                         {% else %}
-                        <span class="text-[10px] font-bold uppercase tracking-wider text-amber-600">전용 모델 없음</span>
+                        <span class="text-[10px] font-bold text-amber-600">전용 모델 없음</span>
                         {% endif %}
                     </div>
 
@@ -505,9 +503,6 @@
                         <!-- Prediction Result. 버튼을 눌러 분석한 뒤에만 보여 준다. -->
                         <div id="prediction-result" class="hidden">
                             <div class="p-3 sm:p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-xs relative">
-                                <div class="absolute inset-0 overflow-hidden rounded-xl pointer-events-none" aria-hidden="true">
-                                    <div class="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"></div>
-                                </div>
 
                                 <div class="price-result-wrap relative z-10">
                                     <!-- 입찰 예상가 범위. 축은 최저가~최상가이고 예측가와 내 조건 추천가 범위를 표식으로 둔다. -->
@@ -670,14 +665,14 @@
                 <!-- Past Results -->
                 <div class="h-card">
                     <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                        <h3 class="text-[11px] font-bold text-slate-900 uppercase tracking-widest">과거 사례</h3>
+                        <h3 class="text-[11px] font-bold text-slate-900">과거 사례</h3>
                         <i class="fas fa-history text-slate-300 text-xs"></i>
                     </div>
                     <div class="p-2 space-y-1">
                         {% for result in past_results %}
                         <a href="{{ url('bids:result_detail', result.id) }}" class="block p-3 rounded-sm hover:bg-slate-50 transition-colors group">
                             <div class="flex justify-between items-center mb-1">
-                                <span class="text-[9px] text-slate-400 font-bold uppercase">{{ result.rl_openg_dt|date("Y-m-d") }}</span>
+                                <span class="text-[9px] text-slate-400 font-bold">{{ result.rl_openg_dt|date("Y-m-d") }}</span>
                                 <span class="badge {% if result.institution_match_label == '유사 기관' %}badge-gray{% else %}badge-green{% endif %} text-[9px] px-1.5 py-0">{{ result.institution_match_label or '같은 기관' }}</span>
                             </div>
                             <p class="text-xs font-bold text-slate-800 group-hover:text-primary transition-colors truncate">{{ result.bid_ntce_nm }}</p>
@@ -688,7 +683,7 @@
                         </a>
                         {% else %}
                         <div class="py-10 text-center">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase">이력 없음</p>
+                            <p class="text-[10px] font-bold text-slate-400">이력 없음</p>
                         </div>
                         {% endfor %}
                     </div>
@@ -697,13 +692,13 @@
                 <!-- Recommended -->
                 <div class="h-card">
                     <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                        <h3 class="text-[11px] font-bold text-slate-900 uppercase tracking-widest">비슷한 진행 중 공고</h3>
+                        <h3 class="text-[11px] font-bold text-slate-900">비슷한 진행 중 공고</h3>
                         <i class="fas fa-star text-amber-400 text-xs"></i>
                     </div>
                     <div class="p-2 space-y-1">
                         {% for sim in similar_bids %}
                         <a href="{{ url('bids:bid_detail', sim.id) }}" class="block p-3 rounded-sm hover:bg-slate-50 transition-colors group">
-                            <span class="text-[9px] font-bold text-primary uppercase mb-1 block">{{ sim.category_label }}</span>
+                            <span class="text-[9px] font-bold text-primary mb-1 block">{{ sim.category_label }}</span>
                             <p class="text-xs font-bold text-slate-800 group-hover:text-primary transition-colors line-clamp-2 leading-snug">{{ sim.bid_ntce_nm }}</p>
                             <p class="mt-1 text-[9px] text-slate-400">마감 {{ sim.bid_clse_dt|date("Y-m-d H:i") }}</p>
                             <div class="mt-2 flex justify-between items-center">
@@ -719,7 +714,7 @@
                         </a>
                         {% else %}
                         <div class="py-10 text-center">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase">추천 없음</p>
+                            <p class="text-[10px] font-bold text-slate-400">추천 없음</p>
                         </div>
                         {% endfor %}
                     </div>
@@ -1134,7 +1129,7 @@ $(document).ready(function() {
                 + '<h4 class="font-bold text-slate-900 mb-2">' + escapeHtml(band.band_label)
                 + (on ? ' <span class="ml-2 text-[10px] font-bold text-primary">이 공고</span>' : '')
                 + '</h4>'
-                + '<div class="overflow-x-auto"><table class="w-full text-sm" style="min-width:36rem"><thead><tr class="text-left text-[10px] font-bold text-slate-400 uppercase">'
+                + '<div class="overflow-x-auto"><table class="w-full text-sm" style="min-width:36rem"><thead><tr class="text-left text-[10px] font-bold text-slate-400">'
                 + '<th class="py-1 pr-3 whitespace-nowrap">분야</th><th class="py-1 pr-3 whitespace-nowrap">항목</th><th class="py-1 pr-3 text-right whitespace-nowrap">배점한도</th><th class="py-1 whitespace-nowrap">비고</th>'
                 + '</tr></thead><tbody class="divide-y divide-slate-100">' + rows + '</tbody></table></div>'
                 + '<p class="mt-1 text-xs text-slate-500">합계 배점한도 ' + escapeHtml(String(band.total_limit)) + '</p>'

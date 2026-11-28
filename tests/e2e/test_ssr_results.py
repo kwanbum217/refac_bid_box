@@ -256,8 +256,8 @@ async def test_ssr_result_detail_view_and_chatbot_link(
     await expect(authenticated_page.locator("h1")).to_contain_text(target_res.display_bid_ntce_nm)
     await expect(authenticated_page.locator("body")).to_contain_text(target_res.display_bidwinnr_nm)
 
-    # AI 분석 시작하기 버튼 확인 및 클릭
-    ai_btn = authenticated_page.locator('a:has-text("AI 분석 시작하기")')
+    # AI 어드바이저에게 묻기 버튼 확인 및 클릭
+    ai_btn = authenticated_page.locator('a:has-text("AI 어드바이저에게 묻기")')
     await expect(ai_btn).to_be_visible()
     await ai_btn.click()
 

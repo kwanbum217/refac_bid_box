@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}BIDBOX - 프리미엄 입찰 분석 플랫폼{% endblock %}</title>
+    <title>{% block title %}BIDBOX - 공공조달 용역 입찰 분석{% endblock %}</title>
 
     <link rel="icon" href="{{ url_for('static', path='images/favicon.ico') }}" sizes="any">
     <link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', path='images/favicon-16x16.png') }}">
@@ -72,7 +72,7 @@
         </div>
 
         <div class="flex-1 py-6 space-y-1 px-3">
-            <p class="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] px-3 mb-4 hidden lg:block">메인 메뉴</p>
+            <p class="text-[10px] font-bold text-white/20 px-3 mb-4 hidden lg:block">메인 메뉴</p>
 
             <a href="{{ url('index') }}" class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors group {% if active_nav =='index' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-home w-5 text-center text-lg"></i>
@@ -100,7 +100,7 @@
             </a>
 
             <div class="pt-6">
-                <p class="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] px-3 mb-4 hidden lg:block">설정</p>
+                <p class="text-[10px] font-bold text-white/20 px-3 mb-4 hidden lg:block">설정</p>
                 <a href="#" data-open-settings class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors text-white/60">
                     <i class="fas fa-cog w-5 text-center text-lg"></i>
                     <span class="text-sm hidden lg:block">환경 설정</span>
@@ -117,7 +117,7 @@
                         </div>
                         <div class="flex-1 min-w-0 hidden lg:block">
                             <p class="text-xs font-bold truncate">{{ user.nickname|default(user.username, true) }}</p>
-                            <p class="text-[10px] text-white/40 truncate">엔터프라이즈 사용자</p>
+                            <p class="text-[10px] text-white/40 truncate">회원</p>
                         </div>
                     </a>
                     <form action="{{ url('accounts:logout') }}" method="POST" style="display:inline;margin:0;padding:0;">
@@ -152,7 +152,7 @@
         </div>
 
         <div class="flex-1 space-y-1 overflow-y-auto px-3 py-6">
-            <p class="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] px-3 mb-4">메인 메뉴</p>
+            <p class="text-[10px] font-bold text-white/20 px-3 mb-4">메인 메뉴</p>
 
             <a href="{{ url('index') }}" data-mobile-nav-link data-mobile-nav-close class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors {% if active_nav =='index' %}bg-primary text-white font-bold{% else %}text-white/60{% endif %}">
                 <i class="fas fa-home w-5 text-center text-lg"></i>
@@ -180,7 +180,7 @@
             </a>
 
             <div class="pt-6">
-                <p class="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] px-3 mb-4">설정</p>
+                <p class="text-[10px] font-bold text-white/20 px-3 mb-4">설정</p>
                 <a href="#" data-open-settings data-mobile-nav-close class="flex items-center space-x-3 p-2.5 rounded-md hover:bg-white/5 transition-colors text-white/60">
                     <i class="fas fa-cog w-5 text-center text-lg"></i>
                     <span class="text-sm">환경 설정</span>
@@ -196,7 +196,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-xs font-bold truncate">{{ user.nickname|default(user.username, true) }}</p>
-                        <p class="text-[10px] text-white/40 truncate">엔터프라이즈 사용자</p>
+                        <p class="text-[10px] text-white/40 truncate">회원</p>
                     </div>
                 </a>
                 <form action="{{ url('accounts:logout') }}" method="POST" style="display:inline;margin:0;padding:0;">
@@ -313,7 +313,7 @@
         </main>
 
         <footer class="bg-white border-t border-harness-border flex justify-between items-center px-8 py-4 max-sm:px-4 text-[10px] text-slate-400 font-medium">
-            <p>&copy; 2026 BIDBOX Intelligence. 고성능 입찰 분석을 위해 설계되었습니다.</p>
+            <p>&copy; 2026 BIDBOX · 공공조달 용역 입찰 분석</p>
         </footer>
     </div>
 
@@ -377,7 +377,7 @@
             </div>
         </div>
         <form method="dialog" class="modal-backdrop bg-slate-900/40 backdrop-blur-xs">
-            <button type="submit" aria-label="환경 설정 닫기">close</button>
+            <button type="submit" aria-label="환경 설정 닫기">닫기</button>
         </form>
     </dialog>
 

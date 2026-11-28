@@ -4,12 +4,10 @@
     (파란 강조 카드처럼 색을 유지하는 요소는 대상 클래스에 넣지 않는다.)
 (b) dark: 변형의 ! 접미사는 h-card 요소에만 남는다. tailwind.input.css 의
     `.dark .h-card` 규칙이 같은 속성을 더 높은 명시도로 덮는 유일한 자리다.
-(c) dark: 변형과 ! 를 지우면 main 브랜치 템플릿의 클래스와 같아야 한다(라이트 모드 불변).
+(c) 병합 뒤 폐기(2026-11-28, 의도된 라이트 디자인 변경을 막음)
 """
 
 import re
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,7 +18,6 @@ RELATIVE_TEMPLATES = [
     "src/app/templates/bids/result_detail.html",
 ]
 CLASS_ATTR_RE = re.compile(r'class="([^"]*)"', re.S)
-GIT_BIN = shutil.which("git") or "git"
 
 # 다크 배경 위에서 그대로 두면 밝게 남는 면
 LIGHT_SURFACE_CLASSES = frozenset(
@@ -103,53 +100,3 @@ def test_important_suffix_only_on_h_card(relpath):
             token for token in classes if token.startswith("dark:") and token.endswith("!")
         ]
     assert not offenders, f"{relpath}: h-card 밖에 남은 ! 접미사 {sorted(set(offenders))}"
-
-
-def _strip_dark_variants(classes: list[str]) -> list[str]:
-    return [
-        token[:-1] if token.endswith("!") else token
-        for token in classes
-        if not token.startswith("dark:")
-    ]
-
-
-# 다크 대응 직전의 main 커밋이다. 움직이는 main 과 비교하면 병합 뒤 main 자체가 다크
-# 변형을 포함해 항상 실패하므로, 라이트 모드 기준은 이 고정 커밋으로 둔다.
-LIGHT_BASELINE_REF = "975bb823"
-
-
-def _main_template_text(relpath: str) -> str:
-    result = subprocess.run(  # noqa: S603
-        [GIT_BIN, "show", f"{LIGHT_BASELINE_REF}:{relpath}"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        pytest.skip(
-            f"기준 커밋 {LIGHT_BASELINE_REF} 에서 {relpath} 를 읽을 수 없습니다: {result.stderr.strip()}"
-        )
-    return result.stdout
-
-
-@pytest.mark.parametrize("relpath", RELATIVE_TEMPLATES, ids=lambda value: Path(value).name)
-def test_light_mode_matches_main(relpath):
-    current = _template_path(relpath).read_text(encoding="utf-8")
-    main = _main_template_text(relpath)
-
-    current_classes = _class_tokens(current)
-    main_classes = _class_tokens(main)
-    assert len(current_classes) == len(main_classes), (
-        f"{relpath}: class 속성 개수가 main 과 다릅니다 "
-        f"({len(current_classes)} != {len(main_classes)})"
-    )
-
-    for index, (current_tokens, main_tokens) in enumerate(
-        zip(current_classes, main_classes, strict=True)
-    ):
-        stripped = _strip_dark_variants(current_tokens)
-        assert stripped == main_tokens, (
-            f"{relpath}: {index + 1}번째 class 속성이 라이트 모드에서 main 과 다릅니다. "
-            f"{stripped} != {main_tokens}"
-        )

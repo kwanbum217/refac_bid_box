@@ -82,7 +82,7 @@ from src.app.services.search_index_parity import count_db_announcements
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ui"])
 
-# 채팅 헤더의 'Records Indexed' 는 색인 문서 수, 곧 서로 다른 공고 수입니다
+# 채팅 화면의 '색인 공고 N건' 은 색인 문서 수, 곧 서로 다른 공고 수입니다
 # (search_index.py 의 색인 문서 정의: 공고번호+카테고리별 최신 차수 1행).
 # 전체 행 수를 세면 같은 공고의 차수만큼 부풀려집니다.
 # count_db_announcements 는 운영 규모(약 560만 행)에서 20초 넘게 걸려 요청마다
@@ -104,12 +104,8 @@ def _indexed_announcement_count(db: Session) -> int:
 
 
 def _compact_count(value: int) -> str:
-    """842K 처럼 축약 표기합니다 (원본 하드코딩 문구의 형식을 유지)."""
-    if value >= 1_000_000:
-        return f"{value / 1_000_000:.1f}M"
-    if value >= 1_000:
-        return f"{value // 1_000}K"
-    return str(value)
+    """색인 공고 수를 세 자리 쉼표로 표기합니다(예: 505,271). 단위 축약(K·M)은 쓰지 않습니다."""
+    return f"{value:,}"
 
 
 def _login_redirect(request: Request) -> RedirectResponse:
