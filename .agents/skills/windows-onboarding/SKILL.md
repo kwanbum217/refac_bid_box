@@ -14,7 +14,7 @@ description: Windows 에서 GitHub 저장소를 처음 클론한 팀원이 웹 �
 | 설치 전 확인 | 점검 결과 표와 설치할 `winget` 명령 목록을 사용자에게 먼저 보여 주고 승인을 받은 뒤에만 실행합니다. 승인 없는 자동 설치를 하지 않습니다. |
 | 관리자 권한 | 관리자 권한이 필요한 단계는 사람이 직접 실행합니다. 에이전트는 명령과 이유만 안내합니다. |
 | 재부팅 | `wsl --install` 이후 재부팅, Docker Desktop 첫 실행, BIOS/UEFI 가상화 설정 변경은 사람이 직접 수행합니다. |
-| 비밀값 | `.env` 는 `.env.example` 을 기준으로 만들고 `SECRET_KEY`, `MEILI_MASTER_KEY`, `MYSQL_ROOT_PASSWORD`, `G2B_SERVICE_KEY` 값은 사용자에게 받습니다. 에이전트가 값을 생성하거나 추측하거나 문서·커밋에 남기지 않습니다. |
+| 비밀값 | `.env` 는 `.env.example` 을 기준으로 만들고 `SECRET_KEY`, `MEILI_MASTER_KEY`, `MYSQL_ROOT_PASSWORD`, `G2B_SERVICE_KEY`(옛 이름 `serviceKey` 도 인정) 값은 사용자에게 받습니다. 에이전트가 값을 생성하거나 추측하거나 문서·커밋에 남기지 않습니다. |
 | 데이터 보호 | 코디네이터가 전달한 운영 데이터 덤프와 백업 스냅샷을 공개 저장소에 올리지 않습니다. 받은 경로도 문서와 커밋에 남기지 않습니다. |
 | 복원 | `restore --execute --confirm` 은 대상 DB 와 자산을 덮어씁니다. 개발 장비가 맞는지 확인하고 사용자 승인 후에만 실행합니다. |
 | 변경 범위 | 저장소 밖의 전역 설정, 방화벽, Windows 계정을 임의로 바꾸지 않습니다. 필요한 변경은 사용자에게 알리고 승인을 받습니다. |
@@ -76,10 +76,29 @@ Git Bash 에서는 `cp .env.example .env` 를 사용합니다.
 | `SECRET_KEY` | 32자 이상. 비어 있거나 짧으면 애플리케이션이 기동하지 않습니다. |
 | `MEILI_MASTER_KEY` | 비어 있으면 Compose 구성 단계에서 실패합니다. |
 | `MYSQL_ROOT_PASSWORD` | 로컬 개발용 값. `.env.example` 기본값을 그대로 써도 되지만 사용자에게 확인합니다. |
-| `G2B_SERVICE_KEY` | 4장 B 경로의 첫 수집에 필요합니다. |
+| `G2B_SERVICE_KEY` | 4장 B 경로의 첫 수집에 필요합니다. 옛 이름 `serviceKey` 로만 있어도 됩니다. |
 | `G2B_USRINFO_SERVICE_KEY` | 수요기관 수집을 함께 할 때만 필요합니다. |
 
-4. Python 의존성을 동기화합니다.
+4. 수집 키가 있는지 점검합니다. 수집 코드는 `G2B_SERVICE_KEY`, `serviceKey`, `SERVICE_KEY` 순서로 이름을 찾으므로, 아래 두 이름을 모두 보고 **둘 중 하나라도 값이 있으면 키 있음**으로 판정합니다. 값은 출력하지 않고 길이만 확인합니다.
+
+```powershell
+Select-String -Path .env -Pattern '^(G2B_SERVICE_KEY|serviceKey)=' | ForEach-Object {
+  $parts = $_.Line -split '=', 2
+  '{0}: {1}자' -f $parts[0], $parts[1].Length
+}
+```
+
+Git Bash 에서는 아래 형식을 씁니다.
+
+```bash
+grep -E '^(G2B_SERVICE_KEY|serviceKey)=' .env | while IFS='=' read -r name value; do echo "$name: ${#value}자"; done
+```
+
+- 두 줄 모두 `0자` 이면 키가 없는 것입니다. 이때만 사용자에게 키 입력을 요청합니다.
+- `G2B_SERVICE_KEY` 가 정본 이름이고 `serviceKey` 는 옛 이름입니다. `serviceKey` 에만 값이 있어도 키 없음으로 오판하지 않습니다.
+- `.env.example` 을 그대로 복사했다면 두 이름의 값은 비어 있습니다. 예시 파일의 주석에 있는 이름을 변수로 오해하지 않습니다.
+
+5. Python 의존성을 동기화합니다.
 
 ```powershell
 uv sync --all-groups --python 3.13
@@ -87,13 +106,13 @@ uv sync --all-groups --python 3.13
 
 uv 가 관리하는 3.13 인터프리터를 사용하므로 시스템 Python 설치가 없어도 됩니다.
 
-5. 루트의 Tailwind CSS 도구 의존성을 설치합니다.
+6. 루트의 Tailwind CSS 도구 의존성을 설치합니다.
 
 ```powershell
 npm ci
 ```
 
-6. 줄바꿈이 LF 로 체크아웃되었는지 확인합니다. `.gitattributes` 가 `* text=auto eol=lf` 로 고정하므로 정상 클론이면 아래 결과가 `i/lf` 와 `w/lf` 입니다.
+7. 줄바꿈이 LF 로 체크아웃되었는지 확인합니다. `.gitattributes` 가 `* text=auto eol=lf` 로 고정하므로 정상 클론이면 아래 결과가 `i/lf` 와 `w/lf` 입니다.
 
 ```powershell
 git ls-files --eol Makefile docker-compose.yml
@@ -191,7 +210,7 @@ curl -s -H "Authorization: Bearer $MEILI_MASTER_KEY" \
 
 코디네이터 묶음이 없을 때의 경로입니다. 모델 가중치는 이 경로로 생기지 않으므로 예측 기능과 `/api/v1/health/ready` 의 `model_registry` 검사는 제한된 상태로 남습니다.
 
-1. 사용자가 `.env` 에 `G2B_SERVICE_KEY` 를 입력했는지 확인합니다.
+1. 3장 4단계의 키 점검 절차로 `.env` 의 `G2B_SERVICE_KEY` 또는 `serviceKey` 중 하나에 값이 있는지 확인합니다. 둘 다 비어 있을 때만 사용자에게 키 입력을 요청합니다.
 2. DB 와 Redis 를 띄웁니다.
 
 ```powershell
@@ -288,6 +307,9 @@ GNU Make 가 없을 때는 같은 동작을 아래 명령으로 대체합니다.
 | `/api/v1/health/ready` 가 `503` | 응답의 `checks` 에서 실패 항목 확인 | `mysql`, `redis`, `model_registry`, `chromadb`, `meilisearch` 중 실패 원인을 확인하고 `make logs` 로 앱 로그를 봅니다. 모델 가중치가 없으면 4장 A 복원이 필요합니다. |
 | `/bids/` 가 `503` | `docker compose ps` 로 `app`, `meilisearch` 상태 확인 | Meilisearch 색인은 백업 대상이 아니므로 복원 뒤 4장 A 6단계 재색인을 `MEILI_TIMEOUT_SECONDS=30` 으로 실행하고, 7단계에서 `/tasks` 의 `enqueued`·`processing` 이 `0` 인지 확인합니다. |
 | DB 테이블이 없음 | `make migrate-current` 가 비어 있음 | 빈 신규 DB 에서만 `make migrate-up` 을 실행합니다. 복원 대상 DB 에는 실행하지 않습니다. |
+| ChromaDB 손상 (`sqlite database disk image is malformed`) | 앱 로그의 `database disk image is malformed`, KB 색인·검색·`/api/v1/health/ready` 의 `chromadb` 실패 | 1) `docker compose stop app worker` 로 두 컨테이너를 멈춥니다. 2) `chroma_db` 폴더를 지우지 말고 `chroma_db.broken_<날짜>` 로 이름만 바꿔 보존합니다. 3) `<snapshot-dir>` 의 `chroma_db.tar.gz` 해시를 같은 폴더의 `SHA256SUMS.txt` 값과 대조합니다(`Get-FileHash -Algorithm SHA256 <snapshot-dir>\chroma_db.tar.gz`). 4) 저장소 루트에서 `tar -xzf <snapshot-dir>/chroma_db.tar.gz` 로 `chroma_db` 만 되살립니다. 5) `uv run python scripts/run_data_reconciliation.py --since <스냅샷 날짜>` 로 이후분을 보충합니다. 6) `docker compose start app worker` 로 다시 올립니다. `restore --execute` 는 DB 까지 덮어쓰므로 쓰지 않습니다. |
+| 호스트 `uv run` 색인·정합성 작업이 SQLite 잠금이나 ChromaDB 손상을 냄 | 작업 중 `database is locked` 또는 `database disk image is malformed` | `app` 과 `worker` 가 같은 `chroma_db` 폴더를 마운트하므로(`docker-compose.yml` 114행, 191행) Windows 폴더 공유 위에서 SQLite 를 동시에 열면 손상될 수 있습니다. 호스트에서 `uv run` 으로 KB 색인이나 정합성 작업을 돌리기 전에 `docker compose stop app worker` 로 멈추고, 작업이 끝난 뒤 `docker compose start app worker` 로 다시 올립니다. |
+| 낙찰정보 API 오류 `[07] 입력범위값 초과` | 수집 로그의 `[07]` 과 실패한 `--category`, `--since`, `--until` 구간 | 조회 구간을 7일 이하로 나눠 다시 실행합니다. 외자 낙찰은 업종이 `Frgcpt` 입니다. `uv run python scripts/backfill_from_g2b.py --category <업종> --fetch-type result --since <YYYYMMDD> --until <YYYYMMDD>` (업종은 `Thng`, `Cnstwk`, `Servc`, `Frgcpt` 중 하나) |
 
 ## 7. 실행 확인
 
