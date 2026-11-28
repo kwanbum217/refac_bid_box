@@ -79,7 +79,7 @@ CAPABILITY_REGISTRY: dict[str, CapabilityDefinition] = {
         type="internal_tool",
         mutating=False,
         requires_confirmation=False,
-        allowed_params=("query", "category", "model_id", "limit"),
+        allowed_params=("query", "category", "model_id", "limit", "bid_ntce_no"),
         executor="src.app.services.tools.bid_prediction_tool.execute",
     ),
     "semantic_search_tool": CapabilityDefinition(

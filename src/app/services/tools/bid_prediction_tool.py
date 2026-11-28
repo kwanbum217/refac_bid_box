@@ -18,7 +18,11 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.app.models.bids import BidAnnouncement
-from src.app.services.bid_queries import not_cancelled_clause, similar_announcement_latest_filter
+from src.app.services.bid_queries import (
+    CANCELLED_NTCE_KIND,
+    not_cancelled_clause,
+    similar_announcement_latest_filter,
+)
 from src.ml.dataset import announcement_feature_payload
 from src.ml.features import build_feature_dict
 from src.ml.institution_history import lookup_institution_stats
@@ -289,6 +293,66 @@ def _latest_predictable_bids(db: Session, category: str = "", limit: int = 1):
     return rows[:limit]
 
 
+def _bid_for_notice_no(
+    db: Session, bid_ntce_no: str, category: str = ""
+) -> tuple[BidAnnouncement | None, str]:
+    """지정 공고번호의 최신 차수 한 건과 판정 사유를 돌려줍니다.
+
+    최신 차수 판정은 목록과 같은 bid_queries 정의를 씁니다. 취소·기준 금액 0 을
+    걸러 빈 결과로 만들면 호출자가 "없는 공고" 와 구분할 수 없고, 다른 공고로
+    대체할 위험도 생깁니다. 그래서 거르지 않고 사유를 함께 돌려줍니다.
+    """
+    stmt = select(BidAnnouncement).where(BidAnnouncement.bid_ntce_no == bid_ntce_no)
+    if category:
+        stmt = stmt.where(BidAnnouncement.category == category)
+    latest = (
+        db.execute(
+            similar_announcement_latest_filter(stmt).order_by(
+                BidAnnouncement.bid_ntce_ord.desc(),
+                BidAnnouncement.bid_ntce_dt.desc(),
+                BidAnnouncement.id.desc(),
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if latest is None:
+        return None, "bid_not_found"
+    if latest.ntce_kind_nm == CANCELLED_NTCE_KIND:
+        return latest, "cancelled_latest_order"
+    if float(latest.prediction_reference_amount or 0) <= 0:
+        return latest, "zero_reference_amount"
+    return latest, ""
+
+
+_TARGET_BID_ERROR_MESSAGES = {
+    "bid_not_found": "지정한 공고번호의 공고를 찾지 못했습니다.",
+    "cancelled_latest_order": "지정한 공고번호의 최신 차수가 취소공고라 예측할 수 없습니다.",
+    "zero_reference_amount": "지정한 공고번호의 예측 기준 금액이 0 이라 예측할 수 없습니다.",
+}
+
+
+def _target_bid_error(
+    reason: str,
+    *,
+    query: str,
+    category: str,
+    bid_ntce_no: str,
+    requested_count: int,
+) -> dict[str, Any]:
+    """지정 공고를 예측할 수 없을 때 다른 공고로 대체하지 않고 사유를 알립니다."""
+    return {
+        "status": "error",
+        "reason": reason,
+        "message": _TARGET_BID_ERROR_MESSAGES[reason],
+        "query": query,
+        "category": category,
+        "bid_ntce_no": bid_ntce_no,
+        "requested_count": requested_count,
+        "result_count": 0,
+    }
+
+
 def _model_display_name(model_id: str) -> str:
     wrapper = ModelRegistry.get_model(model_id)
     return wrapper.get_display_name() if wrapper else model_id
@@ -449,10 +513,26 @@ def execute(
     category: str = "",
     model_id: str = "",
     limit: int = 1,
+    bid_ntce_no: str = "",
     **_ignored: Any,
 ) -> dict[str, Any]:
     resolved_limit = coerce_limit(limit, query)
-    bids = _latest_predictable_bids(db, category, resolved_limit)
+    target_no = (bid_ntce_no or "").strip()
+    if target_no:
+        # 번호가 지정되면 그 공고의 최신 차수만 예측합니다. limit 이 더 커도
+        # 다른 공고를 채워 넣지 않고, 예측할 수 없으면 오류로 알립니다.
+        target, reason = _bid_for_notice_no(db, target_no, category)
+        if target is None or reason:
+            return _target_bid_error(
+                reason,
+                query=query,
+                category=category,
+                bid_ntce_no=target_no,
+                requested_count=resolved_limit,
+            )
+        bids = [target]
+    else:
+        bids = _latest_predictable_bids(db, category, resolved_limit)
     if not bids:
         return {
             "status": "error",

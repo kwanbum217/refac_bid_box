@@ -206,6 +206,10 @@ def interpret_request(
         if model_id:
             execution_plan.parameters["model_id"] = model_id
         execution_plan.parameters["limit"] = _extract_prediction_limit(normalized)
+        # 공고번호가 있으면 그 공고만 예측 대상입니다. 번호를 실행 계획에서 빼면
+        # 도구가 최근 공고를 골라 다른 공고를 예측합니다.
+        if bid_ntce_no:
+            execution_plan.parameters["bid_ntce_no"] = bid_ntce_no
         execution_plan.reasoning = "bid price prediction request"
         return execution_plan
 
