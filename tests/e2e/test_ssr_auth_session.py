@@ -70,9 +70,7 @@ async def test_authenticated_access_to_protected_page(
     await expect(
         authenticated_page.locator("p.font-bold").filter(has_text=user_nickname).first
     ).to_be_visible()
-    await expect(
-        authenticated_page.locator("p").filter(has_text="엔터프라이즈 사용자").first
-    ).to_be_visible()
+    await expect(authenticated_page.locator("p").filter(has_text="회원").first).to_be_visible()
 
 
 @pytest.mark.e2e
