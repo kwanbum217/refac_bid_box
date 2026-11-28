@@ -23,7 +23,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from enum import StrEnum
 from functools import wraps
 from pathlib import Path
@@ -1555,6 +1555,41 @@ def get_latest_collection_time(db: Session | None = None) -> datetime | None:
             session.close()
 
 
+# 한국은 일광절약시간이 없어 고정 +9시간을 씁니다(src.app.core.timeutil 과 같은 규약).
+KST = timezone(timedelta(hours=9))
+
+
+def get_latest_successful_schedule_time(
+    schedule_name: str,
+    db: Session | None = None,
+) -> datetime | None:
+    """스케줄 이름의 최신 성공 실행 시작 시각(UTC naive)을 조회합니다.
+
+    `schedule_run_log.started_at` 은 UTC naive 이므로 그대로 비교합니다. 성공한
+    행이 하나도 없으면 None 을 반환합니다. 조회 실패는 호출자가 판정에서
+    제외하도록 예외를 그대로 전파합니다.
+    """
+    from sqlalchemy import func, select
+
+    from src.app.models.schedule_run_log import ScheduleRunLog
+
+    if db is None:
+        session = SessionLocal()
+        own_session = True
+    else:
+        session = db
+        own_session = False
+    try:
+        stmt = select(func.max(ScheduleRunLog.started_at)).where(
+            ScheduleRunLog.schedule_name == schedule_name,
+            ScheduleRunLog.success.is_(True),
+        )
+        return session.execute(stmt).scalar()
+    finally:
+        if own_session:
+            session.close()
+
+
 INTRADAY_COLLECT_SCHEDULE_NAME = "intraday_collect"
 # 실제 회차는 30초 안팎이지만 워커 기본 job_timeout(1800초)보다 짧은 크론 타임아웃을
 # 두면 공용 정책 검사(test_cron_timeout_exceeds_default_job_timeout)와 어긋납니다.
@@ -2050,6 +2085,34 @@ def check_schedule_catchup_needed(
             f"마지막 수집 후 {elapsed_hours:.1f}시간 경과하여 임계치({threshold_hours}시간)를 초과했습니다."
         )
         return True, "threshold_exceeded", details
+
+    # 낮 시간 수집이나 수동 수집이 collected_at 을 최신으로 올려도 야간 스케줄 자체가
+    # 성공하지 못했다면 그날 야간 작업은 빠진 것입니다. 오늘(KST) 02:00 슬롯 이후에
+    # 마지막 성공이 슬롯 이전이거나 성공 이력이 없으면 놓친 야간 작업으로 봅니다.
+    # 이력 조회가 실패하면 판정을 바꾸지 않고 기존 결과로 끝냅니다.
+    now_utc = _as_utc(now)
+    nightly_slot_kst = now_utc.astimezone(KST).replace(hour=2, minute=0, second=0, microsecond=0)
+    nightly_slot = nightly_slot_kst.astimezone(UTC)
+    if now_utc >= nightly_slot:
+        history_available = True
+        last_success_at: datetime | None = None
+        try:
+            last_success_at = get_latest_successful_schedule_time(target_task, db)
+        except Exception as exc:
+            history_available = False
+            logger.warning("야간 슬롯 성공 이력 조회 실패로 판정에서 제외합니다: %s", exc)
+
+        if history_available:
+            details["last_success_at"] = (
+                last_success_at.isoformat() if last_success_at is not None else None
+            )
+            details["nightly_slot_at"] = nightly_slot.isoformat()
+            if last_success_at is None or _as_utc(last_success_at) < nightly_slot:
+                details["reason"] = (
+                    f"야간 슬롯({nightly_slot_kst.isoformat()}) 성공 기록이 없어 "
+                    "놓친 야간 작업을 보충합니다."
+                )
+                return True, "nightly_slot_missed", details
 
     details["reason"] = (
         f"마지막 수집 후 {elapsed_hours:.1f}시간 경과하여 임계치({threshold_hours}시간) 이내입니다."
